@@ -176,3 +176,9 @@
 - `src/driving/approval.py`：`classify_risk`(纯函数；高风险模式 push/merge/rm-rf/sudo/deploy/kubectl/凭据/装扩展/devcontainer rebuild/nix profile...) + `build_approval_graph`(classify→gate；高风险 `interrupt()` 硬暂停)。不靠 agent 自觉(Cline auto-approve 模型自分类不可靠)→**状态机强制**(§7 沙箱外要审批 / D13)。
 - `test_approval.py`：风险分类 / 高风险 interrupt 暂停后 approve→放行 / reject→否决 / 低风险 auto 放行。全过。verify_milestone_3.sh 加 M3.5a。
 - **D15(用户新要求)**：恒用最新最强技术；每任务多 Agent 协作 + 专属 overseer 监督效率/方向。驾驭层升级为 Supervisor(GLM)+Worker(Kimi)+Overseer(GLM)。调研(wr5pwf6m1): langgraph-supervisor 0.0.31 默认传全量历史污染上下文→官方推荐自定义 handoff 只传结构化任务；overseer=critic 节点产出结构化 verdict + 分层升级(确定性预检→GLM 语义→人类)。
+
+## [2026-06-30] M3.6 多Agent监督编排（D15 核心）+ 结构化输出修复(D16)
+- `src/driving/orchestrator.py`：手搓 LangGraph 图 **Supervisor(GLM 调度，干净结构化子任务)→Worker(Kimi via cline)→Overseer(GLM 监督：确定性预检+GLM 方向判断 verdict)→条件路由(continue/replan/abort)→强制验证**；checkpointer。节点可注入。
+- `test_orchestrator.py`：7 场景确定性单测(调度/believe_done 跳过/中止/重规划/验证重试/熔断/循环)全过；verify_milestone_3.sh 加 M3.6a。
+- §6 修复(D16)：`with_structured_output` 默认 `json_schema` 对 GLM ✗(返回 markdown)→ 改 `method="function_calling"` ✓。
+- **真实 e2e ✅**：GLM 把目标拆成具体子任务 → Kimi 经 cline 修复(4 工具调用 completed)→ **GLM overseer 真实裁决 eff=0.95 dir=1.0** "完整闭环无绕路" → 强制验证过。**GLM 真在监督，非 fail-open**。

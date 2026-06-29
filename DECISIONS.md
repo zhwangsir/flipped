@@ -117,3 +117,9 @@
   - 技术：`langgraph-supervisor`(最新) + 自定义 overseer 节点 + checkpoint/interrupt。
 - 把原 M3.6 子Agent主从**提升为核心要求**，贯穿全产品（IDE 内每个任务都走此编排）。
 - **"最新最强"**：LangGraph 最新 + GLM-5.2/Kimi-K2.7(本地最强) + Cline 当前版 + Code-OSS fork(业界标准)；新依赖默认取最新稳定版。
+
+## D16 · GLM/exo 结构化输出必须用 method="function_calling"（§6 工程化）
+- **日期**：2026-06-30 ｜ **批准**：实测
+- **现象**：orchestrator 的 supervisor/overseer 用 `with_structured_output`(langchain 默认 `json_schema`) 对 GLM **校验失败**(GLM 返回 markdown 非 JSON)→fail-open，"GLM 智能监督"形同虚设。
+- **实测**：`json_schema` ✗ / `json_mode` ✗ / **`function_calling` ✓**(GLM 返回正确结构；M0.4 已证 GLM 支持工具调用)。
+- **约定**：所有对 GLM/Kimi(经 LiteLLM/exo)的 `with_structured_output` 一律 `method="function_calling"`。已修 orchestrator 两处。

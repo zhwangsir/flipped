@@ -49,6 +49,9 @@ rm -rf "$F"
 echo "== M3.5 人工审批硬断点 单测（风险分类 + interrupt 暂停/放行/否决） =="
 $PY tests/test_approval.py >/dev/null 2>&1 && pass "approval 单测通过" || bad "approval 单测失败"
 
+echo "== M3.6 多Agent监督编排 单测（Supervisor+Worker+Overseer：调度/中止/重规划/验证/熔断/循环） =="
+$PY tests/test_orchestrator.py >/dev/null 2>&1 && pass "orchestrator 单测通过" || bad "orchestrator 单测失败"
+
 echo ""
-if [ $fail -eq 0 ]; then echo "M3（可观测 + 强制验证 + 循环检测 + 人工审批）验收：通过 ✅"; else echo "M3 验收：有未通过 ❌"; fi
+if [ $fail -eq 0 ]; then echo "M3（可观测+强制验证+循环检测+人工审批+多Agent监督编排）验收：通过 ✅"; else echo "M3 验收：有未通过 ❌"; fi
 exit $fail
