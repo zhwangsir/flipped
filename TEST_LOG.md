@@ -166,3 +166,8 @@
 
 ### M3 一键验收 verify_milestone_3.sh ✅ 退出码 0
 - M3.2a observe 单测 ✅ ｜ M3.2b 真实 cline 可观测 ✅ ｜ M3.3a sidecar 单测 ✅ ｜ M3.3b 强制验证 e2e ✅
+
+## [2026-06-30] M3.4 循环检测（sidecar 跨步状态机）
+- `sidecar.py` 加 `action_signature`（从工具轨迹算"工具+目标文件/命令"的有序签名）+ verify 节点循环检测：同一签名重复 ≥ `loop_threshold`(默认 3) → `stuck`/`stop_reason=loop_detected` → 中断（早于熔断）；重复 ≥2 即在回灌里**升级"换思路重规划"提示**。
+- `test_sidecar.py` 加：签名相等性 / 循环检测（同签名重复 3 次即停，stop_reason=loop_detected，第 3 次任务含重规划提示）/ 熔断改用不同签名以区分（stop_reason=circuit_breaker）。全过。
+- `verify_milestone_3.sh` 回归 ✅ 退出码 0（M3.2 可观测 + M3.3 强制验证 + M3.4 循环检测单测 + e2e）。

@@ -12,7 +12,7 @@
 |---|------|------|------|------|
 | 可观测 | cline `--json` 流解析→结构化轨迹+审计 | A: observe.py | 真实 cline 运行被捕获+审计落盘 | ✅ done (M3.2) |
 | **强制验证** | 完成后**强制**跑验收命令判定 done，不过回灌重做，触顶熔断 | C: sidecar.py | 单测(回灌+熔断) + e2e(驱动 cline 真验收) | ✅ done (M3.3) |
-| 循环检测 | 跨步记忆动作指纹，同动作≥N 中断重规划 | C: sidecar | 构造重复→被中断 | todo |
+| 循环检测 | 跨步记忆动作指纹，同动作≥N 中断重规划 | C: sidecar | 同签名重复→中断+重规划提示 | ✅ done (M3.4) |
 | 上下文压缩 | 接近上限自动总结落盘 | A: Cline Auto Compact（零代码，验证即可） | 长任务自动 compact 不丢决策 | todo |
 | 人工审批断点 | 高风险动作前硬暂停(interrupt) + Plan/Act 兜底 | A+C | 高风险动作暂停，resume 放行/否决 | todo |
 | 子Agent主从 | GLM 调度 / Kimi 执行，子任务干净上下文、结构化交回 | C: supervisor | 子上下文不含主线无关历史 | todo |
@@ -31,10 +31,10 @@
 - [ ] 无硬编码密钥；git commit + STATE 更新
 
 ## 下一步（Phase 1 续）
-1. **循环检测**（sidecar：在 state 累加动作指纹，≥N 触发 interrupt 重规划分支）。
-2. **人工审批硬断点**（sidecar：高风险工具前 `interrupt()`，注意副作用放断点之后/幂等）。
-3. **子Agent主从**（langgraph-supervisor：GLM 调度、Kimi 执行，自定义 handoff 裁剪历史）。
-4. **IDE 控制面扩展骨架**（Phase 1/2 衔接：注册环境/终端/调试工具）。
+1. **人工审批硬断点**（sidecar：高风险工具前 `interrupt()`，注意副作用放断点之后/幂等）。
+2. **子Agent主从**（langgraph-supervisor：GLM 调度、Kimi 执行，自定义 handoff 裁剪历史）。
+3. **IDE 控制面扩展骨架**（Phase 1/2 衔接：注册环境/终端/调试工具）。
+4. **上下文压缩**：验证 Cline 原生 Auto Compact 即可（零代码）。
 
 ## 风险
 - 会话/进程重启杀后台服务（LiteLLM/SearXNG）→ 需 `start_proxy.sh` 重启；Phase 3 打包成托管服务根治。

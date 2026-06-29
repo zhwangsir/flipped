@@ -28,7 +28,7 @@ sys.exit(0 if ok else 1)
 " && pass "cline 运行被可观测（工具调用捕获 + 审计落盘）" || bad "可观测集成失败"
 rm -rf "$F"
 
-echo "== M3.3a 强制验证 sidecar 单测（确定性：回灌重试 + 熔断） =="
+echo "== M3.3a sidecar 单测（确定性：强制验证 + 回灌重试 + 熔断 + 循环检测） =="
 $PY tests/test_sidecar.py >/dev/null 2>&1 && pass "sidecar 单测通过" || bad "sidecar 单测失败"
 
 echo "== M3.3b e2e：sidecar 强制验证驱动 cline 修复 =="
