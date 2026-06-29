@@ -27,7 +27,7 @@
     },
     "M1": { "title": "工具链基线 (SearXNG + 联网搜索工具 + 最小 agent loop)", "status": "done", "note": "SearXNG(Docker, JSON+出站代理) + web_search(单测) + LangGraph ReAct agent loop(GLM via :4000) 端到端通过; verify_milestone_1.sh 退出码 0" },
     "M2": { "title": "代码编辑器形态 (Cline 接 :4000, architect/coder 双模型, 多文件改动端到端)", "status": "done", "note": "Cline CLI v3.0.33 + 扩展 v4.0.2; cline auth openai-compatible -> :4000; M2.4 headless 多文件改动 ALL PASS(读->改->跑->自检); verify_milestone_2.sh 退出码 0; fork 推迟到 M3" },
-    "M3": { "title": "驾驭层 (强制验证/循环检测/上下文压缩/人工审批/子Agent/可观测性)", "status": "doing", "note": "M3.1 架构决策(D9: A/C 分工不 fork) + M3.2 可观测(src/driving/observe.py 解析 cline --json, verify_milestone_3.sh 过) 完成; 余 M3.3 循环检测/M3.4 压缩(Cline 原生)/M3.5 子Agent/M3.6 强制验证/M3.7 硬审批" },
+    "M3": { "title": "驾驭层 = Phase 1 脑 (强制验证/循环检测/压缩/审批/子Agent/可观测/IDE控制面)", "status": "doing", "note": "产品转向桌面 IDE(D10-D14), M3=Phase 1 脑(LangGraph sidecar + Cline 扩展)。完成: M3.1 架构(D9/D11) + M3.2 可观测(observe.py) + M3.3 强制验证(sidecar.py: LangGraph 状态机 强制验收+回灌+熔断, SqliteSaver, 单测+e2e, verify_milestone_3.sh 全绿)。余: 循环检测/上下文压缩(Cline 原生)/人工审批硬断点/子Agent主从/IDE 控制面。" },
     "M4": { "title": "后端能力接入 (DeepAgents 包成 MCP Server + RAG 向量库)", "status": "todo" },
     "M5": { "title": "硬化与产线化 (性能/稳定性/安全/崩溃恢复)", "status": "todo" }
   },
@@ -40,7 +40,12 @@
     { "id": "D6", "decision": "agent 框架 = LangGraph(原生 checkpoint 支撑 M5 崩溃恢复 + M3 审批中断恢复同源; 主-从双模型契合)。M1 已装 langgraph 1.2.6 + langchain-openai 1.3.3", "date": "2026-06-29", "approved_by": "用户(用成熟框架)+调研" },
     { "id": "D7", "decision": "中国网络: Docker 镜像走 docker.m.daocloud.io; pip/uv 走清华源; SearXNG outgoing.proxies 指向 host.docker.internal:7890(宿主 Clash)", "date": "2026-06-29", "approved_by": "实测" },
     { "id": "D8", "decision": "M2 验收用 Cline CLI headless(与编辑器同一 agent core, 免 GUI/computer-use); web_search 对瞬时空结果自重试(§6, agent loop 192->4 消息); verify 脚本加固(多 query/加时长, 不放宽断言); 运维: macOS 无 setsid, 后台服务(LiteLLM/SearXNG)用 run_in_background, 会话重启后需 start_proxy.sh / docker compose up 重启", "date": "2026-06-29", "approved_by": "实测" },
-    { "id": "D9", "decision": "驾驭层(M3)三层分工不 fork: A=Cline 原生(Auto Compact 压缩/Plan-Act 审批)+hooks(PostToolUse 日志/PreToolUse 守门); C=LangGraph(强制验证/循环检测/子Agent supervisor/硬审批 interrupt/checkpoint 归档)。前置: 换 SqliteSaver/PostgresSaver。详见 docs/research-cline-hooks-driving-layer.md", "date": "2026-06-29", "approved_by": "调研+推荐" }
+    { "id": "D9", "decision": "驾驭层(M3)三层分工不 fork: A=Cline 原生(Auto Compact 压缩/Plan-Act 审批)+hooks(PostToolUse 日志/PreToolUse 守门); C=LangGraph(强制验证/循环检测/子Agent supervisor/硬审批 interrupt/checkpoint 归档)。前置: 换 SqliteSaver/PostgresSaver。详见 docs/research-cline-hooks-driving-layer.md", "date": "2026-06-29", "approved_by": "调研+推荐" },
+    { "id": "D10", "decision": "产品形态=多平台桌面 IDE(类 VSCode/IDEA/HBuilder)，fork Code-OSS。用户=自己/少数人。重大转向。详见 docs/product-architecture.md", "date": "2026-06-29", "approved_by": "用户" },
+    { "id": "D11", "decision": "驾驭层落点=Cline 原生/hooks + LangGraph 本地 sidecar(否决 TS 重写); 打包=python-build-standalone+uv+electron-builder extraResources(否决 PyInstaller)。佐证 Cursor/Windsurf 独立 agent 进程", "date": "2026-06-29", "approved_by": "调研+推荐" },
+    { "id": "D12", "decision": "随项目内置环境=Dev Containers+mise(Nix 为 power 选项); AI 改 devcontainer.json/.mise.toml + rebuild 自愈", "date": "2026-06-29", "approved_by": "调研+推荐" },
+    { "id": "D13", "decision": "AI 控制面=薄扩展注册工具(typed API+executeCommand+CLI), 不为控制 IDE 而 fork; 高风险动作走审批", "date": "2026-06-29", "approved_by": "调研+推荐" },
+    { "id": "D14", "decision": "外壳=Code-OSS fork(VSCodium 脚手架)+Open VSX+Cline 内建 builtin+三平台签名公证; 阶段化 脑→环境→壳", "date": "2026-06-29", "approved_by": "调研+推荐" }
   ],
   "known_issues": [
     { "id": "ISSUE-1", "severity": "high", "status": "resolved", "title": "exo 集群推理面 502 Bad Gateway", "detail": "双重根因: (1)早期 instances=0 模型未 LAUNCH; (2)模型起来后 Python 客户端仍 502 实为本机 HTTP_PROXY 劫持(见 D5)。解决: 用户按 2+2 LAUNCH 两模型 + 设 NO_PROXY。M0.4/M0.5 已全通过。", "owner": "已解决" },

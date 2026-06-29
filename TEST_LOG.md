@@ -150,3 +150,19 @@
 - ✅ 改走 **`--json` 流解析**: `agent_event` 的 content_start/content_end(contentType=tool) 带 toolName/input/output/durationMs, 信息完整; C 侧(LangGraph)驱动 cline headless 时本就读此流。
 - 实现 `src/driving/observe.py`: `parse_events`(纯函数, 单测覆盖) + `run_and_observe`(驱动 cline + 落结构化审计 JSONL)。删掉不工作的文件 hook(死代码)。
 - 验收 `verify_milestone_3.sh` ✅: observe 单测过; 真实 cline 运行被可观测(捕获 editor/run_commands, summary={tool_calls:2, iterations:3, reason:completed}, 审计落盘)。
+
+## [2026-06-30] M3.3 强制验证节点 + sidecar 骨架（Phase 1）
+
+### 实现
+- `src/driving/sidecar.py`：LangGraph 状态机 execute→verify→(条件)。**强制验证**=完成后由 sidecar(非 agent)跑验收命令判定 done；不过→把失败详情回灌进任务重做；触顶 max_iterations→**熔断**(§6)。SqliteSaver checkpointer（崩溃恢复地基）。executor/verifier 可注入以便单测。
+- 给 `drive()` 加 `data_dir` 透传（用 M2 隔离的 .cline-data 鉴权）。
+
+### M3.3a 确定性单测 ✅（tests/test_sidecar.py，注入 stub 无需 LLM）
+- happy path（一次过）/ 回灌重试（前两次失败→第三次过，且失败详情回灌进任务）/ 熔断（永远失败→触顶 max_iterations 停）。
+
+### M3.3b e2e ✅（sidecar 驱动真实 cline=Kimi via :4000）
+- 隔离 fixture（`add` 返回 a-b，测试失败）→ drive() 驱动 cline：editor/read_files/run_commands(3 调用,4 迭代,completed)→ **sidecar 强制跑 `python3 test_math.py`** → verified=True, iteration=1 → 终态测试 OK。
+- 文件 SqliteSaver（db_path 给文件）→ 崩溃恢复地基成立。
+
+### M3 一键验收 verify_milestone_3.sh ✅ 退出码 0
+- M3.2a observe 单测 ✅ ｜ M3.2b 真实 cline 可观测 ✅ ｜ M3.3a sidecar 单测 ✅ ｜ M3.3b 强制验证 e2e ✅

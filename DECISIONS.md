@@ -71,3 +71,38 @@
 - **理由**：Cline hooks 是单次调用边界回调（无跨步记忆、不能强制下一步），LangGraph 的 checkpoint+interrupt+supervisor 正好补跨步状态机这层。
 - **前置**：C 侧崩溃恢复须把 checkpointer 从 InMemorySaver 换 SqliteSaver/PostgresSaver；interrupt 副作用须放断点之后/幂等；supervisor handoff 须裁剪历史。
 - **顺序**：先 A 侧（含 PostToolUse 日志 hook 实测）→ 搭 C supervisor 骨架 → 接 (1)(2)(4硬断点)(5)。
+
+## D10 · 产品形态 = 桌面 IDE（fork VS Code / Code-OSS）— 重大转向
+- **日期**：2026-06-29 ｜ **批准**：用户
+- **决定**：最终产品是类似 IDEA / VSCode / HBuilder 的**桌面 IDE**（不是个人装置/一键套件）。目标用户：自己/少数人。
+- **实现路径（提案，待调研 wvwkbktvg 确认）**：fork **Code-OSS**(VSCode 内核)换皮成品牌 IDE（Cursor/Windsurf/字节 Trae 模式——业界都是 fork，无人从零写 IDE），内建 Cline 派生的 AI agent。
+- **重大影响**：
+  - **D9 重定**：驾驭层不能是外部 Python 进程（桌面产品里不能让用户单跑 LangGraph）→ 移入**内建扩展(TS, 可能 fork Cline)** 或 **IDE 随启 sidecar 服务**（复用现有 Python/LangGraph）。待调研定。
+  - **D4 演进**：Cline 从"配置使用"升级为"内建/fork 进 IDE"。
+  - **路线重排**：M2–M5 围绕 IDE 产品重排；M5 产线化 = 出桌面 IDE 安装器(签名/公证/Open VSX)。
+  - **M0–M3 复用**：M0(LiteLLM/exo)→模型后端(端点外置让用户填)；M1 搜索→内建工具/MCP；M3.2 observe.py→并入扩展或 sidecar。不废，但 re-home。
+- **策略**：两阶段——先做扎实"脑"(AI agent + 驾驭层 as 扩展)，再做"壳"(fork+换皮+打包桌面 App)。脑未验证前不先做壳。
+
+## D11 · 驾驭层落点 = Cline 原生/hooks + LangGraph 本地 sidecar
+- **日期**：2026-06-29 ｜ **批准**：调研(wbnb5vubp) + 推荐
+- 承接 D9：压缩→Cline Auto Compact；采集→PostToolUse(observe.py)；守门→PreToolUse；日常审批→Plan/Act；**强制验证/循环检测/子Agent主从/硬审批/checkpoint 归档 → LangGraph 本地 sidecar**。
+- **否决**：脑验证前把 LangGraph 用 TS 重写进 Cline fork（高成本零增量）。佐证：Cursor=独立 Rust 编排服务(Anyrun)、Windsurf=独立本地 Rust agent——重 agent 逻辑放独立进程。
+- 打包：`python-build-standalone` + `uv` 经 `electron-builder extraResources`（**否决 PyInstaller 黑盒**）；主进程 spawn + /health 探活 + 退出 kill；macOS 逐二进制签名+公证。模型端点外置为用户可填。
+
+## D12 · 随项目内置环境 = Dev Containers + mise（Nix 为 power 选项）
+- **日期**：2026-06-29 ｜ **批准**：调研 + 推荐
+- 主干 **Dev Containers**(devcontainer.json + Features 层叠多语言) + **mise**(.mise.toml 版本钉定，容器内/本地共用)；**Nix flake** 进阶可选；运行时打进安装器仅离线兜底。
+- AI 管环境 = 改 `devcontainer.json`/`.mise.toml` 两个声明文件 + 触发 Rebuild 自愈。提供 mise-only 降级(原生 Windows/无 Docker)。
+- Windows 前置 WSL2+Docker Desktop，源码放 WSL FS。真复现需锁镜像 digest + Feature 版本 + .mise.toml。
+
+## D13 · AI 控制面 = 薄扩展注册工具，不为控制 IDE 而 fork
+- **日期**：2026-06-29 ｜ **批准**：调研 + 推荐
+- 三控制面叠加：Cline 现有工具 + typed 扩展 API(tasks/debug/settings/terminals) + executeCommand 内建命令(装扩展/重载) + CLI(devcontainer/nix)。建薄"IDE 控制面"扩展注册为 MCP/Cline 工具。
+- fork 仅为：外壳品牌化 + 必须在 stable 用的 proposed API 白名单。
+- **安全**：高风险(rebuild/nix 改动/装扩展/User 设置写/任意终端)→人工审批；只读自省自动放行。坑：内建命令 ID 跨 fork/版本不稳，防御性校验。
+
+## D14 · 外壳 = Code-OSS fork（VSCodium 脚手架）+ 阶段化路线
+- **日期**：2026-06-29 ｜ **批准**：调研 + 推荐
+- 用 **VSCodium 构建仓库**为脚手架换皮；市场=**Open VSX**(微软市场红线)；不打包微软闭源 builtin；**Cline(Apache-2.0) 作 bundled builtin**(留 LICENSE/NOTICE)；三平台签名公证。
+- 佐证：Cursor/Windsurf/Trae 均 Code-OSS fork + Open VSX。代价：上游月度 rebase、签名/公证、Open VSX 供应链审计。
+- **阶段化(脑→环境→壳)**：Phase 1 脑(stock VS Code 里做完 agent+控制面+sidecar+驾驭层) → Phase 2 环境(environment-as-code + AI 管环境) → Phase 3 壳(fork+品牌+打包出安装器=M5)。脑先于壳。
