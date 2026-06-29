@@ -46,6 +46,9 @@ sys.exit(0 if final.get('verified') else 1)
 " && pass "sidecar 驱动 cline + 强制验收通过(verified)" || bad "强制验证 e2e 未通过"
 rm -rf "$F"
 
+echo "== M3.5 人工审批硬断点 单测（风险分类 + interrupt 暂停/放行/否决） =="
+$PY tests/test_approval.py >/dev/null 2>&1 && pass "approval 单测通过" || bad "approval 单测失败"
+
 echo ""
-if [ $fail -eq 0 ]; then echo "M3（M3.2 可观测 + M3.3 强制验证）验收：通过 ✅"; else echo "M3 验收：有未通过 ❌"; fi
+if [ $fail -eq 0 ]; then echo "M3（可观测 + 强制验证 + 循环检测 + 人工审批）验收：通过 ✅"; else echo "M3 验收：有未通过 ❌"; fi
 exit $fail

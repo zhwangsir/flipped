@@ -171,3 +171,8 @@
 - `sidecar.py` 加 `action_signature`（从工具轨迹算"工具+目标文件/命令"的有序签名）+ verify 节点循环检测：同一签名重复 ≥ `loop_threshold`(默认 3) → `stuck`/`stop_reason=loop_detected` → 中断（早于熔断）；重复 ≥2 即在回灌里**升级"换思路重规划"提示**。
 - `test_sidecar.py` 加：签名相等性 / 循环检测（同签名重复 3 次即停，stop_reason=loop_detected，第 3 次任务含重规划提示）/ 熔断改用不同签名以区分（stop_reason=circuit_breaker）。全过。
 - `verify_milestone_3.sh` 回归 ✅ 退出码 0（M3.2 可观测 + M3.3 强制验证 + M3.4 循环检测单测 + e2e）。
+
+## [2026-06-30] M3.5 人工审批硬断点（LangGraph interrupt）+ D15 多Agent监督原则
+- `src/driving/approval.py`：`classify_risk`(纯函数；高风险模式 push/merge/rm-rf/sudo/deploy/kubectl/凭据/装扩展/devcontainer rebuild/nix profile...) + `build_approval_graph`(classify→gate；高风险 `interrupt()` 硬暂停)。不靠 agent 自觉(Cline auto-approve 模型自分类不可靠)→**状态机强制**(§7 沙箱外要审批 / D13)。
+- `test_approval.py`：风险分类 / 高风险 interrupt 暂停后 approve→放行 / reject→否决 / 低风险 auto 放行。全过。verify_milestone_3.sh 加 M3.5a。
+- **D15(用户新要求)**：恒用最新最强技术；每任务多 Agent 协作 + 专属 overseer 监督效率/方向。驾驭层升级为 Supervisor(GLM)+Worker(Kimi)+Overseer(GLM)。调研(wr5pwf6m1): langgraph-supervisor 0.0.31 默认传全量历史污染上下文→官方推荐自定义 handoff 只传结构化任务；overseer=critic 节点产出结构化 verdict + 分层升级(确定性预检→GLM 语义→人类)。

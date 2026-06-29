@@ -27,7 +27,7 @@
     },
     "M1": { "title": "工具链基线 (SearXNG + 联网搜索工具 + 最小 agent loop)", "status": "done", "note": "SearXNG(Docker, JSON+出站代理) + web_search(单测) + LangGraph ReAct agent loop(GLM via :4000) 端到端通过; verify_milestone_1.sh 退出码 0" },
     "M2": { "title": "代码编辑器形态 (Cline 接 :4000, architect/coder 双模型, 多文件改动端到端)", "status": "done", "note": "Cline CLI v3.0.33 + 扩展 v4.0.2; cline auth openai-compatible -> :4000; M2.4 headless 多文件改动 ALL PASS(读->改->跑->自检); verify_milestone_2.sh 退出码 0; fork 推迟到 M3" },
-    "M3": { "title": "驾驭层 = Phase 1 脑 (强制验证/循环检测/压缩/审批/子Agent/可观测/IDE控制面)", "status": "doing", "note": "产品转向桌面 IDE(D10-D14), M3=Phase 1 脑(LangGraph sidecar + Cline 扩展)。完成: M3.1 架构(D9/D11) + M3.2 可观测(observe.py) + M3.3 强制验证(sidecar.py: LangGraph 状态机 强制验收+回灌+熔断, SqliteSaver) + M3.4 循环检测(action_signature 同动作重复→中断+重规划提示); 单测+e2e, verify_milestone_3.sh 全绿。余: 上下文压缩(Cline 原生)/人工审批硬断点/子Agent主从/IDE 控制面。" },
+    "M3": { "title": "驾驭层 = Phase 1 脑 (强制验证/循环检测/压缩/审批/子Agent/可观测/IDE控制面)", "status": "doing", "note": "产品转向桌面 IDE(D10-D14), M3=Phase 1 脑(LangGraph sidecar + Cline 扩展)。完成: M3.1 架构(D9/D11) + M3.2 可观测(observe.py) + M3.3 强制验证(sidecar.py: LangGraph 状态机 强制验收+回灌+熔断, SqliteSaver) + M3.4 循环检测(action_signature) + M3.5 人工审批硬断点(approval.py: interrupt 高风险暂停, D15 多Agent监督原则已记); 单测+e2e, verify_milestone_3.sh 全绿。余: 子Agent多Agent监督编排(Supervisor GLM+Worker Kimi+Overseer GLM)/上下文压缩(Cline 原生)/IDE 控制面。" },
     "M4": { "title": "后端能力接入 (DeepAgents 包成 MCP Server + RAG 向量库)", "status": "todo" },
     "M5": { "title": "硬化与产线化 (性能/稳定性/安全/崩溃恢复)", "status": "todo" }
   },

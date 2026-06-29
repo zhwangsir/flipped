@@ -106,3 +106,14 @@
 - 用 **VSCodium 构建仓库**为脚手架换皮；市场=**Open VSX**(微软市场红线)；不打包微软闭源 builtin；**Cline(Apache-2.0) 作 bundled builtin**(留 LICENSE/NOTICE)；三平台签名公证。
 - 佐证：Cursor/Windsurf/Trae 均 Code-OSS fork + Open VSX。代价：上游月度 rebase、签名/公证、Open VSX 供应链审计。
 - **阶段化(脑→环境→壳)**：Phase 1 脑(stock VS Code 里做完 agent+控制面+sidecar+驾驭层) → Phase 2 环境(environment-as-code + AI 管环境) → Phase 3 壳(fork+品牌+打包出安装器=M5)。脑先于壳。
+
+## D15 · 核心架构原则：多 Agent 协作 + 专属监督 Agent；恒用最新最强技术
+- **日期**：2026-06-30 ｜ **批准**：用户
+- **要求**：(1) 所有内容上最新最强技术；(2) 任何任务由多个 agent 协作完成，并设**专属"监督 Agent"**监督其他 agent 的**效率**与**方向**是否有偏。
+- **落地**：驾驭层从"主从(GLM 调度/Kimi 执行)"升级为"**多 Agent 编排 + 监督**"：
+  - **Supervisor(GLM)**：拆解任务、调度 worker、综合结果。
+  - **Worker(s)(Kimi via cline)**：执行子任务，受 sidecar 强制验证/循环检测治理。
+  - **Overseer/监督(GLM，专属)**：实时看 worker 轨迹(observe)，评估效率(绕路/重复/低产)与方向(是否偏离目标)，发现问题即干预(令 supervisor 重规划/换法/中止)。
+  - 技术：`langgraph-supervisor`(最新) + 自定义 overseer 节点 + checkpoint/interrupt。
+- 把原 M3.6 子Agent主从**提升为核心要求**，贯穿全产品（IDE 内每个任务都走此编排）。
+- **"最新最强"**：LangGraph 最新 + GLM-5.2/Kimi-K2.7(本地最强) + Cline 当前版 + Code-OSS fork(业界标准)；新依赖默认取最新稳定版。
