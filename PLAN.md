@@ -16,7 +16,7 @@
 | 上下文压缩 | 接近上限自动总结落盘 | A: Cline Auto Compact（零代码） | run_and_observe 接 --compaction agentic，实测接受 | ✅ done (M3.7) |
 | 人工审批断点 | 高风险动作前硬暂停(interrupt) + Plan/Act 兜底 | A+C | 高风险动作暂停，resume 放行/否决 | ✅ done (M3.5) |
 | 多Agent监督编排(D15) | Supervisor(GLM)+Worker(Kimi)+**Overseer(GLM 监督效率/方向)** | C: orchestrator.py | 7 场景单测 + 真实 e2e(GLM 真监督 eff=0.95/dir=1.0) | ✅ done (M3.6) |
-| IDE 控制面 | agent 工具管 终端/调试/任务/设置/扩展/环境 | TS 扩展(typed API+executeCommand+CLI) | 🟡 骨架+环境工具 ✅(编译+risk/env 单测)；余 agent桥(MCP/HTTP)/运行时验证 |
+| IDE 控制面 | agent 工具管 终端/调试/任务/设置/扩展/环境 | TS 扩展(typed API+executeCommand+CLI+HTTP桥) | 🟡 骨架+环境工具+agent桥 ✅(编译+risk/env/bridge+py client 单测)；余 运行时(扩展宿主)roundtrip 验证 |
 
 ## 已落地组件（Phase 1）
 - `src/driving/observe.py` — cline 事件流解析 + 审计（可观测）。

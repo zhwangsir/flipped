@@ -14,12 +14,22 @@
       { "command": "ide.openTerminal", "title": "flipped: Open Terminal" },
       { "command": "ide.installExtension", "title": "flipped: Install Extension" },
       { "command": "ide.runCommand", "title": "flipped: Run VS Code Command" }
-    ]
+    ],
+    "configuration": {
+      "title": "flipped",
+      "properties": {
+        "flipped.bridgePort": {
+          "type": "number",
+          "default": 39217,
+          "description": "agent↔扩展桥本地 HTTP 端口(仅 127.0.0.1)"
+        }
+      }
+    }
   },
   "scripts": {
     "compile": "tsc -p ./",
     "typecheck": "tsc --noEmit -p ./",
-    "test": "node out/risk.test.js && node out/env.test.js"
+    "test": "node out/risk.test.js && node out/env.test.js && node out/bridge.test.js"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",

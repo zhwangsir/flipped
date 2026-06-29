@@ -2,8 +2,10 @@
 // 三控制面叠加：typed 扩展 API(任务/终端/设置) + executeCommand 内建命令(装扩展/任意命令) + (后续) CLI(devcontainer/nix)。
 // 高风险动作经 risk.classifyRisk 判定 → 人工确认(§7 沙箱外要审批)，不靠 agent 自觉。
 import { execFile } from "child_process";
+import * as http from "http";
 import { promisify } from "util";
 import * as vscode from "vscode";
+import { dispatchTool, parseToolRequest } from "./bridge";
 import {
   addDevcontainerFeature,
   DevcontainerConfig,
@@ -128,11 +130,40 @@ const tools: Record<string, ToolHandler> = {
 };
 
 export function activate(context: vscode.ExtensionContext): void {
+  // 1) 注册为 VS Code 命令(供命令面板/键位/其它扩展调用)
   for (const [name, handler] of Object.entries(tools)) {
     context.subscriptions.push(
       vscode.commands.registerCommand(name, (args?: Record<string, unknown>) => handler(args ?? {})),
     );
   }
+
+  // 2) agent↔扩展桥：本地 HTTP(仅 127.0.0.1) 让 Python 驾驭层(sidecar/orchestrator) 调 IDE 工具
+  const port = vscode.workspace.getConfiguration("flipped").get<number>("bridgePort", 39217);
+  const server = http.createServer((req, res) => {
+    if (req.method !== "POST" || req.url !== "/tool") {
+      res.writeHead(404);
+      res.end();
+      return;
+    }
+    let body = "";
+    req.on("data", (c) => (body += String(c)));
+    req.on("end", () => {
+      void (async () => {
+        try {
+          const { name, args } = parseToolRequest(body);
+          const result = await dispatchTool(name, args, tools);
+          res.writeHead(200, { "content-type": "application/json" });
+          res.end(JSON.stringify({ ok: true, result }));
+        } catch (e) {
+          res.writeHead(400, { "content-type": "application/json" });
+          res.end(JSON.stringify({ ok: false, error: String(e) }));
+        }
+      })();
+    });
+  });
+  server.listen(port, "127.0.0.1", () => console.log(`flipped bridge: 127.0.0.1:${port}`));
+  context.subscriptions.push({ dispose: () => server.close() });
+
   console.log("flipped IDE 控制面已激活，工具：", Object.keys(tools).join(", "));
 }
 
