@@ -191,3 +191,9 @@
 - orchestrator 加 `approval_gate` 节点(supervisor→approval_gate→worker)：`require_approval=True` 时高风险子任务(classify_risk)在派给 worker 前 `interrupt()` 等放行；否决→回 supervisor 重规划。复用 M3.5 approval。
 - test_orchestrator.py +2 场景：高风险→interrupt→放行执行 / 否决→换安全方案。全 9 场景过。
 - §7 治理环闭合：多Agent编排里高风险动作强制人工审批（不靠 agent 自觉）。
+
+## [2026-06-30] IDE 控制面扩展骨架（D13，TS VS Code 扩展，Phase 1→2 衔接）
+- `ide-extension/`：package.json + tsconfig + src/{risk.ts, extension.ts, risk.test.ts}。
+- extension.ts 注册 IDE 控制面工具(D13 三控制面)：typed API(`ide.runTask`/`openTerminal`/`get|updateSetting`) + executeCommand(`ide.installExtension`/`runCommand`)。高风险动作经 `risk.classifyRisk` → 模态人工确认(§7)。
+- 验证：npm install(npmmirror) ✓；`tsc --noEmit` typecheck ✓(extension.ts vs @types/vscode)；compile ✓；risk.test ✅(镜像 Python classify_risk)。
+- 后续：CLI 工具(devcontainer/nix 环境管理) + agent↔扩展桥(MCP/HTTP) + 运行时(extension host)验证。

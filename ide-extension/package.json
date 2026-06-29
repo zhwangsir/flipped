@@ -1,0 +1,29 @@
+{
+  "name": "flipped-ide-control-plane",
+  "displayName": "flipped IDE 控制面",
+  "description": "让 AI agent 驱动 IDE 子系统(终端/任务/调试/设置/扩展/环境)，高风险走人工审批(D13/§7)",
+  "version": "0.0.1",
+  "publisher": "flipped",
+  "engines": { "vscode": "^1.90.0" },
+  "categories": ["Other"],
+  "main": "./out/extension.js",
+  "activationEvents": ["onStartupFinished"],
+  "contributes": {
+    "commands": [
+      { "command": "ide.runTask", "title": "flipped: Run Task" },
+      { "command": "ide.openTerminal", "title": "flipped: Open Terminal" },
+      { "command": "ide.installExtension", "title": "flipped: Install Extension" },
+      { "command": "ide.runCommand", "title": "flipped: Run VS Code Command" }
+    ]
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "typecheck": "tsc --noEmit -p ./",
+    "test": "node out/risk.test.js"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/vscode": "^1.90.0",
+    "typescript": "^5.4.0"
+  }
+}

@@ -40,3 +40,6 @@ infra/searxng/settings.yml
 # Cline hook 审计日志(运行时)
 src/driving/hooks/audit.jsonl
 logs/cline-audit.jsonl
+
+# IDE 控制面扩展构建产物
+ide-extension/out/

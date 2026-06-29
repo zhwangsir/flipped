@@ -16,7 +16,7 @@
 | 上下文压缩 | 接近上限自动总结落盘 | A: Cline Auto Compact（零代码） | run_and_observe 接 --compaction agentic，实测接受 | ✅ done (M3.7) |
 | 人工审批断点 | 高风险动作前硬暂停(interrupt) + Plan/Act 兜底 | A+C | 高风险动作暂停，resume 放行/否决 | ✅ done (M3.5) |
 | 多Agent监督编排(D15) | Supervisor(GLM)+Worker(Kimi)+**Overseer(GLM 监督效率/方向)** | C: orchestrator.py | 7 场景单测 + 真实 e2e(GLM 真监督 eff=0.95/dir=1.0) | ✅ done (M3.6) |
-| IDE 控制面 | agent 工具管 终端/调试/任务/设置/扩展/环境 | Cline 扩展(typed API+executeCommand+CLI) | 各子系统可被 agent 操作 + 高风险审批 | todo（M4 起） |
+| IDE 控制面 | agent 工具管 终端/调试/任务/设置/扩展/环境 | TS 扩展(typed API+executeCommand+CLI) | 🟡 骨架 ✅(编译+风险单测)；余 CLI/agent桥/运行时验证 |
 
 ## 已落地组件（Phase 1）
 - `src/driving/observe.py` — cline 事件流解析 + 审计（可观测）。
@@ -32,8 +32,9 @@
 
 ## 下一步（Phase 1 续）
 **驾驭层六件套全部 ✅**：可观测 · 强制验证 · 循环检测 · 人工审批 · 多Agent监督编排(D15) · 上下文压缩。**审批已接入 orchestrator ✅**（governed 多Agent loop 闭环）。余（Phase 1 收尾 + 衔接 Phase 2）：
-1. **IDE 控制面扩展骨架**（Phase 1/2 衔接：TS VS Code 扩展，注册 环境/终端/调试/任务 工具，typed API + executeCommand + CLI；高风险走 approval）。— **下一个大件**
+1. **IDE 控制面扩展** — 骨架 ✅(编译+风险单测)。续：加 CLI 工具(devcontainer/nix 环境管理)、agent↔扩展桥(MCP/HTTP)、运行时(extension host)验证。
 2. **Phase 1 整体 e2e + 文档收尾**。
+3. **Phase 2 环境**：devcontainer + mise 模板 + AI 管环境(改声明+rebuild)。
 
 ## 风险
 - 会话/进程重启杀后台服务（LiteLLM/SearXNG）→ 需 `start_proxy.sh` 重启；Phase 3 打包成托管服务根治。
