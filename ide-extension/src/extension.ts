@@ -1,8 +1,18 @@
 // flipped IDE 控制面（D13）：把 IDE 子系统暴露成 AI agent 可调用的工具。
 // 三控制面叠加：typed 扩展 API(任务/终端/设置) + executeCommand 内建命令(装扩展/任意命令) + (后续) CLI(devcontainer/nix)。
 // 高风险动作经 risk.classifyRisk 判定 → 人工确认(§7 沙箱外要审批)，不靠 agent 自觉。
+import { execFile } from "child_process";
+import { promisify } from "util";
 import * as vscode from "vscode";
+import {
+  addDevcontainerFeature,
+  DevcontainerConfig,
+  devcontainerRebuildCmd,
+  setMiseTool,
+} from "./env";
 import { classifyRisk } from "./risk";
+
+const pexec = promisify(execFile);
 
 type ToolHandler = (args: Record<string, unknown>) => Promise<unknown>;
 
@@ -68,6 +78,52 @@ const tools: Record<string, ToolHandler> = {
     }
     const rest = Array.isArray(args) ? args : [];
     return vscode.commands.executeCommand(String(commandId), ...rest);
+  },
+  // 环境即代码(D12/D13)：AI 改声明文件 → 重建。编辑 devcontainer.json 加语言 Feature
+  "env.addDevcontainerFeature": async ({ feature, version }) => {
+    const ws = vscode.workspace.workspaceFolders?.[0]?.uri;
+    if (!ws) {
+      throw new Error("no workspace");
+    }
+    const file = vscode.Uri.joinPath(ws, ".devcontainer", "devcontainer.json");
+    let cfg: DevcontainerConfig = {};
+    try {
+      cfg = JSON.parse(Buffer.from(await vscode.workspace.fs.readFile(file)).toString());
+    } catch {
+      /* 无则新建 */
+    }
+    const next = addDevcontainerFeature(cfg, String(feature), version ? String(version) : "latest");
+    await vscode.workspace.fs.writeFile(file, Buffer.from(JSON.stringify(next, null, 2)));
+    return { ok: true, features: Object.keys(next.features ?? {}) };
+  },
+  // 编辑 .mise.toml 钉语言版本
+  "env.miseUse": async ({ tool, version }) => {
+    const ws = vscode.workspace.workspaceFolders?.[0]?.uri;
+    if (!ws) {
+      throw new Error("no workspace");
+    }
+    const file = vscode.Uri.joinPath(ws, ".mise.toml");
+    let toml = "";
+    try {
+      toml = Buffer.from(await vscode.workspace.fs.readFile(file)).toString();
+    } catch {
+      /* 无则新建 */
+    }
+    await vscode.workspace.fs.writeFile(file, Buffer.from(setMiseTool(toml, String(tool), String(version))));
+    return { ok: true };
+  },
+  // 重建 devcontainer 使声明生效(高风险 → 审批)
+  "env.rebuildDevcontainer": async () => {
+    const ws = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    if (!ws) {
+      throw new Error("no workspace");
+    }
+    if (!(await gate("devcontainer rebuild"))) {
+      throw new Error("rejected by user");
+    }
+    const cmd = devcontainerRebuildCmd(ws);
+    const { stdout } = await pexec(cmd[0], cmd.slice(1));
+    return { ok: true, stdout: stdout.slice(-500) };
   },
 };
 

@@ -197,3 +197,8 @@
 - extension.ts 注册 IDE 控制面工具(D13 三控制面)：typed API(`ide.runTask`/`openTerminal`/`get|updateSetting`) + executeCommand(`ide.installExtension`/`runCommand`)。高风险动作经 `risk.classifyRisk` → 模态人工确认(§7)。
 - 验证：npm install(npmmirror) ✓；`tsc --noEmit` typecheck ✓(extension.ts vs @types/vscode)；compile ✓；risk.test ✅(镜像 Python classify_risk)。
 - 后续：CLI 工具(devcontainer/nix 环境管理) + agent↔扩展桥(MCP/HTTP) + 运行时(extension host)验证。
+
+## [2026-06-30] IDE 控制面 + 环境即代码工具（D12/D13）
+- `ide-extension/src/env.ts`：`addDevcontainerFeature`(加语言 Feature)/`setMiseTool`(钉版本)/`devcontainerRebuildCmd`/`miseInstallCmd`，纯函数不可变。
+- extension.ts 加环境工具：`env.addDevcontainerFeature`/`env.miseUse`(改声明文件) + `env.rebuildDevcontainer`(CLI，高风险审批)。**AI 管环境 = 改 devcontainer.json/.mise.toml + rebuild(D12)**。
+- 验证：typecheck ✓(含 child_process/util vs @types/node)；compile ✓；risk.test + env.test ✅(env: feature 增/不可变, mise 建段/替换/追加/保留其它段, 命令构建)。

@@ -19,7 +19,7 @@
   "scripts": {
     "compile": "tsc -p ./",
     "typecheck": "tsc --noEmit -p ./",
-    "test": "node out/risk.test.js"
+    "test": "node out/risk.test.js && node out/env.test.js"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
