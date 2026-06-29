@@ -22,3 +22,12 @@
 - **决策**：M0 必须用真实带 `tools` 的请求实测两模型返回结构化 `tool_calls`（而非把调用塞进 content）。不稳则在驾驭层加结构化输出约束 + 重试（呼应 M2）。
 - **理由**：验证靠运行不靠看（§1.2）；这是后续一切的地基。
 - **现状**：因集群推理 502 暂时 blocked，已由后台监控 `monitor_cluster.py` 在集群恢复后自动复验。
+
+## D4 · M2 编辑器基座改选（Roo Code 已停服）— 待用户确认
+- **日期**：2026-06-29 ｜ **批准**：⏳ pending（ISSUE-2）
+- **背景**：AGENTS.md M2 要求"fork Roo Code"。但调研确认 **Roo Code 于 2026-05-15 被官方归档停服**（仓库只读、末版 v3.54.0，团队转云端 agent Roomote）。作为 fork 基座意味着无上游更新、无安全补丁、社区迁走。
+- **候选**：
+  - **Kilo Code**（推荐）：Roo Code 的 fork，与 Roo 共享真实 git 历史；Apache-2.0；2026 活跃维护；自定义模式=custom agents，支持 **Sticky Models**（按 agent 钉模型，可声明式做到 Architect→GLM-5.2 / Coder→Kimi-K2.7-Code，修复 Roo 仅 UI 绑定的弱点）；有 Roo→Kilo 迁移向导（.roomodes→.kilo/agents/*.md）。
+  - **Cline**：Roo 的上游；MIT（更宽松）；5M+ 安装、社区最大；多 agent/coordinator 委派，不同 agent 可配不同模型。基座最干净，但"按模式分模型"需用其多 agent 机制自行组织。
+- **影响**：选 Kilo → AGENTS.md M2 的 Roo 思路几乎平移，per-mode-model 更顺；选 Cline → 基座更稳但模式体系要重搭。两者都原生支持 OpenAI Compatible 指向 LiteLLM :4000。
+- **不阻塞**：M0/M1 不依赖此决策；到 M2 前定即可。

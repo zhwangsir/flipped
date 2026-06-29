@@ -30,3 +30,27 @@
 - 结论：开发工具链基本就绪，M0.3 起草 LiteLLM 配置前需 `pip install litellm` 或用 docker 镜像。
 
 ---
+
+## [2026-06-29 15:52:19] 集群恢复监控启动
+轮询 http://100.64.201.37:52415/v1/chat/completions，每 120s，最多 30 次。
+
+## [2026-06-29] M0.3 LiteLLM 代理验证 + M0.6 验收脚本
+
+### LiteLLM 安装
+- 命令：`uv venv --python 3.11 .venv && uv pip install 'litellm[proxy]'`
+- 结果：**LiteLLM 1.90.0** 装入 `.venv` ✅
+
+### 代理别名暴露（不依赖集群）
+- 命令：`litellm --config infra/litellm/config.yaml --port 4000` 后台启动；`curl /v1/models`
+- 输出：`data=[architect, coder]`；`/health/readiness = {"status":"healthy"}`
+- 结论：**M0.3 配置层 ✅** — 别名机制成立，对外仅暴露 architect / coder（隐藏真实 model id）。
+
+### M0 验收脚本实跑（scripts/verify_milestone_0.sh，退出码 1）
+- M0.2 exo 目录：✅ GLM-5.2 / Kimi 均在
+- M0.3 代理别名：✅ architect / coder
+- M0.4 工具调用(exo 直连)：❌ 两模型均 502（集群未恢复，命根子待验）
+- M0.5 经代理路由：❌ 上游 502 → 降级耗尽
+- 结论：M0 中**不依赖实时推理的部分全部就绪**；M0.4/M0.5 待集群恢复（monitor_cluster.py 盯）。退出码 1 是诚实反映集群阻塞，非脚本缺陷。
+
+### 调研补记（M2 基座）
+- Roo Code 已于 2026-05-15 停服归档 → ISSUE-2 / 决策 D4（待用户在 Kilo Code / Cline 间选）。

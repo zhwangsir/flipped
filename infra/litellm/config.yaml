@@ -1,0 +1,35 @@
+# LiteLLM Proxy 配置 — flipped M0（决策 D1）
+# 链路: 客户端/编辑器 -> 本代理(:4000) -> exo 集群(:52415) -> {GLM-5.2, Kimi-K2.7-Code}
+# 别名: architect = GLM-5.2(编排者/架构师) ; coder = Kimi-K2.7-Code(执行者/码农)
+# 启动: litellm --config infra/litellm/config.yaml --port 4000
+# 来源: context7 核对 BerriAI/litellm v1.83.3-stable 官方文档
+
+model_list:
+  # 编排者/架构师 -> GLM-5.2 （注意 openai/ 前缀: 告诉 LiteLLM 走 OpenAI 兼容路由）
+  - model_name: architect
+    litellm_params:
+      model: openai/mlx-community/GLM-5.2-DQ4plus-q8   # 必须与 exo /v1/models 的 id 完全一致
+      api_base: http://100.64.201.37:52415/v1          # 必带 /v1 后缀
+      api_key: os.environ/EXO_API_KEY                  # 从环境变量读, 不硬编码
+
+  # 执行者/码农 -> Kimi-K2.7-Code
+  - model_name: coder
+    litellm_params:
+      model: openai/mlx-community/Kimi-K2.7-Code-4bit
+      api_base: http://100.64.201.37:52415/v1
+      api_key: os.environ/EXO_API_KEY
+
+router_settings:
+  # 双向降级: 某别名报错(429/500/超时)时路由到另一个 (key/value 必须是 model_name 别名)
+  fallbacks: [{ "architect": ["coder"] }, { "coder": ["architect"] }]
+  num_retries: 2
+  timeout: 600          # 本地大模型首 token 慢, 调大避免误触发降级
+  allowed_fails: 3
+  cooldown_time: 30     # 连续失败后冷却该部署的秒数
+
+litellm_settings:
+  drop_params: true      # 丢弃上游不支持的参数, 提升 OpenAI 兼容性
+  request_timeout: 600
+
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY   # 代理对外鉴权; 所有请求需带 Authorization: Bearer
