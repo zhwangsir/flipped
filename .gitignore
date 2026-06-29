@@ -1,0 +1,32 @@
+# ---- 密钥 / 凭据（绝不入库，AGENTS.md §7）----
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+secrets/
+
+# ---- Node ----
+node_modules/
+dist/
+build/
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# ---- Python ----
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+
+# ---- 运行时 / 产物 ----
+logs/
+*.tmp
+.cache/
+
+# ---- OS / 编辑器 ----
+.DS_Store
+.idea/
+.vscode/

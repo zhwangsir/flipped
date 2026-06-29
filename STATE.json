@@ -1,0 +1,45 @@
+{
+  "project": "flipped",
+  "description": "接入本地 MLX 双模型(GLM-5.2 编排者 / Kimi-K2.7-Code 执行者)的 agentic 代码编辑器平台。fork Roo Code + 自定义驾驭层(强制验证/循环检测/上下文压缩/人工审批/子Agent/可观测性) + MCP 联网与外部能力。",
+  "updated": "2026-06-29",
+  "current_milestone": "M0",
+  "key_facts": {
+    "dev_host": "Apple M5 Max, 128GB RAM, 1.1TB 可用磁盘 — 开发/控制节点，非模型宿主",
+    "model_cluster": "exo 集群 @ http://100.64.201.37:52415 (内网, OpenAI 兼容)；公网 https://dgmt.top/exo (需 Bearer token)",
+    "cluster_topology": "Thunderbolt 桥接、张量并行多节点；GLM-5.2 与 Kimi-K2.7-Code 各 4 分片(deviceRank 0-3)",
+    "orchestrator_model": "mlx-community/GLM-5.2-DQ4plus-q8 (编排者/架构师, 主 Agent)",
+    "executor_model": "mlx-community/Kimi-K2.7-Code-4bit (执行者/码农, 子 Agent)",
+    "serving_arch": "客户端/编辑器 -> LiteLLM Proxy(:4000) -> exo(:52415) -> {GLM-5.2, Kimi-K2.7-Code}",
+    "toolchain": "git/node v24/npm/pnpm/python3.9/docker/uv/brew 已装；缺 litellm(pip)/code CLI/yarn"
+  },
+  "milestones": {
+    "M0": {
+      "title": "环境与服务层 (复用 exo + LiteLLM 前置)",
+      "status": "doing",
+      "tasks": {
+        "M0.1_skeleton": { "title": "初始化项目骨架与状态文件", "status": "doing" },
+        "M0.2_cluster_reachable": { "title": "确认 exo 集群两模型在线 (/v1/models)", "status": "done", "note": "GLM-5.2 与 Kimi-K2.7-Code 均在 140 模型目录中" },
+        "M0.3_litellm_config": { "title": "起草 LiteLLM 配置 (architect->GLM, coder->Kimi, 降级)", "status": "todo" },
+        "M0.4_toolcall_validation": { "title": "实测两模型经 exo 的工具调用解析正确 (M0 命根子验收)", "status": "blocked", "note": "集群推理面当前全线 502，模型分片下载中，未可服务" },
+        "M0.5_fallback_validation": { "title": "停一个模型验证 LiteLLM 降级", "status": "todo" },
+        "M0.6_verify_script": { "title": "scripts/verify_milestone_0.sh 一键复跑验收", "status": "todo" }
+      }
+    },
+    "M1": { "title": "工具链基线 (SearXNG + 联网搜索工具 + 最小 agent loop)", "status": "todo" },
+    "M2": { "title": "代码编辑器形态 (fork Roo Code, OpenAI 兼容指向 :4000, .roomodes 分模式绑模型)", "status": "todo" },
+    "M3": { "title": "驾驭层 (强制验证/循环检测/上下文压缩/人工审批/子Agent/可观测性)", "status": "todo" },
+    "M4": { "title": "后端能力接入 (DeepAgents 包成 MCP Server + RAG 向量库)", "status": "todo" },
+    "M5": { "title": "硬化与产线化 (性能/稳定性/安全/崩溃恢复)", "status": "todo" }
+  },
+  "architecture_decisions": [
+    { "id": "D1", "decision": "服务层复用现成 exo 集群 + LiteLLM(:4000) 前置，弃用 mlx-openai-server", "date": "2026-06-29", "approved_by": "用户" },
+    { "id": "D2", "decision": "本机 M5 Max 128GB 为开发/控制节点；模型驻留在 exo 集群(其聚合内存才是 AGENTS.md 所指 2TB)", "date": "2026-06-29", "approved_by": "实测核对" },
+    { "id": "D3", "decision": "M0 验收核心 = 经 exo 的工具调用(function calling)解析实测，而非 mlx-openai-server 的 tool-call-parser 配对", "date": "2026-06-29", "approved_by": "用户" }
+  ],
+  "known_issues": [
+    { "id": "ISSUE-1", "severity": "high", "status": "open", "title": "exo 集群推理面 502 Bad Gateway", "detail": "对 GLM-5.2/Kimi/甚至最小 Qwen3-0.6B 的 /v1/chat/completions 均 5s 快速 502；/state 显示分片 DownloadPending，模型未进入可服务状态。阻塞 M0.4 工具调用验证。", "owner": "用户拉起集群 + Claude 后台监控自动复验" }
+  ],
+  "background_jobs": [
+    { "name": "monitor_cluster.py", "purpose": "轮询 exo 从 502 恢复，模型一可服务即自动跑工具调用验证并写入 TEST_LOG.md", "started": "2026-06-29" }
+  ]
+}
