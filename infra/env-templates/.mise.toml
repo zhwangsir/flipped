@@ -1,0 +1,7 @@
+# 随项目内置多语言环境 · 版本钉定（D12）。容器内/本地共用同一份。
+# AI 经 IDE 控制面 env.miseUse 工具改这里 + rebuild 生效。
+[tools]
+python = "3.12"
+node = "20"
+rust = "1.83"
+java = "21"

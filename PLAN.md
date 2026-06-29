@@ -34,7 +34,7 @@
 **驾驭层六件套全部 ✅**：可观测 · 强制验证 · 循环检测 · 人工审批 · 多Agent监督编排(D15) · 上下文压缩。**审批已接入 orchestrator ✅**（governed 多Agent loop 闭环）。余（Phase 1 收尾 + 衔接 Phase 2）：
 1. **IDE 控制面扩展** — 骨架 + 环境工具 ✅(编译+risk/env 单测)。续：agent↔扩展桥(MCP/HTTP)、运行时(extension host)验证。
 2. **Phase 1 整体 e2e + 文档收尾**。
-3. **Phase 2 环境**：devcontainer + mise 模板 + AI 管环境(改声明+rebuild)。
+3. **Phase 2 环境**：模板 ✅(infra/env-templates + verify_phase2.sh)；AI 管环境工具 ✅(env.ts)。余：运行时(devcontainer CLI rebuild)实测，需 Docker Desktop。
 
 ## 风险
 - 会话/进程重启杀后台服务（LiteLLM/SearXNG）→ 需 `start_proxy.sh` 重启；Phase 3 打包成托管服务根治。

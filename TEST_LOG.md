@@ -202,3 +202,8 @@
 - `ide-extension/src/env.ts`：`addDevcontainerFeature`(加语言 Feature)/`setMiseTool`(钉版本)/`devcontainerRebuildCmd`/`miseInstallCmd`，纯函数不可变。
 - extension.ts 加环境工具：`env.addDevcontainerFeature`/`env.miseUse`(改声明文件) + `env.rebuildDevcontainer`(CLI，高风险审批)。**AI 管环境 = 改 devcontainer.json/.mise.toml + rebuild(D12)**。
 - 验证：typecheck ✓(含 child_process/util vs @types/node)；compile ✓；risk.test + env.test ✅(env: feature 增/不可变, mise 建段/替换/追加/保留其它段, 命令构建)。
+
+## [2026-06-30] Phase 2 环境模板（D12）— 随项目内置多语言环境
+- `infra/env-templates/{devcontainer.json, .mise.toml}`：Dev Containers Features(python3.12/node20/rust/java21/mise) 层叠 + postCreate 跑 `mise install`；.mise.toml 钉 4 语言版本(容器内/本地共用)。
+- `scripts/verify_phase2.sh` ✅：devcontainer 多语言 Features 完整 + mise install postCreate；.mise.toml 钉定完整。
+- AI 经 IDE 控制面 `env.addDevcontainerFeature`/`env.miseUse`(已测) 改这些声明 + rebuild 管环境(D12 闭环)。
