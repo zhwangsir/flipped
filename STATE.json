@@ -2,7 +2,7 @@
   "project": "flipped",
   "description": "接入本地 MLX 双模型(GLM-5.2 编排者 / Kimi-K2.7-Code 执行者)的 agentic 代码编辑器平台。fork Roo Code + 自定义驾驭层(强制验证/循环检测/上下文压缩/人工审批/子Agent/可观测性) + MCP 联网与外部能力。",
   "updated": "2026-06-29",
-  "current_milestone": "M2",
+  "current_milestone": "M3",
   "key_facts": {
     "dev_host": "Apple M5 Max, 128GB RAM, 1.1TB 可用磁盘 — 开发/控制节点，非模型宿主",
     "model_cluster": "exo 集群 @ http://100.64.201.37:52415 (内网, OpenAI 兼容)；公网 https://dgmt.top/exo (需 Bearer token)",
@@ -26,7 +26,7 @@
       }
     },
     "M1": { "title": "工具链基线 (SearXNG + 联网搜索工具 + 最小 agent loop)", "status": "done", "note": "SearXNG(Docker, JSON+出站代理) + web_search(单测) + LangGraph ReAct agent loop(GLM via :4000) 端到端通过; verify_milestone_1.sh 退出码 0" },
-    "M2": { "title": "代码编辑器形态 (fork Roo Code, OpenAI 兼容指向 :4000, .roomodes 分模式绑模型)", "status": "todo" },
+    "M2": { "title": "代码编辑器形态 (Cline 接 :4000, architect/coder 双模型, 多文件改动端到端)", "status": "done", "note": "Cline CLI v3.0.33 + 扩展 v4.0.2; cline auth openai-compatible -> :4000; M2.4 headless 多文件改动 ALL PASS(读->改->跑->自检); verify_milestone_2.sh 退出码 0; fork 推迟到 M3" },
     "M3": { "title": "驾驭层 (强制验证/循环检测/上下文压缩/人工审批/子Agent/可观测性)", "status": "todo" },
     "M4": { "title": "后端能力接入 (DeepAgents 包成 MCP Server + RAG 向量库)", "status": "todo" },
     "M5": { "title": "硬化与产线化 (性能/稳定性/安全/崩溃恢复)", "status": "todo" }
@@ -38,7 +38,8 @@
     { "id": "D4", "decision": "M2 基座 = Cline(MIT, Roo 上游, exo 社区实测对本地模型最稳, 活跃)。弃 Roo Code(已停服)/Kilo(本地模型有 MODEL_NO_TOOLS_USED 风险)。M2 先用 install+配置验证编辑器流, 源码 fork 推迟到 M3 加驾驭层时", "date": "2026-06-29", "approved_by": "Claude(用户连续继续授权)", "status": "decided" },
     { "id": "D5", "decision": "访问 exo 的 Python/httpx 客户端(含 LiteLLM)必须 export NO_PROXY 含 100.64.201.37, 否则被本机 HTTP_PROXY(Clash:7890)劫持成 502。curl/Node fetch 不受影响。已写入 start_proxy.sh/verify_milestone_0.sh", "date": "2026-06-29", "approved_by": "实测根因" },
     { "id": "D6", "decision": "agent 框架 = LangGraph(原生 checkpoint 支撑 M5 崩溃恢复 + M3 审批中断恢复同源; 主-从双模型契合)。M1 已装 langgraph 1.2.6 + langchain-openai 1.3.3", "date": "2026-06-29", "approved_by": "用户(用成熟框架)+调研" },
-    { "id": "D7", "decision": "中国网络: Docker 镜像走 docker.m.daocloud.io; pip/uv 走清华源; SearXNG outgoing.proxies 指向 host.docker.internal:7890(宿主 Clash)", "date": "2026-06-29", "approved_by": "实测" }
+    { "id": "D7", "decision": "中国网络: Docker 镜像走 docker.m.daocloud.io; pip/uv 走清华源; SearXNG outgoing.proxies 指向 host.docker.internal:7890(宿主 Clash)", "date": "2026-06-29", "approved_by": "实测" },
+    { "id": "D8", "decision": "M2 验收用 Cline CLI headless(与编辑器同一 agent core, 免 GUI/computer-use); web_search 对瞬时空结果自重试(§6, agent loop 192->4 消息); verify 脚本加固(多 query/加时长, 不放宽断言); 运维: macOS 无 setsid, 后台服务(LiteLLM/SearXNG)用 run_in_background, 会话重启后需 start_proxy.sh / docker compose up 重启", "date": "2026-06-29", "approved_by": "实测" }
   ],
   "known_issues": [
     { "id": "ISSUE-1", "severity": "high", "status": "resolved", "title": "exo 集群推理面 502 Bad Gateway", "detail": "双重根因: (1)早期 instances=0 模型未 LAUNCH; (2)模型起来后 Python 客户端仍 502 实为本机 HTTP_PROXY 劫持(见 D5)。解决: 用户按 2+2 LAUNCH 两模型 + 设 NO_PROXY。M0.4/M0.5 已全通过。", "owner": "已解决" },

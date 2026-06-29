@@ -8,8 +8,13 @@ from tools.web_search import SearchError, format_for_llm, search  # noqa: E402
 
 
 def test_returns_results():
-    r = search("LangGraph", max_results=3)
-    assert isinstance(r, list) and len(r) >= 1, f"期望 >=1 条结果, 实得 {len(r)}"
+    # SearXNG 上游引擎(经 Clash)偶发抖动 -> 多 query 任一返回即通过(仍要求真实结果, 不放水)
+    r: list = []
+    for q in ("LangGraph", "Python programming language", "Wikipedia"):
+        r = search(q, max_results=3)
+        if r:
+            break
+    assert isinstance(r, list) and len(r) >= 1, "3 个 query 均无结果(SearXNG 引擎全抖?)"
     assert all(x.get("url", "").startswith("http") for x in r), "每条结果须含 http URL"
     assert all(x.get("title") for x in r), "每条结果须有标题"
 

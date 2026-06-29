@@ -18,7 +18,7 @@ pass(){ echo "  ✅ $1"; }
 bad(){ echo "  ❌ $1"; fail=1; }
 
 echo "== M0.2 exo 集群目录 =="
-models=$(curl -s --max-time 10 "$EXO/v1/models" || true)
+models=$(curl -s --max-time 30 "$EXO/v1/models" || true)
 echo "$models" | grep -q "GLM-5.2-DQ4plus-q8" && pass "GLM-5.2 在目录" || bad "GLM-5.2 不在目录"
 echo "$models" | grep -q "Kimi-K2.7-Code-4bit" && pass "Kimi-K2.7-Code 在目录" || bad "Kimi-K2.7-Code 不在目录"
 

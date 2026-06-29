@@ -33,3 +33,6 @@ logs/
 
 # SearXNG 运行配置(含 secret)
 infra/searxng/settings.yml
+
+# Cline CLI 隔离状态(含 API key)
+.cline-data/

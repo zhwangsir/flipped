@@ -7,8 +7,12 @@ export NO_PROXY="100.64.201.37,localhost,127.0.0.1,::1,.local"; export no_proxy=
 PY="$([ -x .venv/bin/python ] && echo .venv/bin/python || echo python3)"
 fail=0; pass(){ echo "  ✅ $1"; }; bad(){ echo "  ❌ $1"; fail=1; }
 
-echo "== M1.1 SearXNG JSON 搜索 =="
-n=$(curl -s --max-time 45 "http://localhost:8080/search?q=LangGraph&format=json" | $PY -c "import sys,json;print(len(json.load(sys.stdin).get('results',[])))" 2>/dev/null || echo 0)
+echo "== M1.1 SearXNG JSON 搜索(引擎经 Clash 易抖, 多 query 重试) =="
+n=0
+for q in LangGraph "model+context+protocol" python wikipedia; do
+  n=$(curl -s --max-time 45 "http://localhost:8080/search?q=${q}&format=json" | $PY -c "import sys,json;print(len(json.load(sys.stdin).get('results',[])))" 2>/dev/null || echo 0)
+  [ "${n:-0}" -ge 1 ] && break
+done
 [ "${n:-0}" -ge 1 ] && pass "SearXNG 返回 $n 条结果" || bad "SearXNG 无结果(容器在跑? 引擎超时?)"
 
 echo "== M1.2 web_search 工具单测 =="

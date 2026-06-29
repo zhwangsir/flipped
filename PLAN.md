@@ -1,52 +1,51 @@
-# PLAN.md — 当前里程碑：M2 · 代码编辑器形态（Cline）
+# PLAN.md — 当前里程碑：M3 · 驾驭层
 
-> M0、M1 已完成（详见 STATE.json / TEST_LOG.md / DECISIONS.md）。本文件描述 M2。
+> M0、M1、M2 已完成（详见 STATE.json / TEST_LOG.md / DECISIONS.md）。本文件描述 M3。
 
-## M2 目标（AGENTS.md §5，按 D4 修正）
+## M3 目标（AGENTS.md §5）
 
-把 **Cline**（D4：替代已停服的 Roo Code）接到我们的服务层：API Provider = OpenAI Compatible → `http://localhost:4000`（LiteLLM），规划/架构阶段用 GLM-5.2（别名 `architect`），实现/编码阶段用 Kimi-K2.7-Code（别名 `coder`）。在编辑器内下达多文件改动任务，全流程跑通。
+在 Cline（D4 基座）之上逐个叠加驾驭层能力，每加一个写测试：
+1. 强制验证节点（Agent 自称完成后强制跑验收脚本）
+2. 循环检测（最近 N 步动作签名，同文件/同动作 ≥3 次则中断重规划）
+3. 上下文压缩（接近窗口上限自动总结+落盘）
+4. 人工审批断点（高风险动作前暂停等确认，§7）
+5. 子 Agent（主-从：GLM 调度，Kimi 干活；子任务独立干净上下文，结构化交回）
+6. 可观测性（tracing / 本地日志，每步输入/输出/工具调用可追溯）
 
-**验收（AGENTS.md M2）**：在编辑器内下达一个多文件改动任务，Agent 能**读文件 → 改代码 → 跑命令 → 自检**全流程跑通；并核查工具调用配对正确（M0.4 已证 exo 侧 OK）。
+## 首要设计决策（M3.1，先定再做）
 
-## 策略（D4）
+**驾驭层落在哪一层？** 三种路径，需先评估（呼应 M2 "先轻后重"）：
+- **(A) Cline hooks + SDK + .clinerules（轻，优先评估）**：Cline CLI 有 `--hooks-dir`（运行时钩子注入）、`@cline/sdk`（createTool/生命周期钩子）、`.clinerules`。强制验证（hook 在 agent 完成时跑验收）、可观测（hook 记录每步）、循环检测（hook 看动作历史）也许无需改源码即可实现。
+- **(B) fork Cline 源码（重，D4 预定但仅在必要时）**：Bun + Git LFS + protobuf + 两包构建 + F5。深度改 agent loop（如内建循环检测/压缩策略）才需要。
+- **(C) LangGraph 编排层（D6）包在 Cline 外**：用 M1 的 LangGraph 基建做主-从子 Agent 调度 + checkpoint（崩溃恢复/审批中断），Cline 作为"执行器"。
 
-**M2 先 install + 配置验证**编辑器流；**源码 fork 推迟到 M3**（届时加驾驭层才需改源码）。理由：M2 验收不需要改 Cline 源码，装现成版 + 配置即可达成，最小代价（Karpathy Rule 2）。
+倾向：**先 A/C 能覆盖的用 A/C，真改不动 agent 内核才上 B**。M3.1 产出落 DECISIONS（新决策）。
 
-## 链路
+## 步骤与验收（M3.1 定方案后细化）
 
-```
-VS Code + Cline 扩展
-   └ API Provider: OpenAI Compatible → http://localhost:4000 (LiteLLM master key)
-       ├ Plan/Architect 模式 → 模型 "architect" (GLM-5.2)
-       └ Act/Coder 模式     → 模型 "coder" (Kimi-K2.7-Code)
-   → LiteLLM(:4000) → exo(:52415) → GLM / Kimi
-```
+| # | 能力 | 验收(每个都要测) | 状态 |
+|---|------|------------------|------|
+| M3.1 | 方案决策：hooks/SDK vs fork vs LangGraph 外包 | 写 DECISIONS，给出每能力落点 | todo |
+| M3.2 | 强制验证节点 | agent 谎称完成 → 强制验收脚本拦下 | todo |
+| M3.3 | 循环检测 | 构造同动作重复 → ≥3 次被中断重规划 | todo |
+| M3.4 | 上下文压缩 | 长会话接近上限 → 自动总结+落盘且不崩 | todo |
+| M3.5 | 人工审批断点 | 高风险动作（push/部署）→ 暂停等确认 | todo |
+| M3.6 | 子 Agent 主-从 | 主 Agent 派子任务、子任务独立上下文、结构化交回 | todo |
+| M3.7 | 可观测性 | 每步输入/输出/工具调用可追溯（日志/tracing） | todo |
 
-## 步骤与验收
+## M3 完成定义（DoD §8）
 
-| # | 步骤 | 验证方式 | 状态 |
-|---|------|----------|------|
-| M2.1 | 装 Cline 扩展 + `code` CLI 入 PATH | VS Code 里 Cline 面板出现；`code --version` 可用 | todo |
-| M2.2 | 配 OpenAI Compatible → :4000（key=master_key，model=architect/coder） | Cline 内发一句话，经 LiteLLM 收到 GLM/Kimi 回复（看 LiteLLM 日志命中别名） | todo |
-| M2.3 | 按模式分模型：Plan→architect(GLM)、Act→coder(Kimi) | 切模式时实际命中对应模型（依赖调研 ws3m2ej7r 结论） | todo |
-| M2.4 | 端到端多文件改动任务 | 在一个测试小项目里让 Cline 读多文件→改→跑命令→自检，工具调用全程不失效 | todo |
-| M2.5 | 证据留痕 + 验收脚本/记录 | 截图/日志记入 TEST_LOG；可脚本化部分入 verify_milestone_2 | todo |
-
-## M2 完成定义（DoD §8）
-
-- [ ] Cline 经 :4000 能正常对话（架构/编码两别名都通）
-- [ ] 多文件改动任务端到端跑通（读→改→跑→自检），工具调用不失效
-- [ ] 证据记入 TEST_LOG（Cline 是 GUI，验收含截图/日志）
-- [ ] 全量回归（verify_milestone_0/1）仍通过
+- [ ] 六项能力各自实现且有可重复测试
+- [ ] verify_milestone_3.sh 实跑通过，证据入 TEST_LOG
+- [ ] 全量回归（verify_0/1/2）仍通过
 - [ ] 无硬编码密钥；git commit + STATE 更新
 
-## 已知交互点 / 风险
+## 风险
 
-- **Cline 是 GUI 扩展**：M2.4 端到端验收很可能需要**你在 VS Code 里实操**，或我用 computer-use 驱动（较重）。调研 ws3m2ej7r 在查是否有 headless/CLI 驱动方式。
-- 按模式分模型能力以调研结论为准；若 Cline 不支持，则用两个 API Profile 手动切换兜底。
-- model id 必须与 LiteLLM 暴露的别名完全一致（architect/coder）；context window 等可能要手填。
-- `code` CLI 未在 PATH（VS Code app 已装）→ M2.1 先补。
+- 部分能力 Cline 已内建（compaction 有 `--compaction`、审批有 auto-approve 开关、checkpoint 有还原）→ 别重复造，先盘点 Cline 现有能力再决定自建哪些。
+- fork+build 偏重（Bun/protos）→ 仅在 A/C 不够时启动。
+- 会话/进程重启会杀后台服务 → M3 的常驻组件需可一键重启 + 状态外置（呼应 §2.5 Ralph）。
 
-## 下一里程碑预告（M3）
+## 下一里程碑预告（M4）
 
-驾驭层：强制验证 / 循环检测 / 上下文压缩 / 人工审批 / 子Agent / 可观测——此时 **fork Cline** 落自定义代码（基于 D6 LangGraph 的 checkpoint/中断机制思路）。
+DeepAgents 后端包成 MCP Server + RAG（向量库）；编辑器内触发"调研+落地代码"复合任务。

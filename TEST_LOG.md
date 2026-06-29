@@ -119,3 +119,23 @@
 
 ### M1 一键验收 verify_milestone_1.sh ✅ 退出码 0；M0 回归 ✅ 退出码 0
 - M1.1 ✅ ｜ M1.2 ✅ ｜ M1.3 ✅ ｜ M0 全 ✅（无回归）
+
+## [2026-06-29] 🎉 M2 完成 — Cline 编辑器接入 + 多文件改动端到端
+
+### 安装与配置
+- Cline CLI v3.0.33（`npm i -g cline`；平台二进制 `@cline/cli-darwin-arm64` 走**官方** registry，npmmirror 缺）+ VS Code 扩展 v4.0.2（saoudrizwan.claude-dev）。
+- `cline auth openai-compatible -b http://localhost:4000/v1 -m coder`（隔离 `--data-dir .cline-data`，gitignored）。
+
+### M2.4 多文件改动端到端（cline headless, coder=Kimi via :4000）✅
+- 隔离 fixture（mathlib.py/app.py/test_math.py，基线 `add=-1` 测试失败）。
+- cline 自主：读 3 文件 → 修 add bug → 加 multiply → app.py 加 product() → 跑 `python3 test_math.py` → **ALL PASS**；git diff=2 文件；退出码 0。
+- 正是 AGENTS.md M2 验收（读→改→跑→自检）。M2.3 architect/GLM 经 :4000 curl 200；M2.2 配置 ✅。
+- 关键洞察：用 Cline **CLI headless**（与编辑器同一 agent core）做自动化验收，免 GUI/computer-use；fork 留 M3。
+
+### 工程化修复（§6 遇错即工程化）
+- `web_search` 加"瞬时空结果/网络错自重试"（`SEARXNG_RETRIES` + 短退避）：agent loop 消息数 **192 → 4**，单测转稳。
+- verify_0/1/2 加固（不放宽断言）：M0.2 catalog `--max-time 30`；M1.1/单测 多 query 任一命中；M2.3 curl 直验。
+- 运维坑：LiteLLM 代理 / SearXNG 在**会话重启时被杀**，需 `start_proxy.sh` / `docker compose up` 重启；macOS **无 setsid**（detached 失败）。
+
+### 三里程碑全绿（各自单独前台跑，退出码均 0）
+- verify_milestone_0.sh ✅ ｜ verify_milestone_1.sh ✅（27 结果/单测过/loop 4 消息）｜ verify_milestone_2.sh ✅
