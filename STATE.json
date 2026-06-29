@@ -35,7 +35,7 @@
     { "id": "D1", "decision": "服务层复用现成 exo 集群 + LiteLLM(:4000) 前置，弃用 mlx-openai-server", "date": "2026-06-29", "approved_by": "用户" },
     { "id": "D2", "decision": "本机 M5 Max 128GB 为开发/控制节点；模型驻留在 exo 集群(其聚合内存才是 AGENTS.md 所指 2TB)", "date": "2026-06-29", "approved_by": "实测核对" },
     { "id": "D3", "decision": "M0 验收核心 = 经 exo 的工具调用(function calling)解析实测，而非 mlx-openai-server 的 tool-call-parser 配对", "date": "2026-06-29", "approved_by": "用户" },
-    { "id": "D4", "decision": "[待用户确认] M2 基座不再用 Roo Code(2026-05-15 已归档停服)；候选 Cline(exo 社区实测最稳/MIT) 或 Kilo Code(贴合 AGENTS.md 模式体系/Sticky Models 按 agent 钉模型/Apache-2.0)。建议 M0.4 实测后再定, 略偏 Cline", "date": "2026-06-29", "approved_by": "pending", "status": "open" },
+    { "id": "D4", "decision": "M2 基座 = Cline(MIT, Roo 上游, exo 社区实测对本地模型最稳, 活跃)。弃 Roo Code(已停服)/Kilo(本地模型有 MODEL_NO_TOOLS_USED 风险)。M2 先用 install+配置验证编辑器流, 源码 fork 推迟到 M3 加驾驭层时", "date": "2026-06-29", "approved_by": "Claude(用户连续继续授权)", "status": "decided" },
     { "id": "D5", "decision": "访问 exo 的 Python/httpx 客户端(含 LiteLLM)必须 export NO_PROXY 含 100.64.201.37, 否则被本机 HTTP_PROXY(Clash:7890)劫持成 502。curl/Node fetch 不受影响。已写入 start_proxy.sh/verify_milestone_0.sh", "date": "2026-06-29", "approved_by": "实测根因" },
     { "id": "D6", "decision": "agent 框架 = LangGraph(原生 checkpoint 支撑 M5 崩溃恢复 + M3 审批中断恢复同源; 主-从双模型契合)。M1 已装 langgraph 1.2.6 + langchain-openai 1.3.3", "date": "2026-06-29", "approved_by": "用户(用成熟框架)+调研" },
     { "id": "D7", "decision": "中国网络: Docker 镜像走 docker.m.daocloud.io; pip/uv 走清华源; SearXNG outgoing.proxies 指向 host.docker.internal:7890(宿主 Clash)", "date": "2026-06-29", "approved_by": "实测" }
