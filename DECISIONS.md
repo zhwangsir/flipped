@@ -42,3 +42,15 @@
 - **为何 curl/Node 不受影响**：curl 出于 httpoxy 安全只认小写 `http_proxy`(未设)；Node fetch / 裸 socket 不读代理 env。
 - **决策**：所有访问 exo 的 Python 进程必须 `export NO_PROXY=100.64.201.37,...`（已写入 `scripts/start_proxy.sh` 与 `scripts/verify_milestone_0.sh`）。
 - **影响**：解释了此前大量"集群 502"实为本机代理劫持而非集群故障；修复后 M0.4/M0.5 全通过。编辑器(Node)无需此设置。
+
+## D6 · agent 框架 = LangGraph
+- **日期**：2026-06-29 ｜ **批准**：用户（"用成熟框架"）+ 调研推荐
+- **背景**：M1 需 agent loop；用户选"用成熟框架"。调研对比 LangGraph/Pydantic-AI/OpenAI Agents SDK/AutoGen/LlamaIndex（详见 [research-agent-frameworks.md](research-agent-frameworks.md)）。
+- **决策**：选 **LangGraph**。决定性理由：唯一把**原生执行态 checkpoint** 做进核心架构 → 直接支撑 M5 崩溃恢复/断点续跑 + M3 人工审批中断恢复（同源机制），且主-从双模型(GLM supervisor / Kimi worker)天然契合。
+- **现状**：M1 已装 `langgraph==1.2.6`+`langchain-openai==1.3.3`，用 `create_react_agent` 跑通 ReAct loop。M3/M5 再加 checkpoint-sqlite/supervisor/langsmith，并迁移到 `langchain.agents.create_agent`。
+
+## D7 · 中国网络：镜像源 + 容器出站代理
+- **日期**：2026-06-29 ｜ **批准**：实测
+- **背景**：Clash(7890) 对 Docker Hub/PyPI 大文件下载反复 EOF；SearXNG 容器直连搜索引擎超时。
+- **决策**：① Docker 镜像走 `docker.m.daocloud.io`；② pip/uv 走清华 `pypi.tuna.tsinghua.edu.cn`；③ SearXNG `outgoing.proxies` 指向 `http://host.docker.internal:7890`（宿主 Clash）。
+- **影响**：避免反复重试浪费；后续新依赖/镜像默认走镜像源。

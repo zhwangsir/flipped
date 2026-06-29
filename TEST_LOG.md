@@ -98,3 +98,24 @@
 
 ### M0 一键验收 verify_milestone_0.sh ✅ 退出码 0
 - M0.2 ✅ ｜ M0.3 ✅ ｜ M0.4 ✅✅ ｜ M0.5 ✅ ｜ **M0 验收：全部通过**
+
+## [2026-06-29] 🎉 M1 完成 — 工具链基线全通过
+
+### 网络坑与解法（中国网络 + Clash）
+- Docker 拉 searxng：docker.io/ghcr 大层经 Clash 反复 EOF → 改用国内镜像源 `docker.m.daocloud.io/searxng/searxng:latest` 一次成功，retag 回 `searxng/searxng:latest`。
+- pip 装 langgraph：PyPI 经 Clash 也断 → 改用清华镜像 `--index-url https://pypi.tuna.tsinghua.edu.cn/simple` 成功。
+- SearXNG 容器出站访问搜索引擎：直连超时 → settings.yml 配 `outgoing.proxies: all:// → http://host.docker.internal:7890`（容器内 host.docker.internal=192.168.5.2，即宿主 Clash），引擎恢复。
+
+### M1.1 SearXNG ✅
+- `curl 'localhost:8080/search?q=LangGraph&format=json'` → 200 application/json，20 条结果（brave/wikidata 等经代理返回）。
+
+### M1.2 web_search 工具 ✅
+- `tests/test_web_search.py` 全过（≥1 结果含 http URL、空 query 抛 SearchError、format_for_llm）。
+- 多 query 实测（中英文）均返回结构化结果。
+
+### M1.3 agent loop（LangGraph ReAct, GLM-5.2 via :4000）✅
+- 真实问题"搜索 SearXNG 是什么"→ agent **自主调用 web_search**(searched=True, 4-5 消息)→ 输出带 [n] 引用 + 来源 URL 的中文答案。
+- 这是 AGENTS.md M1 验收标准（需实时信息的任务，自主搜索 + 有来源）。
+
+### M1 一键验收 verify_milestone_1.sh ✅ 退出码 0；M0 回归 ✅ 退出码 0
+- M1.1 ✅ ｜ M1.2 ✅ ｜ M1.3 ✅ ｜ M0 全 ✅（无回归）

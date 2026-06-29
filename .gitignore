@@ -30,3 +30,6 @@ logs/
 .DS_Store
 .idea/
 .vscode/
+
+# SearXNG 运行配置(含 secret)
+infra/searxng/settings.yml

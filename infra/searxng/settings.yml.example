@@ -1,0 +1,22 @@
+# SearXNG 配置模板 — flipped M1。复制为 settings.yml 并把 secret_key 换成随机值：
+#   sed "s/ultrasecretkey/$(openssl rand -hex 32)/" settings.yml.example > settings.yml
+# settings.yml 已在 .gitignore（含真实 secret，不入库 — §7）
+use_default_settings: true
+general:
+  instance_name: "flipped-searxng"
+  debug: false
+server:
+  secret_key: "ultrasecretkey"      # 部署时替换为随机值
+  bind_address: "0.0.0.0:8080"
+  limiter: false                    # 本地 API 用，关闭限流/bot 检测
+  image_proxy: false
+search:
+  safe_search: 0
+  formats:                          # 关键：SearXNG 默认禁 json，必须显式开启
+    - html
+    - json
+outgoing:
+  request_timeout: 15.0
+  proxies:                          # 容器经宿主 Clash 出站访问搜索引擎(中国网络必需)
+    all://:
+      - http://host.docker.internal:7890

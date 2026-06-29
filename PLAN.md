@@ -1,44 +1,52 @@
-# PLAN.md — 当前里程碑：M0 · 环境与服务层
+# PLAN.md — 当前里程碑：M1 · 工具链基线
 
-> 本文件只描述**当前里程碑**的详细步骤与验收标准（AGENTS.md §4）。完成后归档要点到 DECISIONS.md，再开下一里程碑的新 PLAN。
+> M0 已完成（详见 STATE.json / DECISIONS.md / TEST_LOG.md）。本文件现描述 M1。
 
-## M0 目标（按实测修正）
+## M1 目标（AGENTS.md §5）
 
-把两个本地 MLX 模型经统一入口暴露为可被 agentic 客户端调用的 OpenAI 兼容服务，并**实测工具调用解析正确**。
+自托管 SearXNG → 实现联网搜索工具并验证可返回结果 → 搭一个最小 agent loop，能调用该工具完成一个真实查询任务。
 
-原文 M0 假设「单机 mlx-openai-server + 双模型本地常驻 1.35TB」在本机（M5 Max 128GB）不成立。已与用户确认改为：**复用现成 exo 集群 + LiteLLM(:4000) 前置**（决策 D1/D2/D3）。
+**验收**：给一个需要实时信息的任务，agent **自主调用搜索**并给出**有来源**的答案。
+
+## 链路
 
 ```
-客户端/编辑器  ->  LiteLLM Proxy(:4000)  ->  exo 集群(100.64.201.37:52415)  ->  GLM-5.2 / Kimi-K2.7-Code
-                    路由/降级/密钥/可观测                已是 OpenAI 兼容
+最小 agent loop (GLM-5.2 主 Agent, 经 LiteLLM:4000 或 exo 直连)
+   --tool_call--> web_search 工具 --HTTP--> 自托管 SearXNG (:8080, JSON 输出)
+   <--结构化结果+来源URL--                            搜索多引擎聚合
 ```
 
 ## 步骤与验收
 
 | # | 步骤 | 涉及文件 | 验证方式 | 状态 |
 |---|------|----------|----------|------|
-| M0.1 | 初始化骨架与状态文件 | AGENTS.md, STATE.json, PLAN.md, DECISIONS.md, TEST_LOG.md, README.md, .gitignore | `ls` 全部存在 + `git log` 有初始提交 | doing |
-| M0.2 | 确认集群两模型在线 | — | `curl /v1/models` 含 GLM-5.2 与 Kimi-K2.7-Code | ✅ done |
-| M0.3 | 起草 LiteLLM 配置 | infra/litellm/config.yaml, .env.example | `litellm --config ... --dry-run` 通过；启动后 `/v1/models` 列出 architect/coder 别名 | todo |
-| M0.4 | **工具调用实测（命根子）** | scripts/toolcall_test.py | 两模型对带 tools 的请求返回结构化 `tool_calls`（非塞进 content）| **blocked**（集群 502） |
-| M0.5 | 降级验证 | infra/litellm/config.yaml | 停一个模型，LiteLLM fallback 到另一个/报可控错误 | todo |
-| M0.6 | 一键验收脚本 | scripts/verify_milestone_0.sh | 任何时候 `bash scripts/verify_milestone_0.sh` 退出码 0 | todo |
+| M1.1 | 部署 SearXNG（Docker），开启 JSON 输出 | infra/searxng/{docker-compose.yml, settings.yml} | `curl 'localhost:8080/search?q=test&format=json'` 返回结果 JSON | todo |
+| M1.2 | web_search 工具：query → SearXNG JSON → 结构化 {title,url,snippet} | src/tools/web_search.py | 单测：给定 query 返回 ≥1 条带 url 的结果 | todo |
+| M1.3 | 最小 agent loop：GLM 经工具调用自主搜索→综合带来源答案 | src/agent/loop.py | 跑一个实时问题，loop 自主调 web_search 并引用来源 | todo |
+| M1.4 | 一键验收 | scripts/verify_milestone_1.sh | 退出码 0：实时问题→自主搜索→有来源答案 | todo |
 
-## M0 完成定义（DoD，AGENTS.md §8）
+## M1 完成定义（DoD §8）
 
-- [ ] `verify_milestone_0.sh` 实跑通过，输出记入 TEST_LOG.md
-- [ ] 两模型工具调用解析实测通过（M0.4）
-- [ ] LiteLLM 路由 + 降级实测通过（M0.3/M0.5）
-- [ ] 无硬编码密钥（token 走 `.env`，`.env` 在 `.gitignore`）
-- [ ] git commit + STATE.json 更新
-- [ ] 遗留问题显式记录
+- [ ] SearXNG 可返回 JSON 搜索结果
+- [ ] web_search 工具有单测且通过
+- [ ] agent loop **端到端**跑通一个真实实时查询（真实 agent loop，非仅测函数 — §3）
+- [ ] verify_milestone_1.sh 实跑通过，输出记入 TEST_LOG
+- [ ] 全量回归（含 verify_milestone_0.sh）仍通过
+- [ ] 无硬编码密钥；git commit + STATE 更新
 
-## 当前阻塞与并行策略
+## 关键设计决策（待确认）
 
-- 🔴 **阻塞**：exo 集群推理 502（ISSUE-1）。M0.4/M0.5 需实时推理，暂挂 blocked。
-- 🟢 **并行可做**（不依赖实时推理）：M0.1 骨架、M0.3 LiteLLM 配置起草、M2 Roo Code fork 调研。
-- 🔭 **后台监控**：`scripts/monitor_cluster.py` 盯集群恢复，模型一 ready 即自动复跑 M0.4 工具调用验证并写 TEST_LOG.md。
+1. **SearXNG 部署 = Docker**（docker-compose，本机已装 docker 29.5）。已知坑：SearXNG **默认禁用 JSON 输出**，settings.yml 须加 `search.formats: [html, json]`；本地用需放宽 limiter/bot 检测。
+2. **agent loop 实现**：
+   - (A) **最小手写**：~150 行 Python，直接对 exo 的 OpenAI 兼容 API 跑 tool-calling 循环（复用 M0 已验证的工具调用 + NO_PROXY）。轻、可控、零新框架。
+   - (B) **复用 DeepAgents 骨架**：AGENTS.md 多次提到"先前的 DeepAgents 骨架"/ M4 要把 DeepAgents 包成 MCP。若你已有该骨架，可移植以与 M4 衔接。
+3. **主 Agent 模型** = GLM-5.2（编排者，AGENTS.md 指定）；经 LiteLLM `architect` 别名或 exo 直连。
 
-## 下一里程碑预告（M1）
+## 依赖与风险
 
-自托管 SearXNG + 联网搜索工具 + 最小 agent loop 跑通一个需实时信息的真实查询。M0 验收通过后再展开。
+- 新依赖：Docker SearXNG 服务（§7 新服务，已随"选 M1"获批）。Python 侧仅用 httpx（已装）。
+- 风险：SearXNG JSON 默认关 / limiter 拦截 localhost / 公共实例不可用故必须自托管；agent loop 访问 exo 需 NO_PROXY（D5），访问 SearXNG 是 localhost（在 NO_PROXY 内）。
+
+## 下一里程碑预告（M2）
+
+编辑器形态：基座在 Cline / Kilo 间定（D4），接 :4000，Architect→GLM / Coder→Kimi。M1 通过后展开。
