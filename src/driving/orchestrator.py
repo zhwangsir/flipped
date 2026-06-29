@@ -15,7 +15,9 @@ import os
 from typing import Callable, Literal, TypedDict
 
 from langgraph.graph import END, START, StateGraph
+from langgraph.types import interrupt
 
+from driving.approval import APPROVE_WORDS, classify_risk
 from driving.observe import run_and_observe
 from driving.sidecar import action_signature
 
@@ -32,6 +34,8 @@ class OrchestratorState(TypedDict, total=False):
     iteration: int
     current_subtask: str
     believe_done: bool
+    require_approval: bool
+    approval_decision: str   # approved / rejected / auto
     signatures: list[str]
     last_obs: dict
     verdict: dict          # overseer 最近裁决
@@ -203,12 +207,29 @@ def build_orchestrator(supervisor: SupervisorFn = default_supervisor,
     g.add_node("abort", mark_abort)
     g.add_node("loop", mark_loop)
     g.add_node("breaker", mark_breaker)
+    def approval_gate(state: OrchestratorState) -> dict:
+        # 高风险子任务（逸出沙箱/不可逆，§7）在派给 worker 前硬暂停审批；require_approval=False 时直通
+        if state.get("require_approval") and classify_risk(state.get("current_subtask", "")) == "high":
+            decision = interrupt({"subtask": state.get("current_subtask"),
+                                  "reason": "高风险子任务，需人工放行（§7 沙箱外要审批）"})
+            if str(decision).strip().lower() in APPROVE_WORDS:
+                return {"approval_decision": "approved"}
+            return {"approval_decision": "rejected",
+                    "feedback": (state.get("feedback", "") + "\n[人工否决了上一子任务，请换方案]").strip()}
+        return {"approval_decision": "auto"}
+
     def _route_sup(state: OrchestratorState) -> str:
         # supervisor 相信已完成 → 直接强制验证（跳过冗余 worker 步）
-        return "verify" if state.get("believe_done") else "worker"
+        return "verify" if state.get("believe_done") else "approval_gate"
 
+    def _route_approval(state: OrchestratorState) -> str:
+        # 被否决 → 回 supervisor 重规划；否则 → worker 执行
+        return "supervisor" if state.get("approval_decision") == "rejected" else "worker"
+
+    g.add_node("approval_gate", approval_gate)
     g.add_edge(START, "supervisor")
-    g.add_conditional_edges("supervisor", _route_sup, {"worker": "worker", "verify": "verify"})
+    g.add_conditional_edges("supervisor", _route_sup, {"approval_gate": "approval_gate", "verify": "verify"})
+    g.add_conditional_edges("approval_gate", _route_approval, {"supervisor": "supervisor", "worker": "worker"})
     g.add_edge("worker", "overseer")
     g.add_conditional_edges("overseer", route_overseer,
                             {"verify": "verify", "replan": "supervisor", "abort": "abort"})
@@ -223,13 +244,17 @@ def build_orchestrator(supervisor: SupervisorFn = default_supervisor,
 def drive_orchestrated(goal: str, cwd: str, verify_cmd: list, *,
                        max_iterations: int = 4, loop_threshold: int = DEFAULT_LOOP_THRESHOLD,
                        thread_id: str = "default", db_path: str = ":memory:",
-                       data_dir: str | None = None) -> OrchestratorState:
-    """多 Agent 监督编排驱动一个目标到验收通过 / 监督中止 / 循环 / 熔断。"""
+                       data_dir: str | None = None, require_approval: bool = False) -> OrchestratorState:
+    """多 Agent 监督编排驱动一个目标到验收通过 / 监督中止 / 循环 / 熔断。
+
+    require_approval=True：高风险子任务在执行前 interrupt 等人工放行（命中需用 Command(resume=...) 续跑）。
+    """
     from langgraph.checkpoint.sqlite import SqliteSaver
 
     initial: OrchestratorState = {
         "goal": goal, "cwd": cwd, "verify_cmd": verify_cmd, "data_dir": data_dir,
         "max_iterations": max_iterations, "loop_threshold": loop_threshold,
+        "require_approval": require_approval,
         "iteration": 0, "signatures": [], "feedback": "", "verified": False,
         "done": False, "stop_reason": "", "history": [],
     }

@@ -4,6 +4,9 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
+from langgraph.checkpoint.memory import InMemorySaver  # noqa: E402
+from langgraph.types import Command  # noqa: E402
+
 from driving.orchestrator import build_orchestrator  # noqa: E402
 
 
@@ -93,9 +96,57 @@ def test_loop_detection():
     assert final["iteration"] == 3
 
 
+def _approval_graph(supervisor):
+    c = {"work": 0}
+
+    def worker(state):
+        c["work"] += 1
+        return {"last_obs": {"summary": {}}, "signatures": state.get("signatures", []) + ["s"],
+                "history": state.get("history", []) + [{"step": "worker"}]}
+
+    def overseer(state):
+        return {"verdict": {"action": "continue"}, "history": state.get("history", []) + [{"step": "overseer"}]}
+
+    def verifier(cmd, cwd):
+        return True, ""
+
+    g = build_orchestrator(supervisor, worker, overseer, verifier, checkpointer=InMemorySaver())
+    init = {"goal": "G", "cwd": "/tmp", "verify_cmd": ["true"], "max_iterations": 3, "loop_threshold": 3,
+            "require_approval": True, "iteration": 0, "signatures": [], "feedback": "", "verified": False,
+            "done": False, "stop_reason": "", "history": []}
+    return g, init, c
+
+
+def test_approval_gate_high_risk_then_approve():
+    def supervisor(state):
+        return {"current_subtask": "git push origin main", "believe_done": False,
+                "history": state.get("history", []) + [{"step": "supervisor"}]}
+    g, init, c = _approval_graph(supervisor)
+    cfg = {"configurable": {"thread_id": "appr"}}
+    res = g.invoke(init, cfg)
+    assert "__interrupt__" in res, "高风险子任务应 interrupt 等审批"
+    assert c["work"] == 0, "审批前 worker 不应执行"
+    res2 = g.invoke(Command(resume="approve"), cfg)
+    assert res2.get("verified") is True and c["work"] == 1  # 放行后 worker 执行
+
+
+def test_approval_gate_reject_then_replan_safe():
+    def supervisor(state):
+        # 被否决后(feedback 含'否决')改走安全方案
+        sub = "ls -la" if "否决" in state.get("feedback", "") else "git push origin main"
+        return {"current_subtask": sub, "believe_done": False,
+                "history": state.get("history", []) + [{"step": "supervisor"}]}
+    g, init, c = _approval_graph(supervisor)
+    cfg = {"configurable": {"thread_id": "rej"}}
+    g.invoke(init, cfg)
+    res = g.invoke(Command(resume="reject"), cfg)  # 否决高风险 → 回 supervisor → 安全方案 → 直通
+    assert res.get("verified") is True and c["work"] == 1
+
+
 if __name__ == "__main__":
     for fn in (test_happy_dispatch_work_oversee_verify, test_supervisor_believe_done_skips_worker,
                test_overseer_abort, test_overseer_replan_then_pass, test_forced_verify_retry,
-               test_circuit_breaker, test_loop_detection):
+               test_circuit_breaker, test_loop_detection,
+               test_approval_gate_high_risk_then_approve, test_approval_gate_reject_then_replan_safe):
         fn()
     print("orchestrator 单测: 全部通过 ✅（Supervisor+Worker+Overseer 监督编排：调度/跳过/中止/重规划/验证/熔断/循环）")

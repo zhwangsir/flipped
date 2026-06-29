@@ -186,3 +186,8 @@
 ## [2026-06-30] M3.7 上下文压缩（Cline 原生 Auto Compact）→ 驾驭层六件套全齐
 - `run_and_observe` 加 `compaction` 参数，默认 `--compaction agentic`（Cline 原生 Auto Compact，D9/D11 零自研代码）。实测 cline 接受且正常(exit 0)。
 - **M3 驾驭层六件套全部 ✅**：可观测 / 强制验证 / 循环检测 / 人工审批 / 多Agent监督编排(D15) / 上下文压缩。全建立在 SqliteSaver(崩溃恢复)。
+
+## [2026-06-30] orchestrator 接入审批硬断点（governed 多Agent loop 闭环）
+- orchestrator 加 `approval_gate` 节点(supervisor→approval_gate→worker)：`require_approval=True` 时高风险子任务(classify_risk)在派给 worker 前 `interrupt()` 等放行；否决→回 supervisor 重规划。复用 M3.5 approval。
+- test_orchestrator.py +2 场景：高风险→interrupt→放行执行 / 否决→换安全方案。全 9 场景过。
+- §7 治理环闭合：多Agent编排里高风险动作强制人工审批（不靠 agent 自觉）。

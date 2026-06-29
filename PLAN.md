@@ -31,10 +31,9 @@
 - [ ] 无硬编码密钥；git commit + STATE 更新
 
 ## 下一步（Phase 1 续）
-**驾驭层六件套全部 ✅**：可观测 · 强制验证 · 循环检测 · 人工审批 · 多Agent监督编排(D15) · 上下文压缩。余（Phase 1 收尾 + 衔接 Phase 2）：
-1. **IDE 控制面扩展骨架**（Phase 1/2 衔接：TS VS Code 扩展，注册 环境/终端/调试/任务 工具，typed API + executeCommand + CLI；高风险走 approval）。— 下一个大件
-2. **把 approval 硬断点接入 orchestrator** 高风险子任务（supervisor→approval_gate→worker）。
-3. **Phase 1 整体 e2e + 文档**。
+**驾驭层六件套全部 ✅**：可观测 · 强制验证 · 循环检测 · 人工审批 · 多Agent监督编排(D15) · 上下文压缩。**审批已接入 orchestrator ✅**（governed 多Agent loop 闭环）。余（Phase 1 收尾 + 衔接 Phase 2）：
+1. **IDE 控制面扩展骨架**（Phase 1/2 衔接：TS VS Code 扩展，注册 环境/终端/调试/任务 工具，typed API + executeCommand + CLI；高风险走 approval）。— **下一个大件**
+2. **Phase 1 整体 e2e + 文档收尾**。
 
 ## 风险
 - 会话/进程重启杀后台服务（LiteLLM/SearXNG）→ 需 `start_proxy.sh` 重启；Phase 3 打包成托管服务根治。
