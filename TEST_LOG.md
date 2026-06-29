@@ -207,3 +207,8 @@
 - `infra/env-templates/{devcontainer.json, .mise.toml}`：Dev Containers Features(python3.12/node20/rust/java21/mise) 层叠 + postCreate 跑 `mise install`；.mise.toml 钉 4 语言版本(容器内/本地共用)。
 - `scripts/verify_phase2.sh` ✅：devcontainer 多语言 Features 完整 + mise install postCreate；.mise.toml 钉定完整。
 - AI 经 IDE 控制面 `env.addDevcontainerFeature`/`env.miseUse`(已测) 改这些声明 + rebuild 管环境(D12 闭环)。
+
+## [2026-06-30] Capstone e2e 暴露 ISSUE-1 重现 + §6 worker_error 快速失败
+- Capstone(多文件任务)失败**根因 = exo 集群 GLM/Kimi 实例又下线**（litellm "No instance found... No deployments available"；直连 coder :4000 → 429）。**非编排器 bug**——编排器正确地熔断停住(未假成功/未无限空转)。需用户在 exo Web UI 重新 LAUNCH 两模型(ISSUE-1 重现，与会话重启时同类)。
+- §6 工程化：orchestrator 加 **worker_error 快速失败**——执行器退出非0且0工具调用(常为上游不可用)→ `stop_reason=worker_error` 立即停，不耗尽 N 轮才笼统 circuit_breaker。test_orchestrator +1 场景(共10)，全过。
+- README.md 升级为完整系统文档(架构/已建/如何运行/诚实边界)。

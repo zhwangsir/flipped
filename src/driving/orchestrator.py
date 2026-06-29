@@ -36,6 +36,7 @@ class OrchestratorState(TypedDict, total=False):
     believe_done: bool
     require_approval: bool
     approval_decision: str   # approved / rejected / auto
+    worker_error: bool       # 执行器(cline)报错/上游模型不可用 → 快速失败
     signatures: list[str]
     last_obs: dict
     verdict: dict          # overseer 最近裁决
@@ -93,8 +94,11 @@ def default_worker(state: OrchestratorState) -> dict:
                           model="coder", data_dir=state.get("data_dir"))
     sig = action_signature(obs.get("records") or [])
     sigs = state.get("signatures", []) + [sig]
-    hist = state.get("history", []) + [{"step": "worker", "summary": obs.get("summary"), "signature": sig}]
-    return {"last_obs": obs, "signatures": sigs, "history": hist}
+    summ = obs.get("summary") or {}
+    # cline 退出非0 且一个工具都没调 = 执行器报错(常为上游模型不可用/429) → 快速失败, 别空转熔断
+    werr = (not obs.get("ok")) and summ.get("tool_calls", 0) == 0
+    hist = state.get("history", []) + [{"step": "worker", "summary": summ, "signature": sig, "error": werr}]
+    return {"last_obs": obs, "signatures": sigs, "history": hist, "worker_error": werr}
 
 
 def default_overseer(state: OrchestratorState) -> dict:
@@ -230,7 +234,16 @@ def build_orchestrator(supervisor: SupervisorFn = default_supervisor,
     g.add_edge(START, "supervisor")
     g.add_conditional_edges("supervisor", _route_sup, {"approval_gate": "approval_gate", "verify": "verify"})
     g.add_conditional_edges("approval_gate", _route_approval, {"supervisor": "supervisor", "worker": "worker"})
-    g.add_edge("worker", "overseer")
+    def mark_worker_error(state: OrchestratorState) -> dict:
+        return {"done": True, "stop_reason": "worker_error"}
+
+    def route_worker(state: OrchestratorState) -> str:
+        # 执行器报错(上游模型不可用等) → 快速失败，不进 overseer/verify 空转
+        return "worker_error" if state.get("worker_error") else "overseer"
+
+    g.add_node("worker_error", mark_worker_error)
+    g.add_conditional_edges("worker", route_worker, {"overseer": "overseer", "worker_error": "worker_error"})
+    g.add_edge("worker_error", END)
     g.add_conditional_edges("overseer", route_overseer,
                             {"verify": "verify", "replan": "supervisor", "abort": "abort"})
     g.add_conditional_edges("verify", route_verify,
@@ -254,7 +267,7 @@ def drive_orchestrated(goal: str, cwd: str, verify_cmd: list, *,
     initial: OrchestratorState = {
         "goal": goal, "cwd": cwd, "verify_cmd": verify_cmd, "data_dir": data_dir,
         "max_iterations": max_iterations, "loop_threshold": loop_threshold,
-        "require_approval": require_approval,
+        "require_approval": require_approval, "worker_error": False,
         "iteration": 0, "signatures": [], "feedback": "", "verified": False,
         "done": False, "stop_reason": "", "history": [],
     }

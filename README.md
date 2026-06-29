@@ -1,36 +1,65 @@
 # flipped
 
-接入本地 MLX 双模型的 **agentic 代码编辑器平台**。
+**AI 驱动的多平台桌面 IDE**（目标形态，D10）——类似 VSCode / IDEA / HBuilder，但整个 IDE 由 AI 底层驱动：每个任务都由**多 Agent 协作 + 专属监督 Agent**完成（D15），随项目内置多语言开发环境（D12）。接入本地 exo 集群的两个 MLX 模型：
 
-| 角色 | 模型 | 位置 |
-|------|------|------|
-| 编排者 / 架构师（主 Agent） | GLM-5.2 (`mlx-community/GLM-5.2-DQ4plus-q8`) | exo 集群 |
-| 执行者 / 码农（子 Agent） | Kimi-K2.7-Code (`mlx-community/Kimi-K2.7-Code-4bit`) | exo 集群 |
+| 角色 | 模型 | 经 |
+|---|---|---|
+| 编排者 / 监督（Supervisor + Overseer） | GLM-5.2（别名 `architect`） | LiteLLM(:4000) → exo 集群 |
+| 执行者（Worker） | Kimi-K2.7-Code（别名 `coder`） | 同上 |
 
-**基座**：fork Roo Code + 自定义驾驭层（强制验证 / 循环检测 / 上下文压缩 / 人工审批 / 子 Agent / 可观测性）+ MCP 联网与外部能力。
+> 自主开发：本仓库由 AI agent 按 [AGENTS.md](AGENTS.md) 流程推进（先计划 → 验证靠运行 → 小步提交 → 状态外置）。决策见 [DECISIONS.md](DECISIONS.md)(D1–D16)，进度见 [STATE.json](STATE.json)，证据见 [TEST_LOG.md](TEST_LOG.md)，架构见 [docs/product-architecture.md](docs/product-architecture.md)。
 
-## 架构（M0 已定，决策 D1/D2）
+## 架构（三层，D11–D14）
 
 ```
-客户端 / 编辑器
-   -> LiteLLM Proxy (:4000)        # 统一路由 architect→GLM / coder→Kimi、降级、密钥、可观测
-   -> exo 集群 (100.64.201.37:52415)  # 已是 OpenAI 兼容，张量并行多节点
-   -> { GLM-5.2, Kimi-K2.7-Code }
+┌ 外壳 Shell（Phase 3）: Code-OSS fork 多平台桌面 IDE + Open VSX + 内建 Cline ┐
+│  ┌ 脑 Brain（Phase 1 ✅）─────────────────────────────────────────────┐  │
+│  │ 内建 Cline 派生 agent + IDE 控制面扩展(ide-extension/)              │  │
+│  │ 驾驭层 sidecar(src/driving/, LangGraph): 多Agent监督编排           │  │
+│  │   Supervisor(GLM) + Worker(Kimi via cline) + Overseer(GLM)         │  │
+│  │   + 强制验证/循环检测/人工审批/上下文压缩, 全在 SqliteSaver         │  │
+│  └────────────────────────────────────────────────────────────────────┘  │
+│  随项目内置环境（Phase 2）: Dev Containers + mise (infra/env-templates/)   │
+└────────────────────────────────────────────────────────────────────────────┘
+        → LiteLLM(:4000) → exo 集群 → GLM-5.2 / Kimi-K2.7-Code        [M0]
+        内建工具: web_search(SearXNG)                                  [M1]
 ```
 
-> 本机（Apple M5 Max / 128GB）是开发/控制节点，**不加载模型**；模型驻留在 exo 集群。
+## 已建成（自主验证，全部单测/e2e 通过）
 
-## 工作方式
+- **M0 服务层**：LiteLLM 代理(:4000) 路由 architect/coder → exo；工具调用实测通过。
+- **M1 工具链**：SearXNG 自托管 + `web_search` 工具 + LangGraph agent loop。
+- **M2 编辑器接入**：Cline（CLI + VS Code 扩展）接 :4000，多文件改动端到端。
+- **Phase 1 脑（驾驭层六件套 ✅）** `src/driving/`：
+  - `observe.py` 可观测 · `sidecar.py` 强制验证+循环检测 · `approval.py` 人工审批 ·
+    `orchestrator.py` **多Agent监督编排（Supervisor+Worker+Overseer，D15）** · 上下文压缩(Cline 原生)。
+- **IDE 控制面扩展** `ide-extension/`(TS)：让 AI 驱动 IDE（任务/终端/设置/扩展/命令）+ 环境即代码工具（devcontainer/mise），高风险走审批。
+- **Phase 2 环境模板** `infra/env-templates/`：多语言 Dev Container + mise。
 
-本项目由自主开发 Agent 按 [AGENTS.md](AGENTS.md) 的流程推进：先计划、验证靠运行、小步提交、状态外置、诚实报告。
+## 如何运行
 
-- 当前进度 / 里程碑 / 已知问题：[STATE.json](STATE.json)
-- 当前里程碑详细计划：[PLAN.md](PLAN.md)
-- 架构决策记录：[DECISIONS.md](DECISIONS.md)
-- 测试证据流水：[TEST_LOG.md](TEST_LOG.md)
+```bash
+# 1) 起服务（exo 集群需先在其 Web UI LAUNCH 两个模型）
+uv venv --python 3.11 .venv && uv pip install 'litellm[proxy]' 'langgraph' 'langchain-openai' 'langgraph-checkpoint-sqlite'
+cp .env.example .env   # 填 EXO_API_KEY / LITELLM_MASTER_KEY
+bash scripts/start_proxy.sh &                       # LiteLLM :4000
+docker compose -f infra/searxng/docker-compose.yml --project-directory infra/searxng up -d   # SearXNG :8080
+npm i -g cline && cline auth openai-compatible -b http://localhost:4000/v1 -m coder --data-dir .cline-data
 
-## 脚本
+# 2) 验收（每个里程碑一键复跑）
+bash scripts/verify_milestone_0.sh   # 服务层
+bash scripts/verify_milestone_1.sh   # 工具链
+bash scripts/verify_milestone_2.sh   # 编辑器
+bash scripts/verify_milestone_3.sh   # 驾驭层(六件套)
+bash scripts/verify_phase2.sh        # 环境模板
 
-- `scripts/monitor_cluster.py` — 盯 exo 集群从 502 恢复，模型 ready 即自动跑工具调用验证。
-- `scripts/toolcall_test.py` — 单次工具调用解析验证（`python3 scripts/toolcall_test.py <model_id>`）。
-- `scripts/verify_milestone_0.sh` — M0 一键验收（待集群恢复后补全）。
+# 3) 跑多Agent监督编排(GLM 调度 / Kimi 执行 / GLM 监督)
+.venv/bin/python -m driving.orchestrator <cwd> "<目标>" python3 test.py
+```
+
+> ⚠️ 访问 exo 的 Python 进程须 `export NO_PROXY=100.64.201.37,...`（本机 Clash 代理会劫持成 502，D5）。
+
+## 当前状态与剩余（诚实边界）
+
+- ✅ **Phase 1 脑完整可用**（最难的 AI 核心），IDE 控制面 + Phase 2 模板就绪。
+- ⏳ **需宿主/Docker/账号才能继续验证的部分**：IDE 控制面 agent↔扩展桥 + 运行时（需 VS Code 扩展宿主）；devcontainer 重建运行时（需 Docker Desktop）；**Phase 3 外壳 fork/签名/公证/分发（需用户 Apple 开发者证书与账号）**。

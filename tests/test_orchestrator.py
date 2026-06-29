@@ -143,10 +143,40 @@ def test_approval_gate_reject_then_replan_safe():
     assert res.get("verified") is True and c["work"] == 1
 
 
+def test_worker_error_fast_fail():
+    # 执行器报错(上游模型不可用) → 快速失败 worker_error，不进 overseer/verify 空转熔断
+    c = {"over": 0}
+
+    def supervisor(state):
+        return {"current_subtask": "sub", "believe_done": False,
+                "history": state.get("history", []) + [{"step": "supervisor"}]}
+
+    def worker(state):
+        return {"last_obs": {"ok": False, "summary": {"tool_calls": 0}}, "worker_error": True,
+                "signatures": state.get("signatures", []) + ["x"],
+                "history": state.get("history", []) + [{"step": "worker"}]}
+
+    def overseer(state):
+        c["over"] += 1
+        return {"verdict": {"action": "continue"}, "history": state.get("history", [])}
+
+    def verifier(cmd, cwd):
+        return True, ""
+
+    g = build_orchestrator(supervisor, worker, overseer, verifier, checkpointer=None)
+    final = g.invoke({"goal": "G", "cwd": "/tmp", "verify_cmd": ["true"], "max_iterations": 4,
+                      "loop_threshold": 3, "iteration": 0, "signatures": [], "feedback": "",
+                      "verified": False, "done": False, "stop_reason": "", "history": [], "worker_error": False})
+    assert final["stop_reason"] == "worker_error", f"应 worker_error, 实 {final['stop_reason']}"
+    assert c["over"] == 0, "worker 报错应快速失败，不进 overseer"
+    assert final.get("iteration", 0) == 0, "不应进 verify 计数"
+
+
 if __name__ == "__main__":
     for fn in (test_happy_dispatch_work_oversee_verify, test_supervisor_believe_done_skips_worker,
                test_overseer_abort, test_overseer_replan_then_pass, test_forced_verify_retry,
                test_circuit_breaker, test_loop_detection,
-               test_approval_gate_high_risk_then_approve, test_approval_gate_reject_then_replan_safe):
+               test_approval_gate_high_risk_then_approve, test_approval_gate_reject_then_replan_safe,
+               test_worker_error_fast_fail):
         fn()
     print("orchestrator 单测: 全部通过 ✅（Supervisor+Worker+Overseer 监督编排：调度/跳过/中止/重规划/验证/熔断/循环）")
