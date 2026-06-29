@@ -38,8 +38,9 @@
     { "id": "D4", "decision": "[待用户确认] M2 基座不再用 Roo Code(2026-05-15 已归档停服)；候选 Cline(exo 社区实测最稳/MIT) 或 Kilo Code(贴合 AGENTS.md 模式体系/Sticky Models 按 agent 钉模型/Apache-2.0)。建议 M0.4 实测后再定, 略偏 Cline", "date": "2026-06-29", "approved_by": "pending", "status": "open" }
   ],
   "known_issues": [
-    { "id": "ISSUE-1", "severity": "high", "status": "open", "title": "exo 集群推理面 502 Bad Gateway", "detail": "对 GLM-5.2/Kimi/甚至最小 Qwen3-0.6B 的 /v1/chat/completions 均 5s 快速 502；/state 显示分片 DownloadPending，模型未进入可服务状态。阻塞 M0.4/M0.5 实测。", "owner": "用户拉起集群 + Claude 后台监控自动复验" },
-    { "id": "ISSUE-2", "severity": "high", "status": "open", "title": "M2 基座 Roo Code 已停服", "detail": "Roo Code 于 2026-05-15 官方归档停服(只读, 末版 v3.54.0)，不能作为 fork 基座。需改基座 -> 见决策 D4。不阻塞 M0/M1。", "owner": "待用户在 D4 选 Kilo Code / Cline" }
+    { "id": "ISSUE-1", "severity": "high", "status": "open", "title": "exo 集群推理面 502 Bad Gateway", "detail": "根因(2026-06-29 复查): instances=0(模型未 LAUNCH) + 553 分片仍 DownloadPending → 无服务, 故 /v1/chat/completions 全 502。需用户点 LAUNCH(Kimi 597GB 在 2 台即可先解锁)。阻塞 M0.4/M0.5 实测。", "owner": "用户点 LAUNCH + Claude 后台监控自动复验" },
+    { "id": "ISSUE-2", "severity": "high", "status": "open", "title": "M2 基座 Roo Code 已停服", "detail": "Roo Code 于 2026-05-15 官方归档停服(只读, 末版 v3.54.0)，不能作为 fork 基座。需改基座 -> 见决策 D4。不阻塞 M0/M1。", "owner": "待用户在 D4 选 Kilo Code / Cline" },
+    { "id": "ISSUE-3", "severity": "medium", "status": "open", "title": "exo 4 台 RDMA 起不来, 退回 2 台", "detail": "6 对节点仅 studio01<->studio02 缺 RDMA(降级 TCP/IP); 四台 Thunderbolt Bridge exists:false, thunderboltBridgeCycles=[]; RDMA 走 80Gb/s 口(120Gb/s TB5 口 en6/en7 闲置)。Tensor 跨>2 台需 RDMA 环, 当前组不出。不阻塞 2 台 Launch(Kimi 597GB<1024GB); 但双模型常驻(1.35TB)需 4 台 2TB 池化。", "owner": "用户重插 01<->02 雷雳线(优先 TB5 口) + 启用四台 Thunderbolt Bridge" }
   ],
   "background_jobs": [
     { "name": "monitor_cluster.py", "purpose": "轮询 exo 从 502 恢复，模型一可服务即自动跑工具调用验证并写入 TEST_LOG.md", "started": "2026-06-29" },
