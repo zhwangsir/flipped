@@ -182,3 +182,7 @@
 - `test_orchestrator.py`：7 场景确定性单测(调度/believe_done 跳过/中止/重规划/验证重试/熔断/循环)全过；verify_milestone_3.sh 加 M3.6a。
 - §6 修复(D16)：`with_structured_output` 默认 `json_schema` 对 GLM ✗(返回 markdown)→ 改 `method="function_calling"` ✓。
 - **真实 e2e ✅**：GLM 把目标拆成具体子任务 → Kimi 经 cline 修复(4 工具调用 completed)→ **GLM overseer 真实裁决 eff=0.95 dir=1.0** "完整闭环无绕路" → 强制验证过。**GLM 真在监督，非 fail-open**。
+
+## [2026-06-30] M3.7 上下文压缩（Cline 原生 Auto Compact）→ 驾驭层六件套全齐
+- `run_and_observe` 加 `compaction` 参数，默认 `--compaction agentic`（Cline 原生 Auto Compact，D9/D11 零自研代码）。实测 cline 接受且正常(exit 0)。
+- **M3 驾驭层六件套全部 ✅**：可观测 / 强制验证 / 循环检测 / 人工审批 / 多Agent监督编排(D15) / 上下文压缩。全建立在 SqliteSaver(崩溃恢复)。

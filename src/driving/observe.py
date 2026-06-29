@@ -77,13 +77,14 @@ def write_audit(records: list[dict], path: str) -> None:
 
 def run_and_observe(task: str, cwd: str, *, model: str = "coder",
                     data_dir: str | None = None, timeout: int = 280,
-                    audit_path: str | None = None) -> dict:
+                    audit_path: str | None = None, compaction: str = "agentic") -> dict:
     """驱动一次 cline headless 并解析其 --json 流，返回 {summary, records, ok}。
 
     C 侧 LangGraph 节点用它把 Cline 当执行器：跑任务 + 拿到可追溯轨迹。
+    compaction：用 Cline 原生上下文压缩（Auto Compact，D9/D11，零自研）。agentic|basic|off。
     """
     cmd = ["cline", "--json", "--auto-approve", "true", "-P", "openai-compatible",
-           "-m", model, "-c", cwd, "--timeout", str(timeout)]
+           "-m", model, "-c", cwd, "--timeout", str(timeout), "--compaction", compaction]
     if data_dir:
         cmd += ["--data-dir", data_dir]
     cmd.append(task)

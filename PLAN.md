@@ -13,7 +13,7 @@
 | 可观测 | cline `--json` 流解析→结构化轨迹+审计 | A: observe.py | 真实 cline 运行被捕获+审计落盘 | ✅ done (M3.2) |
 | **强制验证** | 完成后**强制**跑验收命令判定 done，不过回灌重做，触顶熔断 | C: sidecar.py | 单测(回灌+熔断) + e2e(驱动 cline 真验收) | ✅ done (M3.3) |
 | 循环检测 | 跨步记忆动作指纹，同动作≥N 中断重规划 | C: sidecar | 同签名重复→中断+重规划提示 | ✅ done (M3.4) |
-| 上下文压缩 | 接近上限自动总结落盘 | A: Cline Auto Compact（零代码，验证即可） | 长任务自动 compact 不丢决策 | todo |
+| 上下文压缩 | 接近上限自动总结落盘 | A: Cline Auto Compact（零代码） | run_and_observe 接 --compaction agentic，实测接受 | ✅ done (M3.7) |
 | 人工审批断点 | 高风险动作前硬暂停(interrupt) + Plan/Act 兜底 | A+C | 高风险动作暂停，resume 放行/否决 | ✅ done (M3.5) |
 | 多Agent监督编排(D15) | Supervisor(GLM)+Worker(Kimi)+**Overseer(GLM 监督效率/方向)** | C: orchestrator.py | 7 场景单测 + 真实 e2e(GLM 真监督 eff=0.95/dir=1.0) | ✅ done (M3.6) |
 | IDE 控制面 | agent 工具管 终端/调试/任务/设置/扩展/环境 | Cline 扩展(typed API+executeCommand+CLI) | 各子系统可被 agent 操作 + 高风险审批 | todo（M4 起） |
@@ -31,10 +31,10 @@
 - [ ] 无硬编码密钥；git commit + STATE 更新
 
 ## 下一步（Phase 1 续）
-已完成：可观测 ✅ · 强制验证 ✅ · 循环检测 ✅ · 人工审批 ✅ · **多Agent监督编排 ✅(D15 核心)**。余：
-1. **IDE 控制面扩展骨架**（Phase 1/2 衔接：注册 环境/终端/调试/任务 工具，typed API + executeCommand + CLI；高风险走 approval）。
-2. **上下文压缩**：验证 Cline 原生 Auto Compact（零代码）。
-3. **Phase 1 收尾**：把 approval 硬断点接入 orchestrator 高风险动作；整体 e2e + 文档。
+**驾驭层六件套全部 ✅**：可观测 · 强制验证 · 循环检测 · 人工审批 · 多Agent监督编排(D15) · 上下文压缩。余（Phase 1 收尾 + 衔接 Phase 2）：
+1. **IDE 控制面扩展骨架**（Phase 1/2 衔接：TS VS Code 扩展，注册 环境/终端/调试/任务 工具，typed API + executeCommand + CLI；高风险走 approval）。— 下一个大件
+2. **把 approval 硬断点接入 orchestrator** 高风险子任务（supervisor→approval_gate→worker）。
+3. **Phase 1 整体 e2e + 文档**。
 
 ## 风险
 - 会话/进程重启杀后台服务（LiteLLM/SearXNG）→ 需 `start_proxy.sh` 重启；Phase 3 打包成托管服务根治。
