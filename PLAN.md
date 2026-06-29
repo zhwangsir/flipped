@@ -19,13 +19,14 @@
 - **(B) fork Cline 源码（重，D4 预定但仅在必要时）**：Bun + Git LFS + protobuf + 两包构建 + F5。深度改 agent loop（如内建循环检测/压缩策略）才需要。
 - **(C) LangGraph 编排层（D6）包在 Cline 外**：用 M1 的 LangGraph 基建做主-从子 Agent 调度 + checkpoint（崩溃恢复/审批中断），Cline 作为"执行器"。
 
-倾向：**先 A/C 能覆盖的用 A/C，真改不动 agent 内核才上 B**。M3.1 产出落 DECISIONS（新决策）。
+✅ **已决（D9，调研 task wuw3zewas）**：3=A(Cline Auto Compact 零代码)；6=A 采集(PostToolUse 日志 hook)+C 归档(checkpoint)；4=A 兜底(Plan/Act+auto-approve)+C 硬断点(interrupt)；1/2/5=C(LangGraph supervisor/状态机)。**不 fork(B)**。详见 [research-cline-hooks-driving-layer.md](docs/research-cline-hooks-driving-layer.md)。前置：C 侧换 SqliteSaver/PostgresSaver。
 
 ## 步骤与验收（M3.1 定方案后细化）
 
 | # | 能力 | 验收(每个都要测) | 状态 |
 |---|------|------------------|------|
-| M3.1 | 方案决策：hooks/SDK vs fork vs LangGraph 外包 | 写 DECISIONS，给出每能力落点 | todo |
+| M3.1 | 方案决策（D9：A/C 分工，不 fork） | DECISIONS D9 + docs 落盘 | ✅ done |
+| M3.2 | 可观测采集：PostToolUse/PreToolUse 日志 hook（A，先实测 hook 协议） | cline 跑任务 --hooks-dir，JSONL 落每步工具调用 | todo |
 | M3.2 | 强制验证节点 | agent 谎称完成 → 强制验收脚本拦下 | todo |
 | M3.3 | 循环检测 | 构造同动作重复 → ≥3 次被中断重规划 | todo |
 | M3.4 | 上下文压缩 | 长会话接近上限 → 自动总结+落盘且不崩 | todo |

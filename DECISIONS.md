@@ -55,3 +55,19 @@
 - **背景**：Clash(7890) 对 Docker Hub/PyPI 大文件下载反复 EOF；SearXNG 容器直连搜索引擎超时。
 - **决策**：① Docker 镜像走 `docker.m.daocloud.io`；② pip/uv 走清华 `pypi.tuna.tsinghua.edu.cn`；③ SearXNG `outgoing.proxies` 指向 `http://host.docker.internal:7890`（宿主 Clash）。
 - **影响**：避免反复重试浪费；后续新依赖/镜像默认走镜像源。
+
+## D8 · M2 验收方式 + 工程化修复
+- **日期**：2026-06-29 ｜ **批准**：实测
+- M2 验收用 **Cline CLI headless**（与编辑器同一 agent core，免 GUI/computer-use）在隔离 fixture 跑多文件改动。
+- `web_search` 加"瞬时空结果/网络错自重试"（§6）：agent loop 消息数 192→4。
+- verify_0/1/2 加固（多 query/加时长，**不放宽断言**）。
+- 运维：macOS **无 setsid**；后台服务（LiteLLM/SearXNG）用 run_in_background，会话重启后需 `start_proxy.sh` / `docker compose up` 重启。
+
+## D9 · 驾驭层（M3）三层分工，不 fork Cline
+- **日期**：2026-06-29 ｜ **批准**：调研(task wuw3zewas) + 推荐
+- **决策**：6 件套按"Cline 原生 / hooks 单步守门 / LangGraph 跨步状态机"分工，**不需 fork(B)**。详见 [research-cline-hooks-driving-layer.md](research-cline-hooks-driving-layer.md)。
+  - **A（Cline 原生/hooks）**：上下文压缩(Auto Compact 零代码)、可观测采集(PostToolUse 日志 hook)、单步守门(PreToolUse)、日常审批(Plan/Act+auto-approve)。
+  - **C（LangGraph，复用 M1/D6）**：强制验证、循环检测、子Agent主从(supervisor)、硬审批断点(interrupt)、可观测归档(checkpoint)。
+- **理由**：Cline hooks 是单次调用边界回调（无跨步记忆、不能强制下一步），LangGraph 的 checkpoint+interrupt+supervisor 正好补跨步状态机这层。
+- **前置**：C 侧崩溃恢复须把 checkpointer 从 InMemorySaver 换 SqliteSaver/PostgresSaver；interrupt 副作用须放断点之后/幂等；supervisor handoff 须裁剪历史。
+- **顺序**：先 A 侧（含 PostToolUse 日志 hook 实测）→ 搭 C supervisor 骨架 → 接 (1)(2)(4硬断点)(5)。

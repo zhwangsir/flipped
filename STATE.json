@@ -39,7 +39,8 @@
     { "id": "D5", "decision": "访问 exo 的 Python/httpx 客户端(含 LiteLLM)必须 export NO_PROXY 含 100.64.201.37, 否则被本机 HTTP_PROXY(Clash:7890)劫持成 502。curl/Node fetch 不受影响。已写入 start_proxy.sh/verify_milestone_0.sh", "date": "2026-06-29", "approved_by": "实测根因" },
     { "id": "D6", "decision": "agent 框架 = LangGraph(原生 checkpoint 支撑 M5 崩溃恢复 + M3 审批中断恢复同源; 主-从双模型契合)。M1 已装 langgraph 1.2.6 + langchain-openai 1.3.3", "date": "2026-06-29", "approved_by": "用户(用成熟框架)+调研" },
     { "id": "D7", "decision": "中国网络: Docker 镜像走 docker.m.daocloud.io; pip/uv 走清华源; SearXNG outgoing.proxies 指向 host.docker.internal:7890(宿主 Clash)", "date": "2026-06-29", "approved_by": "实测" },
-    { "id": "D8", "decision": "M2 验收用 Cline CLI headless(与编辑器同一 agent core, 免 GUI/computer-use); web_search 对瞬时空结果自重试(§6, agent loop 192->4 消息); verify 脚本加固(多 query/加时长, 不放宽断言); 运维: macOS 无 setsid, 后台服务(LiteLLM/SearXNG)用 run_in_background, 会话重启后需 start_proxy.sh / docker compose up 重启", "date": "2026-06-29", "approved_by": "实测" }
+    { "id": "D8", "decision": "M2 验收用 Cline CLI headless(与编辑器同一 agent core, 免 GUI/computer-use); web_search 对瞬时空结果自重试(§6, agent loop 192->4 消息); verify 脚本加固(多 query/加时长, 不放宽断言); 运维: macOS 无 setsid, 后台服务(LiteLLM/SearXNG)用 run_in_background, 会话重启后需 start_proxy.sh / docker compose up 重启", "date": "2026-06-29", "approved_by": "实测" },
+    { "id": "D9", "decision": "驾驭层(M3)三层分工不 fork: A=Cline 原生(Auto Compact 压缩/Plan-Act 审批)+hooks(PostToolUse 日志/PreToolUse 守门); C=LangGraph(强制验证/循环检测/子Agent supervisor/硬审批 interrupt/checkpoint 归档)。前置: 换 SqliteSaver/PostgresSaver。详见 docs/research-cline-hooks-driving-layer.md", "date": "2026-06-29", "approved_by": "调研+推荐" }
   ],
   "known_issues": [
     { "id": "ISSUE-1", "severity": "high", "status": "resolved", "title": "exo 集群推理面 502 Bad Gateway", "detail": "双重根因: (1)早期 instances=0 模型未 LAUNCH; (2)模型起来后 Python 客户端仍 502 实为本机 HTTP_PROXY 劫持(见 D5)。解决: 用户按 2+2 LAUNCH 两模型 + 设 NO_PROXY。M0.4/M0.5 已全通过。", "owner": "已解决" },
