@@ -1,0 +1,23 @@
+{
+  "nameShort": "flipped",
+  "nameLong": "flipped IDE",
+  "applicationName": "flipped",
+  "dataFolderName": ".flipped",
+  "serverApplicationName": "flipped-server",
+  "serverDataFolderName": ".flipped-server",
+  "darwinBundleIdentifier": "com.flipped.ide",
+  "win32AppUserModelId": "flipped.IDE",
+  "win32DirName": "flipped IDE",
+  "win32NameVersion": "flipped IDE",
+  "win32RegValueName": "flippedIDE",
+  "win32ShellNameShort": "flipped IDE",
+  "win32MutexName": "flippedide",
+  "win32AppId": "{{A1B2C3D4-0000-0000-0000-FL1PPED1DE00}}",
+  "urlProtocol": "flipped",
+  "reportIssueUrl": "https://github.com/flipped/flipped-ide/issues/new",
+  "extensionsGallery": {
+    "serviceUrl": "https://open-vsx.org/vscode/gallery",
+    "itemUrl": "https://open-vsx.org/vscode/item",
+    "resourceUrlTemplate": "https://open-vsx.org/vscode/unpkg/{publisher}/{name}/{version}/{path}"
+  }
+}

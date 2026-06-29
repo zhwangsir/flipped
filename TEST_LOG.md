@@ -217,3 +217,10 @@
 - `ide-extension/src/bridge.ts`：`parseToolRequest`/`dispatchTool`(纯逻辑)；extension.ts 起本地 HTTP(**仅 127.0.0.1:39217**) `POST /tool` → 分派到 IDE 工具。
 - `src/driving/ide_client.py`：`build_tool_request`/`parse_tool_response`(纯) + `call_ide_tool`(走桥)。
 - 验证：TS typecheck+compile ✓；bridge.test + Python test_ide_client ✅(分派/解析两端逻辑)。运行时 roundtrip(扩展宿主在跑 + Python 调用)待开宿主验。
+
+## [2026-06-30] Phase 3 外壳脚手架（D14）— 待签名状态
+- `shell/product.overrides.json`：flipped 品牌字段(三平台) + **Open VSX** 市场(微软市场红线)。
+- `shell/apply_branding.py`：deep_merge 把覆盖合并进 VSCodium product.json(纯函数可测)。
+- `shell/BUILD.md`：fork→换皮→内建 Cline/扩展→三平台构建→签名公证 runbook，**[需你]** 标注 Apple/Windows 证书步骤。
+- `scripts/verify_phase3_scaffold.sh` ✅：配置合法+Open VSX；合并逻辑实测(覆盖+保留+不可变)。
+- 余(用户/网络门控)：VSCodium clone+build + 签名公证分发（需 Apple 开发者证书）。
