@@ -35,7 +35,7 @@
     { "id": "D1", "decision": "服务层复用现成 exo 集群 + LiteLLM(:4000) 前置，弃用 mlx-openai-server", "date": "2026-06-29", "approved_by": "用户" },
     { "id": "D2", "decision": "本机 M5 Max 128GB 为开发/控制节点；模型驻留在 exo 集群(其聚合内存才是 AGENTS.md 所指 2TB)", "date": "2026-06-29", "approved_by": "实测核对" },
     { "id": "D3", "decision": "M0 验收核心 = 经 exo 的工具调用(function calling)解析实测，而非 mlx-openai-server 的 tool-call-parser 配对", "date": "2026-06-29", "approved_by": "用户" },
-    { "id": "D4", "decision": "[待用户确认] M2 基座不再用 Roo Code(2026-05-15 已归档停服, 末版 v3.54.0)；候选 Kilo Code(推荐: Roo fork/共享 git 历史/Apache-2.0/活跃/Sticky Models 按 agent 钉模型) 或 Cline(Roo 上游/MIT/活跃)", "date": "2026-06-29", "approved_by": "pending", "status": "open" }
+    { "id": "D4", "decision": "[待用户确认] M2 基座不再用 Roo Code(2026-05-15 已归档停服)；候选 Cline(exo 社区实测最稳/MIT) 或 Kilo Code(贴合 AGENTS.md 模式体系/Sticky Models 按 agent 钉模型/Apache-2.0)。建议 M0.4 实测后再定, 略偏 Cline", "date": "2026-06-29", "approved_by": "pending", "status": "open" }
   ],
   "known_issues": [
     { "id": "ISSUE-1", "severity": "high", "status": "open", "title": "exo 集群推理面 502 Bad Gateway", "detail": "对 GLM-5.2/Kimi/甚至最小 Qwen3-0.6B 的 /v1/chat/completions 均 5s 快速 502；/state 显示分片 DownloadPending，模型未进入可服务状态。阻塞 M0.4/M0.5 实测。", "owner": "用户拉起集群 + Claude 后台监控自动复验" },

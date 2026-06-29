@@ -22,6 +22,7 @@
 - **决策**：M0 必须用真实带 `tools` 的请求实测两模型返回结构化 `tool_calls`（而非把调用塞进 content）。不稳则在驾驭层加结构化输出约束 + 重试（呼应 M2）。
 - **理由**：验证靠运行不靠看（§1.2）；这是后续一切的地基。
 - **现状**：因集群推理 502 暂时 blocked，已由后台监控 `monitor_cluster.py` 在集群恢复后自动复验。
+- **调研确认(2026-06-29)**：exo **原生支持结构化 tool_calls**（按模型分派解析器，无 `--tool-call-parser` CLI flag）；Kimi-K2 与 GLM 均有 exo 专用解析器 + 单测 → **M0.4 大概率通过**。唯一风险是 K2.7/GLM-5.2 版本命名匹配，以实测为准。详见 [research-exo-toolcalling.md](research-exo-toolcalling.md)。
 
 ## D4 · M2 编辑器基座改选（Roo Code 已停服）— 待用户确认
 - **日期**：2026-06-29 ｜ **批准**：⏳ pending（ISSUE-2）
@@ -30,4 +31,6 @@
   - **Kilo Code**（推荐）：Roo Code 的 fork，与 Roo 共享真实 git 历史；Apache-2.0；2026 活跃维护；自定义模式=custom agents，支持 **Sticky Models**（按 agent 钉模型，可声明式做到 Architect→GLM-5.2 / Coder→Kimi-K2.7-Code，修复 Roo 仅 UI 绑定的弱点）；有 Roo→Kilo 迁移向导（.roomodes→.kilo/agents/*.md）。
   - **Cline**：Roo 的上游；MIT（更宽松）；5M+ 安装、社区最大；多 agent/coordinator 委派，不同 agent 可配不同模型。基座最干净，但"按模式分模型"需用其多 agent 机制自行组织。
 - **影响**：选 Kilo → AGENTS.md M2 的 Roo 思路几乎平移，per-mode-model 更顺；选 Cline → 基座更稳但模式体系要重搭。两者都原生支持 OpenAI Compatible 指向 LiteLLM :4000。
+- **新证据(2026-06-29 调研)**：exo 社区实测(#1840)反馈 **Cline 对本地模型最稳**；Kilo Code 有 `MODEL_NO_TOOLS_USED` 通病、需手动开工具开关并对齐 Model ID/context window。这与"Kilo 更贴合 per-mode-model"形成真实权衡。
+- **修正建议**：本项目命根子是工具调用稳定性、且 exo 是实际后端 → 建议在 **M0.4 实测拿到 ground truth 后再定基座**（可顺带 A/B 两个客户端）。若需现在选：要稳→Cline，要贴合 AGENTS.md 模式体系→Kilo，略偏 Cline。
 - **不阻塞**：M0/M1 不依赖此决策；到 M2 前定即可。
