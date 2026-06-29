@@ -36,3 +36,7 @@ infra/searxng/settings.yml
 
 # Cline CLI 隔离状态(含 API key)
 .cline-data/
+
+# Cline hook 审计日志(运行时)
+src/driving/hooks/audit.jsonl
+logs/cline-audit.jsonl

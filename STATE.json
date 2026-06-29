@@ -27,7 +27,7 @@
     },
     "M1": { "title": "工具链基线 (SearXNG + 联网搜索工具 + 最小 agent loop)", "status": "done", "note": "SearXNG(Docker, JSON+出站代理) + web_search(单测) + LangGraph ReAct agent loop(GLM via :4000) 端到端通过; verify_milestone_1.sh 退出码 0" },
     "M2": { "title": "代码编辑器形态 (Cline 接 :4000, architect/coder 双模型, 多文件改动端到端)", "status": "done", "note": "Cline CLI v3.0.33 + 扩展 v4.0.2; cline auth openai-compatible -> :4000; M2.4 headless 多文件改动 ALL PASS(读->改->跑->自检); verify_milestone_2.sh 退出码 0; fork 推迟到 M3" },
-    "M3": { "title": "驾驭层 (强制验证/循环检测/上下文压缩/人工审批/子Agent/可观测性)", "status": "todo" },
+    "M3": { "title": "驾驭层 (强制验证/循环检测/上下文压缩/人工审批/子Agent/可观测性)", "status": "doing", "note": "M3.1 架构决策(D9: A/C 分工不 fork) + M3.2 可观测(src/driving/observe.py 解析 cline --json, verify_milestone_3.sh 过) 完成; 余 M3.3 循环检测/M3.4 压缩(Cline 原生)/M3.5 子Agent/M3.6 强制验证/M3.7 硬审批" },
     "M4": { "title": "后端能力接入 (DeepAgents 包成 MCP Server + RAG 向量库)", "status": "todo" },
     "M5": { "title": "硬化与产线化 (性能/稳定性/安全/崩溃恢复)", "status": "todo" }
   },
@@ -45,7 +45,8 @@
   "known_issues": [
     { "id": "ISSUE-1", "severity": "high", "status": "resolved", "title": "exo 集群推理面 502 Bad Gateway", "detail": "双重根因: (1)早期 instances=0 模型未 LAUNCH; (2)模型起来后 Python 客户端仍 502 实为本机 HTTP_PROXY 劫持(见 D5)。解决: 用户按 2+2 LAUNCH 两模型 + 设 NO_PROXY。M0.4/M0.5 已全通过。", "owner": "已解决" },
     { "id": "ISSUE-2", "severity": "high", "status": "open", "title": "M2 基座 Roo Code 已停服", "detail": "Roo Code 于 2026-05-15 官方归档停服(只读, 末版 v3.54.0)，不能作为 fork 基座。需改基座 -> 见决策 D4。不阻塞 M0/M1。", "owner": "待用户在 D4 选 Kilo Code / Cline" },
-    { "id": "ISSUE-3", "severity": "medium", "status": "open", "title": "exo 4 台 RDMA 起不来, 退回 2 台", "detail": "6 对节点仅 studio01<->studio02 缺 RDMA(降级 TCP/IP); 四台 Thunderbolt Bridge exists:false, thunderboltBridgeCycles=[]; RDMA 走 80Gb/s 口(120Gb/s TB5 口 en6/en7 闲置)。Tensor 跨>2 台需 RDMA 环, 当前组不出。不阻塞 2 台 Launch(Kimi 597GB<1024GB); 但双模型常驻(1.35TB)需 4 台 2TB 池化。已用配法 B(2+2)规避: GLM=studio04+02, Kimi=studio03+01(各 2 台 RDMA 不相交), M0 不受影响。仅当要双模型同池或单模型 4 路提速才需修 4 路。", "owner": "可选: 重插 01<->02 线 + 启用四台 TB Bridge" }
+    { "id": "ISSUE-3", "severity": "medium", "status": "open", "title": "exo 4 台 RDMA 起不来, 退回 2 台", "detail": "6 对节点仅 studio01<->studio02 缺 RDMA(降级 TCP/IP); 四台 Thunderbolt Bridge exists:false, thunderboltBridgeCycles=[]; RDMA 走 80Gb/s 口(120Gb/s TB5 口 en6/en7 闲置)。Tensor 跨>2 台需 RDMA 环, 当前组不出。不阻塞 2 台 Launch(Kimi 597GB<1024GB); 但双模型常驻(1.35TB)需 4 台 2TB 池化。已用配法 B(2+2)规避: GLM=studio04+02, Kimi=studio03+01(各 2 台 RDMA 不相交), M0 不受影响。仅当要双模型同池或单模型 4 路提速才需修 4 路。", "owner": "可选: 重插 01<->02 线 + 启用四台 TB Bridge" },
+    { "id": "ISSUE-4", "severity": "low", "status": "open", "title": "cline CLI v3.0.33 --hooks-dir 不执行文件 hook", "detail": "实测 PreToolUse/PostToolUse 文件 hook(带.sh与无扩展名)放 --hooks-dir 均不触发, 虽 --json 流内部 emit hook_event。已绕过: 可观测改走 --json 流解析(observe.py)。影响: A 侧单步守门(PreToolUse cancel)CLI 不可用 -> 改由 C 侧(LangGraph)统一强制。将来需文件 hook 可试 VSCode 扩展(Settings->Enable Hooks)或升级 cline。", "owner": "M3 后续/可选" }
   ],
   "background_jobs": [
     { "name": "monitor_cluster.py", "purpose": "(已停止) 曾轮询 exo 恢复; M0.4 已解决不再需要", "status": "stopped" },

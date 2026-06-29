@@ -139,3 +139,14 @@
 
 ### 三里程碑全绿（各自单独前台跑，退出码均 0）
 - verify_milestone_0.sh ✅ ｜ verify_milestone_1.sh ✅（27 结果/单测过/loop 4 消息）｜ verify_milestone_2.sh ✅
+
+## [2026-06-29] M3.1 驾驭层架构决策 + M3.2 可观测
+
+### M3.1 架构(D9): 三层分工, 不 fork Cline
+- 调研 task wuw3zewas: Cline 有 Claude-Code 式 hooks 系统(v3.36)。6 件套落点: A=Cline 原生(Auto Compact 压缩)+hooks; C=LangGraph(强制验证/循环检测/子Agent supervisor/硬审批 interrupt/checkpoint 归档)。B(fork) 全不需要。
+
+### M3.2 可观测 — 实测纠偏(§6)
+- 🔬 **实测发现(ISSUE-4)**: cline CLI v3.0.33 的 `--hooks-dir` **不执行**外部文件 hook(PreToolUse/PostToolUse, 试过 `.sh` 与无扩展名两种命名, 审计日志两处均空), 尽管其 `--json` 流内部 emit `hook_event`。
+- ✅ 改走 **`--json` 流解析**: `agent_event` 的 content_start/content_end(contentType=tool) 带 toolName/input/output/durationMs, 信息完整; C 侧(LangGraph)驱动 cline headless 时本就读此流。
+- 实现 `src/driving/observe.py`: `parse_events`(纯函数, 单测覆盖) + `run_and_observe`(驱动 cline + 落结构化审计 JSONL)。删掉不工作的文件 hook(死代码)。
+- 验收 `verify_milestone_3.sh` ✅: observe 单测过; 真实 cline 运行被可观测(捕获 editor/run_commands, summary={tool_calls:2, iterations:3, reason:completed}, 审计落盘)。
