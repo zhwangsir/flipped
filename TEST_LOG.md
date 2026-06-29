@@ -224,3 +224,9 @@
 - `shell/BUILD.md`：fork→换皮→内建 Cline/扩展→三平台构建→签名公证 runbook，**[需你]** 标注 Apple/Windows 证书步骤。
 - `scripts/verify_phase3_scaffold.sh` ✅：配置合法+Open VSX；合并逻辑实测(覆盖+保留+不可变)。
 - 余(用户/网络门控)：VSCodium clone+build + 签名公证分发（需 Apple 开发者证书）。
+
+## [2026-06-30] Kimi 恢复 + architect 切到 GLM-5.2-fp8
+- 用户重新 LAUNCH：Kimi-K2.7-Code(coder ✅) + **GLM-5.2-fp8**(替换原 DQ4plus-q8)。
+- `config.yaml` architect → `mlx-community/GLM-5.2-fp8`；代理重启，别名 architect/coder 就绪。
+- verify_milestone_3 **live 回归 ✅**(observe/sidecar e2e 经真实 Kimi + 全单测)。
+- GLM-5.2-fp8(全精度大模型)仍在加载；architect 暂未服务；capstone(需 GLM 监督)待其就绪。
