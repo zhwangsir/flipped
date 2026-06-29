@@ -34,3 +34,11 @@
 - **新证据(2026-06-29 调研)**：exo 社区实测(#1840)反馈 **Cline 对本地模型最稳**；Kilo Code 有 `MODEL_NO_TOOLS_USED` 通病、需手动开工具开关并对齐 Model ID/context window。这与"Kilo 更贴合 per-mode-model"形成真实权衡。
 - **修正建议**：本项目命根子是工具调用稳定性、且 exo 是实际后端 → 建议在 **M0.4 实测拿到 ground truth 后再定基座**（可顺带 A/B 两个客户端）。若需现在选：要稳→Cline，要贴合 AGENTS.md 模式体系→Kilo，略偏 Cline。
 - **不阻塞**：M0/M1 不依赖此决策；到 M2 前定即可。
+- **M0 实测补充(2026-06-29)**：exo 工具调用已对两模型实测通过；编辑器栈 Node fetch 直连 exo 正常（且不受本机代理影响，见 D5）→ M2 基座技术风险已基本排除，可在 Cline/Kilo 间随时定。
+
+## D5 · 访问 exo 必须绕开本机 HTTP 代理（NO_PROXY）
+- **日期**：2026-06-29 ｜ **批准**：实测根因
+- **背景**：开发机设了 `HTTP_PROXY=HTTPS_PROXY=http://127.0.0.1:7890`(Clash)，`NO_PROXY` 未含 exo 内网 IP。Python httpx/urllib（含 LiteLLM）读大写 `HTTP_PROXY` → 把发往 `100.64.201.37` 的请求塞进代理 → 代理到不了内网 → **502**。
+- **为何 curl/Node 不受影响**：curl 出于 httpoxy 安全只认小写 `http_proxy`(未设)；Node fetch / 裸 socket 不读代理 env。
+- **决策**：所有访问 exo 的 Python 进程必须 `export NO_PROXY=100.64.201.37,...`（已写入 `scripts/start_proxy.sh` 与 `scripts/verify_milestone_0.sh`）。
+- **影响**：解释了此前大量"集群 502"实为本机代理劫持而非集群故障；修复后 M0.4/M0.5 全通过。编辑器(Node)无需此设置。

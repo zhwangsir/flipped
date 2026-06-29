@@ -4,6 +4,9 @@
 set -uo pipefail
 cd "$(dirname "$0")/.."
 [ -f .env ] && { set -a; . ./.env; set +a; }
+# 绕开本机 HTTP_PROXY，否则 curl(小写 http_proxy 未设故 OK)外的 python 请求会被代理劫持成 502
+export NO_PROXY="100.64.201.37,localhost,127.0.0.1,::1,.local"
+export no_proxy="$NO_PROXY"
 
 EXO="http://100.64.201.37:52415"
 PROXY="http://localhost:4000"
