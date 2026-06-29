@@ -18,8 +18,8 @@ MODELS = [
     ("GLM-5.2 (编排者)", "mlx-community/GLM-5.2-DQ4plus-q8"),
     ("Kimi-K2.7-Code (执行者)", "mlx-community/Kimi-K2.7-Code-4bit"),
 ]
-MAX_ITERS = 30      # 上限，防止失控空转 (AGENTS.md §6)
-SLEEP_SECS = 120
+MAX_ITERS = int(os.environ.get("MONITOR_MAX_ITERS", "30"))   # 上限，防止失控空转 (AGENTS.md §6)
+SLEEP_SECS = int(os.environ.get("MONITOR_SLEEP", "120"))
 
 
 def now() -> str:
