@@ -238,3 +238,7 @@
 - **GLM overseer 真做了效率+方向双维监督**(dir=1.0 确认方向、eff=0.6 主动指出工具调用偏多)——正是 D15 核心。
 - 前置：用户 LAUNCH GLM-5.2-fp8(736GB,fp8)+Kimi(2+2 部署)；architect/coder 两别名 live。终态 calc.py/main.py 建成、test OK。
 - **至此 Phase 1 脑在真实多文件复杂度上完全验证。**
+
+## [2026-06-30] verify_0 动态模型 id(§6) — GLM-5.2-fp8 工具调用全通
+- `verify_milestone_0.sh` 改为从 `config.yaml` 动态解析 architect/coder 真实 model id(避免用户换模型后脚本陈旧)。
+- 重跑全绿：M0.4 **GLM-5.2-fp8** + Kimi 工具调用 ✅、M0.5 架构路由 ✅。新 GLM 命根子(工具调用解析)确认。

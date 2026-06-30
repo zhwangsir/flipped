@@ -10,8 +10,10 @@ export no_proxy="$NO_PROXY"
 
 EXO="http://100.64.201.37:52415"
 PROXY="http://localhost:4000"
-GLM="mlx-community/GLM-5.2-DQ4plus-q8"
-KIMI="mlx-community/Kimi-K2.7-Code-4bit"
+# 从 LiteLLM 配置动态取 architect/coder 真实 model id（用户换模型后脚本不陈旧，§6）
+GLM=$(grep -A2 'model_name: architect' infra/litellm/config.yaml | grep -m1 'model: openai' | sed 's#.*openai/##' | awk '{print $1}')
+KIMI=$(grep -A2 'model_name: coder' infra/litellm/config.yaml | grep -m1 'model: openai' | sed 's#.*openai/##' | awk '{print $1}')
+[ -n "$GLM" ] && [ -n "$KIMI" ] || { echo "❌ 无法从 config 解析 architect/coder 模型 id"; exit 1; }
 PY="$( [ -x .venv/bin/python ] && echo .venv/bin/python || echo python3 )"
 fail=0
 pass(){ echo "  ✅ $1"; }
