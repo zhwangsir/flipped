@@ -45,7 +45,10 @@
     { "id": "D11", "decision": "驾驭层落点=Cline 原生/hooks + LangGraph 本地 sidecar(否决 TS 重写); 打包=python-build-standalone+uv+electron-builder extraResources(否决 PyInstaller)。佐证 Cursor/Windsurf 独立 agent 进程", "date": "2026-06-29", "approved_by": "调研+推荐" },
     { "id": "D12", "decision": "随项目内置环境=Dev Containers+mise(Nix 为 power 选项); AI 改 devcontainer.json/.mise.toml + rebuild 自愈", "date": "2026-06-29", "approved_by": "调研+推荐" },
     { "id": "D13", "decision": "AI 控制面=薄扩展注册工具(typed API+executeCommand+CLI), 不为控制 IDE 而 fork; 高风险动作走审批", "date": "2026-06-29", "approved_by": "调研+推荐" },
-    { "id": "D14", "decision": "外壳=Code-OSS fork(VSCodium 脚手架)+Open VSX+Cline 内建 builtin+三平台签名公证; 阶段化 脑→环境→壳", "date": "2026-06-29", "approved_by": "调研+推荐" }
+    { "id": "D14", "decision": "外壳=Code-OSS fork(VSCodium 脚手架)+Open VSX+Cline 内建 builtin+三平台签名公证; 阶段化 脑→环境→壳", "date": "2026-06-29", "approved_by": "调研+推荐" },
+    { "id": "D15", "decision": "核心架构=多 Agent 协作+专属监督 Agent(Supervisor GLM/Worker Kimi/Overseer GLM 监督效率与方向); 恒用最新最强技术。原 M3.6 子Agent主从提升为贯穿全产品的核心要求", "date": "2026-06-30", "approved_by": "用户" },
+    { "id": "D16", "decision": "GLM/exo 经 LiteLLM 的 with_structured_output 必须 method=\"function_calling\"(默认 json_schema/json_mode 对 GLM 校验失败, function_calling ✓)。已修 orchestrator 两处", "date": "2026-06-30", "approved_by": "实测" },
+    { "id": "D17", "decision": "Phase 3 壳 Windows release 走 GitHub Actions windows-latest 云构建(本机 macOS 无法构建 Windows 原生包); 首版未签名分发(SmartScreen 警告, Authenticode 证书 user-gated 后补, CI 预留接口); CI 产出 artifact 后经用户确认再发 Release; 多端=CI 矩阵增量", "date": "2026-06-30", "approved_by": "用户" }
   ],
   "known_issues": [
     { "id": "ISSUE-1", "severity": "high", "status": "resolved", "title": "exo 集群推理面 502 Bad Gateway", "detail": "双重根因: (1)早期 instances=0 模型未 LAUNCH; (2)模型起来后 Python 客户端仍 502 实为本机 HTTP_PROXY 劫持(见 D5)。解决: 用户按 2+2 LAUNCH 两模型 + 设 NO_PROXY。M0.4/M0.5 已全通过。", "owner": "已解决" },

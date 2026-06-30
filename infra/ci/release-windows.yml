@@ -1,0 +1,82 @@
+name: release-windows
+
+# flipped IDE · Windows 云构建(D17)。本机 macOS 无法构建 Windows 原生包，
+# 故在 windows-2022 runner 上 clone VSCodium 脚手架 + 叠加 flipped 品牌/内建扩展 + Inno Setup 未签名 installer。
+# 手动触发(workflow_dispatch)，不随 push 自动跑，避免误烧 CI 时长。
+
+on:
+  workflow_dispatch:
+    inputs:
+      vscodium_ref:
+        description: "VSCodium 脚手架的 tag/branch"
+        required: false
+        default: "master"
+      ms_tag:
+        description: "(可选)覆盖 microsoft/vscode tag；留空=用 VSCodium upstream 钉定"
+        required: false
+        default: ""
+      release_version:
+        description: "(可选)覆盖 flipped 版本号"
+        required: false
+        default: ""
+      include_builtins:
+        description: "内建 Cline + ide-extension(v0.1)；关闭=纯品牌构建(v0.0 先验证管线)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  build-windows:
+    runs-on: windows-2022
+    timeout-minutes: 120
+    defaults:
+      run:
+        shell: bash
+    env:
+      APP_NAME: Flipped
+      BINARY_NAME: flipped
+      ORG_NAME: flipped
+      VSCODE_ARCH: x64
+      OS_NAME: windows
+      VSCODE_QUALITY: stable
+      SHOULD_BUILD: "yes"
+      SHOULD_BUILD_REH: "no"
+      SHOULD_BUILD_REH_WEB: "no"
+      SHOULD_BUILD_MSI: "no"
+      SHOULD_BUILD_MSI_NOUP: "no"
+      MS_TAG: ${{ github.event.inputs.ms_tag }}
+      RELEASE_VERSION: ${{ github.event.inputs.release_version }}
+      INCLUDE_BUILTIN_EXTS: ${{ github.event.inputs.include_builtins == 'true' && '1' || '0' }}
+    steps:
+      - name: Checkout flipped
+        uses: actions/checkout@v4
+        with:
+          path: flipped
+
+      - name: Clone VSCodium scaffold
+        run: git clone --depth 1 --branch "${{ github.event.inputs.vscodium_ref || 'master' }}" https://github.com/VSCodium/vscodium.git vscodium
+
+      - name: Setup Node (from VSCodium .nvmrc)
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: vscodium/.nvmrc
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Build flipped IDE (Windows x64)
+        run: bash flipped/shell/build-windows.sh build
+
+      - name: Checksums
+        run: bash flipped/shell/build-windows.sh checksums
+
+      - name: Upload installers
+        uses: actions/upload-artifact@v4
+        with:
+          name: flipped-windows-x64
+          path: vscodium/assets/*
+          if-no-files-found: error

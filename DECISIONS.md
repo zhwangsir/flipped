@@ -123,3 +123,11 @@
 - **现象**：orchestrator 的 supervisor/overseer 用 `with_structured_output`(langchain 默认 `json_schema`) 对 GLM **校验失败**(GLM 返回 markdown 非 JSON)→fail-open，"GLM 智能监督"形同虚设。
 - **实测**：`json_schema` ✗ / `json_mode` ✗ / **`function_calling` ✓**(GLM 返回正确结构；M0.4 已证 GLM 支持工具调用)。
 - **约定**：所有对 GLM/Kimi(经 LiteLLM/exo)的 `with_structured_output` 一律 `method="function_calling"`。已修 orchestrator 两处。
+
+## D17 · Phase 3 壳 Windows release = GitHub Actions 云构建 + 首版未签名
+- **日期**：2026-06-30 ｜ **批准**：用户
+- **硬约束**：本机为 macOS(Darwin ARM64)，**无法构建 Windows 原生安装包**(node-pty/spdlog/native-watchdog 等原生模块需 Windows MSVC 工具链；VSCodium 官方亦按平台在对应 OS 的 runner 出包)。
+- **路径(用户选)**：A = **GitHub Actions `windows-latest` 云构建** — fork→品牌→内建(Cline+ide-extension)→sidecar 打包→Inno Setup installer 全写成 CI workflow，推到 `zhwangsir/flipped`(公开 repo，Windows runner 免费)，云端产出 `.exe`/`.msi`。否决 B(需用户本地 Windows 机器)/C(轻量 Tauri 壳，偏离 D14)。
+- **签名(用户选)**：首版**未签名**分发(SmartScreen "未知发布者" 警告，用户手动放行)；CI 预留 Authenticode 接口(signtool/azure-code-signing + secret)，待用户备证书后启用。
+- **发布门**：CI 产出 artifact 后**先给用户确认**再 `gh release create`(发布=对外动作)。
+- **多端**：Windows 跑通后，同一管线加 `macos`/`linux` job 成矩阵(承接 D14 三平台)。
