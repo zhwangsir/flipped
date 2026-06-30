@@ -230,3 +230,11 @@
 - `config.yaml` architect → `mlx-community/GLM-5.2-fp8`；代理重启，别名 architect/coder 就绪。
 - verify_milestone_3 **live 回归 ✅**(observe/sidecar e2e 经真实 Kimi + 全单测)。
 - GLM-5.2-fp8(全精度大模型)仍在加载；architect 暂未服务；capstone(需 GLM 监督)待其就绪。
+
+## [2026-06-30] 🎉 Phase 1 capstone — GLM-5.2-fp8 监督 Kimi 多文件任务 ✅
+- 多Agent监督编排在**多文件任务**上端到端通过(verified, iteration 1)：
+  [GLM 调度] 拆解目标 → [Kimi 执行] 建 calc.py+main.py(12 工具调用 completed) →
+  [GLM 监督] action=continue **dir=1.0 eff=0.6** "方向完全正确；但 12 次工具调用偏多(低效)" → [强制验证] OK。
+- **GLM overseer 真做了效率+方向双维监督**(dir=1.0 确认方向、eff=0.6 主动指出工具调用偏多)——正是 D15 核心。
+- 前置：用户 LAUNCH GLM-5.2-fp8(736GB,fp8)+Kimi(2+2 部署)；architect/coder 两别名 live。终态 calc.py/main.py 建成、test OK。
+- **至此 Phase 1 脑在真实多文件复杂度上完全验证。**
