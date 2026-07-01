@@ -32,6 +32,7 @@ import openhands.tools.terminal  # noqa: F401
 
 from api.events import EventBus
 from api.schemas import EventType, Role
+from driving.safety import audit_openhands_events
 
 
 class OpenHandsWorker:
@@ -176,6 +177,9 @@ class OpenHandsWorker:
                            {"status": "running", "progress": 10, "note": "派发任务到沙盒"})
                 conversation.send_message(task_description, sender="flipped-supervisor")
                 conversation.run(blocking=True, poll_interval=1.0, timeout=self.timeout)
+                violations = audit_openhands_events(self._events)
+                if violations:
+                    raise RuntimeError(violations[0])
 
                 final_state = conversation.state
                 status = getattr(final_state, "execution_status", None)

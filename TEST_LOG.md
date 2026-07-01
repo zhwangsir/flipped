@@ -498,3 +498,35 @@
 
 ### 进入 M5.5
 - 下一步：安全加固（密钥管理、命令白名单、高风险动作审批整合）。
+
+## [2026-07-02] M5.5 完成 — 安全加固
+
+### 实现
+- `src/driving/safety.py`：命令白名单/黑名单、密钥扫描、OpenHands 终端事件审计。
+- `src/driving/orchestrator.py`：默认 verifier 改为 `_safe_default_verifier`，验收前过白名单 + 高风险命令需审批。
+- `src/executor/openhands_worker.py`：`RemoteConversation.run` 结束后审计 terminal 事件，命中危险模式则快速失败。
+- `src/api/main.py`：lifespan 启动时调用 `validate_secrets`。
+- `tests/conftest.py`：设置 `EXO_API_KEY=dummy` 避免 lifespan 打印警告。
+
+### M5.5 单测
+- 命令：`PYTHONPATH=src .venv/bin/python -m pytest tests/test_safety.py -q`
+- 输出摘要：`12 passed, 1 warning`
+- 结论：✅ 通过；覆盖命令归一化、危险命令拦截、安全命令放行、未知命令拦截、环境变量覆盖、密钥扫描、`.env`/环境变量校验、OpenHands 事件审计。
+
+### 全量回归
+- 命令：`PYTHONPATH=src .venv/bin/python -m pytest tests/ -q`
+- 输出摘要：`91 passed, 2 warnings in 12.83s`
+- 结论：✅ 通过；M5.5 未引入回归。
+
+### M5 验收脚本
+- 命令：`bash scripts/verify_m5.sh`
+- 输出摘要：`test_metrics.py 7 passed` / `test_safety.py 12 passed` / 全量 91 passed / Console build 成功；退出码 0。
+- 结论：✅ 通过。
+
+### Console 构建
+- 命令：`cd console && npm run build`
+- 输出摘要：`tsc -b && vite build` 成功，`dist` 产物生成。
+- 结论：✅ 通过。
+
+### 进入 M5.6
+- 下一步：长任务 checkpoint 续跑验收（沙箱内模拟）。

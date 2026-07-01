@@ -102,7 +102,7 @@
     "M5": {
       "title": "硬化与产线化 (性能/稳定性/安全/崩溃恢复)",
       "status": "doing",
-      "note": "M5.4 完成；M5.5 进行中（安全加固）。",
+      "note": "M5.4 完成；M5.5 完成（安全加固）；M5.6 进行中（长任务 checkpoint 续跑验收）。",
       "tasks": {
         "M5.1": {
           "title": "性能可观测（metrics collector + /api/v1/metrics）",
@@ -122,12 +122,17 @@
         "M5.4": {
           "title": "崩溃恢复与断点续跑",
           "status": "done",
-          "note": "resume_orchestrated + API resume endpoint + tests/test_api_recovery.py 修复；verify_m5.sh 全绿"
+          "note": "resume_orchestrated + API resume endpoint + tests/test_api_recovery.py 修复；verify_m5.sh 全绿。"
         },
         "M5.5": {
           "title": "安全加固",
+          "status": "done",
+          "note": "src/driving/safety.py 命令白名单/黑名单/密钥扫描/OpenHands 审计；orchestrator 默认 safe verifier；openhands_worker 终端事件审计；api/main lifespan 校验 secrets；test_safety.py 12 用例；全量 91 passed。"
+        },
+        "M5.6": {
+          "title": "长任务验收（沙箱内模拟）",
           "status": "doing",
-          "note": "密钥管理、命令白名单、高风险动作审批整合"
+          "note": "进行中：新增/扩展测试模拟长任务多步 orchestrator + 中途保留 checkpoint 崩溃 + resume_orchestrated 续跑到 verified。"
         }
       }
     }

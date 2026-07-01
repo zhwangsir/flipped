@@ -8,6 +8,7 @@ import pytest
 # API tests don't leave .sessions.json in the project root.
 _test_session_path = os.path.join(tempfile.gettempdir(), "flipped_test_sessions.json")
 os.environ["FLIPPED_SESSION_STORE_PATH"] = _test_session_path
+os.environ.setdefault("EXO_API_KEY", "dummy")
 if os.path.exists(_test_session_path):
     os.remove(_test_session_path)
 

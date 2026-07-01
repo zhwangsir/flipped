@@ -6,9 +6,11 @@ from __future__ import annotations
 
 import asyncio
 import os
+import sys
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import Any
+from pathlib import Path
 
 import httpx
 from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
@@ -17,6 +19,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from .events import EventBus, get_bus
 from .schemas import EventType, HealthResponse, MetricsResponse, Role, Session, SessionStatus, TaskRequest, TaskResponse
 from .session import SessionStore, store
+from driving.safety import validate_secrets
 from metrics import COLLECTOR
 
 MOCK_WORKER = os.environ.get("FLIPPED_MOCK_WORKER", "0") == "1"
@@ -32,6 +35,10 @@ bus: EventBus = get_bus(store)
 async def lifespan(app: FastAPI):
     bus.set_loop(asyncio.get_running_loop())
     store.load(os.environ.get("FLIPPED_SESSION_STORE_PATH", ".sessions.json"))
+    ok, findings = validate_secrets(Path(__file__).resolve().parent.parent)
+    if not ok:
+        for f in findings:
+            print(f"[safety] {f}", file=sys.stderr)
     for session in store.list():
         if session.status in (SessionStatus.running, SessionStatus.paused) and session.checkpoint_db_path:
             asyncio.create_task(_resume_orchestrator(session))

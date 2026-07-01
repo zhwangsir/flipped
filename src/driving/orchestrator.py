@@ -24,6 +24,7 @@ from driving.sidecar import action_signature
 from metrics import MetricsCallbackHandler
 from driving.context_manager import CheckpointRetention, compress_history
 from driving.model_router import resolve_model_config, resolve_worker_model_config
+from driving.safety import is_safe_command
 
 from executor.openhands_worker import OpenHandsWorker
 
@@ -244,7 +245,14 @@ def _overseer_ret(state: OrchestratorState, verdict: dict) -> dict:
     return upd
 
 
-def _default_verifier(cmd: list, cwd: str) -> "tuple[bool, str]":
+def _safe_default_verifier(cmd: list, cwd: str) -> "tuple[bool, str]":
+    from driving.approval import classify_risk
+    command_str = " ".join(cmd)
+    ok, reason = is_safe_command(command_str)
+    if not ok:
+        return False, f"command blocked: {reason}"
+    if classify_risk(command_str) == "high":
+        return False, "high-risk command requires approval"
     import subprocess
     p = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, timeout=300)
     return p.returncode == 0, (p.stdout + p.stderr)[-2000:]
@@ -255,7 +263,7 @@ def _default_verifier(cmd: list, cwd: str) -> "tuple[bool, str]":
 def build_orchestrator(supervisor: SupervisorFn = default_supervisor,
                        worker: WorkerFn = default_worker,
                        overseer: OverseerFn = default_overseer,
-                       verifier: VerifierFn = _default_verifier,
+                       verifier: VerifierFn = _safe_default_verifier,
                        checkpointer=None,
                        max_context_tokens: int = 10000,
                        keep_recent: int = 4,
@@ -379,7 +387,7 @@ def drive_orchestrated(goal: str, cwd: str, verify_cmd: list, *,
                        supervisor: SupervisorFn = default_supervisor,
                        worker: WorkerFn = default_worker,
                        overseer: OverseerFn = default_overseer,
-                       verifier: VerifierFn = _default_verifier) -> OrchestratorState:
+                       verifier: VerifierFn = _safe_default_verifier) -> OrchestratorState:
     """多 Agent 监督编排驱动一个目标到验收通过 / 监督中止 / 循环 / 熔断。
 
     require_approval=True：高风险子任务在执行前 interrupt 等人工放行（命中需用 Command(resume=...) 续跑）。
@@ -415,7 +423,7 @@ def resume_orchestrated(thread_id: str, db_path: str = "data/checkpoints.db", *,
                         supervisor: SupervisorFn = default_supervisor,
                         worker: WorkerFn = default_worker,
                         overseer: OverseerFn = default_overseer,
-                        verifier: VerifierFn = _default_verifier,
+                        verifier: VerifierFn = _safe_default_verifier,
                         max_context_tokens: int = 10000, keep_recent: int = 4,
                         summarizer: Callable | None = None,
                         max_checkpoints: int = 50) -> OrchestratorState | None:
