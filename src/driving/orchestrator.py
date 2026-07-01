@@ -91,12 +91,23 @@ VerifierFn = Callable[[list, str], "tuple[bool, str]"]
 # ---------- 默认实现（GLM/Kimi 经 LiteLLM） ----------
 
 def _make_llm(alias: str, temperature: float = 0):
-    """构建指向 LiteLLM:4000 的 ChatOpenAI（alias=architect/coder）。"""
+    """构建指向 LiteLLM:4000 或直连 exo 的 ChatOpenAI（alias=architect/coder）。
+
+    通过环境变量可绕过 LiteLLM 代理：
+      FLIPPED_MODEL_BASE_URL=http://100.64.201.37:52415/v1
+      FLIPPED_ARCHITECT_MODEL=mlx-community/GLM-5.2-fp8
+      FLIPPED_CODER_MODEL=mlx-community/Kimi-K2.7-Code-4bit
+    """
     from langchain_openai import ChatOpenAI
 
-    base = os.environ.get("LITELLM_BASE_URL", "http://localhost:4000/v1")
-    key = os.environ.get("LITELLM_MASTER_KEY", "dummy")
-    return ChatOpenAI(model=alias, base_url=base, api_key=key, temperature=temperature, timeout=300)
+    model_map = {
+        "architect": os.environ.get("FLIPPED_ARCHITECT_MODEL", "mlx-community/GLM-5.2-fp8"),
+        "coder": os.environ.get("FLIPPED_CODER_MODEL", "mlx-community/Kimi-K2.7-Code-4bit"),
+    }
+    model = model_map.get(alias, alias)
+    base = os.environ.get("FLIPPED_MODEL_BASE_URL") or os.environ.get("LITELLM_BASE_URL", "http://localhost:4000/v1")
+    key = os.environ.get("EXO_API_KEY") or os.environ.get("LITELLM_MASTER_KEY", "dummy")
+    return ChatOpenAI(model=model, base_url=base, api_key=key, temperature=temperature, timeout=300)
 
 
 def default_supervisor(state: OrchestratorState) -> dict:

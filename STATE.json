@@ -2,7 +2,7 @@
   "project": "flipped",
   "description": "接入本地 MLX 双模型(GLM-5.2 编排者 / Kimi-K2.7-Code 执行者)的 agentic 代码编辑器平台。fork Roo Code + 自定义驾驭层(强制验证/循环检测/上下文压缩/人工审批/子Agent/可观测性) + MCP 联网与外部能力。",
   "updated": "2026-07-01",
-  "current_milestone": "Phase B · 打通 MVP（B1 ✅ / B2 ✅ / B3 ✅ / B4 tool-calling 加固 + cost warning 修复）",
+  "current_milestone": "Phase B · 打通 MVP（B1/B2/B3/B4 ✅ / B5 UI 去 AI 感打磨）",
   "key_facts": {
     "dev_host": "Apple M5 Max, 128GB RAM, 1.1TB 可用磁盘 — 开发/控制节点，非模型宿主",
     "model_cluster": "exo 集群 @ http://100.64.201.37:52415 (内网, OpenAI 兼容)；公网 https://dgmt.top/exo (需 Bearer token)",
@@ -35,7 +35,7 @@
         "B1": { "title": "orchestration-api 骨架 (FastAPI + WS 事件)", "status": "done", "note": "verify_b1.sh 全绿；PYTHONPATH=src 修复运行" },
         "B2": { "title": "Worker 迁移到 OpenHands SDK (RemoteWorkspace + 直连 exo)", "status": "done", "note": "openhands_worker.py + verify_b2.sh 真实端到端通过；orchestrator.default_worker 已切为 openhands_worker" },
         "B3": { "title": "Console 接后端真实 WS 数据流", "status": "done", "note": "console store/api + Sidebar/Conversation/StatusBar 接真实会话/WS；verify_b3.sh 全绿" },
-        "B4": { "title": "tool-calling 加固 + cost warning 修复", "status": "todo" },
+        "B4": { "title": "tool-calling 加固 + cost warning 修复", "status": "done", "note": "openhands_worker 加 drop_params/native_tool_calling/LITELLM_LOG=ERROR；orchestrator supervisor/overseer 支持 FLIPPED_MODEL_BASE_URL 直连 exo；verify_b4.sh 真实 GLM→OpenHands(Kimi)→docker exec 验证 全绿" },
         "B5": { "title": "UI 去 AI 感打磨", "status": "todo" }
       }
     },
@@ -67,7 +67,7 @@
     { "id": "ISSUE-2", "severity": "high", "status": "open", "title": "M2 基座 Roo Code 已停服", "detail": "Roo Code 于 2026-05-15 官方归档停服(只读, 末版 v3.54.0)，不能作为 fork 基座。需改基座 -> 见决策 D4。不阻塞 M0/M1。", "owner": "待用户在 D4 选 Kilo Code / Cline" },
     { "id": "ISSUE-3", "severity": "medium", "status": "open", "title": "exo 4 台 RDMA 起不来, 退回 2 台", "detail": "6 对节点仅 studio01<->studio02 缺 RDMA(降级 TCP/IP); 四台 Thunderbolt Bridge exists:false, thunderboltBridgeCycles=[]; RDMA 走 80Gb/s 口(120Gb/s TB5 口 en6/en7 闲置)。Tensor 跨>2 台需 RDMA 环, 当前组不出。不阻塞 2 台 Launch(Kimi 597GB<1024GB); 但双模型常驻(1.35TB)需 4 台 2TB 池化。已用配法 B(2+2)规避: GLM=studio04+02, Kimi=studio03+01(各 2 台 RDMA 不相交), M0 不受影响。仅当要双模型同池或单模型 4 路提速才需修 4 路。", "owner": "可选: 重插 01<->02 线 + 启用四台 TB Bridge" },
     { "id": "ISSUE-4", "severity": "low", "status": "open", "title": "cline CLI v3.0.33 --hooks-dir 不执行文件 hook", "detail": "实测 PreToolUse/PostToolUse 文件 hook(带.sh与无扩展名)放 --hooks-dir 均不触发, 虽 --json 流内部 emit hook_event。已绕过: 可观测改走 --json 流解析(observe.py)。影响: A 侧单步守门(PreToolUse cancel)CLI 不可用 -> 改由 C 侧(LangGraph)统一强制。将来需文件 hook 可试 VSCode 扩展(Settings->Enable Hooks)或升级 cline。", "owner": "M3 后续/可选" },
-    { "id": "ISSUE-5", "severity": "medium", "status": "open", "title": "LiteLLM proxy :4000 因 Postgres/prisma 初始化阻塞", "detail": "新 py3.12 venv 中 litellm 1.84.1 启动时卡在 `prisma migrate deploy`（本地 postgres 未运行/超时）。Phase B 已让 OpenHands Worker 直连 exo；但 orchestrator 默认 supervisor/overseer 仍指向 :4000。若 proxy 仍起不来，需让 supervisor/overseer 也直连 exo 或修复本地 postgres。", "owner": "B3/B4 决定" }
+    { "id": "ISSUE-5", "severity": "medium", "status": "resolved", "title": "LiteLLM proxy :4000 因 Postgres/prisma 初始化阻塞", "detail": "新 py3.12 venv 中 litellm 1.84.1 启动时卡在 `prisma migrate deploy`（本地 postgres 未运行/超时）。B4 已给 orchestrator supervisor/overseer 增加 FLIPPED_MODEL_BASE_URL / FLIPPED_ARCHITECT_MODEL / FLIPPED_CODER_MODEL 环境变量，可直连 exo 绕过 proxy。LiteLLM proxy 仍可修复后作为可选前置。", "owner": "已绕过" }
 
   ],
   "background_jobs": [

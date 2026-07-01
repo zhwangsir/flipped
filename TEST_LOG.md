@@ -295,3 +295,24 @@
 
 ### 已知问题
 - Console 目前仅验证了构建产物 + 后端 WS 数据流；真正的浏览器 DOM 渲染验证（Playwright）因浏览器下载超时未启用，待 B5 UI 打磨时补齐。
+
+## [2026-07-01] Phase B · B4 完成：tool-calling 加固 + cost warning 修复 + 真实闭环
+
+### 实现
+- `src/executor/openhands_worker.py`：
+  - LLM 增加 `drop_params=True`（丢弃不兼容参数）与 `native_tool_calling=True`（稳定 tool_calls 解析）。
+  - 环境变量增加 `LITELLM_LOG=ERROR`，抑制 litellm cost map / debug 级别噪音。
+- `src/driving/orchestrator.py`：`_make_llm` 支持环境变量绕过 LiteLLM proxy：
+  - `FLIPPED_MODEL_BASE_URL`：Supervisor/Overseer 的 base_url；
+  - `FLIPPED_ARCHITECT_MODEL` / `FLIPPED_CODER_MODEL`：分别映射 `architect` / `coder` 别名到完整 exo 模型 id。
+  - 默认仍指向 `LITELLM_BASE_URL`（向后兼容），未设置时回退到直连 exo。
+
+### 验证
+- `scripts/verify_b4.sh` ✅ 退出码 0：
+  - 目标：在 `/workspace` 下创建 `b4_done.txt`，内容 hello，并验证存在与内容；
+  - 流程：GLM-5.2-fp8 Supervisor 拆解子任务 → OpenHands Worker(Kimi-K2.7-Code-4bit) 在 Docker 沙盒执行 → GLM-5.2-fp8 Overseer 监督 → docker exec 强制验证；
+  - 结果：`verified=True, stop_reason=verified, iteration=1, history steps=4`。
+- 全量回归 `python -m pytest tests/` ✅ 29 passed。
+
+### 关键决策
+- B4 临时让 Supervisor/Overseer 也直连 exo（通过 env），解决 LiteLLM proxy 的本地 Postgres/prisma 阻塞；proxy 修复后仍可切回。

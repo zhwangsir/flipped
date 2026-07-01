@@ -12,6 +12,7 @@ from typing import Any
 # 抑制 OpenHands SDK banner 与 litellm 远程 cost map 拉取超时警告
 os.environ.setdefault("OPENHANDS_SUPPRESS_BANNER", "1")
 os.environ.setdefault("LITELLM_LOCAL_MODEL_COST_MAP", "True")
+os.environ.setdefault("LITELLM_LOG", "ERROR")
 
 from openhands.sdk.agent.agent import Agent
 from openhands.sdk.conversation.impl.remote_conversation import RemoteConversation
@@ -158,6 +159,8 @@ class OpenHandsWorker:
                 api_key=self.api_key,
                 timeout=300,
                 num_retries=2,
+                drop_params=True,
+                native_tool_calling=True,
             )
             agent = Agent(llm=llm, tools=self.tools, include_default_tools=["FinishTool", "ThinkTool"])
             workspace = RemoteWorkspace(host=self.agent_host, working_dir=self.working_dir, api_key=self.api_key)

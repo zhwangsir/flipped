@@ -1,33 +1,24 @@
-# Phase B · B3 计划：Console 接入真实 WS 数据流 ✅
+# Phase B · B4 计划：tool-calling 加固 + cost warning 修复 ✅
 
 ## 目标
-让 flipped Console 不再使用 mock 数据，而是：
-1. 从 `orchestration-api` 拉取会话列表；
-2. 选中会话后通过 WebSocket 订阅实时事件；
-3. 在会话流中展示真实 Supervisor / Worker / Overseer / Verify 事件；
-4. 支持在输入框发送任务（创建会话 + 派发任务）。
+1. 让 orchestrator 的 Supervisor/Overseer 在 LiteLLM proxy 不可用时能直连 exo，不阻塞端到端闭环。
+2. 给 OpenHands Worker 增加 tool-calling 稳定性参数，并抑制 litellm cost map 相关噪音。
 
 ## 涉及文件
-- `console/src/types.ts` — 共享类型 + 后端事件 → StreamItem 转换。
-- `console/src/api.ts` — HTTP + WebSocket 客户端。
-- `console/src/store.tsx` — React Context：会话、当前会话、事件流、连接状态、API 动作。
-- `console/src/mock.ts` — 仅保留静态演示数据（diff/终端/MCP 等）。
-- `console/src/App.tsx` — 挂载 Provider。
-- `console/src/components/Sidebar.tsx` — 真实会话列表，支持新建/切换。
-- `console/src/components/Conversation.tsx` — 真实事件流；composer 支持发送任务。
-- `console/src/components/StatusBar.tsx` — 显示 WS 连接状态。
-- `console/src/styles/app.css` — 连接状态指示点样式。
-- `scripts/verify_b3.sh` — 构建 Console + 起 mock 后端 + WS 端到端验证。
+- `src/driving/orchestrator.py`：`_make_llm` 支持 `FLIPPED_MODEL_BASE_URL` / `FLIPPED_ARCHITECT_MODEL` / `FLIPPED_CODER_MODEL`。
+- `src/executor/openhands_worker.py`：LLM 增加 `drop_params=True` / `native_tool_calling=True`；设置 `LITELLM_LOG=ERROR`。
+- `scripts/verify_b4.sh`：真实 GLM Supervisor → OpenHands Worker(Kimi) → GLM Overseer → docker exec 强制验证。
 
 ## 验收结果 ✅
-- `npm run build` 通过，TypeScript 无错。
-- `scripts/verify_b3.sh` 退出码 0：
-  - 启动 orchestration-api（`FLIPPED_MOCK_WORKER=1`）；
-  - 创建会话并派发任务；
-  - Console 通过 WS 收到 24 个事件，包含 message / tool_call / tool_result / file_change / terminal / browser / status；
-  - 静态托管的 console/dist 首页可访问。
+- `scripts/verify_b4.sh` 退出码 0：
+  - GLM-5.2-fp8 调度子任务；
+  - Kimi-K2.7-Code-4bit（OpenHands SDK）在 Docker 沙盒创建 `/workspace/b4_done.txt` 并验证内容 hello；
+  - GLM Overseer 判定方向/效率；
+  - 强制验证通过，`verified=True, stop_reason=verified, iteration=1`。
 - `python -m pytest tests/` ✅ 29 passed。
 
-## 下一步：B4
-- `tool-calling 加固`：给 OpenHands Worker 加结构化输出约束 / 重试 / tool 失败处理，确保 tool_call 解析稳定。
-- `cost warning 修复`：解决 OpenHands / litellm 拉取远端 cost map 超时/警告；稳定本地模型调用。
+## 已知状态
+- LiteLLM proxy `:4000` 仍因本地 Postgres/prisma 未启动，但已可通过环境变量直连 exo，不再是阻塞点。
+
+## 下一步：B5
+- UI 去 AI 感打磨：减少机械 system prompt 输出、优化事件流可读性、给 Console 增加 Human-in-the-loop 审批 UI、错误状态可视化等。
