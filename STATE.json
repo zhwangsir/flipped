@@ -1,8 +1,8 @@
 {
   "project": "flipped",
   "description": "接入本地 MLX 双模型(GLM-5.2 编排者 / Kimi-K2.7-Code 执行者)的 agentic 代码编辑器平台。fork Roo Code + 自定义驾驭层(强制验证/循环检测/上下文压缩/人工审批/子Agent/可观测性) + MCP 联网与外部能力。",
-  "updated": "2026-06-29",
-  "current_milestone": "M3",
+  "updated": "2026-07-01",
+  "current_milestone": "Phase B · 打通 MVP（B1 ✅ / B2 ✅ / B3 Console 真实 WS 数据流）",
   "key_facts": {
     "dev_host": "Apple M5 Max, 128GB RAM, 1.1TB 可用磁盘 — 开发/控制节点，非模型宿主",
     "model_cluster": "exo 集群 @ http://100.64.201.37:52415 (内网, OpenAI 兼容)；公网 https://dgmt.top/exo (需 Bearer token)",
@@ -27,7 +27,18 @@
     },
     "M1": { "title": "工具链基线 (SearXNG + 联网搜索工具 + 最小 agent loop)", "status": "done", "note": "SearXNG(Docker, JSON+出站代理) + web_search(单测) + LangGraph ReAct agent loop(GLM via :4000) 端到端通过; verify_milestone_1.sh 退出码 0" },
     "M2": { "title": "代码编辑器形态 (Cline 接 :4000, architect/coder 双模型, 多文件改动端到端)", "status": "done", "note": "Cline CLI v3.0.33 + 扩展 v4.0.2; cline auth openai-compatible -> :4000; M2.4 headless 多文件改动 ALL PASS(读->改->跑->自检); verify_milestone_2.sh 退出码 0; fork 推迟到 M3" },
-    "M3": { "title": "驾驭层 = Phase 1 脑 (强制验证/循环检测/压缩/审批/子Agent/可观测/IDE控制面)", "status": "doing", "note": "产品转向桌面 IDE(D10-D14), M3=Phase 1 脑(LangGraph sidecar + Cline 扩展)。完成: M3.1 架构(D9/D11) + M3.2 可观测(observe.py) + M3.3 强制验证(sidecar.py: LangGraph 状态机 强制验收+回灌+熔断, SqliteSaver) + M3.4 循环检测(action_signature) + M3.5 人工审批硬断点(approval.py interrupt) + M3.6 多Agent监督编排(orchestrator.py: Supervisor GLM+Worker Kimi+Overseer GLM 监督效率/方向; D15 核心; D16 结构化输出用 function_calling; 7 场景单测 + 真实 e2e GLM 真监督). + M3.7 上下文压缩(Cline 原生 Auto Compact, run_and_observe 接 --compaction agentic)。**驾驭层六件套全部完成** + approval 接入 orchestrator(governed 多Agent loop) + **IDE 控制面扩展**(ide-extension/ TS: IDE 工具+环境即代码工具 addDevcontainerFeature/miseUse/rebuild, 编译+risk/env 单测 ✅, D12/D13); 单测+e2e, verify_milestone_3.sh 全绿。+ Phase 2 环境模板(infra/env-templates devcontainer+mise, verify_phase2.sh ✅, D12)。余: IDE 控制面 agent桥(MCP/HTTP)+运行时验证(需 VS Code 扩展宿主)/Phase 2 devcontainer 运行时(需 Docker)/Phase 3 壳(fork+签名, 需用户 Apple 证书)。" },
+    "M3": { "title": "驾驭层 = Phase 1 脑 (强制验证/循环检测/压缩/审批/子Agent/可观测/IDE控制面)", "status": "done", "note": "产品转向桌面 IDE(D10-D14), M3=Phase 1 脑(LangGraph sidecar + Cline 扩展)。完成: M3.1 架构(D9/D11) + M3.2 可观测(observe.py) + M3.3 强制验证(sidecar.py: LangGraph 状态机 强制验收+回灌+熔断, SqliteSaver) + M3.4 循环检测(action_signature) + M3.5 人工审批硬断点(approval.py interrupt) + M3.6 多Agent监督编排(orchestrator.py: Supervisor GLM+Worker Kimi+Overseer GLM 监督效率/方向; D15 核心; D16 结构化输出用 function_calling; 7 场景单测 + 真实 e2e GLM 真监督). + M3.7 上下文压缩(Cline 原生 Auto Compact, run_and_observe 接 --compaction agentic)。**驾驭层六件套全部完成** + approval 接入 orchestrator(governed 多Agent loop) + **IDE 控制面扩展**(ide-extension/ TS: IDE 工具+环境即代码工具 addDevcontainerFeature/miseUse/rebuild, 编译+risk/env 单测 ✅, D12/D13); 单测+e2e, verify_milestone_3.sh 全绿。+ Phase 2 环境模板(infra/env-templates devcontainer+mise, verify_phase2.sh ✅, D12)。余: IDE 控制面 agent桥(MCP/HTTP)+运行时验证(需 VS Code 扩展宿主)/Phase 2 devcontainer 运行时(需 Docker)/Phase 3 壳(fork+签名, 需用户 Apple 证书)。" },
+    "Phase B": {
+      "title": "打通 MVP (OpenHands 执行 + orchestration-api + Console 真实数据流 + UI 打磨)",
+      "status": "doing",
+      "tasks": {
+        "B1": { "title": "orchestration-api 骨架 (FastAPI + WS 事件)", "status": "done", "note": "verify_b1.sh 全绿；PYTHONPATH=src 修复运行" },
+        "B2": { "title": "Worker 迁移到 OpenHands SDK (RemoteWorkspace + 直连 exo)", "status": "done", "note": "openhands_worker.py + verify_b2.sh 真实端到端通过；orchestrator.default_worker 已切为 openhands_worker" },
+        "B3": { "title": "Console 接后端真实 WS 数据流", "status": "todo" },
+        "B4": { "title": "tool-calling 加固 + cost warning 修复", "status": "todo" },
+        "B5": { "title": "UI 去 AI 感打磨", "status": "todo" }
+      }
+    },
     "M4": { "title": "后端能力接入 (DeepAgents 包成 MCP Server + RAG 向量库)", "status": "todo" },
     "M5": { "title": "硬化与产线化 (性能/稳定性/安全/崩溃恢复)", "status": "todo" }
   },
@@ -48,17 +59,20 @@
     { "id": "D14", "decision": "外壳=Code-OSS fork(VSCodium 脚手架)+Open VSX+Cline 内建 builtin+三平台签名公证; 阶段化 脑→环境→壳", "date": "2026-06-29", "approved_by": "调研+推荐" },
     { "id": "D15", "decision": "核心架构=多 Agent 协作+专属监督 Agent(Supervisor GLM/Worker Kimi/Overseer GLM 监督效率与方向); 恒用最新最强技术。原 M3.6 子Agent主从提升为贯穿全产品的核心要求", "date": "2026-06-30", "approved_by": "用户" },
     { "id": "D16", "decision": "GLM/exo 经 LiteLLM 的 with_structured_output 必须 method=\"function_calling\"(默认 json_schema/json_mode 对 GLM 校验失败, function_calling ✓)。已修 orchestrator 两处", "date": "2026-06-30", "approved_by": "实测" },
-    { "id": "D17", "decision": "Phase 3 壳 Windows release 走 GitHub Actions windows-latest 云构建(本机 macOS 无法构建 Windows 原生包); 首版未签名分发(SmartScreen 警告, Authenticode 证书 user-gated 后补, CI 预留接口); CI 产出 artifact 后经用户确认再发 Release; 多端=CI 矩阵增量", "date": "2026-06-30", "approved_by": "用户" }
+    { "id": "D17", "decision": "Phase 3 壳 Windows release 走 GitHub Actions windows-latest 云构建(本机 macOS 无法构建 Windows 原生包); 首版未签名分发(SmartScreen 警告, Authenticode 证书 user-gated 后补, CI 预留接口); CI 产出 artifact 后经用户确认再发 Release; 多端=CI 矩阵增量", "date": "2026-06-30", "approved_by": "用户" },
+    { "id": "D18", "decision": "重大转向: 产品=本地模型驱动的 AI 开发工厂(类 Claude Code/Codex), 基座=OpenHands(MIT,~79k★,V1 Agent Canvas+Software Agent SDK); 复用其 Docker 沙盒/browser-use 浏览器/MCP+工具/Web 控制台/LiteLLM 接 :4000; 我们的 LangGraph 多 Agent 监督(Supervisor/Overseer)作外层 orchestrator 经 SDK 把子任务派进 DockerWorkspace 并经 state.events 监督。取代 D10/D14/D17 的 VSCodium 编辑器/Windows 安装器方向(降级搁置)。先 Web 控制台后 Electron 桌面。风险: V1 仍 1.0.0-rc 未GA + 本地模型工具调用摩擦(GLM-5.2-fp8 已验证缓解) + macOS ARM 沙盒需实机验证", "date": "2026-07-01", "approved_by": "用户(纠偏+全权委托)" }
   ],
   "known_issues": [
     { "id": "ISSUE-1", "severity": "high", "status": "resolved", "title": "exo 集群推理面 502 Bad Gateway", "detail": "双重根因: (1)早期 instances=0 模型未 LAUNCH; (2)模型起来后 Python 客户端仍 502 实为本机 HTTP_PROXY 劫持(见 D5)。解决: 用户按 2+2 LAUNCH 两模型 + 设 NO_PROXY。M0.4/M0.5 已全通过。", "owner": "已解决" },
     { "id": "ISSUE-2", "severity": "high", "status": "open", "title": "M2 基座 Roo Code 已停服", "detail": "Roo Code 于 2026-05-15 官方归档停服(只读, 末版 v3.54.0)，不能作为 fork 基座。需改基座 -> 见决策 D4。不阻塞 M0/M1。", "owner": "待用户在 D4 选 Kilo Code / Cline" },
     { "id": "ISSUE-3", "severity": "medium", "status": "open", "title": "exo 4 台 RDMA 起不来, 退回 2 台", "detail": "6 对节点仅 studio01<->studio02 缺 RDMA(降级 TCP/IP); 四台 Thunderbolt Bridge exists:false, thunderboltBridgeCycles=[]; RDMA 走 80Gb/s 口(120Gb/s TB5 口 en6/en7 闲置)。Tensor 跨>2 台需 RDMA 环, 当前组不出。不阻塞 2 台 Launch(Kimi 597GB<1024GB); 但双模型常驻(1.35TB)需 4 台 2TB 池化。已用配法 B(2+2)规避: GLM=studio04+02, Kimi=studio03+01(各 2 台 RDMA 不相交), M0 不受影响。仅当要双模型同池或单模型 4 路提速才需修 4 路。", "owner": "可选: 重插 01<->02 线 + 启用四台 TB Bridge" },
-    { "id": "ISSUE-4", "severity": "low", "status": "open", "title": "cline CLI v3.0.33 --hooks-dir 不执行文件 hook", "detail": "实测 PreToolUse/PostToolUse 文件 hook(带.sh与无扩展名)放 --hooks-dir 均不触发, 虽 --json 流内部 emit hook_event。已绕过: 可观测改走 --json 流解析(observe.py)。影响: A 侧单步守门(PreToolUse cancel)CLI 不可用 -> 改由 C 侧(LangGraph)统一强制。将来需文件 hook 可试 VSCode 扩展(Settings->Enable Hooks)或升级 cline。", "owner": "M3 后续/可选" }
+    { "id": "ISSUE-4", "severity": "low", "status": "open", "title": "cline CLI v3.0.33 --hooks-dir 不执行文件 hook", "detail": "实测 PreToolUse/PostToolUse 文件 hook(带.sh与无扩展名)放 --hooks-dir 均不触发, 虽 --json 流内部 emit hook_event。已绕过: 可观测改走 --json 流解析(observe.py)。影响: A 侧单步守门(PreToolUse cancel)CLI 不可用 -> 改由 C 侧(LangGraph)统一强制。将来需文件 hook 可试 VSCode 扩展(Settings->Enable Hooks)或升级 cline。", "owner": "M3 后续/可选" },
+    { "id": "ISSUE-5", "severity": "medium", "status": "open", "title": "LiteLLM proxy :4000 因 Postgres/prisma 初始化阻塞", "detail": "新 py3.12 venv 中 litellm 1.84.1 启动时卡在 `prisma migrate deploy`（本地 postgres 未运行/超时）。Phase B 已让 OpenHands Worker 直连 exo；但 orchestrator 默认 supervisor/overseer 仍指向 :4000。若 proxy 仍起不来，需让 supervisor/overseer 也直连 exo 或修复本地 postgres。", "owner": "B3/B4 决定" }
+
   ],
   "background_jobs": [
     { "name": "monitor_cluster.py", "purpose": "(已停止) 曾轮询 exo 恢复; M0.4 已解决不再需要", "status": "stopped" },
-    { "name": "litellm proxy :4000", "purpose": "M0/M1 服务层代理(architect/coder), 运行中", "status": "running", "start_cmd": "bash scripts/start_proxy.sh" },
+    { "name": "litellm proxy :4000", "purpose": "M0/M1 服务层代理(architect/coder); 当前因本地 Postgres/prisma 初始化阻塞未启动", "status": "stopped", "start_cmd": "bash scripts/start_proxy.sh" },
     { "name": "flipped-searxng (docker :8080)", "purpose": "M1 联网搜索后端(JSON, 经宿主 Clash 出站), 运行中", "status": "running", "start_cmd": "docker compose -f infra/searxng/docker-compose.yml --project-directory infra/searxng up -d" }
   ]
 }

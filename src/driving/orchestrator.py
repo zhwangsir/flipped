@@ -12,6 +12,7 @@ Supervisor(GLM 调度) + Worker(Kimi via cline 执行) + Overseer(GLM 专属监�
 from __future__ import annotations
 
 import os
+import uuid
 from typing import Callable, Literal, TypedDict
 
 from langgraph.graph import END, START, StateGraph
@@ -20,6 +21,39 @@ from langgraph.types import interrupt
 from driving.approval import APPROVE_WORDS, classify_risk
 from driving.observe import run_and_observe
 from driving.sidecar import action_signature
+
+from executor.openhands_worker import OpenHandsWorker
+
+
+class NullEventBus:
+    """在 LangGraph 同步节点中运行 OpenHands Worker 时，不需要向 WebSocket 广播。"""
+
+    def emit(self, *args, **kwargs):  # noqa: ARG002
+        pass
+
+    def set_status(self, *args, **kwargs):  # noqa: ARG002
+        pass
+
+
+def _openhands_signature(events: list) -> str:
+    """把 OpenHands 动作事件序列转成 sidecar 循环检测可比的签名。"""
+    parts: set[str] = set()
+    for event in events:
+        if type(event).__name__ != "ActionEvent":
+            continue
+        tool = getattr(event, "tool_name", None) or "unknown"
+        action = getattr(event, "action", None)
+        target = ""
+        if action is not None:
+            for attr in ("path", "command", "file", "url"):
+                val = getattr(action, attr, None)
+                if val:
+                    target = str(val)
+                    break
+            if not target:
+                target = getattr(action, "_summary", "") or action.__class__.__name__
+        parts.add(f"{tool}:{target[:80]}")
+    return "|".join(sorted(parts))
 
 DEFAULT_LOOP_THRESHOLD = 3
 
@@ -88,7 +122,7 @@ def default_supervisor(state: OrchestratorState) -> dict:
     return {"current_subtask": sub, "believe_done": done, "history": hist}
 
 
-def default_worker(state: OrchestratorState) -> dict:
+def cline_worker(state: OrchestratorState) -> dict:
     """Kimi via cline 执行当前子任务（干净上下文：只给子任务字符串）。"""
     obs = run_and_observe(state["current_subtask"], state["cwd"],
                           model="coder", data_dir=state.get("data_dir"))
@@ -99,6 +133,53 @@ def default_worker(state: OrchestratorState) -> dict:
     werr = (not obs.get("ok")) and summ.get("tool_calls", 0) == 0
     hist = state.get("history", []) + [{"step": "worker", "summary": summ, "signature": sig, "error": werr}]
     return {"last_obs": obs, "signatures": sigs, "history": hist, "worker_error": werr}
+
+
+def openhands_worker(state: OrchestratorState) -> dict:
+    """Kimi via OpenHands SDK 在 Docker 沙盒中执行当前子任务。
+
+    这是 Phase B 的默认执行器：Supervisor(GLM) 拆子任务 -> OpenHands Worker(Kimi)
+    -> Overseer(GLM) 监督。Worker 直连 exo 模型，不经过 LiteLLM 代理。
+    """
+    session_id = f"orch-{uuid.uuid4().hex[:8]}"
+    task_id = f"subtask-{uuid.uuid4().hex[:8]}"
+    bus = NullEventBus()
+    worker = OpenHandsWorker(
+        session_id=session_id,
+        task_id=task_id,
+        bus=bus,
+        agent_host=os.environ.get("OPENHANDS_AGENT_HOST", "http://localhost:8000"),
+        working_dir=state["cwd"],
+        model_alias=os.environ.get("OPENHANDS_MODEL", "mlx-community/Kimi-K2.7-Code-4bit"),
+        base_url=os.environ.get("OPENHANDS_BASE_URL", "http://100.64.201.37:52415/v1"),
+    )
+    try:
+        summary = worker.run(state["current_subtask"])
+    except Exception as e:  # noqa: BLE001
+        err_sig = f"error:{type(e).__name__}"
+        return {
+            "last_obs": {"ok": False, "summary": {"tool_calls": 0}, "error": str(e)},
+            "signatures": state.get("signatures", []) + [err_sig],
+            "history": state.get("history", []) + [{"step": "worker", "summary": {"tool_calls": 0}, "error": True}],
+            "worker_error": True,
+        }
+
+    sig = _openhands_signature(worker.events)
+    tool_calls = sum(1 for e in worker.events if type(e).__name__ == "ActionEvent")
+    ok = summary.get("status") == "done"
+    werr = (not ok) and tool_calls == 0
+    hist = state.get("history", []) + [
+        {"step": "worker", "summary": {"tool_calls": tool_calls, **summary}, "signature": sig, "error": werr}
+    ]
+    return {
+        "last_obs": {"ok": ok, "summary": {"tool_calls": tool_calls, **summary}},
+        "signatures": state.get("signatures", []) + [sig],
+        "history": hist,
+        "worker_error": werr,
+    }
+
+
+default_worker = openhands_worker
 
 
 def default_overseer(state: OrchestratorState) -> dict:

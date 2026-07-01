@@ -131,3 +131,15 @@
 - **签名(用户选)**：首版**未签名**分发(SmartScreen "未知发布者" 警告，用户手动放行)；CI 预留 Authenticode 接口(signtool/azure-code-signing + secret)，待用户备证书后启用。
 - **发布门**：CI 产出 artifact 后**先给用户确认**再 `gh release create`(发布=对外动作)。
 - **多端**：Windows 跑通后，同一管线加 `macos`/`linux` job 成矩阵(承接 D14 三平台)。
+
+## D18 · 重大转向：产品 = AI 开发工厂(OpenHands 基座 + 我们的多 Agent 监督)，弃"VSCodium 编辑器"方向
+- **日期**：2026-07-01 ｜ **批准**：用户(纠偏 + 全权委托"做出效果最好、甚至超过单 agent")
+- **背景**：之前把产品当成"桌面 IDE(VSCodium 换皮)"在推(D10/D14/D17)——**编辑器中心，跑偏**。用户真实意图：像 **Claude Code / Codex** 的**本地模型驱动 agent 平台**——AI 自主用工具在**沙盒**里干活、**内置浏览器**、工具齐全(AI 开发工厂)。
+- **决策**：
+  - **基座 = OpenHands**(`github.com/OpenHands/OpenHands`，MIT，~79k★，活跃)。现成提供：Docker 沙盒(`DockerWorkspace`/runtime)、AI 浏览器(`BrowserToolSet`/browser-use/Playwright)、原生 MCP + 内置工具、**Agent Canvas Web 控制台**、LiteLLM(接 `:4000`)、**Python SDK + `AgentBase` 可扩展**。
+  - **我们的差异化(保留并复用)= 多 Agent 监督编排**(`orchestrator.py`：Supervisor GLM + Overseer GLM)作**外层 orchestrator**：经 OpenHands Python SDK 把子任务派进 fresh `DockerWorkspace` 执行，经 `conversation.state.events`/callbacks 让 Overseer 监督效率与方向。Worker 由"cline CLI"切换为"OpenHands 沙盒 Conversation"。
+  - **本地模型**：GLM/Kimi via LiteLLM `:4000`(`openai/<name>` 前缀 + 在 LiteLLM 注册模型能力)。GLM-5.2-fp8 工具调用 M0.4 已验证，缓解 OpenHands 对弱工具调用模型的已知摩擦(#11632/#6918 等)。
+  - **交互**：先 Agent Canvas Web 控制台；后续 Electron 包成桌面 App(承接用户"桌面 App 后续")。
+- **取代**：D10/D14/D17 的"桌面 IDE/VSCodium fork/Windows 安装器"方向降级搁置(未推的 `release-windows.yml` 暂不推进)。Cline 仍可作可选 worker/参考。
+- **候选横评依据**(均一手核实)：OpenHands ✓(沙盒+浏览器+MCP+Web+SDK)；Cline(最佳 agent 运行时但无沙盒)；SWE-agent/mini(研究/维护态)；Goose(无浏览器/沙盒)；Continue(仓库只读)；Tabby(非 agent)；bolt.diy(浏览器内 WebContainer，无 Docker/Python)；Devika(已弃)。
+- **风险**：OpenHands 本地模型工具调用摩擦 → spike 首步验证；上游活跃但 rebrand 频繁(registry/命名变动)需以官方 quickstart 为准。

@@ -38,6 +38,19 @@ def _parse(data: dict, max_results: int) -> list[dict]:
             "url": url_,
             "snippet": (item.get("content") or "").strip(),
         })
+    # 上游搜索引擎(CAPTCHA/限流)经常返回空 results，但 Wikidata/Wikipedia 的 infobox 仍可信
+    if not results:
+        for item in data.get("infoboxes", [])[:max_results]:
+            url_ = item.get("id") or item.get("url")
+            if not url_ and item.get("urls"):
+                url_ = item["urls"][0].get("url")
+            if not url_:
+                continue
+            results.append({
+                "title": item.get("infobox", "").strip() or item.get("title", "").strip(),
+                "url": url_,
+                "snippet": (item.get("content") or "").strip(),
+            })
     return results
 
 

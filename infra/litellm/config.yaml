@@ -33,3 +33,4 @@ litellm_settings:
 
 general_settings:
   master_key: os.environ/LITELLM_MASTER_KEY   # 代理对外鉴权; 所有请求需带 Authorization: Bearer
+  database_url: "postgresql://drt:local_validate_a225f3b04dd8ff43@localhost:5432/drt"  # 复用本地 drt-postgres; 避免 sqlite/prisma 下载卡死

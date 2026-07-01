@@ -242,3 +242,32 @@
 ## [2026-06-30] verify_0 动态模型 id(§6) — GLM-5.2-fp8 工具调用全通
 - `verify_milestone_0.sh` 改为从 `config.yaml` 动态解析 architect/coder 真实 model id(避免用户换模型后脚本陈旧)。
 - 重跑全绿：M0.4 **GLM-5.2-fp8** + Kimi 工具调用 ✅、M0.5 架构路由 ✅。新 GLM 命根子(工具调用解析)确认。
+
+## [2026-07-01] Phase B · B1/B2 完成 + 依赖冲突解决 + Worker 迁移到 OpenHands SDK
+
+### 环境：py3.12 venv 依赖冲突解决
+- 原 `fastapi==0.138.1` 与 `openhands-ai==1.8.0` 锁定的 `litellm==1.84.1` 冲突（litellm 要求 fastapi==0.124.4）。
+- 已降级并锁定：`fastapi==0.124.4`、`uvicorn[standard]==0.30.0`；补齐 `langgraph==1.2.6` / `langchain-openai==1.3.3` / `langgraph-checkpoint-sqlite==3.1.0` / `langchain-core==1.4.8`。
+- `requirements.txt` 已同步；`python -m pytest tests/` ✅ **29 passed, 1 warning**。
+
+### B1 · orchestration-api 骨架
+- 验收脚本 `scripts/verify_b1.sh` ✅：创建会话 → 派发任务 → WebSocket 收集 24 个事件 → 会话状态 `done`。
+- 修复运行方式：给 `uvicorn` 加 `PYTHONPATH=src`，避免 `ModuleNotFoundError('executor')`。
+
+### B2 · Worker 迁移到 OpenHands SDK
+- `src/executor/openhands_worker.py`：封装 `RemoteConversation` + `Agent` + `RemoteWorkspace`；直连 exo 模型 `openai/mlx-community/Kimi-K2.7-Code-4bit`；显式预注册 `file_editor/task_tracker/terminal` 工具（解决 `TerminalTool not registered`）。
+- 事件翻译：`ActionEvent/ObservationEvent/MessageEvent` → flipped 统一 `Event` schema（`tool_call`, `file_change`, `terminal`, `tool_result`, `message`, `status`, `error`）。
+- 验收脚本 `scripts/verify_b2.sh` ✅：真实任务 → WS 23 个事件 → 沙盒内 `b2_hello.py` + `b2_hello_test.py` 建成，`pytest -q` 1 passed。
+
+### orchestrator 默认 Worker 切到 OpenHands
+- `src/driving/orchestrator.py`：新增 `openhands_worker` 节点 + `NullEventBus`；保留 `cline_worker` 以便回退；`default_worker = openhands_worker`。
+- `_openhands_signature`：把 OpenHands 动作事件转成 sidecar 循环检测可比的签名。
+- `test_orchestrator.py` 回归 ✅（注入 stub，不依赖真 OpenHands）。
+
+### SearXNG 上游抖动兼容
+- 上游搜索引擎（Google/Brave/DuckDuckGo）返回空 `results`，但 Wikidata/Wikipedia `infoboxes` 仍有可信内容。
+- `src/tools/web_search.py`：`_parse` 在 `results` 为空时 fallback 到 `infoboxes`，`test_web_search.py` ✅。
+
+### 当前状态
+- Phase B 进度：B1 ✅ / B2 ✅ / B3（Console 接真实 WS）待做 / B4（tool-calling 加固 + cost warning）待做 / B5（UI 去 AI 感）待做。
+- LiteLLM proxy `:4000` 仍因本地 Postgres/prisma 初始化阻塞，Phase B 已让 Supervisor/Overseer 仍走原 `:4000`（后续若 proxy 起不来，再让 orchestrator 直连 exo）。
