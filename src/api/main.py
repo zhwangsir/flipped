@@ -15,8 +15,9 @@ from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnec
 from fastapi.middleware.cors import CORSMiddleware
 
 from .events import EventBus, get_bus
-from .schemas import EventType, HealthResponse, Role, Session, SessionStatus, TaskRequest, TaskResponse
+from .schemas import EventType, HealthResponse, MetricsResponse, Role, Session, SessionStatus, TaskRequest, TaskResponse
 from .session import SessionStore, store
+from metrics import COLLECTOR
 
 MOCK_WORKER = os.environ.get("FLIPPED_MOCK_WORKER", "0") == "1"
 
@@ -58,6 +59,13 @@ async def health() -> HealthResponse:
         return HealthResponse(ok=r.status_code == 200, proxy=data)
     except Exception as e:
         return HealthResponse(ok=False, proxy={}, error=str(e))
+
+
+# ---------- 性能指标 ----------
+
+@app.get(f"{API_PREFIX}/metrics", response_model=MetricsResponse)
+async def metrics() -> MetricsResponse:
+    return MetricsResponse(**COLLECTOR.snapshot())
 
 
 # ---------- 会话管理 ----------

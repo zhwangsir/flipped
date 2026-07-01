@@ -386,3 +386,33 @@
 - 当前 Codex 沙箱禁止 Python 进程 bind TCP 端口、阻止 outbound 网络连接（SearXNG/exo）。
 - `research_and_code` 的“真实 LLM + 网络 + 编码”端到端未在沙箱中实跑，由注入 mock 的测试兜底验证状态机与调用链。
 - 真实 LLM + 网络 + 编码端到端需在非沙箱环境或 CI 中复跑。
+
+## [2026-07-02] M5.1 完成 — 性能可观测层
+
+### 修复：metrics 模块缩进错误
+- 命令：`source .venv/bin/activate && python -m py_compile src/metrics/__init__.py src/metrics/collector.py`
+- 输出摘要：`src/metrics/__init__.py` 与 `src/metrics/collector.py` 每行均带一个前导空格，导致 `IndentationError: unexpected indent`。已去除前导空格。
+- 结论：✅ 语法错误修复，模块可正常导入。
+
+### M5.1 单测
+- 命令：`PYTHONPATH=src .venv/bin/python -m pytest tests/test_metrics.py -q`
+- 输出摘要：`7 passed, 1 warning`
+- 结论：✅ 通过；覆盖 MetricsCollector / MetricsCallbackHandler / /api/v1/metrics 端点。
+
+### 全量回归
+- 命令：`PYTHONPATH=src .venv/bin/python -m pytest tests/ -q`
+- 输出摘要：`54 passed, 2 warnings in 13.14s`
+- 结论：✅ 通过；M5.1 未引入回归。
+
+### Console 构建
+- 命令：`cd console && npm run build`
+- 输出摘要：`tsc -b && vite build` 成功，dist 产物生成。
+- 结论：✅ 通过。
+
+### M5 验收脚本
+- 命令：`bash scripts/verify_m5.sh`
+- 输出摘要：`test_metrics.py 7 passed` / 全量 `54 passed` / Console build 成功；脚本退出码 0。
+- 结论：✅ 通过；M5.1 性能可观测层验收完成。
+
+### 进入 M5.2
+- 下一步：上下文 / KV cache 管理（token 估算、触发总结压缩、checkpoint 保留策略）。

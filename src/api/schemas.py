@@ -76,3 +76,9 @@ class HealthResponse(BaseModel):
     ok: bool
     proxy: dict[str, Any]
     error: str | None = None
+
+
+class MetricsResponse(BaseModel):
+    """/metrics 端点返回的 LLM / 上下文性能指标。"""
+    llm: dict[str, Any] = Field(default_factory=dict)
+    context: dict[str, Any] = Field(default_factory=dict)

@@ -21,6 +21,7 @@ from langgraph.types import interrupt
 from driving.approval import APPROVE_WORDS, classify_risk
 from driving.observe import run_and_observe
 from driving.sidecar import action_signature
+from metrics import MetricsCallbackHandler
 
 from executor.openhands_worker import OpenHandsWorker
 
@@ -90,7 +91,7 @@ VerifierFn = Callable[[list, str], "tuple[bool, str]"]
 
 # ---------- 默认实现（GLM/Kimi 经 LiteLLM） ----------
 
-def _make_llm(alias: str, temperature: float = 0):
+def _make_llm(alias: str, temperature: float = 0, callbacks=None):
     """构建指向 LiteLLM:4000 或直连 exo 的 ChatOpenAI（alias=architect/coder）。
 
     通过环境变量可绕过 LiteLLM 代理：
@@ -107,7 +108,8 @@ def _make_llm(alias: str, temperature: float = 0):
     model = model_map.get(alias, alias)
     base = os.environ.get("FLIPPED_MODEL_BASE_URL") or os.environ.get("LITELLM_BASE_URL", "http://localhost:4000/v1")
     key = os.environ.get("EXO_API_KEY") or os.environ.get("LITELLM_MASTER_KEY", "dummy")
-    return ChatOpenAI(model=model, base_url=base, api_key=key, temperature=temperature, timeout=300)
+    return ChatOpenAI(model=model, base_url=base, api_key=key, temperature=temperature, timeout=300,
+                      callbacks=callbacks)
 
 
 def default_supervisor(state: OrchestratorState) -> dict:
@@ -125,7 +127,7 @@ def default_supervisor(state: OrchestratorState) -> dict:
            "你是架构调度者。给出执行者下一步要做的【一个】自包含子任务；若相信目标已达成则 believe_done=true。")
     try:
         # method="function_calling"：GLM/exo 不支持 json_schema(langchain 默认)，但支持工具调用(M0.4)
-        plan = _make_llm("architect").with_structured_output(Plan, method="function_calling").invoke(msg)
+        plan = _make_llm("architect", callbacks=[MetricsCallbackHandler()]).with_structured_output(Plan, method="function_calling").invoke(msg)
         sub, done, why = plan.subtask, plan.believe_done, plan.rationale
     except Exception as e:  # noqa: BLE001 失败兜底：直接把目标当子任务
         sub, done, why = state["goal"], False, f"(supervisor LLM 失败兜底: {e})"
@@ -223,7 +225,7 @@ def default_overseer(state: OrchestratorState) -> dict:
            "你是专属监督者：评估执行者这一步的【效率】(有无绕路/重复/低产)与【方向】(是否朝目标)。"
            "方向明显跑偏→replan；严重无望/危险→abort；正常→continue。")
     try:
-        v = _make_llm("architect").with_structured_output(Verdict, method="function_calling").invoke(msg)
+        v = _make_llm("architect", callbacks=[MetricsCallbackHandler()]).with_structured_output(Verdict, method="function_calling").invoke(msg)
         verdict = {"efficiency": v.efficiency, "direction": v.direction, "action": v.action,
                    "issues": v.issues, "rationale": v.rationale}
     except Exception as e:  # noqa: BLE001 监督失败 fail-open: 不阻塞，交给强制验证兜底

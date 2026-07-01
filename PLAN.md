@@ -23,16 +23,29 @@
  - **pytest.ini 禁用 anyio 插件**：`mcp`/`chromadb` 引入的 `anyio` pytest 插件会干扰 `test_api_approval_flow.py` 的 `asyncio.run`，导致全量回归失败；禁用后 47 passed。
  
  ## 详细步骤
- 1. **M5.1 性能可观测**
-    - 在 `orchestration-api` / `orchestrator` 中接入 token/sec、TTFT、上下文长度、KV cache 的指标。
-    - 新增 `src/metrics/` 模块：token usage tracking，可选 Prometheus `/metrics` 端点。
-    - 输出到日志或 HTTP 端点，便于长期观察。
- 
- 2. **M5.2 上下文 / KV cache 管理**
-    - 在 `orchestrator` 中计算上下文 token 使用（基于 `langchain` messages 的 token counter 或估算）。
-    - 当上下文接近阈值时触发总结压缩：将较早消息压缩为 `summary` system 消息，保留最近 N 条完整消息。
-    - 调整 `sidecar` / `orchestrator` 的 checkpoint 保留策略（保留最近 N 个 checkpoint，清理旧数据）。
- 
+1. **M5.1 性能可观测** ✅ 已完成
+   - 新增 `src/metrics/__init__.py` / `src/metrics/collector.py`：线程安全 `MetricsCollector` + LangChain `MetricsCallbackHandler`。
+   - 指标覆盖：LLM total_calls / total_tokens / prompt_tokens / completion_tokens / total_latency / TTFT / errors。
+   - `src/api/main.py` 新增 `GET /api/v1/metrics`；`src/api/schemas.py` 新增 `MetricsResponse`（已修复缩进）。
+   - `src/driving/orchestrator.py` 的 `_make_llm` 支持 `callbacks`；`default_supervisor` / `default_overseer` 注入 `MetricsCallbackHandler`。
+   - 新增 `tests/test_metrics.py` 7 个用例；修复 `src/metrics/` 前导空格导致的 `IndentationError`。
+   - 验证：`test_metrics.py 7 passed` / 全量 `54 passed` / `console build` 通过 / `scripts/verify_m5.sh` 退出码 0。
+
+2. **M5.2 上下文 / KV cache 管理** 🚧 进行中
+   - 新增 `src/driving/context_manager.py`：
+     - `estimate_tokens(history)`：可插拔 token 估算器（默认按字符混合启发式，可选 tiktoken 若已安装）。
+     - `compress_history(history, max_tokens, keep_recent, summarizer)`：当 token 超过阈值时，把早期 history 摘要成一条 `summary` 条目，保留最近 `keep_recent` 条完整记录。
+     - 默认摘要器生成 `{step:"summary", tokens_before, items, digest}`，不丢失关键步类型。
+   - 在 `orchestrator.py` 中：
+     - `OrchestratorState` 增加 `context_summary` 字段；`default_supervisor` 把 `context_summary` 放入 prompt。
+     - 增加 `compress` 节点：在每次回到 supervisor 前调用 `compress_history`，如果触发压缩则更新 `history` + `context_summary`。
+     - `build_orchestrator` 接受 `max_context_tokens` / `keep_recent` 配置。
+   - Checkpoint 保留策略：
+     - 新增 `CheckpointRetention` 包装 `SqliteSaver`，按 `thread_id` 保留最近 N 个 checkpoint，删除旧 checkpoint 及关联 writes。
+     - `drive_orchestrated` 在运行结束后调用 `retention.trim()`，避免长任务 checkpoint 无限膨胀。
+   - 测试：
+     - `tests/test_context_manager.py`：token 估算、压缩触发、摘要内容、retention 删除。
+     - 全量回归（≥54 passed）与 `scripts/verify_m5.sh` 通过。
  3. **M5.3 模型换载 / 路由降级策略**
     - 增加单模型模式 / 双模型模式自动切换：当 `coder` 不可用时只跑 `architect` 级任务，或切换到本地 fallback 模型。
     - 实现 `exollama` 健康检查（`/v1/models` 可达性 + 指定模型在线）。
