@@ -2,7 +2,7 @@
   "project": "flipped",
   "description": "接入本地 MLX 双模型(GLM-5.2 编排者 / Kimi-K2.7-Code 执行者)的 agentic 代码编辑器平台。fork Roo Code + 自定义驾驭层(强制验证/循环检测/上下文压缩/人工审批/子Agent/可观测性) + MCP 联网与外部能力。",
   "updated": "2026-07-01",
-  "current_milestone": "Phase B · 打通 MVP（B1 ✅ / B2 ✅ / B3 Console 真实 WS 数据流）",
+  "current_milestone": "Phase B · 打通 MVP（B1 ✅ / B2 ✅ / B3 ✅ / B4 tool-calling 加固 + cost warning 修复）",
   "key_facts": {
     "dev_host": "Apple M5 Max, 128GB RAM, 1.1TB 可用磁盘 — 开发/控制节点，非模型宿主",
     "model_cluster": "exo 集群 @ http://100.64.201.37:52415 (内网, OpenAI 兼容)；公网 https://dgmt.top/exo (需 Bearer token)",
@@ -34,7 +34,7 @@
       "tasks": {
         "B1": { "title": "orchestration-api 骨架 (FastAPI + WS 事件)", "status": "done", "note": "verify_b1.sh 全绿；PYTHONPATH=src 修复运行" },
         "B2": { "title": "Worker 迁移到 OpenHands SDK (RemoteWorkspace + 直连 exo)", "status": "done", "note": "openhands_worker.py + verify_b2.sh 真实端到端通过；orchestrator.default_worker 已切为 openhands_worker" },
-        "B3": { "title": "Console 接后端真实 WS 数据流", "status": "todo" },
+        "B3": { "title": "Console 接后端真实 WS 数据流", "status": "done", "note": "console store/api + Sidebar/Conversation/StatusBar 接真实会话/WS；verify_b3.sh 全绿" },
         "B4": { "title": "tool-calling 加固 + cost warning 修复", "status": "todo" },
         "B5": { "title": "UI 去 AI 感打磨", "status": "todo" }
       }

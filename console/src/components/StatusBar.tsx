@@ -1,6 +1,18 @@
+import { useApp } from "../store";
 import { IconGit, IconCube, IconCheck, IconWarn, IconBolt } from "../icons";
 
 export function StatusBar() {
+  const { connection, error } = useApp();
+
+  const connLabel =
+    connection === "connected"
+      ? "WS 已连接"
+      : connection === "connecting"
+      ? "WS 连接中"
+      : connection === "error"
+      ? "WS 错误"
+      : "WS 空闲";
+
   return (
     <footer className="statusbar">
       <span className="sb">
@@ -13,8 +25,13 @@ export function StatusBar() {
         <IconWarn size={13} /> 1
       </span>
       <span className="spacer" />
+      {error && (
+        <span className="sb" style={{ color: "var(--danger)" }}>
+          {error}
+        </span>
+      )}
       <span className="sb-live">
-        <span className="dot review" /> Overseer 监督中
+        <span className={"dot " + connection} /> {connLabel}
       </span>
       <span className="sb accent">
         <IconBolt size={13} /> Kimi-K2.7 · <span className="mono">coder</span>

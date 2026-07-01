@@ -271,3 +271,27 @@
 ### 当前状态
 - Phase B 进度：B1 ✅ / B2 ✅ / B3（Console 接真实 WS）待做 / B4（tool-calling 加固 + cost warning）待做 / B5（UI 去 AI 感）待做。
 - LiteLLM proxy `:4000` 仍因本地 Postgres/prisma 初始化阻塞，Phase B 已让 Supervisor/Overseer 仍走原 `:4000`（后续若 proxy 起不来，再让 orchestrator 直连 exo）。
+
+## [2026-07-01] Phase B · B3 完成：Console 接入真实 WS 数据流
+
+### 实现
+- `console/src/types.ts`：统一类型定义 + `eventToStreamItem` 把后端 `ApiEvent` 转成前端 `StreamItem`。
+- `console/src/api.ts`：HTTP（会话 CRUD / 派发任务）+ WebSocket（`/api/v1/sessions/{id}/events`）客户端；API base 可通过 `VITE_API_BASE_URL` 配置。
+- `console/src/store.tsx`：React Context 管理会话列表、当前会话、事件流、连接状态；`tool_result` 自动合并到同工具 `running` 条目。
+- `console/src/components/Sidebar.tsx`：展示真实会话列表，点击切换，支持新建会话。
+- `console/src/components/Conversation.tsx`：展示真实事件流；composer 回车发送任务，未选会话时自动创建。
+- `console/src/components/StatusBar.tsx`：显示 WS 连接状态（connected/connecting/error/idle）。
+- 清理 `console/src/mock.ts`：移除 `sessions`/`stream` 等已接入真实数据的演示数据，仅保留右侧静态面板演示数据。
+
+### 验证
+- `npm run build` ✅（Vite 生产构建成功，无 TS 错误）。
+- `scripts/verify_b3.sh` ✅ 退出码 0：
+  - 构建 Console；
+  - 启动 orchestration-api（`FLIPPED_MOCK_WORKER=1`）；
+  - 静态托管 `console/dist`；
+  - 创建会话 → 派发任务 → WS 收集到 24 个真实事件（含 message / tool_call / tool_result / file_change / terminal / browser / status）；
+  - 会话状态到达 `done`。
+- 全量回归 `python -m pytest tests/` ✅ 29 passed。
+
+### 已知问题
+- Console 目前仅验证了构建产物 + 后端 WS 数据流；真正的浏览器 DOM 渲染验证（Playwright）因浏览器下载超时未启用，待 B5 UI 打磨时补齐。

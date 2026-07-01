@@ -43,3 +43,4 @@ logs/cline-audit.jsonl
 
 # IDE 控制面扩展构建产物
 ide-extension/out/
+console/tsconfig.tsbuildinfo

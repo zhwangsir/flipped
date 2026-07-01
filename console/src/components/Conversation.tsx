@@ -1,5 +1,6 @@
-import type { Role, StreamItem } from "../mock";
-import { stream } from "../mock";
+import { useState } from "react";
+import { useApp } from "../store";
+import type { Role, StreamItem, ToolCall } from "../types";
 import {
   ToolIcon,
   IconSend,
@@ -20,6 +21,7 @@ const ROLE: Record<Role, { label: string; cls: string; avatar: string }> = {
   worker: { label: "Worker · 执行", cls: "worker", avatar: "W" },
   overseer: { label: "Overseer · 监督", cls: "overseer", avatar: "O" },
   verify: { label: "强制验收", cls: "verify", avatar: "✓" },
+  system: { label: "系统", cls: "system", avatar: "⚙" },
 };
 
 function Turn({ item }: { item: StreamItem }) {
@@ -39,19 +41,7 @@ function Turn({ item }: { item: StreamItem }) {
         {item.tools && (
           <div className="tools">
             {item.tools.map((t, i) => (
-              <div className="tool" key={i}>
-                <span className="tool-ic">
-                  <ToolIcon name={t.tool} />
-                </span>
-                <div className="tool-body">
-                  <div className="tool-sum">{t.summary}</div>
-                  {t.detail && <div className="tool-det">{t.detail}</div>}
-                </div>
-                <span className={"tool-status " + t.status}>
-                  {t.status === "ok" && <IconCheck size={11} />}
-                  {t.status === "ok" ? "完成" : t.status}
-                </span>
-              </div>
+              <ToolRow key={i} tool={t} />
             ))}
           </div>
         )}
@@ -86,10 +76,50 @@ function Turn({ item }: { item: StreamItem }) {
   );
 }
 
+function ToolRow({ tool }: { tool: ToolCall }) {
+  return (
+    <div className="tool">
+      <span className="tool-ic">
+        <ToolIcon name={tool.tool} />
+      </span>
+      <div className="tool-body">
+        <div className="tool-sum">{tool.summary}</div>
+        {tool.detail && <div className="tool-det">{tool.detail}</div>}
+      </div>
+      <span className={"tool-status " + tool.status}>
+        {tool.status === "ok" && <IconCheck size={11} />}
+        {tool.status === "ok" ? "完成" : tool.status === "running" ? "运行中" : tool.status}
+      </span>
+    </div>
+  );
+}
+
 export function Conversation() {
+  const { stream, sendTask, connection, selectedSessionId } = useApp();
+  const [text, setText] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const submit = async () => {
+    if (!text.trim() || busy) return;
+    setBusy(true);
+    try {
+      await sendTask(text.trim());
+      setText("");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <section className="center">
       <div className="stream">
+        {stream.length === 0 && (
+          <div className="empty-state">
+            {selectedSessionId
+              ? "等待事件流…（WebSocket " + connection + "）"
+              : "选择左侧会话，或直接在下方输入任务新建会话。"}
+          </div>
+        )}
         {stream.map((it) => (
           <Turn key={it.id} item={it} />
         ))}
@@ -108,7 +138,18 @@ export function Conversation() {
           </button>
         </div>
         <div className="composer-box">
-          <textarea rows={2} placeholder="给 flipped 一个任务，或 @ 引用文件、粘贴报错让它自主修复…" />
+          <textarea
+            rows={2}
+            placeholder="给 flipped 一个任务，或 @ 引用文件、粘贴报错让它自主修复…"
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                submit();
+              }
+            }}
+          />
           <div className="composer-bar">
             <button className="tool-btn">
               <IconAt size={13} /> 上下文
@@ -122,10 +163,8 @@ export function Conversation() {
             <button className="tool-btn">
               <IconCube size={13} /> Docker <IconChevronDown size={12} />
             </button>
-            <button className="tool-btn">
-              Kimi-K2.7 <IconChevronDown size={12} />
-            </button>
-            <button className="send" aria-label="发送">
+            <button className="tool-btn">Kimi-K2.7 <IconChevronDown size={12} /></button>
+            <button className="send" aria-label="发送" onClick={submit} disabled={busy}>
               <IconSend size={15} />
             </button>
           </div>

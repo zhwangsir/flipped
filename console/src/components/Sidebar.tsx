@@ -1,9 +1,13 @@
 import { useState } from "react";
-import { sessions, fileTree } from "../mock";
+import { useApp } from "../store";
+import { fileTree } from "../mock";
+import { formatWhen } from "../types";
 import { IconPlus, IconFile, IconFolder } from "../icons";
 
 export function Sidebar() {
+  const { sessions, selectedSessionId, selectSession, createSession } = useApp();
   const [tab, setTab] = useState<"chats" | "files">("chats");
+
   return (
     <aside className="sidebar">
       <div className="seg">
@@ -17,7 +21,7 @@ export function Sidebar() {
 
       {tab === "chats" ? (
         <>
-          <button className="new-task">
+          <button className="new-task" onClick={() => createSession("新任务")}>
             <IconPlus size={15} /> 新任务
           </button>
           <div className="side-label">
@@ -25,15 +29,19 @@ export function Sidebar() {
             <span>{sessions.length}</span>
           </div>
           <div className="scroll">
-            {sessions.map((s, i) => (
-              <div key={s.id} className={"session" + (i === 0 ? " active" : "")}>
+            {sessions.map((s) => (
+              <div
+                key={s.id}
+                className={"session" + (s.id === selectedSessionId ? " active" : "")}
+                onClick={() => selectSession(s.id)}
+              >
                 <div className="session-top">
                   <span className={"dot " + s.status} />
                   <span className="session-title">{s.title}</span>
                 </div>
                 <div className="session-meta">
                   <span className="chip">{s.model}</span>
-                  <span>{s.when}</span>
+                  <span>{formatWhen(s.updated_at)}</span>
                 </div>
               </div>
             ))}

@@ -5,18 +5,21 @@ import { TopBar } from "./components/TopBar";
 import { Conversation } from "./components/Conversation";
 import { ContextPanel } from "./components/ContextPanel";
 import { StatusBar } from "./components/StatusBar";
+import { AppProvider } from "./store";
 
 export function App() {
   return (
-    <div className="app">
-      <ActivityBar />
-      <TopBar />
-      <div className="body">
-        <Sidebar />
-        <Conversation />
-        <ContextPanel />
+    <AppProvider>
+      <div className="app">
+        <ActivityBar />
+        <TopBar />
+        <div className="body">
+          <Sidebar />
+          <Conversation />
+          <ContextPanel />
+        </div>
+        <StatusBar />
       </div>
-      <StatusBar />
-    </div>
+    </AppProvider>
   );
 }
