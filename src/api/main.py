@@ -20,6 +20,7 @@ from .session import SessionStore, store
 from metrics import COLLECTOR
 
 MOCK_WORKER = os.environ.get("FLIPPED_MOCK_WORKER", "0") == "1"
+FLIPPED_CHECKPOINT_DB = os.environ.get("FLIPPED_CHECKPOINT_DB", "data/checkpoints.db")
 
 API_PREFIX = "/api/v1"
 CONSOLE_ORIGIN = "http://127.0.0.1:5273"
@@ -30,9 +31,14 @@ bus: EventBus = get_bus(store)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     bus.set_loop(asyncio.get_running_loop())
+    store.load(os.environ.get("FLIPPED_SESSION_STORE_PATH", ".sessions.json"))
+    for session in store.list():
+        if session.status in (SessionStatus.running, SessionStatus.paused) and session.checkpoint_db_path:
+            asyncio.create_task(_resume_orchestrator(session))
     yield
     bus.set_loop(None)
     bus._connections.clear()
+    store.save()
 
 
 app = FastAPI(title="flipped orchestration API", version="0.2.0", lifespan=lifespan)
@@ -102,11 +108,25 @@ async def create_task(session_id: str, req: TaskRequest) -> TaskResponse:
     store.update_status(session_id, SessionStatus.running)
     bus.emit(session_id, EventType.status, Role.system,
              {"status": "running", "progress": 0, "note": f"任务 {task_id} 已派发"})
-    if MOCK_WORKER:
+    if req.context.get("orchestrator"):
+        asyncio.create_task(_run_orchestrator(session_id, task_id, req))
+    elif MOCK_WORKER:
         asyncio.create_task(_mock_run(session_id, task_id, req.description))
     else:
         asyncio.create_task(_run_openhands(session_id, task_id, req.description))
     return TaskResponse(task_id=task_id, session_id=session_id, status="running")
+
+
+@app.post(f"{API_PREFIX}/sessions/{{session_id}}/resume", response_model=Session)
+async def resume_session(session_id: str) -> Session:
+    """从持久化的 LangGraph checkpoint 恢复并继续运行 orchestrator 会话。"""
+    session = store.get(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="session not found")
+    if not session.checkpoint_db_path:
+        raise HTTPException(status_code=400, detail="session has no checkpoint_db_path")
+    asyncio.create_task(_resume_orchestrator(session))
+    return session
 
 
 # ---------- WebSocket 事件流 ----------
@@ -127,6 +147,116 @@ async def events_ws(websocket: WebSocket, session_id: str,
         await bus.disconnect(session_id, websocket)
     except Exception:
         await bus.disconnect(session_id, websocket)
+
+
+def _mock_orchestrator_fns():
+    """Deterministic orchestrator nodes for API recovery tests."""
+    verify_count = [0]
+
+    def supervisor(state):
+        count = len([h for h in state.get("history", []) if h.get("step") == "supervisor"])
+        return {
+            "current_subtask": f"sub{count}",
+            "believe_done": count == 1,
+            "history": state.get("history", []) + [{"step": "supervisor"}],
+        }
+
+    def worker(state):
+        return {
+            "last_obs": {"summary": {"tool_calls": 1}},
+            "signatures": state.get("signatures", []) + ["mock"],
+            "history": state.get("history", []) + [{"step": "worker"}],
+            "worker_error": False,
+        }
+
+    def overseer(state):
+        return {
+            "verdict": {"action": "continue"},
+            "history": state.get("history", []) + [{"step": "overseer"}],
+        }
+
+    def verifier(cmd, cwd):
+        verify_count[0] += 1
+        return verify_count[0] == 2, ("fail" if verify_count[0] == 1 else "ok")
+
+    return supervisor, worker, overseer, verifier
+
+
+async def _run_orchestrator(session_id: str, task_id: str, req: TaskRequest) -> None:
+    """在后台线程运行 orchestrator，并持久化 checkpoint。"""
+    from driving.orchestrator import drive_orchestrated
+
+    cfg = req.context.get("orchestrator") or {}
+    goal = req.description
+    verify_cmd = cfg.get("verify_cmd", ["true"])
+    cwd = cfg.get("cwd", "/workspace")
+    db_path = FLIPPED_CHECKPOINT_DB
+    store.update(session_id, goal=goal, verify_cmd=verify_cmd, cwd=cwd, checkpoint_db_path=db_path)
+    try:
+        if os.environ.get("FLIPPED_MOCK_ORCHESTRATOR"):
+            sup, work, over, ver = _mock_orchestrator_fns()
+            final = await asyncio.to_thread(
+                drive_orchestrated,
+                goal=goal, cwd=cwd, verify_cmd=verify_cmd,
+                thread_id=session_id, db_path=db_path,
+                require_approval=cfg.get("require_approval", False),
+                supervisor=sup, worker=work, overseer=over, verifier=ver,
+            )
+        else:
+            final = await asyncio.to_thread(
+                drive_orchestrated,
+                goal=goal, cwd=cwd, verify_cmd=verify_cmd,
+                thread_id=session_id, db_path=db_path,
+                require_approval=cfg.get("require_approval", False),
+            )
+        if final.get("verified"):
+            store.update_status(session_id, SessionStatus.done)
+        elif final.get("stop_reason") in ("worker_error", "overseer_abort", "loop_detected", "circuit_breaker"):
+            store.update_status(session_id, SessionStatus.error)
+        else:
+            store.update_status(session_id, SessionStatus.review)
+    except Exception as exc:
+        store.update_status(session_id, SessionStatus.error)
+        bus.emit(session_id, EventType.error, Role.system,
+                 {"message": f"Orchestrator failed: {exc}"})
+
+
+async def _resume_orchestrator(session: Session) -> None:
+    """从 checkpoint 恢复一个 orchestrator 会话。"""
+    from driving.orchestrator import resume_orchestrated
+
+    bus.emit(session.id, EventType.status, Role.system,
+             {"status": "running", "progress": 0, "note": "从 checkpoint 恢复继续执行"})
+    try:
+        if os.environ.get("FLIPPED_MOCK_ORCHESTRATOR"):
+            sup, work, over, ver = _mock_orchestrator_fns()
+            final = await asyncio.to_thread(
+                resume_orchestrated,
+                session.id,
+                session.checkpoint_db_path,
+                supervisor=sup, worker=work, overseer=over, verifier=ver,
+            )
+        else:
+            final = await asyncio.to_thread(
+                resume_orchestrated,
+                session.id,
+                session.checkpoint_db_path,
+            )
+        if final is None:
+            store.update_status(session.id, SessionStatus.error)
+            bus.emit(session.id, EventType.error, Role.system,
+                     {"message": "没有找到 checkpoint"})
+            return
+        if final.get("verified"):
+            store.update_status(session.id, SessionStatus.done)
+        elif final.get("done"):
+            store.update_status(session.id, SessionStatus.error)
+        else:
+            store.update_status(session.id, SessionStatus.running)
+    except Exception as exc:
+        store.update_status(session.id, SessionStatus.error)
+        bus.emit(session.id, EventType.error, Role.system,
+                 {"message": f"Resume failed: {exc}"})
 
 
 async def _run_openhands(session_id: str, task_id: str, description: str) -> None:

@@ -375,7 +375,11 @@ def drive_orchestrated(goal: str, cwd: str, verify_cmd: list, *,
                        data_dir: str | None = None, require_approval: bool = False,
                        max_context_tokens: int = 10000, keep_recent: int = 4,
                        summarizer: Callable | None = None,
-                       max_checkpoints: int = 50) -> OrchestratorState:
+                       max_checkpoints: int = 50,
+                       supervisor: SupervisorFn = default_supervisor,
+                       worker: WorkerFn = default_worker,
+                       overseer: OverseerFn = default_overseer,
+                       verifier: VerifierFn = _default_verifier) -> OrchestratorState:
     """多 Agent 监督编排驱动一个目标到验收通过 / 监督中止 / 循环 / 熔断。
 
     require_approval=True：高风险子任务在执行前 interrupt 等人工放行（命中需用 Command(resume=...) 续跑）。
@@ -393,11 +397,65 @@ def drive_orchestrated(goal: str, cwd: str, verify_cmd: list, *,
     }
     with SqliteSaver.from_conn_string(db_path) as cp:
         graph = build_orchestrator(
+            supervisor=supervisor,
+            worker=worker,
+            overseer=overseer,
+            verifier=verifier,
             checkpointer=cp,
             max_context_tokens=max_context_tokens,
             keep_recent=keep_recent,
             summarizer=summarizer,
         )
         result = graph.invoke(initial, config={"configurable": {"thread_id": thread_id}})
+        CheckpointRetention(cp, max_checkpoints=max_checkpoints).trim(thread_id)
+        return result
+
+
+def resume_orchestrated(thread_id: str, db_path: str = "data/checkpoints.db", *,
+                        supervisor: SupervisorFn = default_supervisor,
+                        worker: WorkerFn = default_worker,
+                        overseer: OverseerFn = default_overseer,
+                        verifier: VerifierFn = _default_verifier,
+                        max_context_tokens: int = 10000, keep_recent: int = 4,
+                        summarizer: Callable | None = None,
+                        max_checkpoints: int = 50) -> OrchestratorState | None:
+    """从 LangGraph checkpoint 恢复并继续一次未完成的 orchestrator 运行。
+
+    适用于：orchestration-api 崩溃重启后，扫描到 `status=running` 的会话，
+    从持久化的 SqliteSaver 断点续跑。
+    """
+    from langgraph.checkpoint.sqlite import SqliteSaver
+
+    with SqliteSaver.from_conn_string(db_path) as cp:
+        # 先确认数据库里真的有该 thread 的 checkpoint，避免 LangGraph 把空状态当成新 run
+        with cp.cursor() as cur:
+            cur.execute(
+                "SELECT 1 FROM checkpoints WHERE thread_id = ? LIMIT 1",
+                (str(thread_id),),
+            )
+            if not cur.fetchone():
+                return None
+
+        graph = build_orchestrator(
+            supervisor=supervisor,
+            worker=worker,
+            overseer=overseer,
+            verifier=verifier,
+            checkpointer=cp,
+            max_context_tokens=max_context_tokens,
+            keep_recent=keep_recent,
+            summarizer=summarizer,
+        )
+        config = {"configurable": {"thread_id": thread_id}}
+        snapshot = graph.get_state(config)
+        if snapshot is None:
+            return None
+        values = snapshot.values
+        if values.get("done"):
+            return values
+        # 若上一 checkpoint 已被 interrupt（如审批断点），不自动恢复，等待外部 Command(resume=...)
+        if "__interrupt__" in values:
+            return values
+        result = graph.invoke(None, config)
         CheckpointRetention(cp, max_checkpoints=max_checkpoints).trim(thread_id)
         return result

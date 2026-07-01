@@ -102,7 +102,7 @@
     "M5": {
       "title": "硬化与产线化 (性能/稳定性/安全/崩溃恢复)",
       "status": "doing",
-      "note": "目标：性能(KV cache/上下文/模型换载)、稳定性(崩溃恢复/断点续跑)、安全(密钥/命令白名单)。验收：长任务连续自主运行并在中途崩溃后从 checkpoint 恢复。",
+      "note": "M5.4 完成；M5.5 进行中（安全加固）。",
       "tasks": {
         "M5.1": {
           "title": "性能可观测（metrics collector + /api/v1/metrics）",
@@ -118,6 +118,16 @@
           "title": "模型换载 / 路由降级策略",
           "status": "done",
           "note": "新增 src/driving/model_router.py：is_endpoint_healthy / is_model_available / resolve_model_config / resolve_worker_model_config；orchestrator.py 的 _make_llm 与 openhands_worker 节点接入动态路由；新增 test_model_router.py 11 个用例；全量回归 73 passed，console build 通过，verify_m5.sh 退出码 0。"
+        },
+        "M5.4": {
+          "title": "崩溃恢复与断点续跑",
+          "status": "done",
+          "note": "resume_orchestrated + API resume endpoint + tests/test_api_recovery.py 修复；verify_m5.sh 全绿"
+        },
+        "M5.5": {
+          "title": "安全加固",
+          "status": "doing",
+          "note": "密钥管理、命令白名单、高风险动作审批整合"
         }
       }
     }

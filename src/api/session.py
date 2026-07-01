@@ -1,8 +1,11 @@
-"""内存会话仓库（Phase B 先内存，后续换 SQLite/Postgres + Redis Pub/Sub）。"""
+"""会话仓库（Phase B 先内存；M5.4 加入 JSON 持久化以支持崩溃恢复）。"""
 from __future__ import annotations
 
+import json
+import os
 import uuid
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 from .schemas import Event, Role, Session, SessionStatus
@@ -13,6 +16,46 @@ class SessionStore:
         self._sessions: dict[str, Session] = {}
         self._events: dict[str, list[Event]] = {}
         self._counter: dict[str, int] = {}
+        self._path: str | None = None
+
+    def load(self, path: str) -> None:
+        """从 JSON 文件加载会话与事件。"""
+        self._path = path
+        if not os.path.exists(path):
+            return
+        try:
+            data = json.loads(Path(path).read_text(encoding="utf-8"))
+        except Exception:
+            return
+        for s in data.get("sessions", []):
+            session = Session(**s)
+            self._sessions[session.id] = session
+            self._events[session.id] = [Event(**e) for e in data.get("events", {}).get(session.id, [])]
+            self._counter[session.id] = max(
+                [int(e.id.split("-")[-1]) for e in self._events[session.id]] + [0]
+            )
+
+    def save(self) -> None:
+        """持久化到 JSON 文件。"""
+        if not self._path:
+            return
+        data = {
+            "sessions": [s.model_dump(mode="json") for s in self._sessions.values()],
+            "events": {sid: [e.model_dump(mode="json") for e in evs] for sid, evs in self._events.items()},
+        }
+        Path(self._path).write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    def update(self, session_id: str, **kwargs) -> Session | None:
+        """更新会话字段并持久化。"""
+        session = self._sessions.get(session_id)
+        if not session:
+            return None
+        for k, v in kwargs.items():
+            if hasattr(session, k):
+                setattr(session, k, v)
+        session.updated_at = datetime.now(timezone.utc).isoformat()
+        self.save()
+        return session
 
     def _next_id(self, session_id: str) -> str:
         self._counter[session_id] = self._counter.get(session_id, 0) + 1
@@ -26,6 +69,7 @@ class SessionStore:
         self._sessions[sid] = session
         self._events[sid] = []
         self._counter[sid] = 0
+        self.save()
         return session
 
     def get(self, session_id: str) -> Session | None:
@@ -40,6 +84,7 @@ class SessionStore:
             return None
         session.status = status
         session.updated_at = datetime.now(timezone.utc).isoformat()
+        self.save()
         return session
 
     def add_event(self, session_id: str, type_: str, agent: Role | None = None,
@@ -53,6 +98,7 @@ class SessionStore:
             parent_id=parent_id,
         )
         self._events[session_id].append(event)
+        self.save()
         return event
 
     def events(self, session_id: str, after_id: str | None = None) -> list[Event]:

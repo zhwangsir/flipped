@@ -34,6 +34,7 @@ class Role(str, Enum):
 class SessionStatus(str, Enum):
     idle = "idle"
     running = "running"
+    paused = "paused"
     done = "done"
     review = "review"
     error = "error"
@@ -57,6 +58,10 @@ class Session(BaseModel):
     title: str
     status: SessionStatus
     model: str = "coder"
+    goal: str | None = None
+    verify_cmd: list[str] = Field(default_factory=list)
+    cwd: str = "/workspace"
+    checkpoint_db_path: str | None = None
     created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     updated_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 

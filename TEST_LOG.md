@@ -478,3 +478,23 @@
 - 命令：`bash scripts/verify_m5.sh`
 - 输出摘要：test_metrics.py 7 passed / 全量 73 passed / Console build 成功；退出码 0
 - 结论：✅ M5.3 验收完成，进入 M5.4。
+
+## [2026-07-02] M5.4 完成 — 崩溃恢复与断点续跑
+
+### 修复测试
+- 命令：`PYTHONPATH=src .venv/bin/python -m pytest tests/test_api_recovery.py tests/test_api_approval_flow.py -v`
+- 输出摘要：`5 passed`（3 recovery + 2 approval flow）
+- 结论：✅ 修复 `TestClient` 上下文管理器与 `thread_id` 对齐问题。
+
+### 全量回归
+- 命令：`PYTHONPATH=src .venv/bin/python -m pytest tests/ -q`
+- 输出摘要：`79 passed, 2 warnings`
+- 结论：✅ 无回归。
+
+### 验收脚本
+- 命令：`bash scripts/verify_m5.sh`
+- 输出摘要：`test_metrics.py 7 passed` / 全量 `79 passed` / Console build 成功；退出码 0。
+- 结论：✅ M5.4 验收完成。
+
+### 进入 M5.5
+- 下一步：安全加固（密钥管理、命令白名单、高风险动作审批整合）。
