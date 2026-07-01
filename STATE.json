@@ -101,8 +101,8 @@
     },
     "M5": {
       "title": "硬化与产线化 (性能/稳定性/安全/崩溃恢复)",
-      "status": "doing",
-      "note": "M5.4 完成；M5.5 完成（安全加固）；M5.6 进行中（长任务 checkpoint 续跑验收）。",
+      "status": "done",
+      "note": "M5.1-M5.6 全部完成：性能可观测、上下文压缩/checkpoint、模型路由降级、崩溃恢复、安全加固、长任务验收。",
       "tasks": {
         "M5.1": {
           "title": "性能可观测（metrics collector + /api/v1/metrics）",
@@ -131,8 +131,8 @@
         },
         "M5.6": {
           "title": "长任务验收（沙箱内模拟）",
-          "status": "doing",
-          "note": "进行中：新增/扩展测试模拟长任务多步 orchestrator + 中途保留 checkpoint 崩溃 + resume_orchestrated 续跑到 verified。"
+          "status": "done",
+          "note": "test_long_task_crash_after_first_verify_and_resume 通过：多步 orchestrator 在第一个 verify 后模拟崩溃，resume_orchestrated 续跑到 verified；test_recovery.py 4 passed / 全量 92 passed。"
         }
       }
     }

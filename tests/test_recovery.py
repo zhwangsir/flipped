@@ -138,3 +138,50 @@ def test_resume_returns_done_state_when_already_finished(tmp_path: Path):
     )
     assert resumed is not None
     assert resumed["done"] is True
+
+
+def test_long_task_crash_after_first_verify_and_resume(tmp_path: Path):
+    """Simulate a multi-step orchestrator run: crash after the first verify
+    checkpoint is persisted, then resume and finish to verified."""
+    db_path = str(tmp_path / "long_task.db")
+    supervisor, worker, overseer, verifier = _build_stateful_fns()
+
+    initial = {
+        "goal": "Long task",
+        "cwd": "/tmp",
+        "verify_cmd": ["true"],
+        "max_iterations": 4,
+        "loop_threshold": 3,
+        "iteration": 0,
+        "signatures": [],
+        "feedback": "",
+        "verified": False,
+        "done": False,
+        "stop_reason": "",
+        "history": [],
+    }
+
+    with SqliteSaver.from_conn_string(db_path) as cp:
+        graph = build_orchestrator(
+            supervisor, worker, overseer, verifier, checkpointer=cp
+        )
+        config = {"configurable": {"thread_id": "long_task"}}
+        # Run until the first verify node has produced a checkpoint, then break
+        # to simulate the orchestration-api process being killed mid-run.
+        for chunk in graph.stream(initial, config, stream_mode="updates"):
+            if "verify" in chunk:
+                break
+
+    final = resume_orchestrated(
+        "long_task",
+        db_path,
+        supervisor=supervisor,
+        worker=worker,
+        overseer=overseer,
+        verifier=verifier,
+    )
+    assert final is not None
+    assert final["verified"] is True
+    assert final["stop_reason"] == "verified"
+    # The task should have gone through more than one iteration after resume.
+    assert final["iteration"] >= 2

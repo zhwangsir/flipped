@@ -530,3 +530,35 @@
 
 ### 进入 M5.6
 - 下一步：长任务 checkpoint 续跑验收（沙箱内模拟）。
+
+## [2026-07-02] M5.6 完成 — 长任务 checkpoint 续跑验收（沙箱内模拟）
+
+### 实现
+- 新增 `tests/test_recovery.py::test_long_task_crash_after_first_verify_and_resume`：
+  - 注入多步 orchestrator 节点（supervisor/worker/overseer/verifier），verifier 在第一次调用时失败、第二次成功，使任务必须走两个迭代才能到达 `verified`。
+  - 使用 `graph.stream(..., stream_mode="updates")` 运行到第一个 `verify` 节点产生 checkpoint 后主动 break，模拟 orchestration-api 进程崩溃。
+  - 调用 `resume_orchestrated(thread_id="long_task", db_path=...)` 从同一个 SqliteSaver 续跑，断言最终 `verified=True`、`stop_reason=verified`、`iteration>=2`。
+- `scripts/verify_m5.sh` 新增 `M5.6 长任务崩溃恢复单测` 段落。
+
+### M5.6 单测
+- 命令：`PYTHONPATH=src .venv/bin/python -m pytest tests/test_recovery.py -q`
+- 输出摘要：`4 passed, 1 warning`
+- 结论：✅ 通过；覆盖部分 supervisor 崩溃、无 checkpoint 返回 None、已完成 checkpoint 直接返回、以及长任务多步崩溃恢复。
+
+### 全量回归
+- 命令：`PYTHONPATH=src .venv/bin/python -m pytest tests/ -q`
+- 输出摘要：`92 passed, 2 warnings in 11.40s`
+- 结论：✅ 通过；M5.6 未引入回归。
+
+### M5 验收脚本
+- 命令：`bash scripts/verify_m5.sh`
+- 输出摘要：`test_metrics.py 7 passed` / `test_safety.py 12 passed` / `test_recovery.py 4 passed` / 全量 92 passed / Console build 成功；退出码 0。
+- 结论：✅ 通过；M5 里程碑全部完成。
+
+### Console 构建
+- 命令：`cd console && npm run build`
+- 输出摘要：`tsc -b && vite build` 成功，`dist` 产物生成。
+- 结论：✅ 通过。
+
+### 环境限制诚实披露
+- 沙箱内无法真实 bind TCP 端口或 kill 进程，M5.6 用 pytest 注入 + 主动中断 stream 模拟崩溃恢复；真实 LLM + OpenHands 长任务验收保留到非沙箱环境复跑。

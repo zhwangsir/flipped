@@ -80,10 +80,11 @@
     - 新增 `tests/test_safety.py`：12 个用例覆盖命令归一化、危险命令拦截、安全命令放行、未知命令拦截、环境变量覆盖、密钥扫描、`.env`/环境变量校验、OpenHands 事件审计。
     - 验证：`test_safety.py 12 passed` / 全量 91 passed / `verify_m5.sh` 退出码 0 / console build 通过。
 
- 6. **M5.6 长任务验收（沙箱内模拟）** 🚧 进行中
-    - 目标：新增/扩展测试模拟长任务（多步 orchestrator 经历 supervisor→worker→overseer→verify 多个迭代，中途保留 checkpoint 后进程崩溃，再调用 `resume_orchestrated` 从 checkpoint 续跑到 `verified`）。
-    - 在沙箱中无法真实 bind 端口或 kill 进程，用 pytest 注入方式模拟崩溃恢复：通过 `graph.stream(..., stream_mode="updates")` 运行若干 update 后主动 break，再调用 `resume_orchestrated` 完成剩余迭代。
-    - 非沙箱环境可复跑真实 LLM + OpenHands 的长任务，作为最终验收。
+ 6. **M5.6 长任务验收（沙箱内模拟）** ✅ 已完成
+    - 新增 `tests/test_recovery.py::test_long_task_crash_after_first_verify_and_resume`：注入多步 orchestrator 节点，让 supervisor/worker/overseer/verify 跑完第一个完整迭代，在 `verify` 节点产生 checkpoint 后主动 break，模拟 orchestration-api 进程崩溃；再调用 `resume_orchestrated` 从同一个 `thread_id` 和 `db_path` 续跑，最终 `verified=True`、`stop_reason=verified`、`iteration>=2`。
+    - 沙箱内无法 bind TCP 或 kill 进程，用 `graph.stream` + 主动中断的方式模拟崩溃；真实 LLM + OpenHands 的长任务验收保留到非沙箱环境复跑。
+    - `scripts/verify_m5.sh` 新增 M5.6 单测段落。
+    - 验证：`test_recovery.py 4 passed` / 全量 92 passed / `verify_m5.sh` 退出码 0 / console build 通过。
  
  ## 验收标准
  - `python -m pytest tests/test_recovery.py tests/test_safety.py tests/test_metrics.py -q` 全绿（新增）。
