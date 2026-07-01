@@ -79,7 +79,7 @@ async def main():
     uri = f"{WS}/api/v1/sessions/{sid}/events"
     events = []
     done = False
-    async with websockets.connect(uri, open_timeout=5, close_timeout=5) as ws:
+    async with websockets.connect(uri, open_timeout=5, close_timeout=5, proxy=None) as ws:
         await ws.send(json.dumps({"type": "ping"}))
         for _ in range(120):  # 最多 2 分钟
             try:
@@ -116,3 +116,4 @@ async def main():
 
 asyncio.run(main())
 PY
+export NO_PROXY="127.0.0.1,localhost,::1"

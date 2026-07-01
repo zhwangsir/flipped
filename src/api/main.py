@@ -173,6 +173,17 @@ async def _mock_run(session_id: str, task_id: str, description: str) -> None:
     e(EventType.file_change, Role.worker, {"path": "/workspace/app.py", "change": "add", "language": "python"})
     e(EventType.tool_result, Role.worker, {"tool": "file_editor", "summary": "创建 app.py", "status": "ok"})
     await asyncio.sleep(0.2)
+    if os.environ.get("FLIPPED_MOCK_APPROVAL") == "1":
+        bus.emit(session_id, EventType.approval_request, Role.system,
+                 {"action": "Worker 写入 /workspace/app.py", "reason": "文件系统写操作，需人工确认", "risk": "medium"})
+        approval = await _wait_for_event(session_id, EventType.approval_result)
+        decision = str(approval.get("decision", "")).lower()
+        if decision not in ("approve", "approved", "yes", "y", "true", "1", "ok", "放行", "同意"):
+            store.update_status(session_id, SessionStatus.review)
+            bus.emit(session_id, EventType.status, Role.system,
+                     {"status": "review", "progress": 20, "note": "审批被否决"})
+            bus.emit(session_id, EventType.error, Role.system, {"message": "审批被否决，任务中止"})
+            return
 
     e(EventType.tool_call, Role.worker, {"tool": "file_editor", "summary": "创建 test_app.py", "status": "running"})
     await asyncio.sleep(0.2)
@@ -219,3 +230,12 @@ async def _mock_run(session_id: str, task_id: str, description: str) -> None:
       {"text": "强制验收：pytest 全通过 + /docs HTTP 200 + Swagger 标题匹配 → 目标达成。", "ok": True})
     store.update_status(session_id, SessionStatus.done)
     e(EventType.status, Role.system, {"status": "done", "progress": 100, "note": "任务完成"})
+async def _wait_for_event(session_id: str, event_type: EventType, timeout: float = 15.0) -> dict:
+    """在 store 中轮询等待指定类型的事件返回。"""
+    deadline = asyncio.get_event_loop().time() + timeout
+    while asyncio.get_event_loop().time() < deadline:
+        for ev in reversed(store.events(session_id)):
+            if ev.type == event_type:
+                return ev.payload
+        await asyncio.sleep(0.2)
+    return {}
