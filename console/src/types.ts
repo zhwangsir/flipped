@@ -1,14 +1,29 @@
 /** flipped Console 领域模型与后端事件转换。 */
 
-export type Role = "user" | "supervisor" | "worker" | "overseer" | "verify" | "system";
+export type SessionStatus = 'idle' | 'running' | 'done' | 'review' | 'error';
 
-export type ToolName = "terminal" | "file_editor" | "browser" | "search";
+export type Role = 'user' | 'supervisor' | 'worker' | 'overseer' | 'verify' | 'system';
+
+export type ToolName = 'terminal' | 'file_editor' | 'browser' | 'search';
+
+export interface ToolChild {
+  type: 'file_change' | 'terminal' | 'browser' | 'output';
+  text: string;
+}
 
 export interface ToolCall {
   tool: ToolName;
   summary: string;
   detail?: string;
-  status: "ok" | "running" | "error";
+  status: 'ok' | 'running' | 'error';
+  children?: ToolChild[];
+}
+
+export interface ApprovalInfo {
+  id: string;
+  action?: string;
+  reason?: string;
+  risk?: string;
 }
 
 export interface StreamItem {
@@ -24,7 +39,7 @@ export interface StreamItem {
 export interface Session {
   id: string;
   title: string;
-  status: "idle" | "running" | "done" | "review" | "error";
+  status: SessionStatus;
   model: string;
   created_at: string;
   updated_at: string;
@@ -43,35 +58,40 @@ export interface ApiEvent {
 
 /** 把后端事件转成 StreamItem；无法展示的事件返回 null。 */
 export function eventToStreamItem(ev: ApiEvent): StreamItem | null {
-  const role = ev.agent || "system";
+  const role = ev.agent || 'system';
   const p = ev.payload;
   switch (ev.type) {
-    case "message":
-      return { id: ev.id, role, model: p.model, text: p.text };
-    case "tool_call":
+    case 'message':
+      // 隐藏机械 system prompt
+      if (role === 'system') return null;
+      return { id: ev.id, role, text: p.text };
+    case 'tool_call':
       return {
         id: ev.id,
         role,
-        tools: [{ tool: p.tool as ToolName, summary: p.summary || p.tool, status: p.status || "running" }],
+        tools: [{ tool: p.tool as ToolName, summary: p.summary || p.tool, status: p.status || 'running' }],
       };
-    case "tool_result":
+    case 'tool_result':
       return {
         id: ev.id,
         role,
-        tools: [{ tool: p.tool as ToolName, summary: p.summary || p.tool, status: p.status || "ok" }],
+        tools: [{ tool: p.tool as ToolName, summary: p.summary || p.tool, status: p.status || 'ok' }],
       };
-    case "terminal":
-      return { id: ev.id, role, text: `$ ${p.command || ""}\n${p.output || ""}` };
-    case "file_change":
-      return { id: ev.id, role, text: `文件变更: ${p.path} (${p.change || "mod"})` };
-    case "browser":
-      return { id: ev.id, role, text: `浏览器: ${p.url}${p.title ? ` (${p.title})` : ""}` };
-    case "error":
-      return { id: ev.id, role: "system", text: `错误: ${p.message}` };
-    case "status":
-    case "checkpoint":
-    case "approval_request":
-    case "approval_result":
+    case 'terminal':
+      return { id: ev.id, role, text: `$ ${p.command || ''}\n${p.output || ''}` };
+    case 'file_change':
+      return { id: ev.id, role, text: `文件变更: ${p.path} (${p.change || 'mod'})` };
+    case 'browser':
+      return { id: ev.id, role, text: `浏览器: ${p.url}${p.title ? ` (${p.title})` : ''}` };
+    case 'error':
+      return { id: ev.id, role: 'system', text: p.message };
+    case 'approval_result': {
+      const approved = ['approve', 'approved', '同意', '放行'].includes(p.decision);
+      return { id: ev.id, role: 'user', text: approved ? '审批：已放行' : '审批：已否决' };
+    }
+    case 'status':
+    case 'checkpoint':
+    case 'approval_request':
       return null;
     default:
       return { id: ev.id, role, text: JSON.stringify(p) };
@@ -83,7 +103,7 @@ export function formatWhen(iso: string): string {
   const then = new Date(iso).getTime();
   const now = Date.now();
   const sec = Math.max(0, Math.floor((now - then) / 1000));
-  if (sec < 60) return "刚刚";
+  if (sec < 60) return '刚刚';
   if (sec < 3600) return `${Math.floor(sec / 60)} 分钟前`;
   if (sec < 86400) return `${Math.floor(sec / 3600)} 小时前`;
   return new Date(iso).toLocaleDateString();

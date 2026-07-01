@@ -1,8 +1,8 @@
 {
   "project": "flipped",
   "description": "接入本地 MLX 双模型(GLM-5.2 编排者 / Kimi-K2.7-Code 执行者)的 agentic 代码编辑器平台。fork Roo Code + 自定义驾驭层(强制验证/循环检测/上下文压缩/人工审批/子Agent/可观测性) + MCP 联网与外部能力。",
-  "updated": "2026-07-01",
-  "current_milestone": "Phase B · 打通 MVP（B1/B2/B3/B4 ✅ / B5 UI 去 AI 感打磨）",
+  "updated": "2026-07-02",
+  "current_milestone": "Phase B · 打通 MVP（B1/B2/B3/B4/B5 ✅）",
   "key_facts": {
     "dev_host": "Apple M5 Max, 128GB RAM, 1.1TB 可用磁盘 — 开发/控制节点，非模型宿主",
     "model_cluster": "exo 集群 @ http://100.64.201.37:52415 (内网, OpenAI 兼容)；公网 https://dgmt.top/exo (需 Bearer token)",
@@ -65,7 +65,7 @@
     },
     "Phase B": {
       "title": "打通 MVP (OpenHands 执行 + orchestration-api + Console 真实数据流 + UI 打磨)",
-      "status": "doing",
+      "status": "done",
       "tasks": {
         "B1": {
           "title": "orchestration-api 骨架 (FastAPI + WS 事件)",
@@ -89,8 +89,8 @@
         },
         "B5": {
           "title": "UI 去 AI 感打磨",
-          "status": "doing",
-          "note": "PLAN.md 已草拟，待用户确认后开始实现"
+          "status": "done",
+          "note": "UI 去 AI 感打磨完成：Conversation 事件流可读性/StatusBanner/ErrorBanner/ApprovalCard/工具子事件合并；StatusBar 接真实状态；api.ts 支持 send；store.tsx 维护 sessionStatus/progress/errorCount/approvalPending。npm run build 通过；pytest 33 passed, 1 skipped; verify_b5.sh 退出码 0。真实浏览器/WS E2E 因当前 Codex 沙箱禁止 bind TCP 端口被跳过，由 tests/test_api_approval_flow.py (TestClient) 兜底验证审批流。web_search 网络测试在沙箱不可达时自动跳过。"
         }
       }
     },
@@ -254,6 +254,14 @@
       "title": "LiteLLM proxy :4000 因 Postgres/prisma 初始化阻塞",
       "detail": "新 py3.12 venv 中 litellm 1.84.1 启动时卡在 `prisma migrate deploy`（本地 postgres 未运行/超时）。B4 已给 orchestrator supervisor/overseer 增加 FLIPPED_MODEL_BASE_URL / FLIPPED_ARCHITECT_MODEL / FLIPPED_CODER_MODEL 环境变量，可直连 exo 绕过 proxy。LiteLLM proxy 仍可修复后作为可选前置。",
       "owner": "已绕过"
+    },
+    {
+      "id": "ISSUE-6",
+      "severity": "medium",
+      "status": "open",
+      "title": "当前 Codex 执行沙箱禁止 Python TCP socket bind 与 outbound 网络连接",
+      "detail": "B5 验证中，Python 无法 bind 127.0.0.1:any-port（Operation not permitted），导致 verify_b5.sh 无法在进程内启动真实 backend。Node 端 vite preview 同样报 EPERM。outbound curl 到 SearXNG 也被阻止。已通过 TestClient 集成测试 + pytest 跳过网络不可达测试的方式兜底，真实浏览器/WS E2E 需在非沙箱环境或 CI 中复跑。",
+      "owner": "环境限制，非代码缺陷"
     }
   ],
   "background_jobs": [

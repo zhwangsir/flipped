@@ -1,6 +1,6 @@
-import { useState } from "react";
-import { useApp } from "../store";
-import type { Role, StreamItem, ToolCall } from "../types";
+import { useState } from 'react';
+import { useApp } from '../store';
+import type { Role, StreamItem, ToolCall, ToolChild } from '../types';
 import {
   ToolIcon,
   IconSend,
@@ -13,33 +13,109 @@ import {
   IconPuzzle,
   IconCube,
   IconChevronDown,
-} from "../icons";
+  IconShield,
+  IconX,
+  IconHourglass,
+  IconCircleAlert,
+  IconCheckCircle,
+  IconTerminal,
+  IconBrowser,
+  IconFile,
+} from '../icons';
 
 const ROLE: Record<Role, { label: string; cls: string; avatar: string }> = {
-  user: { label: "你", cls: "user", avatar: "你" },
-  supervisor: { label: "Supervisor · 调度", cls: "supervisor", avatar: "S" },
-  worker: { label: "Worker · 执行", cls: "worker", avatar: "W" },
-  overseer: { label: "Overseer · 监督", cls: "overseer", avatar: "O" },
-  verify: { label: "强制验收", cls: "verify", avatar: "✓" },
-  system: { label: "系统", cls: "system", avatar: "⚙" },
+  user: { label: '你', cls: 'user', avatar: '你' },
+  supervisor: { label: 'Supervisor · 调度', cls: 'supervisor', avatar: 'S' },
+  worker: { label: 'Worker · 执行', cls: 'worker', avatar: 'W' },
+  overseer: { label: 'Overseer · 监督', cls: 'overseer', avatar: 'O' },
+  verify: { label: '强制验收', cls: 'verify', avatar: '✓' },
+  system: { label: '系统', cls: 'system', avatar: '⚙' },
 };
+
+function StatusBanner({ status, progress }: { status: string | null; progress: number }) {
+  if (!status || status === 'idle') return null;
+  const isRunning = status === 'running';
+  const isDone = status === 'done';
+  const isReview = status === 'review';
+  const isError = status === 'error';
+  return (
+    <div className={'status-banner ' + status} data-testid='status-banner'>
+      <span className='sb-icon'>
+        {isDone && <IconCheckCircle size={14} />}
+        {isReview && <IconCircleAlert size={14} />}
+        {isError && <IconCircleAlert size={14} />}
+        {isRunning && <IconHourglass size={14} />}
+      </span>
+      <span className='sb-text'>
+        {isRunning && '运行中… ' + progress + '%'}
+        {isDone && '任务已完成'}
+        {isReview && '待人工审批'}
+        {isError && '执行出错'}
+      </span>
+      {isRunning && (
+        <div className='progress-track'>
+          <span className='progress-fill' style={{ width: progress + '%' }} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ErrorBanner({ message }: { message: string | null }) {
+  if (!message) return null;
+  return (
+    <div className='error-banner' data-testid='error-banner'>
+      <IconCircleAlert size={14} />
+      <span>{message}</span>
+    </div>
+  );
+}
+
+function ApprovalCard({ info, onApprove, onReject, busy }: {
+  info: { id: string; action?: string; reason?: string; risk?: string };
+  onApprove: () => void;
+  onReject: () => void;
+  busy: boolean;
+}) {
+  return (
+    <div className='approval-card' data-testid='approval-card'>
+      <div className='approval-head'>
+        <IconShield size={16} />
+        <span className='approval-title'>人工审批请求</span>
+        <span className='approval-risk'>{info.risk || 'medium'}</span>
+      </div>
+      <div className='approval-body'>
+        <div className='approval-action'>{info.action || '未知动作'}</div>
+        {info.reason && <div className='approval-reason'>{info.reason}</div>}
+      </div>
+      <div className='approval-actions'>
+        <button className='approval-btn reject' onClick={onReject} disabled={busy} data-testid='reject-button'>
+          <IconX size={13} /> 否决
+        </button>
+        <button className='approval-btn approve' onClick={onApprove} disabled={busy} data-testid='approve-button'>
+          <IconCheck size={13} /> 放行
+        </button>
+      </div>
+    </div>
+  );
+}
 
 function Turn({ item }: { item: StreamItem }) {
   const r = ROLE[item.role];
   return (
-    <div className={"turn " + item.role}>
-      <div className={"avatar " + r.cls}>{r.avatar}</div>
+    <div className={'turn ' + item.role}>
+      <div className={'avatar ' + r.cls}>{r.avatar}</div>
       <div>
-        {item.role !== "user" && (
-          <div className="role-line">
-            <span className={"role-name rc-" + item.role}>{r.label}</span>
-            {item.model && <span className="role-model">{item.model}</span>}
+        {item.role !== 'user' && (
+          <div className='role-line'>
+            <span className={'role-name rc-' + item.role}>{r.label}</span>
+            {item.model && <span className='role-model'>{item.model}</span>}
           </div>
         )}
-        {item.text && <div className="turn-text">{item.text}</div>}
+        {item.text && <div className='turn-text'>{item.text}</div>}
 
         {item.tools && (
-          <div className="tools">
+          <div className='tools'>
             {item.tools.map((t, i) => (
               <ToolRow key={i} tool={t} />
             ))}
@@ -47,27 +123,27 @@ function Turn({ item }: { item: StreamItem }) {
         )}
 
         {item.verdict && (
-          <div className="verdict">
-            <div className="meters">
-              {(["efficiency", "direction"] as const).map((k) => (
-                <div className="meter" key={k}>
-                  <div className="meter-top">
-                    <span>{k === "efficiency" ? "效率" : "方向"}</span>
+          <div className='verdict'>
+            <div className='meters'>
+              {(['efficiency', 'direction'] as const).map((k) => (
+                <div className='meter' key={k}>
+                  <div className='meter-top'>
+                    <span>{k === 'efficiency' ? '效率' : '方向'}</span>
                     <b>{item.verdict![k].toFixed(2)}</b>
                   </div>
-                  <div className="meter-track">
-                    <span className="meter-fill" style={{ width: `${item.verdict![k] * 100}%` }} />
+                  <div className='meter-track'>
+                    <span className='meter-fill' style={{ width: item.verdict![k] * 100 + '%' }} />
                   </div>
                 </div>
               ))}
             </div>
-            <div className="verdict-note">{item.verdict.note}</div>
-            <span className="verdict-action">action = {item.verdict.action}</span>
+            <div className='verdict-note'>{item.verdict.note}</div>
+            <span className='verdict-action'>action = {item.verdict.action}</span>
           </div>
         )}
 
-        {item.role === "verify" && item.ok && (
-          <div className="verify-banner">
+        {item.role === 'verify' && item.ok && (
+          <div className='verify-banner'>
             <IconCheck size={16} /> {item.text}
           </div>
         )}
@@ -76,48 +152,100 @@ function Turn({ item }: { item: StreamItem }) {
   );
 }
 
+function ChildIcon({ type }: { type: ToolChild['type'] }) {
+  if (type === 'terminal') return <IconTerminal size={12} />;
+  if (type === 'browser') return <IconBrowser size={12} />;
+  if (type === 'file_change') return <IconFile size={12} />;
+  return <IconCheck size={12} />;
+}
+
 function ToolRow({ tool }: { tool: ToolCall }) {
   return (
-    <div className="tool">
-      <span className="tool-ic">
+    <div className='tool'>
+      <span className='tool-ic'>
         <ToolIcon name={tool.tool} />
       </span>
-      <div className="tool-body">
-        <div className="tool-sum">{tool.summary}</div>
-        {tool.detail && <div className="tool-det">{tool.detail}</div>}
+      <div className='tool-body'>
+        <div className='tool-sum'>{tool.summary}</div>
+        {tool.detail && <div className='tool-det'>{tool.detail}</div>}
+        {tool.children && tool.children.length > 0 && (
+          <div className='tool-children'>
+            {tool.children.map((c, i) => (
+              <div className={'tool-child ' + c.type} key={i}>
+                <span className='tool-child-ic'>
+                  <ChildIcon type={c.type} />
+                </span>
+                <span className='tool-child-tx'>{c.text}</span>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
-      <span className={"tool-status " + tool.status}>
-        {tool.status === "ok" && <IconCheck size={11} />}
-        {tool.status === "ok" ? "完成" : tool.status === "running" ? "运行中" : tool.status}
+      <span className={'tool-status ' + tool.status}>
+        {tool.status === 'ok' && <IconCheck size={11} />}
+        {tool.status === 'ok' ? '完成' : tool.status === 'running' ? '运行中' : tool.status}
       </span>
     </div>
   );
 }
 
 export function Conversation() {
-  const { stream, sendTask, connection, selectedSessionId } = useApp();
-  const [text, setText] = useState("");
+  const {
+    stream,
+    sendTask,
+    connection,
+    selectedSessionId,
+    sessionStatus,
+    progress,
+    lastError,
+    approvalPending,
+    sendApproval,
+  } = useApp();
+  const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
+  const [approvalBusy, setApprovalBusy] = useState(false);
 
   const submit = async () => {
-    if (!text.trim() || busy) return;
+    if (!text.trim() || busy || approvalPending) return;
     setBusy(true);
     try {
       await sendTask(text.trim());
-      setText("");
+      setText('');
     } finally {
       setBusy(false);
     }
   };
 
+  const handleApprove = () => {
+    setApprovalBusy(true);
+    sendApproval('approve');
+  };
+
+  const handleReject = () => {
+    setApprovalBusy(true);
+    sendApproval('reject');
+  };
+
+  const disabled = busy || approvalPending !== null;
+
   return (
-    <section className="center">
-      <div className="stream">
-        {stream.length === 0 && (
-          <div className="empty-state">
+    <section className='center'>
+      <div className='stream'>
+        <StatusBanner status={sessionStatus} progress={progress} />
+        <ErrorBanner message={lastError} />
+        {approvalPending && (
+          <ApprovalCard
+            info={approvalPending}
+            onApprove={handleApprove}
+            onReject={handleReject}
+            busy={approvalBusy}
+          />
+        )}
+        {stream.length === 0 && !approvalPending && (
+          <div className='empty-state'>
             {selectedSessionId
-              ? "等待事件流…（WebSocket " + connection + "）"
-              : "选择左侧会话，或直接在下方输入任务新建会话。"}
+              ? '等待事件流…（WebSocket ' + connection + '）'
+              : '选择左侧会话，或直接在下方输入任务新建会话。'}
           </div>
         )}
         {stream.map((it) => (
@@ -125,46 +253,56 @@ export function Conversation() {
         ))}
       </div>
 
-      <div className="composer">
-        <div className="modes">
-          <button className="mode agent active">
+      <div className='composer'>
+        <div className='modes'>
+          <button className='mode agent active'>
             <IconSparkle size={13} /> 智能体
           </button>
-          <button className="mode">
+          <button className='mode'>
             <IconChat size={13} /> 对话
           </button>
-          <button className="mode">
+          <button className='mode'>
             <IconLayout size={13} /> 规划
           </button>
         </div>
-        <div className="composer-box">
+        <div className={'composer-box ' + (disabled ? 'disabled' : '')}>
           <textarea
+            data-testid='composer-input'
             rows={2}
-            placeholder="给 flipped 一个任务，或 @ 引用文件、粘贴报错让它自主修复…"
+            placeholder='给 flipped 一个任务，或 @ 引用文件、粘贴报错让它自主修复…'
             value={text}
+            disabled={disabled}
             onChange={(e) => setText(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
+              if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
                 submit();
               }
             }}
           />
-          <div className="composer-bar">
-            <button className="tool-btn">
+          <div className='composer-bar'>
+            <button className='tool-btn' disabled={disabled}>
               <IconAt size={13} /> 上下文
             </button>
-            <button className="tool-btn" aria-label="附件">
+            <button className='tool-btn' aria-label='附件' disabled={disabled}>
               <IconClip size={13} />
             </button>
-            <button className="tool-btn on">
-              <IconPuzzle size={13} /> 工具 · MCP
+            <button className='tool-btn on' disabled={disabled}>
+              <IconPuzzle size={13} /> 工具
             </button>
-            <button className="tool-btn">
-              <IconCube size={13} /> Docker <IconChevronDown size={12} />
+            <button className='tool-btn' disabled={disabled}>
+              <IconCube size={13} /> 沙盒 <IconChevronDown size={12} />
             </button>
-            <button className="tool-btn">Kimi-K2.7 <IconChevronDown size={12} /></button>
-            <button className="send" aria-label="发送" onClick={submit} disabled={busy}>
+            <button className='tool-btn' disabled={disabled}>
+              Kimi-K2.7 <IconChevronDown size={12} />
+            </button>
+            <button
+              className='send'
+              data-testid='send-button'
+              aria-label='发送'
+              onClick={submit}
+              disabled={disabled}
+            >
               <IconSend size={15} />
             </button>
           </div>

@@ -83,6 +83,21 @@ export const IconClip = ({ size }: P) => (
 export const IconStop = ({ size }: P) => (
   <svg {...b(size)}><rect x="6" y="6" width="12" height="12" rx="2.5" /></svg>
 );
+export const IconShield = ({ size }: P) => (
+  <svg {...b(size)}><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /></svg>
+);
+export const IconX = ({ size }: P) => (
+  <svg {...b(size)}><path d="M18 6 6 18M6 6l12 12" /></svg>
+);
+export const IconHourglass = ({ size }: P) => (
+  <svg {...b(size)}><path d="M5 4h14M7 4v2a5 5 0 0 0 5 5 5 5 0 0 0 5-5V4M7 20h10M7 20v-2a5 5 0 0 1 5-5 5 5 0 0 1 5 5v2M12 11v2" /></svg>
+);
+export const IconCircleAlert = ({ size }: P) => (
+  <svg {...b(size)}><circle cx="12" cy="12" r="10" /><path d="M12 8v4M12 16h.01" /></svg>
+);
+export const IconCheckCircle = ({ size }: P) => (
+  <svg {...b(size)}><circle cx="12" cy="12" r="10" /><path d="m9 12 2 2 4-4" /></svg>
+);
 
 export function ToolIcon({ name, size = 15 }: { name: string; size?: number }) {
   if (name === "terminal") return <IconTerminal size={size} />;

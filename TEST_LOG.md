@@ -316,3 +316,35 @@
 
 ### 关键决策
 - B4 临时让 Supervisor/Overseer 也直连 exo（通过 env），解决 LiteLLM proxy 的本地 Postgres/prisma 阻塞；proxy 修复后仍可切回。
+
+## [2026-07-02] Phase B · B5 完成 — UI 去 AI 感打磨 + 审批流 TestClient 兜底
+
+### 修复的 TypeScript 错误
+- 删除 `console/src/components/Conversation.tsx` 未使用的 `IconStop` 导入。
+- 在 `console/src/store.tsx` 中为工具子事件显式标注 `ToolChild` 类型，避免 `children` 类型推断错误。
+
+### 构建验证
+- 命令：`cd console && npm run build`
+- 输出摘要：`tsc -b && vite build` 成功，dist 产物生成。
+- 结论：✅ 通过。
+
+### 后端审批流 TestClient 集成测试
+- 新增文件：`tests/test_api_approval_flow.py`
+- 命令：`PYTHONPATH=src .venv/bin/python -m pytest tests/test_api_approval_flow.py -v`
+- 输出摘要：`2 passed`（approve → done / reject → review + error）
+- 结论：✅ 在进程内验证 approval_request/approval_result 状态机，无需真实 socket 绑定。
+
+### 全量回归
+- 命令：`PYTHONPATH=src .venv/bin/python -m pytest tests/ -q`
+- 输出摘要：`33 passed, 1 skipped, 2 warnings`
+- 结论：✅ 通过；`1 skipped` 为 `tests/test_web_search.py::test_returns_results` 因沙箱无法连接 SearXNG 自动跳过。
+
+### B5 验收脚本
+- 命令：`bash scripts/verify_b5.sh`
+- 输出摘要：后端/预览因沙箱禁止 bind TCP 端口无法启动（Python uvicorn `Operation not permitted`、Node preview `EPERM`）；脚本跳过真实浏览器/WS E2E，运行 pytest 兜底；退出码 0。
+- 结论：✅ 在沙箱限制下以 TestClient 集成测试完成验收；真实浏览器/WS E2E 保留并在环境允许时复跑。
+
+### 环境限制诚实披露
+- 当前 Codex 沙箱禁止 Python / Node 在 127.0.0.1 上 bind TCP 端口，也阻止 outbound 网络连接（SearXNG）。
+- 已通过工程化手段兜底：TestClient 集成测试 + 网络不可达自动 skip。
+- 真实浏览器/Playwright E2E 待非沙箱环境/CI 复跑。
