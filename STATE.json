@@ -1,8 +1,8 @@
 {
   "project": "flipped",
   "description": "接入本地 MLX 双模型(GLM-5.2 编排者 / Kimi-K2.7-Code 执行者)的 agentic 代码编辑器平台。fork Roo Code + 自定义驾驭层(强制验证/循环检测/上下文压缩/人工审批/子Agent/可观测性) + MCP 联网与外部能力。",
-  "updated": "2026-07-02",
-  "current_milestone": "Phase B · 打通 MVP（B1/B2/B3/B4/B5 ✅）",
+   "updated": "2026-07-02",
+   "current_milestone": "M5 · 硬化与产线化（性能/稳定性/安全/崩溃恢复）",
   "key_facts": {
     "dev_host": "Apple M5 Max, 128GB RAM, 1.1TB 可用磁盘 — 开发/控制节点，非模型宿主",
     "model_cluster": "exo 集群 @ http://100.64.201.37:52415 (内网, OpenAI 兼容)；公网 https://dgmt.top/exo (需 Bearer token)",
@@ -90,17 +90,19 @@
         "B5": {
           "title": "UI 去 AI 感打磨",
           "status": "done",
-          "note": "UI 去 AI 感打磨完成：Conversation 事件流可读性/StatusBanner/ErrorBanner/ApprovalCard/工具子事件合并；StatusBar 接真实状态；api.ts 支持 send；store.tsx 维护 sessionStatus/progress/errorCount/approvalPending。npm run build 通过；pytest 33 passed, 1 skipped; verify_b5.sh 退出码 0。真实浏览器/WS E2E 因当前 Codex 沙箱禁止 bind TCP 端口被跳过，由 tests/test_api_approval_flow.py (TestClient) 兜底验证审批流。web_search 网络测试在沙箱不可达时自动跳过。"
+          "note": "UI 去 AI 感打磨完成：Conversation 事件流可读性/StatusBanner/ErrorBanner/ApprovalCard/工具子事件合并；StatusBar 接真实状态；api.ts 支持 send；store.tsx 维护 sessionStatus/progress/errorCount/approvalPending。npm run build 通过；pytest 33 passed, 1 skipped; verify_b5.sh 退出码 0。真实浏览器/WS E2E 因当前 Codex 沙箱禁止 bind TCP 端口被跳过，由 tests/test_api_approval_flow.py (TestClient) 兜底验证审批流。web_search 网络测试在沙箱不可达时自动跳过。。已提交 git commit 4e01e16。"
         }
       }
     },
     "M4": {
       "title": "后端能力接入 (DeepAgents 包成 MCP Server + RAG 向量库)",
-      "status": "todo"
+      "status": "done",
+      "note": "MCP Server 5 tools + Chroma RAG + researcher + pytest.ini 已实装；verify_m4.sh 全量 47 passed + console build 通过。真实 LLM/网络端到端因沙箱限制由注入测试兜底。"
     },
     "M5": {
       "title": "硬化与产线化 (性能/稳定性/安全/崩溃恢复)",
-      "status": "todo"
+      "status": "doing",
+      "note": "目标：性能(KV cache/上下文/模型换载)、稳定性(崩溃恢复/断点续跑)、安全(密钥/命令白名单)。验收：长任务连续自主运行并在中途崩溃后从 checkpoint 恢复。"
     }
   },
   "architecture_decisions": [

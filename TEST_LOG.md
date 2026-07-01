@@ -348,3 +348,41 @@
 - 当前 Codex 沙箱禁止 Python / Node 在 127.0.0.1 上 bind TCP 端口，也阻止 outbound 网络连接（SearXNG）。
 - 已通过工程化手段兜底：TestClient 集成测试 + 网络不可达自动 skip。
 - 真实浏览器/Playwright E2E 待非沙箱环境/CI 复跑。
+
+## [2026-07-02] M4 完成 — MCP Server + Chroma RAG
+
+### 依赖安装
+- 命令：`source .venv/bin/activate && pip install mcp chromadb 'uvicorn>=0.30.0'`
+- 结果：`mcp` SDK 与 `chromadb` 1.5.9 已装入；`sentence-transformers` 保持可选。
+- 备注：`pytest.ini` 禁用 `anyio` pytest 插件，避免其干扰 `test_api_approval_flow.py` 的 `asyncio.run`。
+
+### MCP Server 实现
+- 新增 `src/mcp_server/`：MCP stdio server，注册 5 个工具：`web_search`、`rag_query`、`rag_ingest`、`run_coding_task`、`research_and_code`。
+- 新增 `src/rag/`：Chroma 向量库 + 可插拔嵌入（`SentenceTransformerEmbeddings` / `MockEmbedding`）+ 文件/目录/文本 ingest。
+- 新增 `src/driving/researcher.py`：聚合 `web_search` + `rag_query` 调研上下文，供 `research_and_code` 使用。
+- 新增测试：`tests/test_rag.py`、`tests/test_mcp_server.py`、`tests/test_researcher.py`。
+
+### M4 单元测试
+- 命令：`PYTHONPATH=src .venv/bin/python -m pytest tests/test_rag.py tests/test_mcp_server.py tests/test_researcher.py -q`
+- 输出摘要：`13 passed, 1 warning in 1.99s`
+- 结论：✅ 通过。
+
+### 全量回归
+- 命令：`PYTHONPATH=src .venv/bin/python -m pytest tests/ -q`
+- 输出摘要：`47 passed, 2 warnings in 9.10s`
+- 结论：✅ 通过；M4 未引入回归。
+
+### M4 验收脚本
+- 命令：`bash scripts/verify_m4.sh`
+- 输出摘要：M4 单测 13 passed，全量回归 47 passed，console build 通过；脚本退出码 0。
+- 结论：✅ 通过。
+
+### Console 构建
+- 命令：`cd console && npm run build`
+- 输出摘要：`tsc -b && vite build` 成功，dist 产物生成。
+- 结论：✅ 通过。
+
+### 环境限制诚实披露
+- 当前 Codex 沙箱禁止 Python 进程 bind TCP 端口、阻止 outbound 网络连接（SearXNG/exo）。
+- `research_and_code` 的“真实 LLM + 网络 + 编码”端到端未在沙箱中实跑，由注入 mock 的测试兜底验证状态机与调用链。
+- 真实 LLM + 网络 + 编码端到端需在非沙箱环境或 CI 中复跑。

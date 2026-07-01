@@ -1,0 +1,101 @@
+"""Chroma 向量库封装。"""
+from __future__ import annotations
+
+import abc
+import os
+import uuid
+from typing import Any
+
+import chromadb
+
+from rag.embeddings import EmbeddingModel, _default_embedding
+
+
+DEFAULT_COLLECTION = "flipped_knowledge"
+
+
+class VectorStore(abc.ABC):
+    """向量库抽象。"""
+
+    @abc.abstractmethod
+    def add_documents(self, docs: list[dict[str, Any]]) -> list[str]:
+        """添加文档；每个 doc 至少包含 'text'，可选 'metadata'。返回 id 列表。"""
+        ...
+
+    @abc.abstractmethod
+    def query(self, text: str, n_results: int = 5, filter: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+        """语义检索，返回 [{id, text, metadata, distance}] 列表。"""
+        ...
+
+    @abc.abstractmethod
+    def delete_collection(self) -> None:
+        """删除整个集合（谨慎）。"""
+        ...
+
+
+class ChromaVectorStore(VectorStore):
+    """基于 Chroma 的本地持久化向量库。
+
+    db_dir=None 且环境变量 RAG_DB_DIR 未设置时使用 EphemeralClient（内存，测试用）。
+    """
+
+    def __init__(
+        self,
+        db_dir: str | None = None,
+        collection: str = DEFAULT_COLLECTION,
+        embedding: EmbeddingModel | None = None,
+    ):
+        self.embedding = embedding or _default_embedding()
+        self.collection_name = collection
+        db_dir = db_dir or os.environ.get("RAG_DB_DIR")
+        if db_dir:
+            self._client = chromadb.PersistentClient(path=db_dir)
+        else:
+            self._client = chromadb.EphemeralClient()
+        self._collection = self._client.get_or_create_collection(
+            name=self.collection_name,
+            metadata={"hnsw:space": "cosine"},
+        )
+
+    def add_documents(self, docs: list[dict[str, Any]]) -> list[str]:
+        if not docs:
+            return []
+        ids = [str(uuid.uuid4()) for _ in docs]
+        texts = [str(d.get("text", "")) for d in docs]
+        embeddings = self.embedding.embed(texts)
+        metadatas = [d.get("metadata") or {} for d in docs]
+        self._collection.add(
+            ids=ids,
+            embeddings=embeddings,
+            documents=texts,
+            metadatas=metadatas,
+        )
+        return ids
+
+    def query(self, text: str, n_results: int = 5, filter: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+        embedding = self.embedding.embed([text])[0]
+        results = self._collection.query(
+            query_embeddings=[embedding],
+            n_results=n_results,
+            where=filter,
+            include=["documents", "metadatas", "distances"],
+        )
+        items: list[dict[str, Any]] = []
+        ids = results.get("ids") or [[]]
+        documents = results.get("documents") or [[]]
+        metadatas = results.get("metadatas") or [[]]
+        distances = results.get("distances") or [[]]
+        for i, doc_id in enumerate(ids[0]):
+            items.append({
+                "id": doc_id,
+                "text": documents[0][i] if documents and len(documents[0]) > i else "",
+                "metadata": metadatas[0][i] if metadatas and len(metadatas[0]) > i else {},
+                "distance": distances[0][i] if distances and len(distances[0]) > i else None,
+            })
+        return items
+
+    def delete_collection(self) -> None:
+        try:
+            self._client.delete_collection(self.collection_name)
+        except Exception:
+            pass
