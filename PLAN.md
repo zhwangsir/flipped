@@ -31,10 +31,11 @@
    - 新增 `tests/test_metrics.py` 7 个用例；修复 `src/metrics/` 前导空格导致的 `IndentationError`。
    - 验证：`test_metrics.py 7 passed` / 全量 `54 passed` / `console build` 通过 / `scripts/verify_m5.sh` 退出码 0。
 
-2. **M5.2 上下文 / KV cache 管理** 🚧 进行中
+2. **M5.2 上下文 / KV cache 管理** ✅ 已完成
+   - 修复 LangGraph `InvalidUpdateError`：移除 `START -> compress` 边；`compress_node` 仅在 `compress_history` 真正触发压缩时才返回 `history` + `context_summary`，否则返回 `{}`，避免与 `supervisor` 在同一 superstep 中同写 `history`。
    - 新增 `src/driving/context_manager.py`：
      - `estimate_tokens(history)`：可插拔 token 估算器（默认按字符混合启发式，可选 tiktoken 若已安装）。
-     - `compress_history(history, max_tokens, keep_recent, summarizer)`：当 token 超过阈值时，把早期 history 摘要成一条 `summary` 条目，保留最近 `keep_recent` 条完整记录。
+     - `compress_history(history, max_tokens, keep_recent, summarizer)`：当 token 超过阈值且历史条目数 > `keep_recent` 时，把早期 history 摘要成一条 `summary` 条目，保留最近 `keep_recent` 条完整记录。
      - 默认摘要器生成 `{step:"summary", tokens_before, items, digest}`，不丢失关键步类型。
    - 在 `orchestrator.py` 中：
      - `OrchestratorState` 增加 `context_summary` 字段；`default_supervisor` 把 `context_summary` 放入 prompt。
@@ -44,8 +45,8 @@
      - 新增 `CheckpointRetention` 包装 `SqliteSaver`，按 `thread_id` 保留最近 N 个 checkpoint，删除旧 checkpoint 及关联 writes。
      - `drive_orchestrated` 在运行结束后调用 `retention.trim()`，避免长任务 checkpoint 无限膨胀。
    - 测试：
-     - `tests/test_context_manager.py`：token 估算、压缩触发、摘要内容、retention 删除。
-     - 全量回归（≥54 passed）与 `scripts/verify_m5.sh` 通过。
+     - 新增 `tests/test_context_manager.py`：8 个用例覆盖 `simple_estimator`、压缩触发、摘要内容、自定义 summarizer、短历史保护、`CheckpointRetention` trim。
+     - 全量回归 62 passed / console build 通过 / `scripts/verify_m5.sh` 退出码 0。
  3. **M5.3 模型换载 / 路由降级策略**
     - 增加单模型模式 / 双模型模式自动切换：当 `coder` 不可用时只跑 `architect` 级任务，或切换到本地 fallback 模型。
     - 实现 `exollama` 健康检查（`/v1/models` 可达性 + 指定模型在线）。

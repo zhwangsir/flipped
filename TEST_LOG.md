@@ -416,3 +416,35 @@
 
 ### 进入 M5.2
 - 下一步：上下文 / KV cache 管理（token 估算、触发总结压缩、checkpoint 保留策略）。
+
+## [2026-07-02] M5.2 完成 — 上下文 / KV cache 管理
+
+### 修复 InvalidUpdateError
+- 命令：python3 修改 src/driving/orchestrator.py
+- 修改：移除 `g.add_edge(START, "compress")`；`compress_node` 在未触发压缩时返回 `{}`。
+- 结论：避免了 `compress` 与 `supervisor` 在初始 superstep 同时写 `history`。
+
+### M5.2 单测
+- 命令：`PYTHONPATH=src .venv/bin/python -m pytest tests/test_context_manager.py -q`
+- 输出摘要：8 passed in 0.06s
+- 结论：✅ 覆盖 token 估算、压缩触发、摘要、自定义 summarizer、retention trim。
+
+### orchestrator 回归
+- 命令：`PYTHONPATH=src .venv/bin/python -m pytest tests/test_orchestrator.py -q`
+- 输出摘要：10 passed, 1 warning
+- 结论：✅ compress 节点修复后编排器状态机回归通过。
+
+### 全量回归
+- 命令：`PYTHONPATH=src .venv/bin/python -m pytest tests/ -q`
+- 输出摘要：62 passed, 2 warnings
+- 结论：✅ 无回归。
+
+### Console 构建
+- 命令：`cd console && npm run build`
+- 输出摘要：`tsc -b && vite build` 成功
+- 结论：✅ 通过。
+
+### M5 验收脚本
+- 命令：`bash scripts/verify_m5.sh`
+- 输出摘要：test_metrics.py 7 passed / 全量 62 passed / Console build 成功；退出码 0
+- 结论：✅ M5.2 验收完成，进入 M5.3。

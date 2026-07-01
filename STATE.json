@@ -111,8 +111,8 @@
         },
         "M5.2": {
           "title": "上下文 / KV cache 管理（token 估算、压缩、checkpoint 保留）",
-          "status": "doing",
-          "note": "准备实现 context_manager.py，集成压缩节点与 CheckpointRetention。"
+          "status": "done",
+          "note": "context_manager.py 已实现；修复 InvalidUpdateError：移除 START->compress 边，compress_node 仅在真正触发压缩时返回 history/context_summary；CheckpointRetention 按 thread_id 保留最近 N 个 checkpoint；新增 test_context_manager.py 8 个用例；全量回归 62 passed，console build 通过，verify_m5.sh 退出码 0。"
         }
       }
     }

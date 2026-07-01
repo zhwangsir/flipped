@@ -22,6 +22,7 @@ from driving.approval import APPROVE_WORDS, classify_risk
 from driving.observe import run_and_observe
 from driving.sidecar import action_signature
 from metrics import MetricsCallbackHandler
+from driving.context_manager import CheckpointRetention, compress_history
 
 from executor.openhands_worker import OpenHandsWorker
 
@@ -80,6 +81,9 @@ class OrchestratorState(TypedDict, total=False):
     done: bool
     stop_reason: str       # verified / overseer_abort / loop_detected / circuit_breaker
     history: list[dict]
+    context_summary: dict | None
+    max_context_tokens: int
+    keep_recent: int
 
 
 # 可注入节点：(state) -> state 增量
@@ -122,8 +126,12 @@ def default_supervisor(state: OrchestratorState) -> dict:
         rationale: str = Field(description="一句话理由")
 
     fb = state.get("feedback", "")
+    summary_note = ""
+    ctx_summary = state.get("context_summary")
+    if ctx_summary:
+        summary_note = f"\n历史摘要：{ctx_summary.get('digest', '')}"
     msg = (f"目标：{state['goal']}\n工作目录：{state['cwd']}\n"
-           f"{'反馈(上一轮验收失败/监督意见，必须据此调整)：' + fb if fb else '这是首轮。'}\n"
+           f"{'反馈(上一轮验收失败/监督意见，必须据此调整)：' + fb if fb else '这是首轮。'}{summary_note}\n"
            "你是架构调度者。给出执行者下一步要做的【一个】自包含子任务；若相信目标已达成则 believe_done=true。")
     try:
         # method="function_calling"：GLM/exo 不支持 json_schema(langchain 默认)，但支持工具调用(M0.4)
@@ -254,7 +262,10 @@ def build_orchestrator(supervisor: SupervisorFn = default_supervisor,
                        worker: WorkerFn = default_worker,
                        overseer: OverseerFn = default_overseer,
                        verifier: VerifierFn = _default_verifier,
-                       checkpointer=None):
+                       checkpointer=None,
+                       max_context_tokens: int = 10000,
+                       keep_recent: int = 4,
+                       summarizer: Callable | None = None):
     """编译 Supervisor→Worker→Overseer→(条件)→Verify 多 agent 监督图。节点可注入。"""
 
     def verify(state: OrchestratorState) -> dict:
@@ -297,6 +308,20 @@ def build_orchestrator(supervisor: SupervisorFn = default_supervisor,
     def mark_breaker(state: OrchestratorState) -> dict:
         return {"done": True, "stop_reason": "circuit_breaker"}
 
+    def compress_node(state: OrchestratorState) -> dict:
+        history = state.get("history", [])
+        if not history:
+            return {}
+        result = compress_history(
+            history,
+            max_tokens=max_context_tokens,
+            keep_recent=keep_recent,
+            summarizer=summarizer,
+        )
+        if not result.get("compressed"):
+            return {}
+        return {"history": result["history"], "context_summary": result.get("summary")}
+
     g = StateGraph(OrchestratorState)
     g.add_node("supervisor", supervisor)
     g.add_node("worker", worker)
@@ -305,6 +330,7 @@ def build_orchestrator(supervisor: SupervisorFn = default_supervisor,
     g.add_node("abort", mark_abort)
     g.add_node("loop", mark_loop)
     g.add_node("breaker", mark_breaker)
+    g.add_node("compress", compress_node)
     def approval_gate(state: OrchestratorState) -> dict:
         # 高风险子任务（逸出沙箱/不可逆，§7）在派给 worker 前硬暂停审批；require_approval=False 时直通
         if state.get("require_approval") and classify_risk(state.get("current_subtask", "")) == "high":
@@ -326,8 +352,9 @@ def build_orchestrator(supervisor: SupervisorFn = default_supervisor,
 
     g.add_node("approval_gate", approval_gate)
     g.add_edge(START, "supervisor")
+    g.add_edge("compress", "supervisor")
     g.add_conditional_edges("supervisor", _route_sup, {"approval_gate": "approval_gate", "verify": "verify"})
-    g.add_conditional_edges("approval_gate", _route_approval, {"supervisor": "supervisor", "worker": "worker"})
+    g.add_conditional_edges("approval_gate", _route_approval, {"supervisor": "compress", "worker": "worker"})
     def mark_worker_error(state: OrchestratorState) -> dict:
         return {"done": True, "stop_reason": "worker_error"}
 
@@ -339,9 +366,9 @@ def build_orchestrator(supervisor: SupervisorFn = default_supervisor,
     g.add_conditional_edges("worker", route_worker, {"overseer": "overseer", "worker_error": "worker_error"})
     g.add_edge("worker_error", END)
     g.add_conditional_edges("overseer", route_overseer,
-                            {"verify": "verify", "replan": "supervisor", "abort": "abort"})
+                            {"verify": "verify", "replan": "compress", "abort": "abort"})
     g.add_conditional_edges("verify", route_verify,
-                            {"supervisor": "supervisor", "loop": "loop", "breaker": "breaker", END: END})
+                            {"supervisor": "compress", "loop": "loop", "breaker": "breaker", END: END})
     g.add_edge("abort", END)
     g.add_edge("loop", END)
     g.add_edge("breaker", END)
@@ -351,7 +378,10 @@ def build_orchestrator(supervisor: SupervisorFn = default_supervisor,
 def drive_orchestrated(goal: str, cwd: str, verify_cmd: list, *,
                        max_iterations: int = 4, loop_threshold: int = DEFAULT_LOOP_THRESHOLD,
                        thread_id: str = "default", db_path: str = ":memory:",
-                       data_dir: str | None = None, require_approval: bool = False) -> OrchestratorState:
+                       data_dir: str | None = None, require_approval: bool = False,
+                       max_context_tokens: int = 10000, keep_recent: int = 4,
+                       summarizer: Callable | None = None,
+                       max_checkpoints: int = 50) -> OrchestratorState:
     """多 Agent 监督编排驱动一个目标到验收通过 / 监督中止 / 循环 / 熔断。
 
     require_approval=True：高风险子任务在执行前 interrupt 等人工放行（命中需用 Command(resume=...) 续跑）。
@@ -364,8 +394,16 @@ def drive_orchestrated(goal: str, cwd: str, verify_cmd: list, *,
         "require_approval": require_approval, "worker_error": False,
         "iteration": 0, "signatures": [], "feedback": "", "verified": False,
         "done": False, "stop_reason": "", "history": [],
+        "context_summary": None, "max_context_tokens": max_context_tokens,
+        "keep_recent": keep_recent,
     }
     with SqliteSaver.from_conn_string(db_path) as cp:
-        graph = build_orchestrator(checkpointer=cp)
-        return graph.invoke(initial, config={"configurable": {"thread_id": thread_id}},
-                            )
+        graph = build_orchestrator(
+            checkpointer=cp,
+            max_context_tokens=max_context_tokens,
+            keep_recent=keep_recent,
+            summarizer=summarizer,
+        )
+        result = graph.invoke(initial, config={"configurable": {"thread_id": thread_id}})
+        CheckpointRetention(cp, max_checkpoints=max_checkpoints).trim(thread_id)
+        return result
