@@ -448,3 +448,33 @@
 - 命令：`bash scripts/verify_m5.sh`
 - 输出摘要：test_metrics.py 7 passed / 全量 62 passed / Console build 成功；退出码 0
 - 结论：✅ M5.2 验收完成，进入 M5.3。
+
+## [2026-07-02] M5.3 完成 — 模型换载 / 路由降级
+
+### 实现
+- 新增 `src/driving/model_router.py`：
+  - `is_endpoint_healthy(base_url)`：GET `/v1/models` 检查可达性。
+  - `is_model_available(base_url, model_id)`：检查指定模型是否在目录中。
+  - `resolve_model_config(alias)`：优先 LiteLLM proxy；proxy 不可用时自动回退直连 exo。
+  - `resolve_worker_model_config()`：为 OpenHands Worker 选择 proxy（docker-host 网关）或直连。
+- `src/driving/orchestrator.py`：`supervisor`/`overseer` 的 `_make_llm` 运行时自动选择可用 endpoint；`openhands_worker` 节点创建 Worker 时通过 router 选择 endpoint。
+
+### M5.3 单测
+- 命令：`PYTHONPATH=src .venv/bin/python -m pytest tests/test_model_router.py -q`
+- 输出摘要：11 passed in 0.02s
+- 结论：✅ 覆盖 proxy 优先/直连回退/双端不可用/alias 可用性/worker 配置。
+
+### 全量回归
+- 命令：`PYTHONPATH=src .venv/bin/python -m pytest tests/ -q`
+- 输出摘要：73 passed, 2 warnings
+- 结论：✅ 无回归。
+
+### Console 构建
+- 命令：`cd console && npm run build`
+- 输出摘要：`tsc -b && vite build` 成功
+- 结论：✅ 通过。
+
+### M5 验收脚本
+- 命令：`bash scripts/verify_m5.sh`
+- 输出摘要：test_metrics.py 7 passed / 全量 73 passed / Console build 成功；退出码 0
+- 结论：✅ M5.3 验收完成，进入 M5.4。

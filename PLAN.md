@@ -47,11 +47,17 @@
    - 测试：
      - 新增 `tests/test_context_manager.py`：8 个用例覆盖 `simple_estimator`、压缩触发、摘要内容、自定义 summarizer、短历史保护、`CheckpointRetention` trim。
      - 全量回归 62 passed / console build 通过 / `scripts/verify_m5.sh` 退出码 0。
- 3. **M5.3 模型换载 / 路由降级策略**
-    - 增加单模型模式 / 双模型模式自动切换：当 `coder` 不可用时只跑 `architect` 级任务，或切换到本地 fallback 模型。
-    - 实现 `exollama` 健康检查（`/v1/models` 可达性 + 指定模型在线）。
-    - 当 LiteLLM proxy `:4000` 不可用且 `FLIPPED_MODEL_BASE_URL` 已设置时自动直连；proxy 恢复后切回。
- 
+ 3. **M5.3 模型换载 / 路由降级策略** ✅ 已完成
+    - 新增 `src/driving/model_router.py`：
+      - `is_endpoint_healthy(base_url, timeout)`：GET `/v1/models` 判断服务是否可达。
+      - `is_model_available(base_url, model_id, timeout)`：在 `/v1/models` 列表中检查指定模型是否在线。
+      - `resolve_model_config(alias)`：优先使用 LiteLLM proxy；proxy 健康且 alias 可用时走 proxy + alias，否则回退到 `FLIPPED_MODEL_BASE_URL` 直连 exo + 完整模型 id。
+      - `resolve_worker_model_config()`：为 OpenHands Worker 选择可用 endpoint + 模型名，运行时 proxy 指向 `host.docker.internal:4000` 供容器内访问。
+    - 在 `src/driving/orchestrator.py` 的 `_make_llm` 中接入 `resolve_model_config`，Supervisor/Overseer 根据运行时健康状态自动选择 proxy 或直连。
+    - 在 `src/driving/orchestrator.py` 的 `openhands_worker` 节点中接入 `resolve_worker_model_config`，Worker 创建时动态选择 endpoint。
+    - 新增 `tests/test_model_router.py`：11 个用例覆盖 proxy 健康/直连健康/双端不可用、alias 可用性判断、worker 配置解析。
+    - 全量回归 73 passed / console build 通过 / `scripts/verify_m5.sh` 退出码 0。
+
  4. **M5.4 崩溃恢复与断点续跑**
     - `orchestration-api` 启动时扫描未完成的会话（`status=running`/`paused`），通过 LangGraph checkpoint 恢复。
     - 提供 `POST /api/v1/sessions/{id}/resume` 端点或自动恢复；`worker_error` 时根据是否已持久化决定重试或交人工。

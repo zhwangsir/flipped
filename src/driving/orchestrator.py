@@ -23,6 +23,7 @@ from driving.observe import run_and_observe
 from driving.sidecar import action_signature
 from metrics import MetricsCallbackHandler
 from driving.context_manager import CheckpointRetention, compress_history
+from driving.model_router import resolve_model_config, resolve_worker_model_config
 
 from executor.openhands_worker import OpenHandsWorker
 
@@ -96,21 +97,13 @@ VerifierFn = Callable[[list, str], "tuple[bool, str]"]
 # ---------- 默认实现（GLM/Kimi 经 LiteLLM） ----------
 
 def _make_llm(alias: str, temperature: float = 0, callbacks=None):
-    """构建指向 LiteLLM:4000 或直连 exo 的 ChatOpenAI（alias=architect/coder）。
+    """构建 ChatOpenAI（alias=architect/coder）。
 
-    通过环境变量可绕过 LiteLLM 代理：
-      FLIPPED_MODEL_BASE_URL=http://100.64.201.37:52415/v1
-      FLIPPED_ARCHITECT_MODEL=mlx-community/GLM-5.2-fp8
-      FLIPPED_CODER_MODEL=mlx-community/Kimi-K2.7-Code-4bit
+    运行时根据 `model_router.resolve_model_config` 自动选择 LiteLLM proxy 或直连 exo。
     """
     from langchain_openai import ChatOpenAI
 
-    model_map = {
-        "architect": os.environ.get("FLIPPED_ARCHITECT_MODEL", "mlx-community/GLM-5.2-fp8"),
-        "coder": os.environ.get("FLIPPED_CODER_MODEL", "mlx-community/Kimi-K2.7-Code-4bit"),
-    }
-    model = model_map.get(alias, alias)
-    base = os.environ.get("FLIPPED_MODEL_BASE_URL") or os.environ.get("LITELLM_BASE_URL", "http://localhost:4000/v1")
+    base, model = resolve_model_config(alias)
     key = os.environ.get("EXO_API_KEY") or os.environ.get("LITELLM_MASTER_KEY", "dummy")
     return ChatOpenAI(model=model, base_url=base, api_key=key, temperature=temperature, timeout=300,
                       callbacks=callbacks)
@@ -160,19 +153,20 @@ def openhands_worker(state: OrchestratorState) -> dict:
     """Kimi via OpenHands SDK 在 Docker 沙盒中执行当前子任务。
 
     这是 Phase B 的默认执行器：Supervisor(GLM) 拆子任务 -> OpenHands Worker(Kimi)
-    -> Overseer(GLM) 监督。Worker 直连 exo 模型，不经过 LiteLLM 代理。
+    -> Overseer(GLM) 监督。Worker 通过 `model_router` 动态选择 LiteLLM proxy 或直连 exo。
     """
     session_id = f"orch-{uuid.uuid4().hex[:8]}"
     task_id = f"subtask-{uuid.uuid4().hex[:8]}"
     bus = NullEventBus()
+    worker_base_url, worker_model_alias = resolve_worker_model_config()
     worker = OpenHandsWorker(
         session_id=session_id,
         task_id=task_id,
         bus=bus,
         agent_host=os.environ.get("OPENHANDS_AGENT_HOST", "http://localhost:8000"),
         working_dir=state["cwd"],
-        model_alias=os.environ.get("OPENHANDS_MODEL", "mlx-community/Kimi-K2.7-Code-4bit"),
-        base_url=os.environ.get("OPENHANDS_BASE_URL", "http://100.64.201.37:52415/v1"),
+        model_alias=worker_model_alias,
+        base_url=worker_base_url,
     )
     try:
         summary = worker.run(state["current_subtask"])
