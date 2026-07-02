@@ -10,6 +10,7 @@ import type {
   BrowserView,
   ChangedFile,
   Metrics,
+  McpServer,
 } from './types';
 import { eventToStreamItem } from './types';
 import {
@@ -19,6 +20,8 @@ import {
   deleteSession as apiDeleteSession,
   cancelTask as apiCancelTask,
   fetchMetrics,
+  getMcpServers,
+  toggleMcpServer as apiToggleMcpServer,
   connectEvents,
 } from './api';
 
@@ -39,6 +42,8 @@ interface AppState {
   browserView: BrowserView | null;
   changedFiles: ChangedFile[];
   metrics: Metrics | null;
+  mcpServers: McpServer[];
+  toggleMcpServer: (name: string, enabled: boolean) => Promise<void>;
   selectedModel: string;
   setModel: (m: string) => void;
   selectSession: (id: string) => void;
@@ -67,6 +72,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [browserView, setBrowserView] = useState<BrowserView | null>(null);
   const [changedFiles, setChangedFiles] = useState<ChangedFile[]>([]);
   const [metrics, setMetrics] = useState<Metrics | null>(null);
+  const [mcpServers, setMcpServers] = useState<McpServer[]>([]);
   const [selectedModel, setSelectedModel] = useState('coder');
   const wsRef = useRef<{ close: () => void; send: (msg: unknown) => void } | null>(null);
 
@@ -96,6 +102,23 @@ export function AppProvider({ children }: { children: ReactNode }) {
       alive = false;
       clearInterval(id);
     };
+  }, []);
+
+  // M7.3 — 拉取真实 MCP 服务器列表
+  useEffect(() => {
+    getMcpServers()
+      .then(setMcpServers)
+      .catch(() => {});
+  }, []);
+
+  const toggleMcpServer = useCallback(async (name: string, enabled: boolean) => {
+    // 乐观更新，失败回滚
+    setMcpServers((prev) => prev.map((s) => (s.name === name ? { ...s, enabled } : s)));
+    try {
+      await apiToggleMcpServer(name, enabled);
+    } catch {
+      setMcpServers((prev) => prev.map((s) => (s.name === name ? { ...s, enabled: !enabled } : s)));
+    }
   }, []);
 
   const selectSession = useCallback((id: string) => {
@@ -307,6 +330,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         browserView,
         changedFiles,
         metrics,
+        mcpServers,
+        toggleMcpServer,
         selectedModel,
         setModel,
         selectSession,

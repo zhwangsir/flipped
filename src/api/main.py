@@ -84,6 +84,23 @@ async def metrics() -> MetricsResponse:
     return MetricsResponse(**COLLECTOR.snapshot())
 
 
+# ---------- MCP 服务器（M7.3 真实列表 + 开关） ----------
+
+@app.get(f"{API_PREFIX}/mcp/servers")
+async def get_mcp_servers() -> list[dict[str, Any]]:
+    from api.mcp_registry import list_servers
+    return list_servers()
+
+
+@app.post(f"{API_PREFIX}/mcp/servers/{{name}}/toggle")
+async def toggle_mcp_server(name: str, enabled: bool = Query(...)) -> dict[str, Any]:
+    from api.mcp_registry import toggle_server
+    try:
+        return toggle_server(name, enabled)
+    except KeyError:
+        raise HTTPException(status_code=404, detail=f"unknown MCP server: {name}")
+
+
 # ---------- 会话管理 ----------
 
 @app.post(f"{API_PREFIX}/sessions", response_model=Session)
@@ -314,6 +331,7 @@ async def _run_openhands(session_id: str, task_id: str, description: str, model_
     """
     from executor.openhands_worker import OpenHandsWorker
     from driving.model_router import resolve_worker_model_config
+    from api.mcp_registry import enabled_mcp_config
 
     base_url, model = resolve_worker_model_config(model_alias)
     worker = OpenHandsWorker(
@@ -324,6 +342,7 @@ async def _run_openhands(session_id: str, task_id: str, description: str, model_
         working_dir=os.environ.get("OPENHANDS_WORKING_DIR", "/workspace"),
         model_alias=model,
         base_url=base_url,
+        mcp_config=enabled_mcp_config(),
     )
     try:
         await asyncio.to_thread(worker.run, description)

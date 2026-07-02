@@ -55,3 +55,6 @@ tests/test_openai_normalize_proxy.py
 projects/
 desktop/node_modules/
 desktop/release/
+
+# M7.3 MCP 运行时开关状态(首次运行自动生成种子)
+config/mcp_servers.json

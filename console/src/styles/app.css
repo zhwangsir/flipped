@@ -982,6 +982,35 @@
   color: var(--text-muted);
   font-family: var(--font-mono);
 }
+/* M7.3 — MCP 行作为可点击开关按钮 */
+button.mcp-row {
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  transition: border-color var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease);
+}
+button.mcp-row:hover {
+  border-color: var(--border);
+  background: var(--bg-surface);
+}
+.mcp-row .t1 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.mcp-transport {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-faint);
+  border: 1px solid var(--border-subtle);
+  border-radius: 4px;
+  padding: 0 5px;
+  line-height: 15px;
+}
+.mcp-tools {
+  color: var(--text-faint);
+}
 .toggle {
   width: 34px;
   height: 19px;

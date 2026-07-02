@@ -56,6 +56,7 @@ class OpenHandsWorker:
         base_url: str | None = None,
         api_key: str | None = None,
         tools: list[dict[str, Any]] | None = None,
+        mcp_config: dict[str, Any] | None = None,
         timeout: float = 600.0,
     ):
         self.session_id = session_id
@@ -67,6 +68,7 @@ class OpenHandsWorker:
         self.base_url = base_url or os.environ.get("OPENHANDS_BASE_URL", "http://host.docker.internal:4000/v1")
         self.api_key = api_key or self._default_agent_api_key()
         self.tools = tools or self.DEFAULT_TOOLS
+        self.mcp_config = mcp_config or {}
         self.timeout = timeout
         self._events: list[OHEvent] = []
         self._lock = threading.Lock()
@@ -167,7 +169,13 @@ class OpenHandsWorker:
                 drop_params=True,
                 native_tool_calling=True,
             )
-            agent = Agent(llm=llm, tools=self.tools, include_default_tools=["FinishTool", "ThinkTool"])
+            agent_kwargs: dict[str, Any] = dict(
+                llm=llm, tools=self.tools, include_default_tools=["FinishTool", "ThinkTool"]
+            )
+            # M7.3 — 仅在有启用的 MCP 服务器时注入，保持默认执行路径不变
+            if self.mcp_config:
+                agent_kwargs["mcp_config"] = self.mcp_config
+            agent = Agent(**agent_kwargs)
             workspace = RemoteWorkspace(host=self.agent_host, working_dir=self.working_dir, api_key=self.api_key)
             with workspace:
                 conversation = RemoteConversation(

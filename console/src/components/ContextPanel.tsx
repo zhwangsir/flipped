@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from 'react';
 import { useApp } from '../store';
-import { diffLines, terminalLines, editorCode, mcpServers, problems } from '../mock';
+import { diffLines, terminalLines, editorCode, problems } from '../mock';
 import { IconCode, IconFile, IconTerminal, IconBrowser, IconWarn, IconPuzzle } from '../icons';
 
 type Tab = 'editor' | 'diff' | 'term' | 'browser' | 'problems' | 'mcp';
@@ -44,7 +44,7 @@ function langOf(path: string): string {
 }
 
 export function ContextPanel() {
-  const { terminalBlocks, browserView, changedFiles } = useApp();
+  const { terminalBlocks, browserView, changedFiles, mcpServers, toggleMcpServer } = useApp();
   const [tab, setTab] = useState<Tab>('editor');
   const [activePath, setActivePath] = useState<string | null>(null);
 
@@ -217,15 +217,33 @@ export function ContextPanel() {
 
         {tab === 'mcp' && (
           <div className="list">
-            {mcpServers.map((s, i) => (
-              <div className="row-card" key={i}>
+            {mcpServers.length === 0 && (
+              <div className="row-card">
                 <span className="lead"><IconPuzzle size={15} /></span>
                 <div className="grow">
-                  <div className="t1">{s.name}</div>
-                  <div className="t2">{s.desc} · {s.tools} 工具</div>
+                  <div className="t1">暂无 MCP 服务器</div>
+                  <div className="t2">检查后端 /mcp/servers</div>
                 </div>
-                <span className={'toggle' + (s.on ? ' on' : '')} />
               </div>
+            )}
+            {mcpServers.map((s) => (
+              <button
+                type="button"
+                className="row-card mcp-row"
+                key={s.name}
+                onClick={() => toggleMcpServer(s.name, !s.enabled)}
+                title={s.enabled ? '点击停用' : '点击启用'}
+              >
+                <span className="lead"><IconPuzzle size={15} /></span>
+                <div className="grow">
+                  <div className="t1">{s.name} <span className="mcp-transport">{s.transport}</span></div>
+                  <div className="t2">
+                    {s.description} · {s.tool_count} 工具
+                    {s.tools.length > 0 && <span className="mcp-tools"> · {s.tools.join(', ')}</span>}
+                  </div>
+                </div>
+                <span className={'toggle' + (s.enabled ? ' on' : '')} />
+              </button>
             ))}
           </div>
         )}

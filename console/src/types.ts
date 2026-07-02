@@ -69,6 +69,16 @@ export interface Metrics {
   context: Record<string, number>;
 }
 
+/** /mcp/servers 返回的真实 MCP 服务器（M7.3）。 */
+export interface McpServer {
+  name: string;
+  description: string;
+  transport: string;
+  enabled: boolean;
+  tools: string[];
+  tool_count: number;
+}
+
 /** orchestration-api 发过来的原始事件（与 src/api/schemas.py 对齐）。 */
 export interface ApiEvent {
   id: string;
