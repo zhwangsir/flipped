@@ -51,3 +51,5 @@ scripts/start_normalize_proxy.sh
 src/proxy/
 tests/test_openai_normalize_proxy.py
 .sessions.json
+.devlogs/
+projects/
