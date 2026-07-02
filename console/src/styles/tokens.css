@@ -1,50 +1,55 @@
 :root[data-theme="dark"] {
-  /* surfaces — deep-space neutral, faint cool cast, layered elevation */
-  --bg-app: oklch(15.5% 0.01 274);
-  --bg-sunken: oklch(14.5% 0.01 274);
-  --bg-base: oklch(17.6% 0.011 274);
-  --bg-surface: oklch(20.8% 0.012 274);
-  --bg-elevated: oklch(24.2% 0.014 274);
-  --bg-hover: oklch(27.5% 0.016 274);
-  --bg-glass: oklch(18% 0.011 274 / 0.72);
+  /* surfaces — quiet near-neutral, minimal cast, low elevation contrast */
+  --bg-app: oklch(16% 0.002 270);
+  --bg-sunken: oklch(14.5% 0.002 270);
+  --bg-base: oklch(18.4% 0.0025 270);
+  --bg-surface: oklch(21% 0.003 270);
+  --bg-elevated: oklch(23.4% 0.0035 270);
+  --bg-hover: oklch(26.5% 0.004 270);
+  --bg-glass: oklch(16% 0.002 270 / 0.86);
 
-  --border: oklch(28% 0.012 274);
-  --border-subtle: oklch(23.5% 0.01 274);
-  --border-strong: oklch(37% 0.014 274);
-  --edge-hi: oklch(100% 0 0 / 0.045); /* glassy top highlight */
+  --border: oklch(27% 0.003 270);
+  --border-subtle: oklch(22.5% 0.003 270);
+  --border-strong: oklch(35% 0.004 270);
+  --edge-hi: transparent; /* glass highlight removed for a flatter look */
 
-  --text-primary: oklch(97% 0.003 274);
-  --text-secondary: oklch(77% 0.008 274);
-  --text-muted: oklch(61% 0.011 274);
-  --text-faint: oklch(49% 0.012 274);
+  --text-primary: oklch(96% 0.002 270);
+  --text-secondary: oklch(72% 0.004 270);
+  --text-muted: oklch(56% 0.005 270);
+  --text-faint: oklch(44% 0.006 270);
 
-  /* accent — luminous iris/indigo (premium signal) */
-  --accent: oklch(66% 0.17 274);
-  --accent-hi: oklch(73% 0.16 274);
-  --accent-soft: oklch(32% 0.09 274 / 0.55);
-  --accent-glow: oklch(66% 0.17 274 / 0.34);
-  --accent-text: oklch(82% 0.12 274);
-  --accent-on: oklch(20% 0.03 274);
+  /* accent — quiet, used only for focus/active, never large fills */
+  --accent: oklch(64% 0.1 248);
+  --accent-hi: oklch(70% 0.1 248);
+  --accent-soft: oklch(29% 0.035 248 / 0.5);
+  --accent-glow: transparent;
+  --accent-text: oklch(78% 0.065 248);
+  --accent-on: oklch(17% 0.002 270);
 
-  /* agent roles */
-  --role-supervisor: oklch(72% 0.14 260); /* blue — GLM 调度 */
-  --role-worker: oklch(76% 0.13 168); /* teal — Kimi 执行 */
-  --role-overseer: oklch(81% 0.13 82); /* gold — GLM 监督 */
+  /* crisp near-white primary (restrained, Codex/Vercel style CTA) */
+  --primary: oklch(95% 0.002 270);
+  --primary-hover: oklch(87% 0.002 270);
+  --on-primary: oklch(17% 0.002 270);
 
-  /* semantic */
-  --success: oklch(76% 0.15 155);
-  --danger: oklch(69% 0.18 25);
-  --warning: oklch(82% 0.13 80);
-  --info: oklch(72% 0.13 240);
-  --diff-add-text: oklch(84% 0.12 155);
-  --diff-del-text: oklch(82% 0.12 25);
+  /* agent roles — muted tints, low chroma */
+  --role-supervisor: oklch(70% 0.055 250);
+  --role-worker: oklch(72% 0.05 168);
+  --role-overseer: oklch(76% 0.06 82);
 
-  /* syntax */
-  --syn-kw: oklch(74% 0.14 300);
-  --syn-str: oklch(78% 0.12 140);
-  --syn-fn: oklch(78% 0.12 235);
-  --syn-num: oklch(80% 0.12 60);
-  --syn-com: oklch(52% 0.02 274);
+  /* semantic — muted, carry meaning only */
+  --success: oklch(70% 0.1 155);
+  --danger: oklch(64% 0.13 25);
+  --warning: oklch(78% 0.09 80);
+  --info: oklch(68% 0.08 240);
+  --diff-add-text: oklch(80% 0.09 155);
+  --diff-del-text: oklch(78% 0.1 25);
+
+  /* syntax — muted */
+  --syn-kw: oklch(72% 0.09 300);
+  --syn-str: oklch(74% 0.09 140);
+  --syn-fn: oklch(75% 0.08 235);
+  --syn-num: oklch(78% 0.08 60);
+  --syn-com: oklch(48% 0.01 270);
   --syn-punct: var(--text-muted);
 
   /* type */
@@ -58,17 +63,17 @@
   --text-xl: 22px;
   --text-2xl: 28px;
 
-  /* rhythm */
+  /* rhythm — tighter, consistent radii */
   --sp-1: 4px;
   --sp-2: 8px;
   --sp-3: 12px;
   --sp-4: 16px;
   --sp-5: 22px;
   --sp-6: 32px;
-  --radius-xs: 5px;
-  --radius-sm: 7px;
-  --radius: 10px;
-  --radius-lg: 14px;
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius: 8px;
+  --radius-lg: 10px;
 
   /* motion */
   --dur-fast: 130ms;
@@ -76,11 +81,11 @@
   --dur-slow: 420ms;
   --ease: cubic-bezier(0.16, 1, 0.3, 1);
 
-  /* depth */
-  --shadow-sm: 0 1px 2px oklch(0% 0 0 / 0.32);
-  --shadow-md: 0 6px 22px oklch(0% 0 0 / 0.34);
-  --shadow-lg: 0 18px 48px oklch(0% 0 0 / 0.46);
-  --glow: 0 0 0 1px var(--accent-soft), 0 8px 26px var(--accent-glow);
+  /* depth — near-flat, hairline-first */
+  --shadow-sm: 0 1px 2px oklch(0% 0 0 / 0.16);
+  --shadow-md: 0 4px 14px oklch(0% 0 0 / 0.22);
+  --shadow-lg: 0 12px 34px oklch(0% 0 0 / 0.32);
+  --glow: none; /* no glow — kills every box-shadow: var(--glow) */
 
   /* layout */
   --rail-w: 52px;

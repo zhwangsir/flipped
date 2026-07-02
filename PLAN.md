@@ -1,101 +1,42 @@
- # M5 · 硬化与产线化：性能 / 稳定性 / 安全 / 崩溃恢复
- 
- ## 目标
- 1. 性能：监控并调优 MLX 双模型吞吐、KV cache / 上下文策略、模型换载策略。
- 2. 稳定性：让 orchestration-api 与 orchestrator 在崩溃 / 重启后可从 LangGraph checkpoint 断点续跑。
- 3. 安全：密钥管理、命令白名单、高风险动作加固。
- 4. 验收：一个长任务能连续自主运行，并在 orchestration-api 被强制杀死后从 checkpoint 恢复继续执行。
- 
- ## M4 完成报告（已验证）
- - `src/mcp_server/`：MCP stdio server，注册 5 个工具：`web_search`、`rag_query`、`rag_ingest`、`run_coding_task`、`research_and_code`。
- - `src/rag/`：Chroma 本地持久化向量库 + 可插拔嵌入（默认 `sentence-transformers/all-MiniLM-L6-v2`，未安装则 fallback 到 `MockEmbedding`）+ 文件/目录/文本 ingest。
- - `src/driving/researcher.py`：聚合 `web_search` + `rag_query` 调研上下文，供 `research_and_code` 使用。
- - 新增测试：`tests/test_rag.py`、`tests/test_mcp_server.py`、`tests/test_researcher.py`。
- - 新增 `scripts/verify_m4.sh` 与 `pytest.ini`（禁用 `anyio` pytest 插件，避免干扰 `asyncio.run` 测试）。
- - 更新 `requirements.txt`（`mcp`、`chromadb`、`uvicorn>=0.30.0`）与 `.env.example`（`RAG_DB_DIR`、`RAG_EMBEDDING_MODEL`）。
- - 验证：`bash scripts/verify_m4.sh` 退出码 0；M4 单测 13 passed；全量回归 47 passed, 2 warnings；`cd console && npm run build` 通过。
- - 环境限制：Codex 沙箱禁止 TCP bind 与 outbound 网络，真实 LLM + 网络 + 编码端到端由注入 mock 的测试兜底验证状态机与调用链。
- 
- ## 关键决策
- - **RAG 向量库选 Chroma**：本地持久化、无需外部服务、Apple Silicon 友好。
- - **嵌入模型可插拔**：默认尝试 `sentence-transformers/all-MiniLM-L6-v2`，未安装时自动 fallback 到 `MockEmbedding`，保证沙箱/测试可运行。
- - **MCP 包名避开冲突**：`src/mcp/` 改名为 `src/mcp_server/`，避免与 PyPI 的 `mcp` 包命名冲突。
- - **pytest.ini 禁用 anyio 插件**：`mcp`/`chromadb` 引入的 `anyio` pytest 插件会干扰 `test_api_approval_flow.py` 的 `asyncio.run`，导致全量回归失败；禁用后 47 passed。
- 
- ## 详细步骤
-1. **M5.1 性能可观测** ✅ 已完成
-   - 新增 `src/metrics/__init__.py` / `src/metrics/collector.py`：线程安全 `MetricsCollector` + LangChain `MetricsCallbackHandler`。
-   - 指标覆盖：LLM total_calls / total_tokens / prompt_tokens / completion_tokens / total_latency / TTFT / errors。
-   - `src/api/main.py` 新增 `GET /api/v1/metrics`；`src/api/schemas.py` 新增 `MetricsResponse`（已修复缩进）。
-   - `src/driving/orchestrator.py` 的 `_make_llm` 支持 `callbacks`；`default_supervisor` / `default_overseer` 注入 `MetricsCallbackHandler`。
-   - 新增 `tests/test_metrics.py` 7 个用例；修复 `src/metrics/` 前导空格导致的 `IndentationError`。
-   - 验证：`test_metrics.py 7 passed` / 全量 `54 passed` / `console build` 通过 / `scripts/verify_m5.sh` 退出码 0。
+# M6 · 从骨架到可用产品：真实端到端 + Console 功能补全 + 产品化
 
-2. **M5.2 上下文 / KV cache 管理** ✅ 已完成
-   - 修复 LangGraph `InvalidUpdateError`：移除 `START -> compress` 边；`compress_node` 仅在 `compress_history` 真正触发压缩时才返回 `history` + `context_summary`，否则返回 `{}`，避免与 `supervisor` 在同一 superstep 中同写 `history`。
-   - 新增 `src/driving/context_manager.py`：
-     - `estimate_tokens(history)`：可插拔 token 估算器（默认按字符混合启发式，可选 tiktoken 若已安装）。
-     - `compress_history(history, max_tokens, keep_recent, summarizer)`：当 token 超过阈值且历史条目数 > `keep_recent` 时，把早期 history 摘要成一条 `summary` 条目，保留最近 `keep_recent` 条完整记录。
-     - 默认摘要器生成 `{step:"summary", tokens_before, items, digest}`，不丢失关键步类型。
-   - 在 `orchestrator.py` 中：
-     - `OrchestratorState` 增加 `context_summary` 字段；`default_supervisor` 把 `context_summary` 放入 prompt。
-     - 增加 `compress` 节点：在每次回到 supervisor 前调用 `compress_history`，如果触发压缩则更新 `history` + `context_summary`。
-     - `build_orchestrator` 接受 `max_context_tokens` / `keep_recent` 配置。
-   - Checkpoint 保留策略：
-     - 新增 `CheckpointRetention` 包装 `SqliteSaver`，按 `thread_id` 保留最近 N 个 checkpoint，删除旧 checkpoint 及关联 writes。
-     - `drive_orchestrated` 在运行结束后调用 `retention.trim()`，避免长任务 checkpoint 无限膨胀。
-   - 测试：
-     - 新增 `tests/test_context_manager.py`：8 个用例覆盖 `simple_estimator`、压缩触发、摘要内容、自定义 summarizer、短历史保护、`CheckpointRetention` trim。
-     - 全量回归 62 passed / console build 通过 / `scripts/verify_m5.sh` 退出码 0。
- 3. **M5.3 模型换载 / 路由降级策略** ✅ 已完成
-    - 新增 `src/driving/model_router.py`：
-      - `is_endpoint_healthy(base_url, timeout)`：GET `/v1/models` 判断服务是否可达。
-      - `is_model_available(base_url, model_id, timeout)`：在 `/v1/models` 列表中检查指定模型是否在线。
-      - `resolve_model_config(alias)`：优先使用 LiteLLM proxy；proxy 健康且 alias 可用时走 proxy + alias，否则回退到 `FLIPPED_MODEL_BASE_URL` 直连 exo + 完整模型 id。
-      - `resolve_worker_model_config()`：为 OpenHands Worker 选择可用 endpoint + 模型名，运行时 proxy 指向 `host.docker.internal:4000` 供容器内访问。
-    - 在 `src/driving/orchestrator.py` 的 `_make_llm` 中接入 `resolve_model_config`，Supervisor/Overseer 根据运行时健康状态自动选择 proxy 或直连。
-    - 在 `src/driving/orchestrator.py` 的 `openhands_worker` 节点中接入 `resolve_worker_model_config`，Worker 创建时动态选择 endpoint。
-    - 新增 `tests/test_model_router.py`：11 个用例覆盖 proxy 健康/直连健康/双端不可用、alias 可用性判断、worker 配置解析。
-    - 全量回归 73 passed / console build 通过 / `scripts/verify_m5.sh` 退出码 0。
+> M0–M5 已完成(骨架 + 多 Agent 编排 + backend/WS + Console 外壳 + 硬化,92 单测绿),但**全是 mock 验证**,`ISSUE-6`(Codex 沙箱禁 TCP/网络)使真实端到端从未跑通,Console 多数面板仍是 mock,未产品化。
+> 本机(macOS 真机)无 ISSUE-6 限制,可做真实 E2E。M6 目标:**让它真正跑起来、Console 真正可用、能打包分发**。
 
- 4. **M5.4 崩溃恢复与断点续跑** ✅ 已完成
-    - 新增 `resume_orchestrated(thread_id, db_path, ...)`：从 `SqliteSaver` checkpoint 恢复未完成的 orchestrator 运行，自动处理已完成/已中断状态，续跑至 `verified` 或终止状态。
-    - `src/api/main.py`：新增 `POST /api/v1/sessions/{id}/resume` 端点；lifespan 启动时扫描 `running`/`paused` 会话并自动 `_resume_orchestrator`；`_resume_orchestrator` 支持 mock 与真实两种模式。
-    - `src/api/session.py`：会话模型支持 `checkpoint_db_path` 字段，用于关联持久化 checkpoint 数据库。
-    - 新增 `tests/test_api_recovery.py`：3 个 API 级用例（无会话 404 / 无 checkpoint 400 / 真实 checkpoint 恢复后状态到达 `done`）。
-    - 修复 `tests/test_recovery.py` / `test_api_recovery.py` 的 `thread_id` 对齐与 TestClient 上下文管理器问题，避免 checkpoint 写入在 API 测试外被隔离。
-    - 验证：`test_recovery.py 3 passed` / `test_api_recovery.py 3 passed` / 全量 79 passed / `verify_m5.sh` 退出码 0。
+## 优先级与顺序
+自主可验的先做(Console 补全 + 后端端点 + 产品化脚手架),模型在线才可跑的真实 LLM E2E 靠后(需用户 LAUNCH exo 模型)。
 
- 5. **M5.5 安全加固** ✅ 已完成
-    - 新增 `src/driving/safety.py`：
-      - `is_safe_command` / `is_dangerous_command`：危险模式黑名单（`rm -rf`、`mkfs`、`dd of=/dev/`、管道 sh、反弹 shell、`sudo` 等） + 命令白名单。
-      - `normalize_command`：剥离 `bash -c` / `sh -c` 与外层引号，避免绕过。
-      - `scan_source_for_secrets` / `validate_secrets`：扫描源码中硬编码的 `api_key/token/secret/password` 与 `EXO_API_KEY/LITELLM_MASTER_KEY/OPENAI_API_KEY`。
-      - `audit_openhands_events`：审计 OpenHands `terminal` ActionEvent，命中危险命令则快速失败。
-      - `SAFETY_ALLOW_UNSAFE_COMMANDS=1` 环境变量仅在测试中临时关闭白名单。
-    - `src/driving/orchestrator.py`：默认 verifier 改为 `_safe_default_verifier`，验收命令前过白名单 + 高风险命令需审批（`classify_risk`）。
-    - `src/executor/openhands_worker.py`：`RemoteConversation.run` 结束后审计 terminal 事件，发现危险命令立即抛出 `RuntimeError`。
-    - `src/api/main.py`：lifespan 启动时调用 `validate_secrets`，无 `.env` 且未设 `EXO_API_KEY` 时打印安全提醒（不阻塞启动）。
-    - `tests/conftest.py`：测试 fixture 设置 `EXO_API_KEY=dummy`，避免 lifespan 在无 `.env` 时打印警告。
-    - 新增 `tests/test_safety.py`：12 个用例覆盖命令归一化、危险命令拦截、安全命令放行、未知命令拦截、环境变量覆盖、密钥扫描、`.env`/环境变量校验、OpenHands 事件审计。
-    - 验证：`test_safety.py 12 passed` / 全量 91 passed / `verify_m5.sh` 退出码 0 / console build 通过。
+## 阶段与任务(每个任务:TDD/构建 → verify → commit)
 
- 6. **M5.6 长任务验收（沙箱内模拟）** ✅ 已完成
-    - 新增 `tests/test_recovery.py::test_long_task_crash_after_first_verify_and_resume`：注入多步 orchestrator 节点，让 supervisor/worker/overseer/verify 跑完第一个完整迭代，在 `verify` 节点产生 checkpoint 后主动 break，模拟 orchestration-api 进程崩溃；再调用 `resume_orchestrated` 从同一个 `thread_id` 和 `db_path` 续跑，最终 `verified=True`、`stop_reason=verified`、`iteration>=2`。
-    - 沙箱内无法 bind TCP 或 kill 进程，用 `graph.stream` + 主动中断的方式模拟崩溃；真实 LLM + OpenHands 的长任务验收保留到非沙箱环境复跑。
-    - `scripts/verify_m5.sh` 新增 M5.6 单测段落。
-    - 验证：`test_recovery.py 4 passed` / 全量 92 passed / `verify_m5.sh` 退出码 0 / console build 通过。
- 
- ## 验收标准
- - `python -m pytest tests/test_recovery.py tests/test_safety.py tests/test_metrics.py -q` 全绿（新增）。
- - `python -m pytest tests/ -q` 全量回归通过（≥47 passed）。
- - `bash scripts/verify_m5.sh` 退出码 0。
- - `orchestration-api` 能从已有 checkpoint 恢复未完成的会话并继续执行。
- - 命令白名单拦截高风险命令，且高风险动作仍强制走审批。
- - 无新增硬编码密钥，`.env` 示例与 `.gitignore` 完整。
- - `cd console && npm run build` 通过。
- 
- ## 回滚策略
- - 不破坏现有 `orchestrator` 图结构，新增 `recovery` / `context_limit` 节点与配置项。
- - 安全白名单默认启用，但可通过 `SAFETY_ALLOW_UNSAFE_COMMANDS=1` 环境变量临时关闭（仅用于测试）。
- - 所有恢复逻辑先走单测，再走 `verify_m5.sh`，最后才接入真实会话。
+### M6.0 UI 打磨落盘 ✅(本次)
+- Console 设计系统改造(去 AI 感 → Codex 简约):tokens.css + app.css。verify:构建绿 + 真实 mock 后端 WS 截图。
+
+### Phase 1 · Console 功能补全(自主,mock 后端可验)
+- **M6.1 ContextPanel 接真实事件流** — editor/diff/终端/浏览器 Tab 从会话事件(file_change/terminal/browser)渲染,替换 `mock.ts` 静态数据;新增 store 派生的工作区文件/diff/终端/浏览器状态。verify:发任务后右侧面板显真实数据 + 构建 + headless 截图。
+- **M6.2 会话操作补全** — 停止/取消任务、删除会话、切换会话清空正确;后端补 `DELETE /sessions/{id}`、`POST /tasks/{id}/cancel`、`GET /sessions/{id}/events`(REST 历史)。verify:pytest + curl + 截图。
+- **M6.3 指标接入 UI** — `GET /api/v1/metrics` 真实值进状态栏/指标面板(token/延迟/调用数),替换硬编码占位。verify:pytest(指标端点)+ 截图。
+- **M6.4 资源管理器接真实工作区** — 侧栏文件树显示会话沙箱真实文件(经后端 `GET /sessions/{id}/workspace`)。verify:pytest + 截图。
+
+### Phase 2 · 真实端到端(本机真机,部分需 exo 模型在线)
+- **M6.5 真实 backend + OpenHands 沙箱 E2E** — 非 mock:Console 派一个真实编码任务 → openhands_worker 在 Docker 沙箱执行 → 真生成文件 + 事件回流 Console。修复 E2E 暴露的问题。verify:沙箱内真文件 + Console 实时可见 + 验收通过(需 exo 模型 + Docker)。
+- **M6.6 模型路由落实** — 确认直连 exo(FLIPPED_MODEL_BASE_URL)或恢复 LiteLLM:4000 统一路由(ISSUE-5);Supervisor/Overseer/Worker 全部走通。verify:真实调用返回 + verify_m5.sh。
+
+### Phase 3 · 产品化
+- **M6.7 一键启动 + 编排** — `scripts/dev_up.sh` 一键起 backend + console(+ 探活 OpenHands);进程管理与健康检查。verify:脚本起全栈 + 截图。
+- **M6.8 Electron 桌面壳** — 壳内嵌 Console(生产构建)+ 主进程 spawn backend sidecar + 连 OpenHands;`npm run app`。verify:Electron 起窗截图。
+- **M6.9 CI** — GitHub Actions:pytest + console build(在非受限 runner)。verify:workflow 文件 + 本地 act/干跑说明。
+
+## 验收标准(M6 DoD)
+- 全量 `pytest tests/ -q` 保持全绿(每个后端任务新增测试)。
+- `cd console && npm run build` 保持通过(每个前端任务后)。
+- Console 每个面板都由**真实后端数据**驱动(mock.ts 仅保留为离线兜底/演示)。
+- 至少一次**真实(非 mock)**任务在沙箱跑通并在 Console 全程可见(M6.5,模型在线时)。
+- 一键脚本可拉起全栈;Electron 可出窗;CI workflow 就绪。
+
+## 循环开发约定(AGENTS.md)
+- 每任务:先写测试/明确 verify → 实现 → 跑测试/构建/截图 → 通过即 `git commit` + 更新 STATE.json/TEST_LOG.md → 下一个。
+- 非 mock 需外部依赖(exo 模型 / Docker)时,若不可用则记录为"待模型在线复跑",不阻塞其余任务。
+- 诚实报告:mock 验证与真实验证分开陈述。
+
+## 回滚
+- 分支 `codex/m6-product`;每任务独立 commit,可逐个回退。不破坏已绿的 M0–M5 代码与测试。
