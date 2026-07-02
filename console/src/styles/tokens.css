@@ -107,3 +107,17 @@
   --topbar-h: 48px;
   --statusbar-h: 28px;
 }
+
+/* responsive — yield side panels on narrower screens so the center stays usable */
+@media (max-width: 1280px) {
+  :root[data-theme="dark"] {
+    --context-w: 404px;
+    --sidebar-w: 252px;
+  }
+}
+@media (max-width: 1080px) {
+  :root[data-theme="dark"] {
+    --context-w: 340px;
+    --sidebar-w: 236px;
+  }
+}
