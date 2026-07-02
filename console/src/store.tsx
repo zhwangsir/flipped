@@ -11,6 +11,8 @@ import type {
   ChangedFile,
   Metrics,
   McpServer,
+  ContextTab,
+  SidebarTab,
 } from './types';
 import { eventToStreamItem } from './types';
 import {
@@ -48,6 +50,16 @@ interface AppState {
   setModel: (m: string) => void;
   selectedMode: string;
   setMode: (m: string) => void;
+  activeView: string;
+  setActiveView: (v: string) => void;
+  contextTab: ContextTab;
+  setContextTab: (t: ContextTab) => void;
+  sidebarTab: SidebarTab;
+  setSidebarTab: (t: SidebarTab) => void;
+  showContext: boolean;
+  toggleContext: () => void;
+  sessionQuery: string;
+  setSessionQuery: (q: string) => void;
   selectSession: (id: string) => void;
   createSession: (title?: string) => Promise<string>;
   deleteSession: (id: string) => Promise<void>;
@@ -77,7 +89,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [mcpServers, setMcpServers] = useState<McpServer[]>([]);
   const [selectedModel, setSelectedModel] = useState('coder');
   const [selectedMode, setSelectedMode] = useState('agent');
+  const [activeView, setActiveView] = useState('agent');
+  const [contextTab, setContextTab] = useState<ContextTab>('editor');
+  const [sidebarTab, setSidebarTab] = useState<SidebarTab>('chats');
+  const [showContext, setShowContext] = useState(true);
+  const [sessionQuery, setSessionQuery] = useState('');
   const wsRef = useRef<{ close: () => void; send: (msg: unknown) => void } | null>(null);
+
+  const toggleContext = useCallback(() => setShowContext((v) => !v), []);
 
   const refreshSessions = useCallback(async () => {
     try {
@@ -340,6 +359,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setModel,
         selectedMode,
         setMode,
+        activeView,
+        setActiveView,
+        contextTab,
+        setContextTab,
+        sidebarTab,
+        setSidebarTab,
+        showContext,
+        toggleContext,
+        sessionQuery,
+        setSessionQuery,
         selectSession,
         createSession,
         deleteSession,

@@ -206,6 +206,39 @@
 .new-task:active {
   transform: scale(0.98);
 }
+/* M7.5 — 会话搜索框 */
+.side-search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 12px 4px;
+  padding: 0 8px;
+  height: 30px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-sunken);
+  color: var(--text-muted);
+}
+.side-search input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+  outline: none;
+}
+.side-search-clear {
+  display: grid;
+  place-items: center;
+  color: var(--text-faint);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+}
+.side-search-clear:hover {
+  color: var(--text-secondary);
+}
 .side-label {
   padding: 10px 14px 6px;
   font-size: var(--text-xs);

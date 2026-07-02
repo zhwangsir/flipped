@@ -9,7 +9,6 @@ import {
   IconChat,
   IconLayout,
   IconAt,
-  IconClip,
   IconPuzzle,
   IconCube,
   IconChevronDown,
@@ -205,6 +204,7 @@ export function Conversation() {
     setModel,
     selectedMode,
     setMode,
+    setContextTab,
   } = useApp();
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
@@ -304,16 +304,28 @@ export function Conversation() {
             }}
           />
           <div className='composer-bar'>
-            <button className='tool-btn' disabled={disabled}>
+            <button
+              className='tool-btn'
+              disabled={disabled}
+              onClick={() => setText((t) => (t.endsWith('@') || t === '' ? t + '@' : t + ' @'))}
+              title='引用上下文：插入 @'
+            >
               <IconAt size={13} /> 上下文
             </button>
-            <button className='tool-btn' aria-label='附件' disabled={disabled}>
-              <IconClip size={13} />
-            </button>
-            <button className='tool-btn on' disabled={disabled}>
+            <button
+              className='tool-btn on'
+              disabled={disabled}
+              onClick={() => setContextTab('mcp')}
+              title='查看 / 开关 MCP 工具'
+            >
               <IconPuzzle size={13} /> 工具
             </button>
-            <button className='tool-btn' disabled={disabled}>
+            <button
+              className='tool-btn'
+              disabled={disabled}
+              onClick={() => setContextTab('term')}
+              title='查看沙盒终端'
+            >
               <IconCube size={13} /> 沙盒 <IconChevronDown size={12} />
             </button>
             <select

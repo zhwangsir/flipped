@@ -1,12 +1,24 @@
-import { useState } from "react";
 import { useApp } from "../store";
 import { fileTree } from "../mock";
 import { formatWhen } from "../types";
-import { IconPlus, IconFile, IconFolder, IconX } from "../icons";
+import { IconPlus, IconFile, IconFolder, IconX, IconSearch } from "../icons";
 
 export function Sidebar() {
-  const { sessions, selectedSessionId, selectSession, createSession, deleteSession, changedFiles } = useApp();
-  const [tab, setTab] = useState<"chats" | "files">("chats");
+  const {
+    sessions,
+    selectedSessionId,
+    selectSession,
+    createSession,
+    deleteSession,
+    changedFiles,
+    sidebarTab: tab,
+    setSidebarTab: setTab,
+    sessionQuery,
+    setSessionQuery,
+  } = useApp();
+
+  const q = sessionQuery.trim().toLowerCase();
+  const filtered = q ? sessions.filter((s) => s.title.toLowerCase().includes(q)) : sessions;
 
   return (
     <aside className="sidebar">
@@ -24,12 +36,26 @@ export function Sidebar() {
           <button className="new-task" onClick={() => createSession("新任务")}>
             <IconPlus size={15} /> 新任务
           </button>
+          <div className="side-search">
+            <IconSearch size={13} />
+            <input
+              value={sessionQuery}
+              onChange={(e) => setSessionQuery(e.target.value)}
+              placeholder="搜索会话…"
+              aria-label="搜索会话"
+            />
+            {sessionQuery && (
+              <button className="side-search-clear" onClick={() => setSessionQuery("")} aria-label="清除">
+                <IconX size={12} />
+              </button>
+            )}
+          </div>
           <div className="side-label">
-            <span>最近</span>
-            <span>{sessions.length}</span>
+            <span>{q ? "匹配" : "最近"}</span>
+            <span>{filtered.length}</span>
           </div>
           <div className="scroll">
-            {sessions.map((s) => (
+            {filtered.map((s) => (
               <div
                 key={s.id}
                 className={"session" + (s.id === selectedSessionId ? " active" : "")}

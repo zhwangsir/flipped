@@ -3,8 +3,6 @@ import { useApp } from '../store';
 import { diffLines, terminalLines, editorCode, problems } from '../mock';
 import { IconCode, IconFile, IconTerminal, IconBrowser, IconWarn, IconPuzzle } from '../icons';
 
-type Tab = 'editor' | 'diff' | 'term' | 'browser' | 'problems' | 'mcp';
-
 const KEYWORDS = new Set(['from', 'import', 'def', 'return', 'if', 'not', 'in', 'raise', 'class', 'for', 'while', 'with', 'as']);
 const LITS = new Set(['None', 'True', 'False']);
 
@@ -44,9 +42,18 @@ function langOf(path: string): string {
 }
 
 export function ContextPanel() {
-  const { terminalBlocks, browserView, changedFiles, mcpServers, toggleMcpServer } = useApp();
-  const [tab, setTab] = useState<Tab>('editor');
+  const {
+    terminalBlocks,
+    browserView,
+    changedFiles,
+    mcpServers,
+    toggleMcpServer,
+    contextTab: tab,
+    setContextTab: setTab,
+    showContext,
+  } = useApp();
   const [activePath, setActivePath] = useState<string | null>(null);
+  if (!showContext) return null;
 
   // M7.2 — 编辑器展示真实沙盒文件内容（来自 file_editor 动作携带的 file_text）
   const realFiles = changedFiles.filter((f) => f.content);

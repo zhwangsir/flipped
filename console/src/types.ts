@@ -69,6 +69,10 @@ export interface Metrics {
   context: Record<string, number>;
 }
 
+/** 共享 UI 导航状态（M7.5 — 让 ActivityBar/TopBar/composer 真正驱动面板）。 */
+export type ContextTab = 'editor' | 'diff' | 'term' | 'browser' | 'problems' | 'mcp';
+export type SidebarTab = 'chats' | 'files';
+
 /** /mcp/servers 返回的真实 MCP 服务器（M7.3）。 */
 export interface McpServer {
   name: string;
