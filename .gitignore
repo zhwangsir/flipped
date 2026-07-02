@@ -53,3 +53,5 @@ tests/test_openai_normalize_proxy.py
 .sessions.json
 .devlogs/
 projects/
+desktop/node_modules/
+desktop/release/

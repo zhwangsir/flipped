@@ -53,6 +53,8 @@ app = FastAPI(title="flipped orchestration API", version="0.2.0", lifespan=lifes
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[CONSOLE_ORIGIN, "http://localhost:5273"],
+    # 桌面壳(Electron,M6.8)从本地静态端口发请求 → 放行 localhost/127.0.0.1 任意端口
+    allow_origin_regex=r"http://(127\.0\.0\.1|localhost):\d+",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
