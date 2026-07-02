@@ -571,3 +571,11 @@
 - 结果:Kimi 在沙盒里 `file_editor` 创建 `/workspace/hello.py` → `terminal` 跑 `python3 hello.py` 输出 `5`(exit 0)→ `finish`;`ConversationExecutionStatus.FINISHED`,~35s,17–20 events。
 - 判定:`finished=True hello.py_created=True terminal_ok=True` → **VERDICT PASS**(连跑两次稳定)。
 - 前提实测:exo 可达 + GLM-5.2-fp8/Kimi-K2.7 真实推理+工具调用通;Docker 运行;容器内可直连 exo(HTTP 200)。
+
+## 2026-07-02 · M6.6 全链路集成 E2E(Console API → 真实沙盒)✅ PASS
+
+- `_run_openhands` 改用 `resolve_worker_model_config()`(M5.3):LiteLLM proxy 健康走 proxy,否则回退 exo 直连。
+- 真实模式后端(port 8011,无 FLIPPED_MOCK_WORKER,OPENHANDS_AGENT_HOST=:8000):
+  `POST /sessions` + `POST /tasks` → `_run_openhands` → 沙盒 → 真实 Kimi(exo 直连)。
+- 结果:沙盒创建 `/workspace/mul.py` + 终端运行,status=done(36s),14 events(file_change/terminal/tool_call/tool_result/message/status),无 error → **PASS**。
+- 意义:产品从 Console 用的 API 路径真正端到端可用。

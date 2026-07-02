@@ -305,17 +305,23 @@ async def _resume_orchestrator(session: Session) -> None:
 
 
 async def _run_openhands(session_id: str, task_id: str, description: str) -> None:
-    """在后台线程运行 OpenHands Worker，避免阻塞 FastAPI 主循环。"""
-    from executor.openhands_worker import OpenHandsWorker
+    """在后台线程运行 OpenHands Worker，避免阻塞 FastAPI 主循环。
 
+    模型端点经 model_router 自动选择(M6.6):LiteLLM proxy 健康走 proxy，
+    否则回退 exo 直连(FLIPPED_MODEL_BASE_URL / 默认 exo)。
+    """
+    from executor.openhands_worker import OpenHandsWorker
+    from driving.model_router import resolve_worker_model_config
+
+    base_url, model = resolve_worker_model_config()
     worker = OpenHandsWorker(
         session_id=session_id,
         task_id=task_id,
         bus=bus,
         agent_host=os.environ.get("OPENHANDS_AGENT_HOST", "http://localhost:8000"),
         working_dir=os.environ.get("OPENHANDS_WORKING_DIR", "/workspace"),
-        model_alias=os.environ.get("OPENHANDS_MODEL", "coder"),
-        base_url=os.environ.get("OPENHANDS_BASE_URL"),
+        model_alias=model,
+        base_url=base_url,
     )
     try:
         await asyncio.to_thread(worker.run, description)
