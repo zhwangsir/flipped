@@ -1,5 +1,5 @@
 /** Console ↔ orchestration-api HTTP + WebSocket 客户端。 */
-import type { Session, ApiEvent } from './types';
+import type { Session, ApiEvent, Metrics } from './types';
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined) || 'http://127.0.0.1:8001';
 const API_PREFIX = '/api/v1';
@@ -37,6 +37,10 @@ export function deleteSession(sessionId: string): Promise<{ ok: boolean }> {
 
 export function cancelTask(sessionId: string): Promise<Session> {
   return api<Session>(`/sessions/${sessionId}/cancel`, { method: 'POST' });
+}
+
+export function fetchMetrics(): Promise<Metrics> {
+  return api<Metrics>('/metrics');
 }
 
 export interface EventHandlers {

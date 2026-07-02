@@ -1,8 +1,12 @@
 import { useApp } from '../store';
 import { IconGit, IconCube, IconCheck, IconWarn, IconBolt, IconShield, IconHourglass } from '../icons';
 
+function fmtTok(n: number): string {
+  return n >= 1000 ? (n / 1000).toFixed(1) + 'k tok' : n + ' tok';
+}
+
 export function StatusBar() {
-  const { connection, error, sessionStatus, progress, errorCount, approvalPending } = useApp();
+  const { connection, error, sessionStatus, progress, errorCount, approvalPending, metrics } = useApp();
 
   const connLabel =
     connection === 'connected'
@@ -53,6 +57,11 @@ export function StatusBar() {
       <span className='sb-live'>
         <span className={'dot ' + connection} /> {connLabel}
       </span>
+      {metrics && metrics.llm.total_calls > 0 && (
+        <span className='sb mono' title='LLM 调用 · tokens · 平均延迟'>
+          {metrics.llm.total_calls} calls · {fmtTok(metrics.llm.total_tokens)} · {Math.round(metrics.llm.avg_latency_ms)}ms
+        </span>
+      )}
       <span className='sb accent'>
         <IconBolt size={13} /> Kimi-K2.7 · <span className='mono'>coder</span>
       </span>

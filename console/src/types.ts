@@ -62,6 +62,12 @@ export interface ChangedFile {
   language?: string;
 }
 
+/** /metrics 返回的性能指标（M6.3）。 */
+export interface Metrics {
+  llm: Record<string, number>;
+  context: Record<string, number>;
+}
+
 /** orchestration-api 发过来的原始事件（与 src/api/schemas.py 对齐）。 */
 export interface ApiEvent {
   id: string;

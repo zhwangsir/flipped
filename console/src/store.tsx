@@ -9,6 +9,7 @@ import type {
   TerminalBlock,
   BrowserView,
   ChangedFile,
+  Metrics,
 } from './types';
 import { eventToStreamItem } from './types';
 import {
@@ -17,6 +18,7 @@ import {
   createTask as apiCreateTask,
   deleteSession as apiDeleteSession,
   cancelTask as apiCancelTask,
+  fetchMetrics,
   connectEvents,
 } from './api';
 
@@ -36,6 +38,7 @@ interface AppState {
   terminalBlocks: TerminalBlock[];
   browserView: BrowserView | null;
   changedFiles: ChangedFile[];
+  metrics: Metrics | null;
   selectSession: (id: string) => void;
   createSession: (title?: string) => Promise<string>;
   deleteSession: (id: string) => Promise<void>;
@@ -61,6 +64,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [terminalBlocks, setTerminalBlocks] = useState<TerminalBlock[]>([]);
   const [browserView, setBrowserView] = useState<BrowserView | null>(null);
   const [changedFiles, setChangedFiles] = useState<ChangedFile[]>([]);
+  const [metrics, setMetrics] = useState<Metrics | null>(null);
   const wsRef = useRef<{ close: () => void; send: (msg: unknown) => void } | null>(null);
 
   const refreshSessions = useCallback(async () => {
@@ -75,6 +79,21 @@ export function AppProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     refreshSessions();
   }, [refreshSessions]);
+
+  // M6.3 — 轮询性能指标
+  useEffect(() => {
+    let alive = true;
+    const tick = () =>
+      fetchMetrics()
+        .then((m) => alive && setMetrics(m))
+        .catch(() => {});
+    tick();
+    const id = setInterval(tick, 4000);
+    return () => {
+      alive = false;
+      clearInterval(id);
+    };
+  }, []);
 
   const selectSession = useCallback((id: string) => {
     setSelectedSessionId(id);
@@ -273,6 +292,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         terminalBlocks,
         browserView,
         changedFiles,
+        metrics,
         selectSession,
         createSession,
         deleteSession,
