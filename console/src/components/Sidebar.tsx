@@ -5,7 +5,7 @@ import { formatWhen } from "../types";
 import { IconPlus, IconFile, IconFolder, IconX } from "../icons";
 
 export function Sidebar() {
-  const { sessions, selectedSessionId, selectSession, createSession, deleteSession } = useApp();
+  const { sessions, selectedSessionId, selectSession, createSession, deleteSession, changedFiles } = useApp();
   const [tab, setTab] = useState<"chats" | "files">("chats");
 
   return (
@@ -60,21 +60,34 @@ export function Sidebar() {
       ) : (
         <>
           <div className="side-label">
-            <span>TODO-API</span>
+            <span>{changedFiles.length > 0 ? "工作区 · 本次变更" : "工作区"}</span>
+            {changedFiles.length > 0 && <span>{changedFiles.length}</span>}
           </div>
           <div className="scroll">
             <div className="tree">
-              {fileTree.map((n, i) => (
-                <div
-                  key={i}
-                  className={"tree-row" + (n.active ? " active" : "")}
-                  style={{ paddingLeft: 8 + n.depth * 14 }}
-                >
-                  <span className="ic">{n.kind === "folder" ? <IconFolder size={14} /> : <IconFile size={14} />}</span>
-                  <span>{n.name}</span>
-                  {n.badge === "add" && <span className="tree-badge add">A</span>}
-                </div>
-              ))}
+              {changedFiles.length > 0
+                ? changedFiles.map((f, i) => (
+                    <div key={i} className="tree-row" style={{ paddingLeft: 8 }} title={f.path}>
+                      <span className="ic">
+                        <IconFile size={14} />
+                      </span>
+                      <span className="session-title">{f.path.split("/").pop()}</span>
+                      <span className="tree-badge add">
+                        {f.change === "add" ? "A" : f.change === "del" ? "D" : "M"}
+                      </span>
+                    </div>
+                  ))
+                : fileTree.map((n, i) => (
+                    <div
+                      key={i}
+                      className={"tree-row" + (n.active ? " active" : "")}
+                      style={{ paddingLeft: 8 + n.depth * 14 }}
+                    >
+                      <span className="ic">{n.kind === "folder" ? <IconFolder size={14} /> : <IconFile size={14} />}</span>
+                      <span>{n.name}</span>
+                      {n.badge === "add" && <span className="tree-badge add">A</span>}
+                    </div>
+                  ))}
             </div>
           </div>
         </>
