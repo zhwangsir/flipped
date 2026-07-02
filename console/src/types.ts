@@ -45,6 +45,23 @@ export interface Session {
   updated_at: string;
 }
 
+/** ContextPanel 从事件流派生的真实上下文数据（M6.1）。 */
+export interface TerminalBlock {
+  command: string;
+  output: string;
+  exit?: number;
+}
+export interface BrowserView {
+  url: string;
+  title?: string;
+  screenshot?: string;
+}
+export interface ChangedFile {
+  path: string;
+  change: string;
+  language?: string;
+}
+
 /** orchestration-api 发过来的原始事件（与 src/api/schemas.py 对齐）。 */
 export interface ApiEvent {
   id: string;

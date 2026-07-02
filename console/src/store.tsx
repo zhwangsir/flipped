@@ -1,5 +1,15 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
-import type { Session, StreamItem, ApiEvent, SessionStatus, ApprovalInfo, ToolChild } from './types';
+import type {
+  Session,
+  StreamItem,
+  ApiEvent,
+  SessionStatus,
+  ApprovalInfo,
+  ToolChild,
+  TerminalBlock,
+  BrowserView,
+  ChangedFile,
+} from './types';
 import { eventToStreamItem } from './types';
 import { fetchSessions, createSession as apiCreateSession, createTask as apiCreateTask, connectEvents } from './api';
 
@@ -16,6 +26,9 @@ interface AppState {
   errorCount: number;
   lastError: string | null;
   approvalPending: ApprovalInfo | null;
+  terminalBlocks: TerminalBlock[];
+  browserView: BrowserView | null;
+  changedFiles: ChangedFile[];
   selectSession: (id: string) => void;
   createSession: (title?: string) => Promise<string>;
   sendTask: (description: string) => Promise<void>;
@@ -36,6 +49,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [errorCount, setErrorCount] = useState(0);
   const [lastError, setLastError] = useState<string | null>(null);
   const [approvalPending, setApprovalPending] = useState<ApprovalInfo | null>(null);
+  const [terminalBlocks, setTerminalBlocks] = useState<TerminalBlock[]>([]);
+  const [browserView, setBrowserView] = useState<BrowserView | null>(null);
+  const [changedFiles, setChangedFiles] = useState<ChangedFile[]>([]);
   const wsRef = useRef<{ close: () => void; send: (msg: unknown) => void } | null>(null);
 
   const refreshSessions = useCallback(async () => {
@@ -86,6 +102,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setErrorCount(0);
       setLastError(null);
       setApprovalPending(null);
+      setTerminalBlocks([]);
+      setBrowserView(null);
+      setChangedFiles([]);
       return;
     }
 
@@ -97,8 +116,26 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setErrorCount(0);
     setLastError(null);
     setApprovalPending(null);
+    setTerminalBlocks([]);
+    setBrowserView(null);
+    setChangedFiles([]);
 
     const appendEvent = (ev: ApiEvent) => {
+      // M6.1 — 从事件流派生 ContextPanel 的真实上下文数据
+      if (ev.type === 'terminal') {
+        setTerminalBlocks((prev) => [
+          ...prev,
+          { command: ev.payload.command || '', output: ev.payload.output || '', exit: ev.payload.exit_code },
+        ]);
+      } else if (ev.type === 'browser') {
+        setBrowserView({ url: ev.payload.url, title: ev.payload.title, screenshot: ev.payload.screenshot });
+      } else if (ev.type === 'file_change') {
+        setChangedFiles((prev) => [
+          ...prev.filter((f) => f.path !== ev.payload.path),
+          { path: ev.payload.path, change: ev.payload.change || 'mod', language: ev.payload.language },
+        ]);
+      }
+
       if (ev.type === 'status') {
         const st = ev.payload.status as SessionStatus;
         const pr = (ev.payload.progress as number) ?? 0;
@@ -214,6 +251,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
         errorCount,
         lastError,
         approvalPending,
+        terminalBlocks,
+        browserView,
+        changedFiles,
         selectSession,
         createSession,
         sendTask,
