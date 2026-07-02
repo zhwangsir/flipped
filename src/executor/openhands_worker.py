@@ -109,6 +109,14 @@ class OpenHandsWorker:
                     summary = summary or getattr(event.action, "_summary", "") or tool
                 self._emit(EventType.tool_call, Role.worker,
                            {"tool": tool, "summary": summary, "status": "running"})
+                # M7.2 — 从 file_editor 动作抓真实文件内容(供编辑器 Tab 展示)
+                if tool == "file_editor" and event.action is not None:
+                    fpath = getattr(event.action, "path", None)
+                    fcontent = getattr(event.action, "file_text", None) or getattr(event.action, "new_str", None)
+                    if fpath and fcontent:
+                        self._emit(EventType.file_change, Role.worker,
+                                   {"path": fpath, "change": getattr(event.action, "command", "mod"),
+                                    "content": str(fcontent)[:8000]})
 
             elif isinstance(event, ObservationEvent):
                 tool = event.tool_name or "unknown"
@@ -128,12 +136,8 @@ class OpenHandsWorker:
                                    {"command": extra.get("command", ""),
                                     "output": extra.get("output", ""),
                                     "exit_code": extra.get("exit_code", 0)})
-                    # 文件编辑单独给 file_change 事件
-                    if tool == "file_editor" and "path" in extra:
-                        self._emit(EventType.file_change, Role.worker,
-                                   {"path": extra.get("path"),
-                                    "change": extra.get("change", "mod"),
-                                    "content": extra.get("content", "")[:4000]})
+                    # 文件变更事件由上游 ActionEvent 携带真实内容发出（含 path/change/content），
+                    # observation 只保留 tool_result 确认，避免冗余覆盖与把 view 误报成变更。
                     # 浏览器单独给 browser 事件
                     if tool.startswith("browser") and ("url" in extra or "screenshot" in extra):
                         self._emit(EventType.browser, Role.worker,

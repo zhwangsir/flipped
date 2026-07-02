@@ -60,6 +60,7 @@ export interface ChangedFile {
   path: string;
   change: string;
   language?: string;
+  content?: string;
 }
 
 /** /metrics 返回的性能指标（M6.3）。 */

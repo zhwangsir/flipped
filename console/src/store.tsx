@@ -173,10 +173,19 @@ export function AppProvider({ children }: { children: ReactNode }) {
       } else if (ev.type === 'browser') {
         setBrowserView({ url: ev.payload.url, title: ev.payload.title, screenshot: ev.payload.screenshot });
       } else if (ev.type === 'file_change') {
-        setChangedFiles((prev) => [
-          ...prev.filter((f) => f.path !== ev.payload.path),
-          { path: ev.payload.path, change: ev.payload.change || 'mod', language: ev.payload.language },
-        ]);
+        setChangedFiles((prev) => {
+          const existing = prev.find((f) => f.path === ev.payload.path);
+          return [
+            ...prev.filter((f) => f.path !== ev.payload.path),
+            {
+              path: ev.payload.path,
+              change: ev.payload.change || existing?.change || 'mod',
+              language: ev.payload.language || existing?.language,
+              // ActionEvent 携带真实文件内容；Observation 无内容时保留已有内容
+              content: ev.payload.content || existing?.content,
+            },
+          ];
+        });
       }
 
       if (ev.type === 'status') {

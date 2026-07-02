@@ -33,10 +33,27 @@ function highlight(line: string): ReactNode[] {
 
 const CHANGE_METHOD: Record<string, string> = { add: 'post', mod: 'get', modified: 'get', del: 'del', delete: 'del' };
 
+const EXT_LANG: Record<string, string> = {
+  py: 'python', ts: 'typescript', tsx: 'tsx', js: 'javascript', jsx: 'jsx',
+  json: 'json', md: 'markdown', css: 'css', html: 'html', sh: 'bash',
+  go: 'go', rs: 'rust', yml: 'yaml', yaml: 'yaml', toml: 'toml', txt: 'text',
+};
+function langOf(path: string): string {
+  const ext = path.split('.').pop()?.toLowerCase() || '';
+  return EXT_LANG[ext] || 'text';
+}
+
 export function ContextPanel() {
   const { terminalBlocks, browserView, changedFiles } = useApp();
   const [tab, setTab] = useState<Tab>('editor');
-  const lines = editorCode.split('\n');
+  const [activePath, setActivePath] = useState<string | null>(null);
+
+  // M7.2 — 编辑器展示真实沙盒文件内容（来自 file_editor 动作携带的 file_text）
+  const realFiles = changedFiles.filter((f) => f.content);
+  const activeFile =
+    realFiles.find((f) => f.path === activePath) || realFiles[realFiles.length - 1] || null;
+  const editorLines = (activeFile?.content ?? editorCode).split('\n');
+  const editorLang = activeFile ? activeFile.language || langOf(activeFile.path) : 'python';
 
   const hasTerm = terminalBlocks.length > 0;
   const hasBrowser = browserView !== null;
@@ -69,11 +86,27 @@ export function ContextPanel() {
       <div className="panel-body">
         {tab === 'editor' && (
           <>
+            {realFiles.length > 1 && (
+              <div className="file-tabs">
+                {realFiles.map((f) => (
+                  <button
+                    key={f.path}
+                    className={'file-tab' + (activeFile?.path === f.path ? ' active' : '')}
+                    onClick={() => setActivePath(f.path)}
+                    title={f.path}
+                  >
+                    {f.path.split('/').pop()}
+                  </button>
+                ))}
+              </div>
+            )}
             <div className="file-head">
-              <IconCode size={13} /> {hasFiles ? changedFiles[changedFiles.length - 1].path : 'app.py'} <span className="add">python</span>
+              <IconCode size={13} /> {activeFile ? activeFile.path : 'app.py'}{' '}
+              <span className="add">{editorLang}</span>
+              {!activeFile && <span className="chip" style={{ marginLeft: 'auto' }}>示例预览</span>}
             </div>
             <div className="editor">
-              {lines.map((l, i) => (
+              {editorLines.map((l, i) => (
                 <div className="eln" key={i}>
                   <span className="gn">{i + 1}</span>
                   <span className="c">{highlight(l)}</span>
