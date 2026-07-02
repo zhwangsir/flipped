@@ -203,6 +203,8 @@ export function Conversation() {
     cancelTask,
     selectedModel,
     setModel,
+    selectedMode,
+    setMode,
   } = useApp();
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
@@ -258,13 +260,25 @@ export function Conversation() {
 
       <div className='composer'>
         <div className='modes'>
-          <button className='mode agent active'>
+          <button
+            className={'mode agent' + (selectedMode === 'agent' ? ' active' : '')}
+            onClick={() => setMode('agent')}
+            title='智能体：在沙盒中自主执行、用工具、改文件'
+          >
             <IconSparkle size={13} /> 智能体
           </button>
-          <button className='mode'>
+          <button
+            className={'mode' + (selectedMode === 'chat' ? ' active' : '')}
+            onClick={() => setMode('chat')}
+            title='对话：直连本地模型问答，不执行、不改文件'
+          >
             <IconChat size={13} /> 对话
           </button>
-          <button className='mode'>
+          <button
+            className={'mode' + (selectedMode === 'plan' ? ' active' : '')}
+            onClick={() => setMode('plan')}
+            title='规划：让模型把目标拆成有序步骤，不执行'
+          >
             <IconLayout size={13} /> 规划
           </button>
         </div>
@@ -272,7 +286,13 @@ export function Conversation() {
           <textarea
             data-testid='composer-input'
             rows={2}
-            placeholder='给 flipped 一个任务，或 @ 引用文件、粘贴报错让它自主修复…'
+            placeholder={
+              selectedMode === 'chat'
+                ? '和本地模型对话，问任何问题…'
+                : selectedMode === 'plan'
+                ? '描述目标，让模型先出一份分步计划…'
+                : '给 flipped 一个任务，或 @ 引用文件、粘贴报错让它自主修复…'
+            }
             value={text}
             disabled={disabled}
             onChange={(e) => setText(e.target.value)}

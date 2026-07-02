@@ -170,8 +170,14 @@ async def create_task(session_id: str, req: TaskRequest) -> TaskResponse:
     store.update_status(session_id, SessionStatus.running)
     bus.emit(session_id, EventType.status, Role.system,
              {"status": "running", "progress": 0, "note": f"任务 {task_id} 已派发"})
+    mode = req.context.get("mode", "agent")
     if req.context.get("orchestrator"):
         t = asyncio.create_task(_run_orchestrator(session_id, task_id, req))
+    elif mode in ("chat", "plan"):
+        # 对话/规划模式：直连本地模型，不启动沙盒
+        t = asyncio.create_task(
+            _run_chat(session_id, task_id, req.description, req.context.get("model", "coder"), mode)
+        )
     elif MOCK_WORKER:
         t = asyncio.create_task(_mock_run(session_id, task_id, req.description))
     else:
@@ -349,6 +355,58 @@ async def _run_openhands(session_id: str, task_id: str, description: str, model_
     except Exception as exc:
         bus.emit(session_id, EventType.error, Role.system,
                  {"message": f"OpenHands Worker 失败: {exc}"})
+        store.update_status(session_id, SessionStatus.error)
+
+
+CHAT_SYSTEM = (
+    "你是 flipped 的对话助手。用简洁中文回答用户的问题；涉及代码时给出可直接运行的片段。"
+    "你只负责对话，不执行任何操作、不修改文件。"
+)
+PLAN_SYSTEM = (
+    "你是 flipped 的规划助手。把用户目标拆解为可执行的有序步骤，每一步给出【要做什么】与【如何验证】。"
+    "用 markdown 有序列表输出，聚焦计划本身，不要编写实现代码、不要执行任何操作。"
+)
+
+
+async def _llm_chat(base_url: str, model: str, system: str, user: str, timeout: float = 120.0) -> str:
+    """直连 OpenAI 兼容端点做一次非流式对话补全。"""
+    url = base_url.rstrip("/") + "/chat/completions"
+    api_key = os.environ.get("EXO_API_KEY") or os.environ.get("OPENAI_API_KEY") or "dummy"
+    payload = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": system},
+            {"role": "user", "content": user},
+        ],
+        "temperature": 0.3,
+        "stream": False,
+    }
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        resp = await client.post(url, json=payload, headers={"Authorization": f"Bearer {api_key}"})
+        resp.raise_for_status()
+        data = resp.json()
+    return data["choices"][0]["message"]["content"]
+
+
+async def _run_chat(session_id: str, task_id: str, description: str, model_alias: str, mode: str) -> None:
+    """对话/规划模式：直连本地模型返回文本，不启动沙盒、不用工具。"""
+    from driving.model_router import resolve_worker_model_config
+
+    base_url, model = resolve_worker_model_config(model_alias)
+    system = PLAN_SYSTEM if mode == "plan" else CHAT_SYSTEM
+    note = "规划" if mode == "plan" else "对话"
+    bus.emit(session_id, EventType.status, Role.system,
+             {"status": "running", "progress": 20, "note": f"{note}中（{model_alias}）"})
+    try:
+        reply = await _llm_chat(base_url, model, system, description)
+        bus.emit(session_id, EventType.message, Role.worker, {"text": reply, "source": "agent"})
+        bus.emit(session_id, EventType.status, Role.system,
+                 {"status": "done", "progress": 100, "note": f"{note}完成"})
+        store.update_status(session_id, SessionStatus.done)
+    except Exception as exc:
+        bus.emit(session_id, EventType.error, Role.system, {"message": f"{note}失败: {exc}"})
+        bus.emit(session_id, EventType.status, Role.system,
+                 {"status": "error", "progress": 100, "note": str(exc)})
         store.update_status(session_id, SessionStatus.error)
 
 

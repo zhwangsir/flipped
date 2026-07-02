@@ -46,6 +46,8 @@ interface AppState {
   toggleMcpServer: (name: string, enabled: boolean) => Promise<void>;
   selectedModel: string;
   setModel: (m: string) => void;
+  selectedMode: string;
+  setMode: (m: string) => void;
   selectSession: (id: string) => void;
   createSession: (title?: string) => Promise<string>;
   deleteSession: (id: string) => Promise<void>;
@@ -74,6 +76,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [metrics, setMetrics] = useState<Metrics | null>(null);
   const [mcpServers, setMcpServers] = useState<McpServer[]>([]);
   const [selectedModel, setSelectedModel] = useState('coder');
+  const [selectedMode, setSelectedMode] = useState('agent');
   const wsRef = useRef<{ close: () => void; send: (msg: unknown) => void } | null>(null);
 
   const refreshSessions = useCallback(async () => {
@@ -143,6 +146,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [selectedSessionId]);
 
   const setModel = useCallback((m: string) => setSelectedModel(m), []);
+  const setMode = useCallback((m: string) => setSelectedMode(m), []);
 
   const sendTask = useCallback(
     async (description: string) => {
@@ -150,9 +154,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (!sid) {
         sid = await createSession();
       }
-      await apiCreateTask(sid, description, selectedModel);
+      await apiCreateTask(sid, description, selectedModel, selectedMode);
     },
-    [selectedSessionId, createSession, selectedModel]
+    [selectedSessionId, createSession, selectedModel, selectedMode]
   );
 
   const sendApproval = useCallback((decision: string, reason = '') => {
@@ -334,6 +338,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         toggleMcpServer,
         selectedModel,
         setModel,
+        selectedMode,
+        setMode,
         selectSession,
         createSession,
         deleteSession,

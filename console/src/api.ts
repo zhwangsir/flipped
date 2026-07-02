@@ -24,10 +24,18 @@ export function createSession(title: string): Promise<Session> {
   return api<Session>(`/sessions?title=${encodeURIComponent(title)}`, { method: 'POST' });
 }
 
-export function createTask(sessionId: string, description: string, model?: string): Promise<void> {
+export function createTask(
+  sessionId: string,
+  description: string,
+  model?: string,
+  mode?: string
+): Promise<void> {
+  const context: Record<string, string> = {};
+  if (model) context.model = model;
+  if (mode) context.mode = mode;
   return api(`/sessions/${sessionId}/tasks`, {
     method: 'POST',
-    body: JSON.stringify({ description, context: model ? { model } : {} }),
+    body: JSON.stringify({ description, context }),
   });
 }
 
