@@ -39,6 +39,8 @@ interface AppState {
   browserView: BrowserView | null;
   changedFiles: ChangedFile[];
   metrics: Metrics | null;
+  selectedModel: string;
+  setModel: (m: string) => void;
   selectSession: (id: string) => void;
   createSession: (title?: string) => Promise<string>;
   deleteSession: (id: string) => Promise<void>;
@@ -65,6 +67,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [browserView, setBrowserView] = useState<BrowserView | null>(null);
   const [changedFiles, setChangedFiles] = useState<ChangedFile[]>([]);
   const [metrics, setMetrics] = useState<Metrics | null>(null);
+  const [selectedModel, setSelectedModel] = useState('coder');
   const wsRef = useRef<{ close: () => void; send: (msg: unknown) => void } | null>(null);
 
   const refreshSessions = useCallback(async () => {
@@ -116,15 +119,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (selectedSessionId) await apiCancelTask(selectedSessionId);
   }, [selectedSessionId]);
 
+  const setModel = useCallback((m: string) => setSelectedModel(m), []);
+
   const sendTask = useCallback(
     async (description: string) => {
       let sid = selectedSessionId;
       if (!sid) {
         sid = await createSession();
       }
-      await apiCreateTask(sid, description);
+      await apiCreateTask(sid, description, selectedModel);
     },
-    [selectedSessionId, createSession]
+    [selectedSessionId, createSession, selectedModel]
   );
 
   const sendApproval = useCallback((decision: string, reason = '') => {
@@ -293,6 +298,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         browserView,
         changedFiles,
         metrics,
+        selectedModel,
+        setModel,
         selectSession,
         createSession,
         deleteSession,

@@ -158,7 +158,7 @@ async def create_task(session_id: str, req: TaskRequest) -> TaskResponse:
     elif MOCK_WORKER:
         t = asyncio.create_task(_mock_run(session_id, task_id, req.description))
     else:
-        t = asyncio.create_task(_run_openhands(session_id, task_id, req.description))
+        t = asyncio.create_task(_run_openhands(session_id, task_id, req.description, req.context.get("model", "coder")))
     RUNNING_TASKS[session_id] = t
     t.add_done_callback(lambda _t, sid=session_id: RUNNING_TASKS.pop(sid, None))
     return TaskResponse(task_id=task_id, session_id=session_id, status="running")
@@ -306,7 +306,7 @@ async def _resume_orchestrator(session: Session) -> None:
                  {"message": f"Resume failed: {exc}"})
 
 
-async def _run_openhands(session_id: str, task_id: str, description: str) -> None:
+async def _run_openhands(session_id: str, task_id: str, description: str, model_alias: str = "coder") -> None:
     """在后台线程运行 OpenHands Worker，避免阻塞 FastAPI 主循环。
 
     模型端点经 model_router 自动选择(M6.6):LiteLLM proxy 健康走 proxy，
@@ -315,7 +315,7 @@ async def _run_openhands(session_id: str, task_id: str, description: str) -> Non
     from executor.openhands_worker import OpenHandsWorker
     from driving.model_router import resolve_worker_model_config
 
-    base_url, model = resolve_worker_model_config()
+    base_url, model = resolve_worker_model_config(model_alias)
     worker = OpenHandsWorker(
         session_id=session_id,
         task_id=task_id,

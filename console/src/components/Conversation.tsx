@@ -201,6 +201,8 @@ export function Conversation() {
     approvalPending,
     sendApproval,
     cancelTask,
+    selectedModel,
+    setModel,
   } = useApp();
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
@@ -294,9 +296,16 @@ export function Conversation() {
             <button className='tool-btn' disabled={disabled}>
               <IconCube size={13} /> 沙盒 <IconChevronDown size={12} />
             </button>
-            <button className='tool-btn' disabled={disabled}>
-              Kimi-K2.7 <IconChevronDown size={12} />
-            </button>
+            <select
+              className='tool-btn model-select'
+              value={selectedModel}
+              onChange={(e) => setModel(e.target.value)}
+              disabled={disabled}
+              title='执行模型'
+            >
+              <option value='coder'>Kimi-K2.7 · coder</option>
+              <option value='architect'>GLM-5.2 · architect</option>
+            </select>
             {sessionStatus === 'running' && (
               <button className='tool-btn stop' onClick={() => cancelTask()}>
                 <IconX size={13} /> 停止

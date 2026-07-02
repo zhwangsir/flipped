@@ -1256,3 +1256,21 @@
   border-color: var(--danger);
   background: oklch(30% 0.06 25 / 0.15);
 }
+
+/* ============ M7.1 模型选择器(真实下拉) ============ */
+.model-select {
+  appearance: none;
+  -webkit-appearance: none;
+  font: inherit;
+  font-size: var(--text-xs);
+  cursor: pointer;
+  padding-right: 9px;
+}
+.model-select:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.model-select option {
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+}

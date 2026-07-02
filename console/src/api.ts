@@ -24,10 +24,10 @@ export function createSession(title: string): Promise<Session> {
   return api<Session>(`/sessions?title=${encodeURIComponent(title)}`, { method: 'POST' });
 }
 
-export function createTask(sessionId: string, description: string): Promise<void> {
+export function createTask(sessionId: string, description: string, model?: string): Promise<void> {
   return api(`/sessions/${sessionId}/tasks`, {
     method: 'POST',
-    body: JSON.stringify({ description }),
+    body: JSON.stringify({ description, context: model ? { model } : {} }),
   });
 }
 

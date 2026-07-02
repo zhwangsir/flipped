@@ -157,3 +157,17 @@ def test_resolve_worker_model_config_defaults_when_env_empty(mock_get, monkeypat
     base, model = resolve_worker_model_config()
     assert base == DEFAULT_EXO_URL
     assert model == "mlx-community/Kimi-K2.7-Code-4bit"
+
+
+@patch("driving.model_router.httpx.get")
+def test_resolve_worker_config_by_alias(mock_get, monkeypatch):
+    """M7.1 — resolve_worker_model_config 按 alias 返回不同执行模型。"""
+    mock_get.side_effect = Exception("down")  # 所有端点不健康 → 走直连回退
+    monkeypatch.setenv("FLIPPED_MODEL_BASE_URL", "http://direct.test/v1")
+    monkeypatch.setenv("FLIPPED_ARCHITECT_MODEL", "mlx-community/GLM-5.2-fp8")
+    monkeypatch.setenv("FLIPPED_CODER_MODEL", "mlx-community/Kimi-K2.7-Code-4bit")
+    _, model_c = resolve_worker_model_config("coder")
+    url_a, model_a = resolve_worker_model_config("architect")
+    assert model_c == "mlx-community/Kimi-K2.7-Code-4bit"
+    assert model_a == "mlx-community/GLM-5.2-fp8"
+    assert url_a == "http://direct.test/v1"

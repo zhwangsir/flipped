@@ -80,7 +80,7 @@ def resolve_model_config(alias: str) -> tuple[str, str]:
     return direct_url, full_model
 
 
-def resolve_worker_model_config() -> tuple[str, str]:
+def resolve_worker_model_config(alias: str = "coder") -> tuple[str, str]:
     """Pick the best endpoint and model name for the OpenHands Worker.
 
     The proxy is checked from the host perspective (localhost:4000) but the
@@ -90,8 +90,8 @@ def resolve_worker_model_config() -> tuple[str, str]:
     proxy_health_url = os.environ.get("LITELLM_BASE_URL", DEFAULT_PROXY_URL)
     proxy_runtime_url = os.environ.get("OPENHANDS_PROXY_BASE_URL", DEFAULT_WORKER_PROXY_URL)
     direct_url = os.environ.get("FLIPPED_MODEL_BASE_URL") or os.environ.get("OPENHANDS_BASE_URL") or DEFAULT_EXO_URL
-    proxy_model = os.environ.get("OPENHANDS_MODEL", "coder")
-    direct_model = _model_id_for_alias("coder")
+    proxy_model = os.environ.get("OPENHANDS_MODEL", "coder") if alias == "coder" else alias
+    direct_model = _model_id_for_alias(alias)
 
     if is_endpoint_healthy(proxy_health_url) and is_model_available(proxy_health_url, proxy_model):
         return proxy_runtime_url, proxy_model
