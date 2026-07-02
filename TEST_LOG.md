@@ -562,3 +562,12 @@
 
 ### 环境限制诚实披露
 - 沙箱内无法真实 bind TCP 端口或 kill 进程，M5.6 用 pytest 注入 + 主动中断 stream 模拟崩溃恢复；真实 LLM + OpenHands 长任务验收保留到非沙箱环境复跑。
+
+## 2026-07-02 · M6.5 真实端到端(非 mock)✅ PASS
+
+**首次真跑通全链路**(此前受 ISSUE-6 限制从未实现;本机真机无该限制)。
+- 命令:`PYTHONPATH=src .venv/bin/python scripts/verify_e2e_real.py`
+- 链路:flipped `OpenHandsWorker` → 真实 OpenHands agent-server 沙盒(Docker,:8000)→ 真实 **Kimi-K2.7-Code**(exo `:52415` 直连,LiteLLM:4000 挂,走 M5.3 直连回退)
+- 结果:Kimi 在沙盒里 `file_editor` 创建 `/workspace/hello.py` → `terminal` 跑 `python3 hello.py` 输出 `5`(exit 0)→ `finish`;`ConversationExecutionStatus.FINISHED`,~35s,17–20 events。
+- 判定:`finished=True hello.py_created=True terminal_ok=True` → **VERDICT PASS**(连跑两次稳定)。
+- 前提实测:exo 可达 + GLM-5.2-fp8/Kimi-K2.7 真实推理+工具调用通;Docker 运行;容器内可直连 exo(HTTP 200)。

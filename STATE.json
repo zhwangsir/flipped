@@ -2,7 +2,7 @@
   "project": "flipped",
   "description": "接入本地 MLX 双模型(GLM-5.2 编排者 / Kimi-K2.7-Code 执行者)的 agentic 代码编辑器平台。fork Roo Code + 自定义驾驭层(强制验证/循环检测/上下文压缩/人工审批/子Agent/可观测性) + MCP 联网与外部能力。",
   "updated": "2026-07-02",
-  "current_milestone": "M5 · 硬化与产线化（性能/稳定性/安全/崩溃恢复）",
+  "current_milestone": "M6 · 从骨架到可用产品 — 进行中: M6.0 UI简约化✅ / M6.1 ContextPanel接真实事件✅ / M6.2 会话删除·取消·事件REST✅ / M6.3 状态栏真实指标✅ / **M6.5 真实端到端✅ PASS（首次!Worker→OpenHands沙盒→真实Kimi→真实文件+执行,scripts/verify_e2e_real.py,ISSUE-6 在真机上突破）**。全量98 passed。详见 PLAN.md / TEST_LOG.md",
   "key_facts": {
     "dev_host": "Apple M5 Max, 128GB RAM, 1.1TB 可用磁盘 — 开发/控制节点，非模型宿主",
     "model_cluster": "exo 集群 @ http://100.64.201.37:52415 (内网, OpenAI 兼容)；公网 https://dgmt.top/exo (需 Bearer token)",
