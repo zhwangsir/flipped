@@ -17,12 +17,13 @@ from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnec
 from fastapi.middleware.cors import CORSMiddleware
 
 from .events import EventBus, get_bus
-from .schemas import EventType, HealthResponse, MetricsResponse, Role, Session, SessionStatus, TaskRequest, TaskResponse
+from .schemas import Event, EventType, HealthResponse, MetricsResponse, Role, Session, SessionStatus, TaskRequest, TaskResponse
 from .session import SessionStore, store
 from driving.safety import validate_secrets
 from metrics import COLLECTOR
 
 MOCK_WORKER = os.environ.get("FLIPPED_MOCK_WORKER", "0") == "1"
+RUNNING_TASKS: dict[str, asyncio.Task] = {}  # M6.2 — 每会话运行中任务句柄，供取消
 FLIPPED_CHECKPOINT_DB = os.environ.get("FLIPPED_CHECKPOINT_DB", "data/checkpoints.db")
 
 API_PREFIX = "/api/v1"
@@ -104,6 +105,41 @@ async def get_session(session_id: str) -> Session:
     return session
 
 
+@app.delete(f"{API_PREFIX}/sessions/{{session_id}}")
+async def delete_session(session_id: str) -> dict:
+    """删除会话及其事件;若正在运行先取消其任务。"""
+    if not store.get(session_id):
+        raise HTTPException(status_code=404, detail="session not found")
+    task = RUNNING_TASKS.pop(session_id, None)
+    if task and not task.done():
+        task.cancel()
+    store.delete(session_id)
+    return {"ok": True, "id": session_id}
+
+
+@app.get(f"{API_PREFIX}/sessions/{{session_id}}/events", response_model=list[Event])
+async def get_events(session_id: str, after_id: str | None = Query(None)) -> list[Event]:
+    """REST 事件历史(回放/调试用),WebSocket 之外的兜底。"""
+    if not store.get(session_id):
+        raise HTTPException(status_code=404, detail="session not found")
+    return store.events(session_id, after_id)
+
+
+@app.post(f"{API_PREFIX}/sessions/{{session_id}}/cancel", response_model=Session)
+async def cancel_session(session_id: str) -> Session:
+    """取消会话运行中的任务:cancel asyncio 任务 + 状态回 idle + emit。"""
+    session = store.get(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="session not found")
+    task = RUNNING_TASKS.pop(session_id, None)
+    if task and not task.done():
+        task.cancel()
+    updated = store.update_status(session_id, SessionStatus.idle)
+    bus.emit(session_id, EventType.status, Role.system,
+             {"status": "idle", "progress": 0, "note": "任务已取消"})
+    return updated
+
+
 # ---------- 任务派发 ----------
 
 @app.post(f"{API_PREFIX}/sessions/{{session_id}}/tasks", response_model=TaskResponse)
@@ -116,11 +152,13 @@ async def create_task(session_id: str, req: TaskRequest) -> TaskResponse:
     bus.emit(session_id, EventType.status, Role.system,
              {"status": "running", "progress": 0, "note": f"任务 {task_id} 已派发"})
     if req.context.get("orchestrator"):
-        asyncio.create_task(_run_orchestrator(session_id, task_id, req))
+        t = asyncio.create_task(_run_orchestrator(session_id, task_id, req))
     elif MOCK_WORKER:
-        asyncio.create_task(_mock_run(session_id, task_id, req.description))
+        t = asyncio.create_task(_mock_run(session_id, task_id, req.description))
     else:
-        asyncio.create_task(_run_openhands(session_id, task_id, req.description))
+        t = asyncio.create_task(_run_openhands(session_id, task_id, req.description))
+    RUNNING_TASKS[session_id] = t
+    t.add_done_callback(lambda _t, sid=session_id: RUNNING_TASKS.pop(sid, None))
     return TaskResponse(task_id=task_id, session_id=session_id, status="running")
 
 

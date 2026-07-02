@@ -78,6 +78,15 @@ class SessionStore:
     def list(self) -> list[Session]:
         return list(self._sessions.values())
 
+    def delete(self, session_id: str) -> bool:
+        """删除会话及其事件；返回是否存在过。"""
+        existed = session_id in self._sessions
+        self._sessions.pop(session_id, None)
+        self._events.pop(session_id, None)
+        self._counter.pop(session_id, None)
+        self.save()
+        return existed
+
     def update_status(self, session_id: str, status: SessionStatus) -> Session | None:
         session = self._sessions.get(session_id)
         if not session:

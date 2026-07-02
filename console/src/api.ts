@@ -31,6 +31,14 @@ export function createTask(sessionId: string, description: string): Promise<void
   });
 }
 
+export function deleteSession(sessionId: string): Promise<{ ok: boolean }> {
+  return api(`/sessions/${sessionId}`, { method: 'DELETE' });
+}
+
+export function cancelTask(sessionId: string): Promise<Session> {
+  return api<Session>(`/sessions/${sessionId}/cancel`, { method: 'POST' });
+}
+
 export interface EventHandlers {
   onMessage: (event: ApiEvent) => void;
   onOpen?: () => void;

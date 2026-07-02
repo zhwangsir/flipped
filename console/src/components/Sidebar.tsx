@@ -2,10 +2,10 @@ import { useState } from "react";
 import { useApp } from "../store";
 import { fileTree } from "../mock";
 import { formatWhen } from "../types";
-import { IconPlus, IconFile, IconFolder } from "../icons";
+import { IconPlus, IconFile, IconFolder, IconX } from "../icons";
 
 export function Sidebar() {
-  const { sessions, selectedSessionId, selectSession, createSession } = useApp();
+  const { sessions, selectedSessionId, selectSession, createSession, deleteSession } = useApp();
   const [tab, setTab] = useState<"chats" | "files">("chats");
 
   return (
@@ -38,6 +38,16 @@ export function Sidebar() {
                 <div className="session-top">
                   <span className={"dot " + s.status} />
                   <span className="session-title">{s.title}</span>
+                  <button
+                    className="session-del"
+                    aria-label="删除会话"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      deleteSession(s.id);
+                    }}
+                  >
+                    <IconX size={12} />
+                  </button>
                 </div>
                 <div className="session-meta">
                   <span className="chip">{s.model}</span>

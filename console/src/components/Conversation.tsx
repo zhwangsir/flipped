@@ -200,6 +200,7 @@ export function Conversation() {
     lastError,
     approvalPending,
     sendApproval,
+    cancelTask,
   } = useApp();
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
@@ -296,6 +297,11 @@ export function Conversation() {
             <button className='tool-btn' disabled={disabled}>
               Kimi-K2.7 <IconChevronDown size={12} />
             </button>
+            {sessionStatus === 'running' && (
+              <button className='tool-btn stop' onClick={() => cancelTask()}>
+                <IconX size={13} /> 停止
+              </button>
+            )}
             <button
               className='send'
               data-testid='send-button'

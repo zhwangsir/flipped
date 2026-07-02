@@ -11,7 +11,14 @@ import type {
   ChangedFile,
 } from './types';
 import { eventToStreamItem } from './types';
-import { fetchSessions, createSession as apiCreateSession, createTask as apiCreateTask, connectEvents } from './api';
+import {
+  fetchSessions,
+  createSession as apiCreateSession,
+  createTask as apiCreateTask,
+  deleteSession as apiDeleteSession,
+  cancelTask as apiCancelTask,
+  connectEvents,
+} from './api';
 
 export type ConnectionState = 'idle' | 'connecting' | 'connected' | 'error';
 
@@ -31,6 +38,8 @@ interface AppState {
   changedFiles: ChangedFile[];
   selectSession: (id: string) => void;
   createSession: (title?: string) => Promise<string>;
+  deleteSession: (id: string) => Promise<void>;
+  cancelTask: () => Promise<void>;
   sendTask: (description: string) => Promise<void>;
   sendApproval: (decision: string, reason?: string) => void;
   refreshSessions: () => Promise<void>;
@@ -77,6 +86,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setSelectedSessionId(s.id);
     return s.id;
   }, []);
+
+  const deleteSession = useCallback(async (id: string) => {
+    await apiDeleteSession(id);
+    setSessions((prev) => prev.filter((s) => s.id !== id));
+    setSelectedSessionId((prev) => (prev === id ? null : prev));
+  }, []);
+
+  const cancelTask = useCallback(async () => {
+    if (selectedSessionId) await apiCancelTask(selectedSessionId);
+  }, [selectedSessionId]);
 
   const sendTask = useCallback(
     async (description: string) => {
@@ -256,6 +275,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         changedFiles,
         selectSession,
         createSession,
+        deleteSession,
+        cancelTask,
         sendTask,
         sendApproval,
         refreshSessions,

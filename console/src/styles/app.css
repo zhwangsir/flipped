@@ -1229,3 +1229,30 @@
   opacity: 0.55;
   cursor: not-allowed;
 }
+
+/* ============ M6.2 会话删除 / 停止 ============ */
+.session-del {
+  margin-left: auto;
+  color: var(--text-faint);
+  opacity: 0;
+  display: grid;
+  place-items: center;
+  padding: 2px;
+  border-radius: 4px;
+  transition: opacity var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease);
+}
+.session:hover .session-del,
+.session.active .session-del {
+  opacity: 1;
+}
+.session-del:hover {
+  color: var(--danger);
+  background: var(--bg-hover);
+}
+.tool-btn.stop {
+  color: var(--danger);
+}
+.tool-btn.stop:hover {
+  border-color: var(--danger);
+  background: oklch(30% 0.06 25 / 0.15);
+}
