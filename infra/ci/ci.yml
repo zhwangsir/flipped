@@ -1,0 +1,48 @@
+name: ci
+
+# M6.9 — 持续集成:Python 单测 + Console 构建。
+# 注:真实端到端(scripts/verify_e2e_real.py)需 exo 模型 + OpenHands + Docker 沙盒,
+# 不在 CI 跑(受限 runner 无这些依赖);由本机 `bash scripts/dev_up.sh` + verify_e2e_real 手动验收。
+
+on:
+  push:
+    branches: [main, "codex/**"]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  python-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pytest
+      - name: Run tests (mock 路径,无外部网络)
+        env:
+          PYTHONPATH: src
+          EXO_API_KEY: dummy
+          FLIPPED_SESSION_STORE_PATH: /tmp/ci_sessions.json
+        run: pytest tests/ -q
+
+  console-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: console
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: console/package-lock.json
+      - run: npm ci
+      - run: npm run build
