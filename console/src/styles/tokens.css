@@ -1,58 +1,68 @@
+/*
+ * flipped Console — design tokens
+ * Direction: OpenAI Codex, dark-first. Near-monochrome neutral surfaces with a
+ * single restrained accent (OpenAI Teal #10a37f). Neutrals are tinted a hair
+ * toward the accent hue so the palette reads cohesive rather than cold.
+ * Everything flat + hairline-first; the accent only marks active/focus/running.
+ */
 :root[data-theme="dark"] {
-  /* surfaces — quiet near-neutral, minimal cast, low elevation contrast */
-  --bg-app: oklch(16% 0.002 270);
-  --bg-sunken: oklch(14.5% 0.002 270);
-  --bg-base: oklch(18.4% 0.0025 270);
-  --bg-surface: oklch(21% 0.003 270);
-  --bg-elevated: oklch(23.4% 0.0035 270);
-  --bg-hover: oklch(26.5% 0.004 270);
-  --bg-glass: oklch(16% 0.002 270 / 0.86);
+  /* surfaces — near-neutral, faint teal undertone, low elevation contrast */
+  --bg-app: oklch(16% 0.004 200);
+  --bg-sunken: oklch(14.2% 0.004 200);
+  --bg-base: oklch(18% 0.005 200);
+  --bg-surface: oklch(20.6% 0.005 200);
+  --bg-elevated: oklch(23% 0.006 200);
+  --bg-hover: oklch(26.5% 0.007 200);
+  --bg-active: oklch(29.5% 0.008 200);
+  --bg-glass: oklch(16% 0.004 200 / 0.86);
 
-  --border: oklch(27% 0.003 270);
-  --border-subtle: oklch(22.5% 0.003 270);
-  --border-strong: oklch(35% 0.004 270);
-  --edge-hi: transparent; /* glass highlight removed for a flatter look */
+  --border-subtle: oklch(23% 0.005 200);
+  --border: oklch(28% 0.006 200);
+  --border-strong: oklch(36% 0.008 200);
+  --edge-hi: transparent; /* flat — no glass highlight */
 
-  --text-primary: oklch(96% 0.002 270);
-  --text-secondary: oklch(72% 0.004 270);
-  --text-muted: oklch(56% 0.005 270);
-  --text-faint: oklch(44% 0.006 270);
+  --text-primary: oklch(96% 0.003 200);
+  --text-secondary: oklch(74% 0.006 200);
+  --text-muted: oklch(58% 0.007 200);
+  --text-faint: oklch(46% 0.008 200);
 
-  /* accent — quiet, used only for focus/active, never large fills */
-  --accent: oklch(64% 0.1 248);
-  --accent-hi: oklch(70% 0.1 248);
-  --accent-soft: oklch(29% 0.035 248 / 0.5);
+  /* accent — OpenAI Teal, the lone color; used only for focus/active/running/links */
+  --accent: oklch(66% 0.13 163);
+  --accent-hi: oklch(73% 0.125 163);
+  --accent-text: oklch(77% 0.11 163);
+  --accent-soft: oklch(66% 0.13 163 / 0.14);
+  --accent-border: oklch(66% 0.13 163 / 0.42);
+  --accent-on: oklch(17% 0.01 163);
   --accent-glow: transparent;
-  --accent-text: oklch(78% 0.065 248);
-  --accent-on: oklch(17% 0.002 270);
+  --focus-ring: 0 0 0 3px oklch(66% 0.13 163 / 0.34);
 
-  /* crisp near-white primary (restrained, Codex/Vercel style CTA) */
-  --primary: oklch(95% 0.002 270);
-  --primary-hover: oklch(87% 0.002 270);
-  --on-primary: oklch(17% 0.002 270);
+  /* primary CTA — crisp near-white (restrained, premium; distinct from accent) */
+  --primary: oklch(96% 0.003 200);
+  --primary-hover: oklch(88% 0.003 200);
+  --on-primary: oklch(17% 0.004 200);
 
-  /* agent roles — muted tints, low chroma */
-  --role-supervisor: oklch(70% 0.055 250);
-  --role-worker: oklch(72% 0.05 168);
-  --role-overseer: oklch(76% 0.06 82);
+  /* agent roles — muted tints; worker shares the teal family */
+  --role-supervisor: oklch(72% 0.06 250);
+  --role-worker: oklch(73% 0.075 163);
+  --role-overseer: oklch(78% 0.07 82);
 
-  /* semantic — muted, carry meaning only */
-  --success: oklch(70% 0.1 155);
-  --danger: oklch(64% 0.13 25);
-  --warning: oklch(78% 0.09 80);
-  --info: oklch(68% 0.08 240);
-  --diff-add-text: oklch(80% 0.09 155);
-  --diff-del-text: oklch(78% 0.1 25);
+  /* semantic — carry meaning only; green/red tuned for diffs & run states */
+  --success: oklch(72% 0.14 158);
+  --danger: oklch(63% 0.19 22);
+  --warning: oklch(78% 0.13 72);
+  --info: oklch(70% 0.1 230);
+  --diff-add-text: oklch(81% 0.13 158);
+  --diff-del-text: oklch(77% 0.15 22);
 
-  /* syntax — muted */
-  --syn-kw: oklch(72% 0.09 300);
-  --syn-str: oklch(74% 0.09 140);
-  --syn-fn: oklch(75% 0.08 235);
-  --syn-num: oklch(78% 0.08 60);
-  --syn-com: oklch(48% 0.01 270);
+  /* syntax — tasteful, muted (syntect-adjacent) */
+  --syn-kw: oklch(74% 0.11 300);
+  --syn-str: oklch(76% 0.12 150);
+  --syn-fn: oklch(74% 0.1 232);
+  --syn-num: oklch(79% 0.1 62);
+  --syn-com: oklch(50% 0.012 200);
   --syn-punct: var(--text-muted);
 
-  /* type */
+  /* type — Geist as the OpenAI-Sans-adjacent stand-in */
   --font-sans: "Geist Variable", "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-mono: "Geist Mono Variable", "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
   --text-xs: 11px;
@@ -62,35 +72,38 @@
   --text-lg: 18px;
   --text-xl: 22px;
   --text-2xl: 28px;
+  --leading-tight: 1.25;
+  --leading-body: 1.6;
 
-  /* rhythm — tighter, consistent radii */
+  /* rhythm — consistent, slightly rounded (Codex-ish) */
   --sp-1: 4px;
   --sp-2: 8px;
   --sp-3: 12px;
   --sp-4: 16px;
   --sp-5: 22px;
   --sp-6: 32px;
-  --radius-xs: 4px;
-  --radius-sm: 6px;
-  --radius: 8px;
-  --radius-lg: 10px;
+  --radius-xs: 5px;
+  --radius-sm: 7px;
+  --radius: 9px;
+  --radius-lg: 12px;
+  --radius-pill: 999px;
 
   /* motion */
-  --dur-fast: 130ms;
+  --dur-fast: 150ms;
   --dur: 220ms;
   --dur-slow: 420ms;
   --ease: cubic-bezier(0.16, 1, 0.3, 1);
 
   /* depth — near-flat, hairline-first */
-  --shadow-sm: 0 1px 2px oklch(0% 0 0 / 0.16);
-  --shadow-md: 0 4px 14px oklch(0% 0 0 / 0.22);
-  --shadow-lg: 0 12px 34px oklch(0% 0 0 / 0.32);
-  --glow: none; /* no glow — kills every box-shadow: var(--glow) */
+  --shadow-sm: 0 1px 2px oklch(0% 0 0 / 0.18);
+  --shadow-md: 0 6px 20px oklch(0% 0 0 / 0.26);
+  --shadow-lg: 0 16px 40px oklch(0% 0 0 / 0.36);
+  --glow: none;
 
   /* layout */
   --rail-w: 52px;
-  --sidebar-w: 268px;
+  --sidebar-w: 272px;
   --context-w: 468px;
-  --topbar-h: 46px;
-  --statusbar-h: 27px;
+  --topbar-h: 48px;
+  --statusbar-h: 28px;
 }

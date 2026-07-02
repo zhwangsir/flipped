@@ -37,6 +37,18 @@ button {
   background: none;
 }
 
+/* keyboard focus — restrained teal ring, only for keyboard nav (ring follows each
+   element's own border-radius, so circular/rounded controls stay intact) */
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+[tabindex]:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
 /* thin, unobtrusive scrollbars */
 * {
   scrollbar-width: thin;

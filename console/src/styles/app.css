@@ -219,6 +219,10 @@
   background: var(--bg-sunken);
   color: var(--text-muted);
 }
+.side-search:focus-within {
+  border-color: var(--accent-border);
+  background: var(--bg-surface);
+}
 .side-search input {
   flex: 1;
   min-width: 0;
@@ -269,7 +273,7 @@
 .session.active {
   background: var(--bg-surface);
   border-color: var(--border);
-  box-shadow: var(--shadow-sm), inset 0 1px 0 var(--edge-hi);
+  box-shadow: inset 2px 0 0 var(--accent);
 }
 .session-top {
   display: flex;
