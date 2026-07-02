@@ -40,3 +40,18 @@
 
 ## 回滚
 - 分支 `codex/m6-product`;每任务独立 commit,可逐个回退。不破坏已绿的 M0–M5 代码与测试。
+
+---
+
+# M7 · UI 诚实化:全部接成真功能 ✅
+
+> 背景:用户发现"很多功能都用不了"——大量 UI 控件是纯装饰(无 onClick / mock 数据 / 硬编码谎报)。
+> 用户明确选择"**全部接成真功能**"(而非删除),优先级:模型切换 / 真实编辑器 / MCP 真列表+开关 / 模式切换。
+
+- **M7.1 模型切换** ✅ — 输入区下拉真切执行模型;`model_router.resolve_worker_model_config(alias)` 按 coder=Kimi/architect=GLM 返回不同模型;`create_task` 透传 `context.model` → 沙盒用对应模型。真实验证:architect(GLM) 在沙盒执行建 g.py。
+- **M7.2 真实编辑器** ✅ — 编辑器 Tab 显示沙盒真实文件内容;worker 从 `file_editor` ActionEvent 抓 `file_text` 随 `file_change` 发出;store 合并保内容;多文件 chips + 行号 + 语法高亮。验证:calc.py 内容真实。
+- **M7.3 MCP 真列表 + 开关** ✅ — `api/mcp_registry.py` 配置文件持久化;flipped 5 工具内省自 `mcp_server.tools.TOOLS`;`GET /mcp/servers` + `POST /toggle`;启用项经 `enabled_mcp_config()` 注入 Agent `mcp_config`(默认全关不改变已验证路径)。
+- **M7.4 模式切换** ✅ — `create_task` 按 `context.mode` 路由;`_run_chat`+`_llm_chat`:对话=直连本地模型问答、规划=LLM 出【要做什么/如何验证】分步计划、智能体=沙盒执行不变。验证:Kimi 秒回 / GLM 出计划。
+- **M7.5 侧栏·顶栏·输入区控件全部接真** ✅ — 共享导航状态入 store(activeView/contextTab/sidebarTab/showContext/sessionQuery);ActivityBar 真导航;TopBar 修正硬编码谎报(随 selectedModel/sessionStatus/会话/变更数)+ 布局切换面板;会话搜索过滤;composer @插入/工具→MCP/沙盒→终端;移除无后端支撑的假按钮(运行/main/附件)。
+
+**验收**:全量 **107 passed**;`console build` 绿;Puppeteer 浏览器实测 6 类控件全部生效(搜索过滤 m74→2 / 模型 pill→GLM-5.2 / rail 导航→浏览器·MCP tab / MCP 开关→持久化后端 / 布局→隐藏面板 / 模式→规划+placeholder 变)。

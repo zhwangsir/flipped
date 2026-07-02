@@ -2,7 +2,7 @@
   "project": "flipped",
   "description": "接入本地 MLX 双模型(GLM-5.2 编排者 / Kimi-K2.7-Code 执行者)的 agentic 代码编辑器平台。fork Roo Code + 自定义驾驭层(强制验证/循环检测/上下文压缩/人工审批/子Agent/可观测性) + MCP 联网与外部能力。",
   "updated": "2026-07-02",
-  "current_milestone": "M6 · 从骨架到可用产品 — 全部完成 ✅: M6.0 UI简约化 / M6.1 ContextPanel真实事件 / M6.2 会话删除·取消·事件REST / M6.3 状态栏真实指标 / M6.4 资源管理器真实工作区 / M6.5 真实端到端(首次!Worker→OpenHands沙盒→真实Kimi→真实文件+执行) / M6.6 全链路集成(Console API→沙盒,model_router 自动exo直连) / M6.7 dev_up.sh 一键起停 / M6.8 Electron桌面壳 / M6.9 CI。全量98 passed,console build绿,真实E2E PASS。一键 scripts/dev_up.sh，验收 scripts/verify_e2e_real.py，桌面 desktop/(npm run dev)。余(产品化尾巴,user-gated):桌面包内嵌Python sidecar + 三平台签名(需证书)。详见 PLAN.md/TEST_LOG.md",
+  "current_milestone": "M7 · UI 诚实化（全部接成真功能）— 完成 ✅: M7.1 模型切换(输入区下拉真切 coder=Kimi/architect=GLM，真实验证 GLM 在沙盒执行建文件) / M7.2 真实编辑器(编辑器 Tab 显示沙盒真实文件内容，源自 file_editor Action 的 file_text；验证 calc.py 内容真实) / M7.3 MCP 真列表+持久化开关+接入 Agent mcp_config(flipped 5 工具内省真实；开关持久化磁盘) / M7.4 模式切换(智能体=沙盒执行/对话=直连本地模型问答/规划=LLM 出分步计划，三态均真实验证) / M7.5 侧栏·顶栏·输入区装饰控件全部接真(ActivityBar 真导航；TopBar 修正硬编码谎报→随 selectedModel/sessionStatus/会话/变更数；会话搜索过滤；composer @插入·工具→MCP·沙盒→终端；布局切换面板；移除无后端支撑的假按钮)。全量 107 passed，console build 绿，Puppeteer 浏览器实测 6 类控件全部生效(搜索过滤/模型 pill/rail 导航/MCP 开关持久化后端/布局隐藏/模式切换)。余(产品化尾巴，user-gated)：桌面包内嵌 Python sidecar + 三平台签名(需证书)。详见 PLAN.md",
   "key_facts": {
     "dev_host": "Apple M5 Max, 128GB RAM, 1.1TB 可用磁盘 — 开发/控制节点，非模型宿主",
     "model_cluster": "exo 集群 @ http://100.64.201.37:52415 (内网, OpenAI 兼容)；公网 https://dgmt.top/exo (需 Bearer token)",
