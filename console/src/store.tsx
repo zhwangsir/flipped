@@ -62,6 +62,8 @@ interface AppState {
   toggleContext: () => void;
   sidebarCollapsed: boolean;
   toggleSidebar: () => void;
+  paletteOpen: boolean;
+  setPaletteOpen: (open: boolean) => void;
   projectContext: ProjectContext | null;
   sessionQuery: string;
   setSessionQuery: (q: string) => void;
@@ -99,6 +101,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [sidebarTab, setSidebarTab] = useState<SidebarTab>('chats');
   const [showContext, setShowContext] = useState(true);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(false);
   const [projectContext, setProjectContext] = useState<ProjectContext | null>(null);
   const [sessionQuery, setSessionQuery] = useState('');
   const wsRef = useRef<{ close: () => void; send: (msg: unknown) => void } | null>(null);
@@ -148,12 +151,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
       .catch(() => {});
   }, []);
 
-  // Stage 3 — Cmd/Ctrl+B 折叠侧栏（Codex 快捷键）
+  // Stage 3/4 — Codex 快捷键：⌘B 折叠侧栏 / ⌘K 命令面板
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'b') {
+      const meta = e.metaKey || e.ctrlKey;
+      if (meta && e.key.toLowerCase() === 'b') {
         e.preventDefault();
         setSidebarCollapsed((v) => !v);
+      } else if (meta && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setPaletteOpen((v) => !v);
       }
     };
     window.addEventListener('keydown', onKey);
@@ -396,6 +403,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         toggleContext,
         sidebarCollapsed,
         toggleSidebar,
+        paletteOpen,
+        setPaletteOpen,
         projectContext,
         sessionQuery,
         setSessionQuery,

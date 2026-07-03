@@ -4,6 +4,7 @@ import { TopBar } from "./components/TopBar";
 import { Conversation } from "./components/Conversation";
 import { ContextPanel } from "./components/ContextPanel";
 import { StatusBar } from "./components/StatusBar";
+import { CommandPalette } from "./components/CommandPalette";
 import { AppProvider, useApp } from "./store";
 
 function AppShell() {
@@ -17,6 +18,7 @@ function AppShell() {
         <ContextPanel />
       </div>
       <StatusBar />
+      <CommandPalette />
     </div>
   );
 }
