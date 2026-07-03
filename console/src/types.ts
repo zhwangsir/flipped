@@ -79,6 +79,21 @@ export interface FileNode {
   children?: FileNode[];
 }
 
+/** 浏览器真内核渲染结果（阶段②b — 选中元素追踪）。 */
+export interface BrowserElement {
+  tag: string;
+  selector: string;
+  text: string;
+  box: { x: number; y: number; w: number; h: number };
+}
+export interface BrowserRender {
+  url: string;
+  title: string;
+  screenshot: string;
+  elements: BrowserElement[];
+  viewport: { width: number; height: number };
+}
+
 /** 共享 UI 导航状态（M7.5 — 让 ActivityBar/TopBar/composer 真正驱动面板）。 */
 export type ContextTab = 'editor' | 'diff' | 'term' | 'browser' | 'files' | 'problems' | 'mcp';
 export type SidebarTab = 'chats' | 'files';

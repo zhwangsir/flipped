@@ -17,7 +17,7 @@ from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnec
 from fastapi.middleware.cors import CORSMiddleware
 
 from .events import EventBus, get_bus
-from .schemas import Event, EventType, HealthResponse, MetricsResponse, Role, Session, SessionStatus, TaskRequest, TaskResponse
+from .schemas import BrowserRenderRequest, Event, EventType, HealthResponse, MetricsResponse, Role, Session, SessionStatus, TaskRequest, TaskResponse
 from .session import SessionStore, store
 from driving.safety import validate_secrets
 from metrics import COLLECTOR
@@ -197,6 +197,23 @@ async def project_file(path: str = Query(..., min_length=1)) -> dict[str, Any]:
     except (OSError, UnicodeDecodeError):
         raise HTTPException(status_code=415, detail="binary or unreadable file")
     return {"path": path, "content": content}
+
+
+# ---------- 浏览器真内核渲染（阶段②b — 右侧「浏览器」实时看效果 + 选中元素追踪） ----------
+
+@app.post(f"{API_PREFIX}/browser/render")
+async def browser_render(req: BrowserRenderRequest) -> dict[str, Any]:
+    """用真 Chromium 渲染 URL，返回截图 + 可点击 DOM 元素框。"""
+    url = req.url.strip()
+    if url.startswith(("localhost", "127.0.0.1", "0.0.0.0", "[::1]")):
+        url = "http://" + url
+    if not url.startswith(("http://", "https://")):
+        raise HTTPException(status_code=400, detail="仅支持 http/https URL")
+    from api.browser import render_page
+    try:
+        return await render_page(url)
+    except Exception as e:  # 渲染失败（超时/DNS/崩溃）→ 502 携带原因
+        raise HTTPException(status_code=502, detail=f"渲染失败: {type(e).__name__}: {e}")
 
 
 # ---------- 会话管理 ----------

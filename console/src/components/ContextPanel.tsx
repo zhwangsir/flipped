@@ -1,9 +1,9 @@
 import { useState, type ReactNode } from 'react';
 import { useApp } from '../store';
-import type { ChangedFile, FileNode } from '../types';
+import type { ChangedFile, FileNode, BrowserElement } from '../types';
 import { diffLines, terminalLines, editorCode, problems } from '../mock';
 import { renderMarkdown } from '../lib/markdown';
-import { IconCode, IconFile, IconFolder, IconTerminal, IconBrowser, IconWarn, IconPuzzle, IconChat, IconX, IconChevronDown } from '../icons';
+import { IconCode, IconFile, IconFolder, IconTerminal, IconBrowser, IconWarn, IconPuzzle, IconChat, IconX, IconChevronDown, IconEye } from '../icons';
 
 /** 递归文件树节点(阶段② — 右侧「文件」)。 */
 function FileTreeNode({ node, depth, activePath, onOpen }: {
@@ -38,6 +38,97 @@ function FileTreeNode({ node, depth, activePath, onOpen }: {
       <IconFile size={12} />
       <span className="ft-name">{node.name}</span>
     </button>
+  );
+}
+
+/** 浏览器真内核预览 + 选中元素追踪(阶段②b)。截图用真 Chromium 渲染，元素框百分比叠加(响应式)。 */
+function BrowserTab() {
+  const {
+    browserRender,
+    browserLoading,
+    browserError,
+    renderBrowser,
+    browserView,
+    prefillComposer,
+  } = useApp();
+  const [url, setUrl] = useState(browserRender?.url || browserView?.url || '');
+  const [selected, setSelected] = useState<BrowserElement | null>(null);
+
+  const go = () => {
+    const u = url.trim();
+    if (u && !browserLoading) {
+      setSelected(null);
+      renderBrowser(u);
+    }
+  };
+  const vw = browserRender?.viewport.width || 1280;
+  const vh = browserRender?.viewport.height || 800;
+  const track = (el: BrowserElement) =>
+    prefillComposer(`追踪页面元素 <${el.tag}> 「${el.text || el.selector}」（选择器 ${el.selector}）`);
+
+  return (
+    <div className="rbrowser">
+      <div className="rbrowser-bar">
+        <span className="traffic"><i /><i /><i /></span>
+        <input
+          className="rbrowser-url mono"
+          value={url}
+          onChange={(e) => setUrl(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && go()}
+          placeholder="http://localhost:5173"
+          aria-label="预览地址"
+        />
+        <button className="rbrowser-go" onClick={go} disabled={browserLoading || !url.trim()}>
+          {browserLoading ? '渲染中…' : '预览'}
+        </button>
+      </div>
+      {browserError && <div className="rbrowser-err">渲染失败：{browserError}</div>}
+      {!browserRender && !browserLoading && !browserError && (
+        <div className="rbrowser-empty">
+          <IconBrowser size={22} />
+          <div>输入 URL 用真 Chromium 渲染</div>
+          <div className="rbrowser-empty-sub">渲染后点击页面元素即可「追踪」给 agent</div>
+        </div>
+      )}
+      {browserRender && (
+        <>
+          <div className="rbrowser-title mono">
+            <IconEye size={12} /> {browserRender.title || browserRender.url}
+            <span className="rbrowser-count">{browserRender.elements.length} 元素</span>
+          </div>
+          <div className="rbrowser-stage">
+            <img src={browserRender.screenshot} alt={browserRender.title} />
+            {browserRender.elements.map((el, i) => (
+              <button
+                key={i}
+                type="button"
+                className={'rbrowser-box' + (selected === el ? ' sel' : '')}
+                style={{
+                  left: `${(el.box.x / vw) * 100}%`,
+                  top: `${(el.box.y / vh) * 100}%`,
+                  width: `${(el.box.w / vw) * 100}%`,
+                  height: `${(el.box.h / vh) * 100}%`,
+                }}
+                onClick={() => setSelected(el)}
+                title={`<${el.tag}> ${el.text}`}
+              />
+            ))}
+          </div>
+          {selected && (
+            <div className="rbrowser-sel">
+              <div className="rbrowser-sel-info">
+                <span className="rbrowser-tag mono">&lt;{selected.tag}&gt;</span>
+                <span className="rbrowser-selname mono">{selected.selector}</span>
+                {selected.text && <div className="rbrowser-seltext">{selected.text}</div>}
+              </div>
+              <button className="rbrowser-track" onClick={() => track(selected)}>
+                追踪此元素
+              </button>
+            </div>
+          )}
+        </>
+      )}
+    </div>
   );
 }
 
@@ -117,7 +208,6 @@ function langOf(path: string): string {
 export function ContextPanel() {
   const {
     terminalBlocks,
-    browserView,
     changedFiles,
     mcpServers,
     toggleMcpServer,
@@ -165,7 +255,6 @@ export function ContextPanel() {
   };
 
   const hasTerm = terminalBlocks.length > 0;
-  const hasBrowser = browserView !== null;
   const hasFiles = changedFiles.length > 0;
   const diffCount = hasFiles ? changedFiles.length : 14;
 
@@ -357,40 +446,7 @@ export function ContextPanel() {
           </div>
         )}
 
-        {tab === 'browser' && (
-          <div className="browser">
-            <div className="browser-chrome">
-              <div className="browser-bar">
-                <span className="traffic"><i /><i /><i /></span>
-                <span className="url">{hasBrowser ? browserView!.url : 'http://127.0.0.1:8000/docs'}</span>
-              </div>
-              <div className="browser-view">
-                {hasBrowser ? (
-                  <>
-                    <div className="swagger-title">{browserView!.title || browserView!.url}</div>
-                    {browserView!.screenshot ? (
-                      <img
-                        src={browserView!.screenshot}
-                        alt={browserView!.title || 'screenshot'}
-                        style={{ width: '100%', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-subtle)', marginTop: 8 }}
-                      />
-                    ) : (
-                      <div className="swagger-sub">已打开页面 · 无截图</div>
-                    )}
-                  </>
-                ) : (
-                  <>
-                    <div className="swagger-title">Todo API</div>
-                    <div className="swagger-sub">0.1.0 · OAS3 · /openapi.json</div>
-                    <div className="endpoint"><span className="method get">GET</span><span className="ep-path">/todos</span></div>
-                    <div className="endpoint"><span className="method post">POST</span><span className="ep-path">/todos</span></div>
-                    <div className="endpoint"><span className="method del">DELETE</span><span className="ep-path">/todos/{'{todo_id}'}</span></div>
-                  </>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
+        {tab === 'browser' && <BrowserTab />}
 
         {tab === 'problems' && (
           <div className="list">

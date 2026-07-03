@@ -72,6 +72,10 @@ class TaskRequest(BaseModel):
     context: dict[str, Any] = Field(default_factory=dict, description="额外上下文，透传给执行器")
 
 
+class BrowserRenderRequest(BaseModel):
+    url: str = Field(..., min_length=1, description="要渲染的目标 URL（仅 http/https）")
+
+
 class TaskResponse(BaseModel):
     task_id: str
     session_id: str

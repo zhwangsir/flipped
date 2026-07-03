@@ -15,6 +15,7 @@ import type {
   SidebarTab,
   ProjectContext,
   FileNode,
+  BrowserRender,
 } from './types';
 import { eventToStreamItem } from './types';
 import {
@@ -29,6 +30,7 @@ import {
   fetchProjectContext,
   fetchProjectFiles,
   fetchProjectFile,
+  renderBrowser as apiRenderBrowser,
   connectEvents,
 } from './api';
 
@@ -75,6 +77,10 @@ interface AppState {
   projectFiles: FileNode[];
   openedFile: { path: string; content: string } | null;
   openFile: (path: string) => Promise<void>;
+  browserRender: BrowserRender | null;
+  browserLoading: boolean;
+  browserError: string | null;
+  renderBrowser: (url: string) => Promise<void>;
   sessionQuery: string;
   setSessionQuery: (q: string) => void;
   selectSession: (id: string) => void;
@@ -117,6 +123,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [projectContext, setProjectContext] = useState<ProjectContext | null>(null);
   const [projectFiles, setProjectFiles] = useState<FileNode[]>([]);
   const [openedFile, setOpenedFile] = useState<{ path: string; content: string } | null>(null);
+  const [browserRender, setBrowserRender] = useState<BrowserRender | null>(null);
+  const [browserLoading, setBrowserLoading] = useState(false);
+  const [browserError, setBrowserError] = useState<string | null>(null);
   const toggleTerminal = useCallback(() => setTerminalOpen((v) => !v), []);
   const prefillComposer = useCallback((text: string) => setComposerPrefill(text), []);
   const [sessionQuery, setSessionQuery] = useState('');
@@ -182,6 +191,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setContextTab('editor');
     } catch {
       /* 二进制/超大/读失败：忽略 */
+    }
+  }, []);
+
+  // 阶段②b — 用真 Chromium 渲染 URL（右侧「浏览器」实时看效果 + 选中元素追踪）
+  const renderBrowser = useCallback(async (url: string) => {
+    setBrowserLoading(true);
+    setBrowserError(null);
+    try {
+      const r = await apiRenderBrowser(url);
+      setBrowserRender(r);
+    } catch (e) {
+      setBrowserError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBrowserLoading(false);
     }
   }, []);
 
@@ -452,6 +475,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
         projectFiles,
         openedFile,
         openFile,
+        browserRender,
+        browserLoading,
+        browserError,
+        renderBrowser,
         sessionQuery,
         setSessionQuery,
         selectSession,

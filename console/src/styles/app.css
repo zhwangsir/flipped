@@ -1552,24 +1552,6 @@
 }
 
 /* browser */
-.browser {
-  padding: var(--sp-3);
-}
-.browser-chrome {
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  overflow: hidden;
-  background: var(--bg-surface);
-  box-shadow: var(--shadow-md);
-}
-.browser-bar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 10px;
-  border-bottom: 1px solid var(--border-subtle);
-  background: var(--bg-elevated);
-}
 .traffic {
   display: flex;
   gap: 5px;
@@ -1580,62 +1562,156 @@
   border-radius: 50%;
   background: var(--border-strong);
 }
-.url {
-  flex: 1;
-  font-family: var(--font-mono);
-  font-size: var(--text-xs);
-  color: var(--text-muted);
+/* 阶段②b — 浏览器真内核预览 + 元素追踪 */
+.rbrowser {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+.rbrowser-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border-subtle);
   background: var(--bg-sunken);
-  padding: 4px 10px;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+.rbrowser-url {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--text-xs);
+  color: var(--text-primary);
+  background: var(--bg-base);
+  border: 1px solid var(--border-subtle);
+  padding: 5px 10px;
   border-radius: 6px;
 }
-.browser-view {
-  padding: var(--sp-4);
-  min-height: 220px;
+.rbrowser-url:focus {
+  border-color: var(--blue);
 }
-.swagger-title {
-  font-size: var(--text-lg);
-  font-weight: 600;
+.rbrowser-go {
+  flex: none;
+  font-size: var(--text-xs);
+  color: var(--bg-base);
+  background: var(--text-primary);
+  padding: 5px 12px;
+  border-radius: 6px;
+  transition: opacity var(--dur-fast) var(--ease);
+}
+.rbrowser-go:disabled {
+  opacity: 0.45;
+}
+.rbrowser-err {
+  margin: 10px;
+  padding: 9px 11px;
+  border-radius: var(--radius-sm);
+  font-size: var(--text-xs);
+  color: var(--danger);
+  background: color-mix(in oklab, var(--danger) 12%, transparent);
+  border: 1px solid color-mix(in oklab, var(--danger) 30%, transparent);
+  white-space: pre-wrap;
+}
+.rbrowser-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 56px 20px;
+  color: var(--text-faint);
+  text-align: center;
+  font-size: var(--text-sm);
+}
+.rbrowser-empty svg {
+  color: var(--text-faint);
   margin-bottom: 4px;
 }
-.swagger-sub {
-  color: var(--text-muted);
-  font-size: var(--text-sm);
-  margin-bottom: var(--sp-4);
+.rbrowser-empty-sub {
+  font-size: var(--text-xs);
 }
-.endpoint {
+.rbrowser-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 11px;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border-subtle);
+}
+.rbrowser-title svg {
+  color: var(--text-faint);
+  flex: none;
+}
+.rbrowser-count {
+  margin-left: auto;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+.rbrowser-stage {
+  position: relative;
+  overflow: auto;
+  flex: 1;
+  min-height: 0;
+  background: var(--bg-sunken);
+}
+.rbrowser-stage img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.rbrowser-box {
+  position: absolute;
+  border: 1px solid transparent;
+  border-radius: 2px;
+  transition: background var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
+}
+.rbrowser-box:hover {
+  background: color-mix(in oklab, var(--blue) 18%, transparent);
+  border-color: var(--blue);
+}
+.rbrowser-box.sel {
+  background: color-mix(in oklab, var(--orange) 22%, transparent);
+  border-color: var(--orange);
+}
+.rbrowser-sel {
   display: flex;
   align-items: center;
   gap: 10px;
   padding: 9px 11px;
-  border: 1px solid var(--border-subtle);
-  border-radius: 8px;
-  margin-bottom: 7px;
-  background: var(--bg-base);
+  border-top: 1px solid var(--border-subtle);
+  background: var(--bg-elevated);
 }
-.method {
-  font-family: var(--font-mono);
-  font-size: 10px;
-  font-weight: 700;
-  padding: 2px 8px;
-  border-radius: 5px;
+.rbrowser-sel-info {
+  flex: 1;
+  min-width: 0;
 }
-.method.get {
-  color: var(--info);
-  background: oklch(30% 0.06 240 / 0.4);
+.rbrowser-tag {
+  font-size: var(--text-xs);
+  color: var(--orange);
 }
-.method.post {
-  color: var(--success);
-  background: oklch(30% 0.06 155 / 0.4);
-}
-.method.del {
-  color: var(--danger);
-  background: oklch(30% 0.07 25 / 0.4);
-}
-.ep-path {
-  font-family: var(--font-mono);
-  font-size: var(--text-sm);
+.rbrowser-selname {
+  font-size: var(--text-xs);
   color: var(--text-secondary);
+  margin-left: 6px;
+}
+.rbrowser-seltext {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  margin-top: 3px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rbrowser-track {
+  flex: none;
+  font-size: var(--text-xs);
+  color: var(--bg-base);
+  background: var(--orange);
+  padding: 6px 12px;
+  border-radius: 6px;
 }
 
 /* problems + mcp */

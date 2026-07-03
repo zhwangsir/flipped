@@ -107,6 +107,22 @@ def test_session_mode_field(monkeypatch, tmp_path):
         assert default["mode"] == "agent"
 
 
+# ---------- 阶段②b 浏览器渲染（URL 校验，不启浏览器） ----------
+
+def test_browser_render_rejects_non_http():
+    """非 http/https scheme → 400（在启浏览器之前就拒）。"""
+    with TestClient(app) as c:
+        r = c.post(f"{API_PREFIX}/browser/render", json={"url": "ftp://evil/x"})
+        assert r.status_code == 400
+
+
+def test_browser_render_requires_url():
+    """空 URL → 422（Pydantic min_length）。"""
+    with TestClient(app) as c:
+        r = c.post(f"{API_PREFIX}/browser/render", json={"url": ""})
+        assert r.status_code == 422
+
+
 # ---------- M7.4 模式路由 ----------
 
 def test_task_mode_chat_routes_to_run_chat(monkeypatch):
