@@ -1,67 +1,14 @@
 /*
  * flipped Console — design tokens
- * Direction: OpenAI Codex, dark-first. Near-monochrome neutral surfaces with a
- * single restrained accent (OpenAI Teal #10a37f). Neutrals are tinted a hair
- * toward the accent hue so the palette reads cohesive rather than cold.
- * Everything flat + hairline-first; the accent only marks active/focus/running.
+ * Direction: OpenAI Codex, theme-aware (dark default + light). Near-monochrome
+ * neutral surfaces with a single restrained accent (OpenAI Teal #10a37f).
+ * Neutrals are tinted a hair toward the accent hue for cohesion. Flat, hairline-first;
+ * the accent only marks active/focus/running.
+ *
+ * Structure: :root = theme-agnostic (type/rhythm/motion/layout);
+ *            :root[data-theme="dark"|"light"] = colors + shadows only.
  */
-:root[data-theme="dark"] {
-  /* surfaces — near-neutral, faint teal undertone, low elevation contrast */
-  --bg-app: oklch(16% 0.004 200);
-  --bg-sunken: oklch(14.2% 0.004 200);
-  --bg-base: oklch(18% 0.005 200);
-  --bg-surface: oklch(20.6% 0.005 200);
-  --bg-elevated: oklch(23% 0.006 200);
-  --bg-hover: oklch(26.5% 0.007 200);
-  --bg-active: oklch(29.5% 0.008 200);
-  --bg-glass: oklch(16% 0.004 200 / 0.86);
-
-  --border-subtle: oklch(23% 0.005 200);
-  --border: oklch(28% 0.006 200);
-  --border-strong: oklch(36% 0.008 200);
-  --edge-hi: transparent; /* flat — no glass highlight */
-
-  --text-primary: oklch(96% 0.003 200);
-  --text-secondary: oklch(74% 0.006 200);
-  --text-muted: oklch(58% 0.007 200);
-  --text-faint: oklch(46% 0.008 200);
-
-  /* accent — OpenAI Teal, the lone color; used only for focus/active/running/links */
-  --accent: oklch(66% 0.13 163);
-  --accent-hi: oklch(73% 0.125 163);
-  --accent-text: oklch(77% 0.11 163);
-  --accent-soft: oklch(66% 0.13 163 / 0.14);
-  --accent-border: oklch(66% 0.13 163 / 0.42);
-  --accent-on: oklch(17% 0.01 163);
-  --accent-glow: transparent;
-  --focus-ring: 0 0 0 3px oklch(66% 0.13 163 / 0.34);
-
-  /* primary CTA — crisp near-white (restrained, premium; distinct from accent) */
-  --primary: oklch(96% 0.003 200);
-  --primary-hover: oklch(88% 0.003 200);
-  --on-primary: oklch(17% 0.004 200);
-
-  /* agent roles — muted tints; worker shares the teal family */
-  --role-supervisor: oklch(72% 0.06 250);
-  --role-worker: oklch(73% 0.075 163);
-  --role-overseer: oklch(78% 0.07 82);
-
-  /* semantic — carry meaning only; green/red tuned for diffs & run states */
-  --success: oklch(72% 0.14 158);
-  --danger: oklch(63% 0.19 22);
-  --warning: oklch(78% 0.13 72);
-  --info: oklch(70% 0.1 230);
-  --diff-add-text: oklch(81% 0.13 158);
-  --diff-del-text: oklch(77% 0.15 22);
-
-  /* syntax — tasteful, muted (syntect-adjacent) */
-  --syn-kw: oklch(74% 0.11 300);
-  --syn-str: oklch(76% 0.12 150);
-  --syn-fn: oklch(74% 0.1 232);
-  --syn-num: oklch(79% 0.1 62);
-  --syn-com: oklch(50% 0.012 200);
-  --syn-punct: var(--text-muted);
-
+:root {
   /* type — Geist as the OpenAI-Sans-adjacent stand-in */
   --font-sans: "Geist Variable", "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-mono: "Geist Mono Variable", "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
@@ -94,12 +41,6 @@
   --dur-slow: 420ms;
   --ease: cubic-bezier(0.16, 1, 0.3, 1);
 
-  /* depth — near-flat, hairline-first */
-  --shadow-sm: 0 1px 2px oklch(0% 0 0 / 0.18);
-  --shadow-md: 0 6px 20px oklch(0% 0 0 / 0.26);
-  --shadow-lg: 0 16px 40px oklch(0% 0 0 / 0.36);
-  --glow: none;
-
   /* layout */
   --rail-w: 52px;
   --sidebar-w: 272px;
@@ -108,15 +49,132 @@
   --statusbar-h: 28px;
 }
 
-/* responsive — yield side panels on narrower screens so the center stays usable */
+/* ============ dark (default) ============ */
+:root[data-theme="dark"] {
+  --bg-app: oklch(16% 0.004 200);
+  --bg-sunken: oklch(14.2% 0.004 200);
+  --bg-base: oklch(18% 0.005 200);
+  --bg-surface: oklch(20.6% 0.005 200);
+  --bg-elevated: oklch(23% 0.006 200);
+  --bg-hover: oklch(26.5% 0.007 200);
+  --bg-active: oklch(29.5% 0.008 200);
+  --bg-glass: oklch(16% 0.004 200 / 0.86);
+
+  --border-subtle: oklch(23% 0.005 200);
+  --border: oklch(28% 0.006 200);
+  --border-strong: oklch(36% 0.008 200);
+  --edge-hi: transparent;
+
+  --text-primary: oklch(96% 0.003 200);
+  --text-secondary: oklch(74% 0.006 200);
+  --text-muted: oklch(58% 0.007 200);
+  --text-faint: oklch(46% 0.008 200);
+
+  --accent: oklch(66% 0.13 163);
+  --accent-hi: oklch(73% 0.125 163);
+  --accent-text: oklch(77% 0.11 163);
+  --accent-soft: oklch(66% 0.13 163 / 0.14);
+  --accent-border: oklch(66% 0.13 163 / 0.42);
+  --accent-on: oklch(17% 0.01 163);
+  --accent-glow: transparent;
+  --focus-ring: 0 0 0 3px oklch(66% 0.13 163 / 0.34);
+
+  --primary: oklch(96% 0.003 200);
+  --primary-hover: oklch(88% 0.003 200);
+  --on-primary: oklch(17% 0.004 200);
+
+  --role-supervisor: oklch(72% 0.06 250);
+  --role-worker: oklch(73% 0.075 163);
+  --role-overseer: oklch(78% 0.07 82);
+
+  --success: oklch(72% 0.14 158);
+  --danger: oklch(63% 0.19 22);
+  --warning: oklch(78% 0.13 72);
+  --info: oklch(70% 0.1 230);
+  --diff-add-text: oklch(81% 0.13 158);
+  --diff-del-text: oklch(77% 0.15 22);
+
+  --syn-kw: oklch(74% 0.11 300);
+  --syn-str: oklch(76% 0.12 150);
+  --syn-fn: oklch(74% 0.1 232);
+  --syn-num: oklch(79% 0.1 62);
+  --syn-com: oklch(50% 0.012 200);
+  --syn-punct: var(--text-muted);
+
+  --shadow-sm: 0 1px 2px oklch(0% 0 0 / 0.18);
+  --shadow-md: 0 6px 20px oklch(0% 0 0 / 0.26);
+  --shadow-lg: 0 16px 40px oklch(0% 0 0 / 0.36);
+  --glow: none;
+}
+
+/* ============ light (Codex light — true-white base, graphite ink) ============ */
+:root[data-theme="light"] {
+  --bg-app: oklch(97% 0.003 200);
+  --bg-sunken: oklch(96% 0.004 200);
+  --bg-base: oklch(99.3% 0.001 200);
+  --bg-surface: oklch(97.2% 0.003 200);
+  --bg-elevated: oklch(100% 0 0);
+  --bg-hover: oklch(95% 0.005 200);
+  --bg-active: oklch(92.5% 0.006 200);
+  --bg-glass: oklch(99.3% 0.001 200 / 0.82);
+
+  --border-subtle: oklch(93.5% 0.004 200);
+  --border: oklch(90% 0.005 200);
+  --border-strong: oklch(83% 0.007 200);
+  --edge-hi: transparent;
+
+  --text-primary: oklch(26% 0.008 220);
+  --text-secondary: oklch(46% 0.007 220);
+  --text-muted: oklch(60% 0.006 220);
+  --text-faint: oklch(72% 0.005 220);
+
+  --accent: oklch(58% 0.13 163);
+  --accent-hi: oklch(52% 0.13 163);
+  --accent-text: oklch(50% 0.13 163);
+  --accent-soft: oklch(66% 0.13 163 / 0.13);
+  --accent-border: oklch(60% 0.13 163 / 0.45);
+  --accent-on: oklch(99% 0 0);
+  --accent-glow: transparent;
+  --focus-ring: 0 0 0 3px oklch(60% 0.13 163 / 0.22);
+
+  /* light-mode primary: graphite/near-black button, white label (OpenAI style) */
+  --primary: oklch(28% 0.008 220);
+  --primary-hover: oklch(20% 0.008 220);
+  --on-primary: oklch(99% 0 0);
+
+  --role-supervisor: oklch(52% 0.11 250);
+  --role-worker: oklch(50% 0.12 163);
+  --role-overseer: oklch(56% 0.12 70);
+
+  --success: oklch(56% 0.15 158);
+  --danger: oklch(54% 0.2 25);
+  --warning: oklch(64% 0.15 66);
+  --info: oklch(54% 0.14 250);
+  --diff-add-text: oklch(48% 0.15 158);
+  --diff-del-text: oklch(52% 0.2 25);
+
+  --syn-kw: oklch(46% 0.17 300);
+  --syn-str: oklch(46% 0.13 150);
+  --syn-fn: oklch(48% 0.15 250);
+  --syn-num: oklch(52% 0.13 48);
+  --syn-com: oklch(66% 0.012 220);
+  --syn-punct: var(--text-muted);
+
+  --shadow-sm: 0 1px 2px oklch(20% 0.02 240 / 0.07);
+  --shadow-md: 0 6px 20px oklch(20% 0.02 240 / 0.09);
+  --shadow-lg: 0 16px 40px oklch(20% 0.02 240 / 0.13);
+  --glow: none;
+}
+
+/* responsive — yield side panels on narrower screens (theme-agnostic) */
 @media (max-width: 1280px) {
-  :root[data-theme="dark"] {
+  :root {
     --context-w: 404px;
     --sidebar-w: 252px;
   }
 }
 @media (max-width: 1080px) {
-  :root[data-theme="dark"] {
+  :root {
     --context-w: 340px;
     --sidebar-w: 236px;
   }

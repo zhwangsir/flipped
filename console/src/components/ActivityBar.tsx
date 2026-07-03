@@ -1,4 +1,5 @@
 import { useApp } from '../store';
+import { useTheme } from '../hooks/useTheme';
 import type { ContextTab, SidebarTab } from '../types';
 import {
   IconChat,
@@ -9,6 +10,8 @@ import {
   IconBrowser,
   IconPuzzle,
   IconGear,
+  IconSun,
+  IconMoon,
 } from '../icons';
 
 /** 每个入口都执行真实导航：切换左侧栏视图或右侧上下文面板 Tab。 */
@@ -30,6 +33,7 @@ const items: {
 
 export function ActivityBar() {
   const { activeView, setActiveView, setSidebarTab, setContextTab } = useApp();
+  const { theme, toggle } = useTheme();
 
   const go = (item: (typeof items)[number]) => {
     setActiveView(item.key);
@@ -52,6 +56,14 @@ export function ActivityBar() {
         </button>
       ))}
       <div className="rail-spacer" />
+      <button
+        className="rail-btn"
+        onClick={toggle}
+        aria-label={theme === 'dark' ? '切换到亮色' : '切换到暗色'}
+        title={theme === 'dark' ? '切换到亮色主题' : '切换到暗色主题'}
+      >
+        {theme === 'dark' ? <IconSun size={19} /> : <IconMoon size={19} />}
+      </button>
       <button
         className={'rail-btn' + (activeView === 'settings' ? ' active' : '')}
         onClick={() => setActiveView('settings')}
