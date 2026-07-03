@@ -97,52 +97,62 @@ function ApprovalCard({ info, onApprove, onReject, busy }: {
 
 function Turn({ item }: { item: StreamItem }) {
   const r = ROLE[item.role];
+
+  // 用户消息：右对齐浅灰气泡(对齐真机 Codex)
+  if (item.role === 'user') {
+    return (
+      <div className='turn user'>
+        {item.text && <div className='turn-text'>{item.text}</div>}
+      </div>
+    );
+  }
+
+  // Agent：扁平文档式,无头像。主执行体(worker)不加角色标签,像真机一样干净；
+  // 元角色(supervisor/overseer/verify)保留细小标签以体现 flipped 的多 Agent 编排。
+  const showRole = item.role !== 'worker';
   return (
     <div className={'turn ' + item.role}>
-      <div className={'avatar ' + r.cls}>{r.avatar}</div>
-      <div>
-        {item.role !== 'user' && (
-          <div className='role-line'>
-            <span className={'role-name rc-' + item.role}>{r.label}</span>
-            {item.model && <span className='role-model'>{item.model}</span>}
-          </div>
-        )}
-        {item.text && <div className='turn-text'>{item.text}</div>}
+      {showRole && (
+        <div className='role-line'>
+          <span className={'role-name rc-' + item.role}>{r.label}</span>
+          {item.model && <span className='role-model'>{item.model}</span>}
+        </div>
+      )}
+      {item.text && <div className='turn-text'>{item.text}</div>}
 
-        {item.tools && (
-          <div className='tools'>
-            {item.tools.map((t, i) => (
-              <ToolRow key={i} tool={t} />
+      {item.tools && (
+        <div className='tools'>
+          {item.tools.map((t, i) => (
+            <ToolRow key={i} tool={t} />
+          ))}
+        </div>
+      )}
+
+      {item.verdict && (
+        <div className='verdict'>
+          <div className='meters'>
+            {(['efficiency', 'direction'] as const).map((k) => (
+              <div className='meter' key={k}>
+                <div className='meter-top'>
+                  <span>{k === 'efficiency' ? '效率' : '方向'}</span>
+                  <b>{item.verdict![k].toFixed(2)}</b>
+                </div>
+                <div className='meter-track'>
+                  <span className='meter-fill' style={{ width: item.verdict![k] * 100 + '%' }} />
+                </div>
+              </div>
             ))}
           </div>
-        )}
+          <div className='verdict-note'>{item.verdict.note}</div>
+          <span className='verdict-action'>action = {item.verdict.action}</span>
+        </div>
+      )}
 
-        {item.verdict && (
-          <div className='verdict'>
-            <div className='meters'>
-              {(['efficiency', 'direction'] as const).map((k) => (
-                <div className='meter' key={k}>
-                  <div className='meter-top'>
-                    <span>{k === 'efficiency' ? '效率' : '方向'}</span>
-                    <b>{item.verdict![k].toFixed(2)}</b>
-                  </div>
-                  <div className='meter-track'>
-                    <span className='meter-fill' style={{ width: item.verdict![k] * 100 + '%' }} />
-                  </div>
-                </div>
-              ))}
-            </div>
-            <div className='verdict-note'>{item.verdict.note}</div>
-            <span className='verdict-action'>action = {item.verdict.action}</span>
-          </div>
-        )}
-
-        {item.role === 'verify' && item.ok && (
-          <div className='verify-banner'>
-            <IconCheck size={16} /> {item.text}
-          </div>
-        )}
-      </div>
+      {item.role === 'verify' && item.ok && (
+        <div className='verify-banner'>
+          <IconCheck size={16} /> {item.text}
+        </div>
+      )}
     </div>
   );
 }
