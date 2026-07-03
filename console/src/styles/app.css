@@ -1874,3 +1874,78 @@ button.mcp-row:hover {
 .term-holder .xterm {
   height: 100%;
 }
+
+/* ============ Codex 式变更文件 diff 块(R4) ============ */
+.diff-files {
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.diff-file {
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.diff-file-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  text-align: left;
+  background: var(--bg-sunken);
+  border-bottom: 1px solid var(--border-subtle);
+}
+.diff-file-head:disabled {
+  cursor: default;
+}
+.diff-file-chev {
+  color: var(--text-faint);
+  display: grid;
+  place-items: center;
+  flex: none;
+  transition: transform var(--dur-fast) var(--ease);
+}
+.diff-file-chev.open {
+  transform: rotate(180deg);
+}
+.diff-file-head > svg {
+  color: var(--text-muted);
+  flex: none;
+}
+.diff-file-name {
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+  flex: none;
+}
+.diff-file-path {
+  font-size: var(--text-xs);
+  color: var(--text-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+.diff-file-badge {
+  font-size: 10px;
+  padding: 1px 7px;
+  border-radius: var(--radius-pill);
+  color: var(--success);
+  background: color-mix(in oklab, var(--success) 15%, transparent);
+  flex: none;
+}
+.diff-file-stat {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--diff-add-text);
+  flex: none;
+}
+.diff-body {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  line-height: 1.7;
+  overflow-x: auto;
+  padding: 4px 0;
+}

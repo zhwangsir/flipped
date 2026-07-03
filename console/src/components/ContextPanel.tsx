@@ -1,7 +1,8 @@
 import { useState, type ReactNode } from 'react';
 import { useApp } from '../store';
+import type { ChangedFile } from '../types';
 import { diffLines, terminalLines, editorCode, problems } from '../mock';
-import { IconCode, IconFile, IconTerminal, IconBrowser, IconWarn, IconPuzzle, IconChat, IconX } from '../icons';
+import { IconCode, IconFile, IconTerminal, IconBrowser, IconWarn, IconPuzzle, IconChat, IconX, IconChevronDown } from '../icons';
 
 const KEYWORDS = new Set(['from', 'import', 'def', 'return', 'if', 'not', 'in', 'raise', 'class', 'for', 'while', 'with', 'as']);
 const LITS = new Set(['None', 'True', 'False']);
@@ -29,7 +30,41 @@ function highlight(line: string): ReactNode[] {
   return out;
 }
 
-const CHANGE_METHOD: Record<string, string> = { add: 'post', mod: 'get', modified: 'get', del: 'del', delete: 'del' };
+const CHANGE_LABEL: Record<string, string> = { create: '新增', add: '新增', mod: '修改', modified: '修改', del: '删除', delete: '删除' };
+
+/** Codex 式变更文件块：可折叠，内容按 diff 行渲染(新建文件=全绿新增)。 */
+function DiffFile({ file }: { file: ChangedFile }) {
+  const [open, setOpen] = useState(true);
+  const name = file.path.split('/').pop() || file.path;
+  const lines = file.content ? file.content.replace(/\n$/, '').split('\n') : [];
+  return (
+    <div className="diff-file">
+      <button className="diff-file-head" onClick={() => setOpen((o) => !o)} disabled={!file.content}>
+        <span className={'diff-file-chev' + (open ? ' open' : '')}>
+          <IconChevronDown size={12} />
+        </span>
+        <IconFile size={13} />
+        <span className="diff-file-name mono">{name}</span>
+        <span className="diff-file-path mono">{file.path}</span>
+        <span className="diff-file-badge">{CHANGE_LABEL[file.change] || file.change}</span>
+        {file.content && <span className="diff-file-stat">+{lines.length}</span>}
+      </button>
+      {open && file.content && (
+        <div className="diff-body">
+          {lines.map((l, i) => (
+            <div className="diff-row add" key={i}>
+              <span className="ln">{i + 1}</span>
+              <span className="tx">
+                <span className="sign">+ </span>
+                {l}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 const EXT_LANG: Record<string, string> = {
   py: 'python', ts: 'typescript', tsx: 'tsx', js: 'javascript', jsx: 'jsx',
@@ -190,15 +225,12 @@ export function ContextPanel() {
           hasFiles ? (
             <>
               <div className="file-head">
-                <IconFile size={13} /> 本次会话变更 <span className="add">{changedFiles.length} 个文件</span>
+                <IconFile size={13} /> 本次会话变更{' '}
+                <span className="add">{changedFiles.length} 个文件</span>
               </div>
-              <div className="list">
-                {changedFiles.map((f, i) => (
-                  <div className="endpoint" key={i}>
-                    <span className={'method ' + (CHANGE_METHOD[f.change] || 'get')}>{f.change}</span>
-                    <span className="ep-path">{f.path}</span>
-                    {f.language && <span className="chip" style={{ marginLeft: 'auto' }}>{f.language}</span>}
-                  </div>
+              <div className="diff-files">
+                {changedFiles.map((f) => (
+                  <DiffFile key={f.path} file={f} />
                 ))}
               </div>
             </>
