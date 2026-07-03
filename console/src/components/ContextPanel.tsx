@@ -86,12 +86,14 @@ export function ContextPanel() {
     contextTab: tab,
     setContextTab: setTab,
     showContext,
+    selectedSessionId,
     prefillComposer,
   } = useApp();
   const [activePath, setActivePath] = useState<string | null>(null);
   const [commentLine, setCommentLine] = useState<number | null>(null);
   const [commentText, setCommentText] = useState('');
-  if (!showContext) return null;
+  // 无活动会话(新线程)或手动折叠 → 不渲染右侧面板，聚焦中央
+  if (!showContext || !selectedSessionId) return null;
 
   // M7.2 — 编辑器展示真实沙盒文件内容（来自 file_editor 动作携带的 file_text）
   const realFiles = changedFiles.filter((f) => f.content);

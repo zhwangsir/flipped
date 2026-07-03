@@ -113,6 +113,10 @@
 .app.sb-collapsed .sidebar {
   border-right: none;
 }
+/* R6 — 右侧面板折叠(新线程聚焦中央 / 布局切换) */
+.app.ctx-collapsed {
+  --context-w: 0px;
+}
 
 /* ---- Codex 侧栏：全局文字导航 ---- */
 .side-nav {
