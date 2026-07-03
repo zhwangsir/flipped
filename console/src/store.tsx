@@ -266,6 +266,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       } else if (ev.type === 'file_change') {
         setChangedFiles((prev) => {
           const existing = prev.find((f) => f.path === ev.payload.path);
+          // 只接受字符串内容(历史事件可能把状态消息数组塞进 content，会导致 .split 崩溃)
+          const incoming = typeof ev.payload.content === 'string' ? ev.payload.content : undefined;
           return [
             ...prev.filter((f) => f.path !== ev.payload.path),
             {
@@ -273,7 +275,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
               change: ev.payload.change || existing?.change || 'mod',
               language: ev.payload.language || existing?.language,
               // ActionEvent 携带真实文件内容；Observation 无内容时保留已有内容
-              content: ev.payload.content || existing?.content,
+              content: incoming || existing?.content,
             },
           ];
         });

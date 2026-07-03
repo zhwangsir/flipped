@@ -36,10 +36,11 @@ const CHANGE_LABEL: Record<string, string> = { create: '新增', add: '新增', 
 function DiffFile({ file }: { file: ChangedFile }) {
   const [open, setOpen] = useState(true);
   const name = file.path.split('/').pop() || file.path;
-  const lines = file.content ? file.content.replace(/\n$/, '').split('\n') : [];
+  const hasContent = typeof file.content === 'string' && file.content.length > 0;
+  const lines = hasContent ? file.content!.replace(/\n$/, '').split('\n') : [];
   return (
     <div className="diff-file">
-      <button className="diff-file-head" onClick={() => setOpen((o) => !o)} disabled={!file.content}>
+      <button className="diff-file-head" onClick={() => setOpen((o) => !o)} disabled={!hasContent}>
         <span className={'diff-file-chev' + (open ? ' open' : '')}>
           <IconChevronDown size={12} />
         </span>
@@ -47,9 +48,9 @@ function DiffFile({ file }: { file: ChangedFile }) {
         <span className="diff-file-name mono">{name}</span>
         <span className="diff-file-path mono">{file.path}</span>
         <span className="diff-file-badge">{CHANGE_LABEL[file.change] || file.change}</span>
-        {file.content && <span className="diff-file-stat">+{lines.length}</span>}
+        {hasContent && <span className="diff-file-stat">+{lines.length}</span>}
       </button>
-      {open && file.content && (
+      {open && hasContent && (
         <div className="diff-body">
           {lines.map((l, i) => (
             <div className="diff-row add" key={i}>
@@ -96,10 +97,12 @@ export function ContextPanel() {
   if (!showContext || !selectedSessionId) return null;
 
   // M7.2 — 编辑器展示真实沙盒文件内容（来自 file_editor 动作携带的 file_text）
-  const realFiles = changedFiles.filter((f) => f.content);
+  // 只认字符串内容，避免历史事件的非字符串 content 导致 .split 崩溃
+  const realFiles = changedFiles.filter((f) => typeof f.content === 'string' && f.content.length > 0);
   const activeFile =
     realFiles.find((f) => f.path === activePath) || realFiles[realFiles.length - 1] || null;
-  const editorLines = (activeFile?.content ?? editorCode).split('\n');
+  const editorSource = typeof activeFile?.content === 'string' ? activeFile.content : editorCode;
+  const editorLines = editorSource.split('\n');
   const editorLang = activeFile ? activeFile.language || langOf(activeFile.path) : 'python';
   const fileLabel = activeFile ? activeFile.path.split('/').pop() || activeFile.path : 'app.py';
 
