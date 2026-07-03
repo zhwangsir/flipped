@@ -262,53 +262,9 @@ export function Conversation() {
   };
 
   const disabled = busy || approvalPending !== null;
+  const isNewThread = !selectedSessionId && stream.length === 0 && !approvalPending;
 
-  return (
-    <section className='center'>
-      <div className='stream'>
-        <StatusBanner status={sessionStatus} progress={progress} />
-        <ErrorBanner message={lastError} />
-        {approvalPending && (
-          <ApprovalCard
-            info={approvalPending}
-            onApprove={handleApprove}
-            onReject={handleReject}
-            busy={approvalBusy}
-          />
-        )}
-        {stream.length === 0 && !approvalPending && (
-          <div className='empty-state'>
-            {selectedSessionId ? (
-              <>
-                <h1 className='empty-hero'>准备就绪</h1>
-                <div className='empty-sub'>等待事件流… · WebSocket {connection}</div>
-              </>
-            ) : (
-              <>
-                <h1 className='empty-hero'>我们应该在 flipped 中构建什么？</h1>
-                <div className='empty-sub'>
-                  本地模型驱动的 AI 开发工厂 · 在受控沙盒中自主编码、调用工具、修改文件
-                </div>
-                <div className='empty-hints'>
-                  <span className='empty-hint'>
-                    <IconSparkle size={12} /> 智能体 · 沙盒执行
-                  </span>
-                  <span className='empty-hint'>
-                    <IconChat size={12} /> 对话 · 直连本地模型
-                  </span>
-                  <span className='empty-hint'>
-                    <IconLayout size={12} /> 规划 · 拆解步骤
-                  </span>
-                </div>
-              </>
-            )}
-          </div>
-        )}
-        {stream.map((it) => (
-          <Turn key={it.id} item={it} />
-        ))}
-      </div>
-
+  const composer = (
       <div className='composer'>
         <div className='modes'>
           <button
@@ -420,6 +376,58 @@ export function Conversation() {
           </div>
         )}
       </div>
+  );
+
+  // Codex 招牌：新线程状态下，大问句 + composer 垂直居中成一组
+  if (isNewThread) {
+    return (
+      <section className='center center-new'>
+        <div className='new-thread'>
+          <h1 className='empty-hero'>我们应该在 flipped 中构建什么？</h1>
+          <div className='empty-sub'>
+            本地模型驱动的 AI 开发工厂 · 在受控沙盒中自主编码、调用工具、修改文件
+          </div>
+          {composer}
+          <div className='empty-hints'>
+            <span className='empty-hint'>
+              <IconSparkle size={12} /> 智能体 · 沙盒执行
+            </span>
+            <span className='empty-hint'>
+              <IconChat size={12} /> 对话 · 直连本地模型
+            </span>
+            <span className='empty-hint'>
+              <IconLayout size={12} /> 规划 · 拆解步骤
+            </span>
+          </div>
+        </div>
+      </section>
+    );
+  }
+
+  return (
+    <section className='center'>
+      <div className='stream'>
+        <StatusBanner status={sessionStatus} progress={progress} />
+        <ErrorBanner message={lastError} />
+        {approvalPending && (
+          <ApprovalCard
+            info={approvalPending}
+            onApprove={handleApprove}
+            onReject={handleReject}
+            busy={approvalBusy}
+          />
+        )}
+        {selectedSessionId && stream.length === 0 && !approvalPending && (
+          <div className='empty-state'>
+            <h1 className='empty-hero'>准备就绪</h1>
+            <div className='empty-sub'>等待事件流… · WebSocket {connection}</div>
+          </div>
+        )}
+        {stream.map((it) => (
+          <Turn key={it.id} item={it} />
+        ))}
+      </div>
+      {composer}
     </section>
   );
 }

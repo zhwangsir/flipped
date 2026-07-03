@@ -1949,3 +1949,40 @@ button.mcp-row:hover {
   overflow-x: auto;
   padding: 4px 0;
 }
+
+/* ============ Codex 招牌：新线程居中(大问句 + composer 成一组) R5 ============ */
+.center-new {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 var(--sp-6) 9vh;
+}
+.new-thread {
+  width: 100%;
+  max-width: 680px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 15px;
+  text-align: center;
+  animation: rise var(--dur) var(--ease) both;
+}
+.new-thread .empty-hero {
+  margin: 0;
+}
+.new-thread .empty-sub {
+  margin: 0;
+}
+.new-thread .composer {
+  width: 100%;
+  border-top: none;
+  padding: 4px 0 0;
+  background: transparent;
+}
+.new-thread .modes {
+  align-self: center;
+  margin-bottom: 10px;
+}
+.new-thread .composer-context {
+  justify-content: center;
+}
