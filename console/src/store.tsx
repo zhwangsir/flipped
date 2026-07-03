@@ -67,6 +67,7 @@ interface AppState {
   setSidebarTab: (t: SidebarTab) => void;
   showContext: boolean;
   toggleContext: () => void;
+  openContext: (t: ContextTab) => void;
   sidebarCollapsed: boolean;
   toggleSidebar: () => void;
   paletteOpen: boolean;
@@ -120,7 +121,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [activeView, setActiveView] = useState('agent');
   const [contextTab, setContextTab] = useState<ContextTab>('editor');
   const [sidebarTab, setSidebarTab] = useState<SidebarTab>('chats');
-  const [showContext, setShowContext] = useState(true);
+  const [showContext, setShowContext] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [terminalOpen, setTerminalOpen] = useState(false);
@@ -139,6 +140,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const wsRef = useRef<{ close: () => void; send: (msg: unknown) => void } | null>(null);
 
   const toggleContext = useCallback(() => setShowContext((v) => !v), []);
+  const openContext = useCallback((t: ContextTab) => {
+    setContextTab(t);
+    setShowContext(true);
+  }, []);
   const toggleSidebar = useCallback(() => setSidebarCollapsed((v) => !v), []);
 
   const refreshSessions = useCallback(async () => {
@@ -483,6 +488,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setSidebarTab,
         showContext,
         toggleContext,
+        openContext,
         sidebarCollapsed,
         toggleSidebar,
         paletteOpen,

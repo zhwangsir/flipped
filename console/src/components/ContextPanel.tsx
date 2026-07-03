@@ -265,7 +265,6 @@ export function ContextPanel() {
     contextTab: tab,
     setContextTab: setTab,
     showContext,
-    selectedSessionId,
     prefillComposer,
     projectContext,
     projectFiles,
@@ -275,8 +274,8 @@ export function ContextPanel() {
   const [activePath, setActivePath] = useState<string | null>(null);
   const [commentLine, setCommentLine] = useState<number | null>(null);
   const [commentText, setCommentText] = useState('');
-  // 无活动会话(新线程)或手动折叠 → 不渲染右侧面板，聚焦中央
-  if (!showContext || !selectedSessionId) return null;
+  // 面板隐藏时不渲染(改为右侧浮动启动器);文件/审查/浏览器等 surface 无需会话即可用
+  if (!showContext) return null;
 
   // M7.2 — 编辑器展示真实沙盒文件内容（来自 file_editor 动作携带的 file_text）
   // 只认字符串内容，避免历史事件的非字符串 content 导致 .split 崩溃

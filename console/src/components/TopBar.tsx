@@ -29,16 +29,14 @@ export function TopBar() {
         title={"WebSocket " + (CONN_LABEL[connection] || connection)}
         aria-label={"WebSocket " + (CONN_LABEL[connection] || connection)}
       />
-      {selectedSessionId && (
-        <button
-          className="icon-btn ghost"
-          aria-label="切换上下文面板"
-          title="显示 / 隐藏右侧面板"
-          onClick={toggleContext}
-        >
-          <IconLayout size={16} />
-        </button>
-      )}
+      <button
+        className="icon-btn ghost"
+        aria-label="切换上下文面板"
+        title="显示 / 隐藏右侧面板"
+        onClick={toggleContext}
+      >
+        <IconLayout size={16} />
+      </button>
     </header>
   );
 }

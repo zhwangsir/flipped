@@ -125,6 +125,9 @@ export const IconArchive = ({ size }: P) => (
 export const IconChevronRight = ({ size }: P) => (
   <svg {...b(size)}><path d="m9 6 6 6-6 6" /></svg>
 );
+export const IconReview = ({ size }: P) => (
+  <svg {...b(size)}><rect x="4" y="4" width="16" height="16" rx="2" /><path d="M8 9h4M8 9v6M15 8v8M13 12h4" /></svg>
+);
 
 export function ToolIcon({ name, size = 15 }: { name: string; size?: number }) {
   if (name === "terminal") return <IconTerminal size={size} />;

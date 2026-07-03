@@ -3,14 +3,15 @@ import { Sidebar } from "./components/Sidebar";
 import { TopBar } from "./components/TopBar";
 import { Conversation } from "./components/Conversation";
 import { ContextPanel } from "./components/ContextPanel";
+import { Launcher } from "./components/Launcher";
 import { CommandPalette } from "./components/CommandPalette";
 import { TerminalDrawer } from "./components/TerminalDrawer";
 import { AppProvider, useApp } from "./store";
 
 function AppShell() {
-  const { sidebarCollapsed, showContext, selectedSessionId } = useApp();
-  // 新线程(无活动会话)聚焦中央 composer；或用户手动折叠了面板 → 收起右侧列
-  const ctxHidden = !showContext || !selectedSessionId;
+  const { sidebarCollapsed, showContext } = useApp();
+  // 面板隐藏 → 收起右侧列 + 显示浮动启动器(Codex 式按需打开 surface)
+  const ctxHidden = !showContext;
   return (
     <div
       className={
@@ -23,7 +24,7 @@ function AppShell() {
       <div className="body">
         <Sidebar />
         <Conversation />
-        <ContextPanel />
+        {showContext ? <ContextPanel /> : <Launcher />}
       </div>
       <TerminalDrawer />
       <CommandPalette />
