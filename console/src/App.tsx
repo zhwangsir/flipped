@@ -3,7 +3,6 @@ import { Sidebar } from "./components/Sidebar";
 import { TopBar } from "./components/TopBar";
 import { Conversation } from "./components/Conversation";
 import { ContextPanel } from "./components/ContextPanel";
-import { StatusBar } from "./components/StatusBar";
 import { CommandPalette } from "./components/CommandPalette";
 import { TerminalDrawer } from "./components/TerminalDrawer";
 import { AppProvider, useApp } from "./store";
@@ -27,7 +26,6 @@ function AppShell() {
         <ContextPanel />
       </div>
       <TerminalDrawer />
-      <StatusBar />
       <CommandPalette />
     </div>
   );

@@ -3,8 +3,8 @@
   height: 100vh;
   display: grid;
   grid-template-columns: 1fr;
-  grid-template-rows: var(--topbar-h) 1fr var(--statusbar-h);
-  grid-template-areas: "topbar" "body" "status";
+  grid-template-rows: var(--topbar-h) 1fr;
+  grid-template-areas: "topbar" "body";
   background: var(--bg-app);
   overflow: hidden;
   position: relative;
@@ -1201,6 +1201,49 @@
 .file-head .add {
   color: var(--success);
 }
+/* R11 — Codex 式面包屑：flipped › src › api › main.py */
+.crumb-head {
+  gap: 6px;
+}
+.crumbs {
+  display: flex;
+  align-items: center;
+  flex-wrap: nowrap;
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+}
+.crumb-part {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+}
+.crumb-seg {
+  color: var(--text-faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.crumb-seg.root {
+  color: var(--text-muted);
+}
+.crumb-seg.leaf {
+  color: var(--text-primary);
+  flex: none;
+}
+.crumb-div {
+  color: var(--text-faint);
+  margin: 0 5px;
+  opacity: 0.65;
+}
+.crumb-lang {
+  margin-left: auto;
+  flex: none;
+  opacity: 0.85;
+}
+.crumb-head .chip {
+  flex: none;
+}
 /* M7.2 — 真实文件的可切换标签 */
 .file-tabs {
   display: flex;
@@ -1474,42 +1517,6 @@ button.mcp-row:hover {
 }
 
 /* ============ status bar ============ */
-.statusbar {
-  grid-area: status;
-  display: flex;
-  align-items: center;
-  gap: var(--sp-3);
-  padding: 0 var(--sp-3);
-  background: var(--bg-app);
-  border-top: 1px solid var(--border-subtle);
-  font-size: var(--text-xs);
-  color: var(--text-muted);
-}
-.sb {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 0 4px;
-  height: 100%;
-  align-content: center;
-}
-.sb.accent {
-  color: var(--accent-text);
-}
-.sb.ok {
-  color: var(--success);
-}
-.sb .mono {
-  color: var(--text-secondary);
-}
-.sb-live {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--role-overseer);
-}
-
-
 /* ============ B5 UI polish additions ============ */
 
 .status-banner {
@@ -1871,7 +1878,7 @@ button.mcp-row:hover {
   position: absolute;
   left: var(--sidebar-w);
   right: var(--context-w);
-  bottom: var(--statusbar-h);
+  bottom: 0;
   height: 264px;
   z-index: 40;
   display: flex;
@@ -1879,7 +1886,7 @@ button.mcp-row:hover {
   background: var(--bg-base);
   border-top: 1px solid var(--border);
   box-shadow: var(--shadow-lg);
-  transform: translateY(calc(100% + var(--statusbar-h)));
+  transform: translateY(100%);
   transition: transform var(--dur) var(--ease);
 }
 .term-drawer.open {
@@ -2043,4 +2050,9 @@ button.mcp-row:hover {
   white-space: nowrap;
   max-width: 420px;
   margin-left: 4px;
+}
+/* R11 — 顶栏右侧极小 WS 连接点(取代已删除的底部状态栏) */
+.topbar-conn {
+  margin-right: 2px;
+  opacity: 0.9;
 }

@@ -89,6 +89,7 @@ export function ContextPanel() {
     showContext,
     selectedSessionId,
     prefillComposer,
+    projectContext,
   } = useApp();
   const [activePath, setActivePath] = useState<string | null>(null);
   const [commentLine, setCommentLine] = useState<number | null>(null);
@@ -104,7 +105,10 @@ export function ContextPanel() {
   const editorSource = typeof activeFile?.content === 'string' ? activeFile.content : editorCode;
   const editorLines = editorSource.split('\n');
   const editorLang = activeFile ? activeFile.language || langOf(activeFile.path) : 'python';
-  const fileLabel = activeFile ? activeFile.path.split('/').pop() || activeFile.path : 'app.py';
+  const editorPath = activeFile ? activeFile.path : 'app.py';
+  const crumbSegs = editorPath.split('/').filter(Boolean);
+  const projectName = projectContext?.project || 'flipped';
+  const fileLabel = crumbSegs[crumbSegs.length - 1] || editorPath;
 
   const submitComment = (ln: number) => {
     const c = commentText.trim();
@@ -159,10 +163,19 @@ export function ContextPanel() {
                 ))}
               </div>
             )}
-            <div className="file-head">
-              <IconCode size={13} /> {activeFile ? activeFile.path : 'app.py'}{' '}
-              <span className="add">{editorLang}</span>
-              {!activeFile && <span className="chip" style={{ marginLeft: 'auto' }}>示例预览</span>}
+            <div className="file-head crumb-head">
+              <IconCode size={13} />
+              <nav className="crumbs" aria-label="文件路径">
+                <span className="crumb-seg root">{projectName}</span>
+                {crumbSegs.map((seg, i) => (
+                  <span className="crumb-part" key={i}>
+                    <span className="crumb-div">›</span>
+                    <span className={'crumb-seg' + (i === crumbSegs.length - 1 ? ' leaf' : '')}>{seg}</span>
+                  </span>
+                ))}
+              </nav>
+              <span className="add crumb-lang">{editorLang}</span>
+              {!activeFile && <span className="chip">示例预览</span>}
             </div>
             <div className="editor">
               {editorLines.map((l, i) => {
