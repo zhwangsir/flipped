@@ -32,6 +32,7 @@ export function Sidebar() {
     deleteSession,
     setContextTab,
     setPaletteOpen,
+    setSettingsOpen,
     projectContext,
   } = useApp();
   const { theme, toggle } = useTheme();
@@ -188,7 +189,7 @@ export function Sidebar() {
       </div>
 
       <div className="side-foot">
-        <button className="side-foot-item" onClick={() => setPaletteOpen(true)} title="设置与命令 (⌘K)">
+        <button className="side-foot-item" onClick={() => setSettingsOpen(true)} title="设置">
           <IconGear size={15} /> 设置
         </button>
         <span className="side-foot-mode">本地模式</span>

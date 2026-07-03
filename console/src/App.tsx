@@ -5,6 +5,7 @@ import { Conversation } from "./components/Conversation";
 import { ContextPanel } from "./components/ContextPanel";
 import { Launcher } from "./components/Launcher";
 import { CommandPalette } from "./components/CommandPalette";
+import { Settings } from "./components/Settings";
 import { TerminalDrawer } from "./components/TerminalDrawer";
 import { AppProvider, useApp } from "./store";
 
@@ -28,6 +29,7 @@ function AppShell() {
       </div>
       <TerminalDrawer />
       <CommandPalette />
+      <Settings />
     </div>
   );
 }
