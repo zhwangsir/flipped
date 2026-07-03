@@ -4,20 +4,27 @@ import { TopBar } from "./components/TopBar";
 import { Conversation } from "./components/Conversation";
 import { ContextPanel } from "./components/ContextPanel";
 import { StatusBar } from "./components/StatusBar";
-import { AppProvider } from "./store";
+import { AppProvider, useApp } from "./store";
+
+function AppShell() {
+  const { sidebarCollapsed } = useApp();
+  return (
+    <div className={"app" + (sidebarCollapsed ? " sb-collapsed" : "")}>
+      <TopBar />
+      <div className="body">
+        <Sidebar />
+        <Conversation />
+        <ContextPanel />
+      </div>
+      <StatusBar />
+    </div>
+  );
+}
 
 export function App() {
   return (
     <AppProvider>
-      <div className="app">
-        <TopBar />
-        <div className="body">
-          <Sidebar />
-          <Conversation />
-          <ContextPanel />
-        </div>
-        <StatusBar />
-      </div>
+      <AppShell />
     </AppProvider>
   );
 }

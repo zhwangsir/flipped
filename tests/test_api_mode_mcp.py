@@ -43,6 +43,19 @@ def test_mcp_toggle_unknown_404(monkeypatch, tmp_path):
         assert r.status_code == 404
 
 
+# ---------- Stage 3 项目上下文 ----------
+
+def test_project_context():
+    """/project/context 返回项目名 + git 分支 + 模式（供 composer 上下文行/状态栏）。"""
+    with TestClient(app) as c:
+        r = c.get(f"{API_PREFIX}/project/context")
+        assert r.status_code == 200
+        data = r.json()
+        assert set(data) >= {"project", "branch", "mode"}
+        assert data["project"]  # 非空项目名
+        assert data["mode"] == "本地模式"
+
+
 # ---------- M7.4 模式路由 ----------
 
 def test_task_mode_chat_routes_to_run_chat(monkeypatch):

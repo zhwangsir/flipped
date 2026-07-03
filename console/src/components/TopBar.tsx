@@ -1,7 +1,6 @@
 import { useApp } from "../store";
-import { IconGit, IconLayout, IconCube } from "../icons";
+import { IconGit, IconLayout, IconSidebar } from "../icons";
 
-const MODEL_LABEL: Record<string, string> = { coder: "Kimi-K2.7", architect: "GLM-5.2" };
 const STATUS_LABEL: Record<string, string> = {
   running: "运行中",
   done: "已完成",
@@ -10,15 +9,17 @@ const STATUS_LABEL: Record<string, string> = {
   idle: "空闲",
 };
 
+/** Codex 精简顶栏：侧栏折叠 + 面包屑 + 变更 + 一枚状态 pill + 面板切换。
+ *  模型/沙盒等下沉到 composer 与状态栏，顶栏保持克制。 */
 export function TopBar() {
   const {
     sessions,
     selectedSessionId,
     sessionStatus,
-    selectedModel,
     changedFiles,
     setContextTab,
     toggleContext,
+    toggleSidebar,
   } = useApp();
 
   const session = sessions.find((s) => s.id === selectedSessionId);
@@ -28,6 +29,14 @@ export function TopBar() {
 
   return (
     <header className="topbar">
+      <button
+        className="icon-btn ghost"
+        onClick={toggleSidebar}
+        aria-label="折叠侧栏"
+        title="折叠 / 展开侧栏 (⌘B)"
+      >
+        <IconSidebar size={15} />
+      </button>
       <div className="crumb">
         {session ? session.title : "flipped"}
         {activeFile && (
@@ -46,12 +55,6 @@ export function TopBar() {
       <span className="spacer" />
       <span className="pill">
         <span className={"dot " + st} /> {STATUS_LABEL[st] || st}
-      </span>
-      <span className="pill">
-        <IconCube size={13} /> 沙盒 <span className="mono">Docker</span>
-      </span>
-      <span className="pill">
-        模型 <span className="mono">{MODEL_LABEL[selectedModel] || selectedModel}</span>
       </span>
       <button
         className="icon-btn"

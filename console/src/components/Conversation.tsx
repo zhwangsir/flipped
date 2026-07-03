@@ -20,6 +20,7 @@ import {
   IconTerminal,
   IconBrowser,
   IconFile,
+  IconGit,
 } from '../icons';
 
 const ROLE: Record<Role, { label: string; cls: string; avatar: string }> = {
@@ -205,6 +206,7 @@ export function Conversation() {
     selectedMode,
     setMode,
     setContextTab,
+    projectContext,
   } = useApp();
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
@@ -375,6 +377,19 @@ export function Conversation() {
             </button>
           </div>
         </div>
+        {projectContext && (
+          <div className='composer-context'>
+            <span className='ctx-item'>
+              <IconFile size={12} /> {projectContext.project}
+            </span>
+            <span className='ctx-sep'>·</span>
+            <span className='ctx-item'>{projectContext.mode}</span>
+            <span className='ctx-sep'>·</span>
+            <span className='ctx-item mono'>
+              <IconGit size={12} /> {projectContext.branch}
+            </span>
+          </div>
+        )}
       </div>
     </section>
   );

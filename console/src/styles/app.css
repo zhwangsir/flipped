@@ -131,6 +131,14 @@
 .icon-btn.run {
   color: var(--success);
 }
+.icon-btn.ghost {
+  color: var(--text-muted);
+  min-width: 28px;
+  padding: 0 6px;
+}
+.icon-btn.ghost:hover {
+  color: var(--text-primary);
+}
 .spacer {
   flex: 1;
 }
@@ -161,6 +169,15 @@
   flex-direction: column;
   background: var(--bg-sunken);
   min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+/* Stage 3 — 侧栏折叠(⌘B / 顶栏按钮) */
+.app.sb-collapsed {
+  --sidebar-w: 0px;
+}
+.app.sb-collapsed .sidebar {
+  border-right: none;
 }
 
 /* ---- Codex 侧栏：全局文字导航 ---- */
@@ -818,6 +835,26 @@
   border-top: 1px solid var(--border-subtle);
   padding: var(--sp-3) var(--sp-4) var(--sp-4);
   background: var(--bg-base);
+}
+/* Stage 3 — composer 上下文行(项目 · 模式 · 分支),呼应 Codex */
+.composer-context {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 4px 0;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+.ctx-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.ctx-item svg {
+  color: var(--text-faint);
+}
+.ctx-sep {
+  color: var(--text-faint);
 }
 .modes {
   display: inline-flex;

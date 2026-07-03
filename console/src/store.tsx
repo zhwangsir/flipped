@@ -13,6 +13,7 @@ import type {
   McpServer,
   ContextTab,
   SidebarTab,
+  ProjectContext,
 } from './types';
 import { eventToStreamItem } from './types';
 import {
@@ -24,6 +25,7 @@ import {
   fetchMetrics,
   getMcpServers,
   toggleMcpServer as apiToggleMcpServer,
+  fetchProjectContext,
   connectEvents,
 } from './api';
 
@@ -58,6 +60,9 @@ interface AppState {
   setSidebarTab: (t: SidebarTab) => void;
   showContext: boolean;
   toggleContext: () => void;
+  sidebarCollapsed: boolean;
+  toggleSidebar: () => void;
+  projectContext: ProjectContext | null;
   sessionQuery: string;
   setSessionQuery: (q: string) => void;
   selectSession: (id: string) => void;
@@ -93,10 +98,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [contextTab, setContextTab] = useState<ContextTab>('editor');
   const [sidebarTab, setSidebarTab] = useState<SidebarTab>('chats');
   const [showContext, setShowContext] = useState(true);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [projectContext, setProjectContext] = useState<ProjectContext | null>(null);
   const [sessionQuery, setSessionQuery] = useState('');
   const wsRef = useRef<{ close: () => void; send: (msg: unknown) => void } | null>(null);
 
   const toggleContext = useCallback(() => setShowContext((v) => !v), []);
+  const toggleSidebar = useCallback(() => setSidebarCollapsed((v) => !v), []);
 
   const refreshSessions = useCallback(async () => {
     try {
@@ -131,6 +139,25 @@ export function AppProvider({ children }: { children: ReactNode }) {
     getMcpServers()
       .then(setMcpServers)
       .catch(() => {});
+  }, []);
+
+  // Stage 3 — 拉取项目上下文（项目名 / 真实 git 分支 / 运行模式）
+  useEffect(() => {
+    fetchProjectContext()
+      .then(setProjectContext)
+      .catch(() => {});
+  }, []);
+
+  // Stage 3 — Cmd/Ctrl+B 折叠侧栏（Codex 快捷键）
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'b') {
+        e.preventDefault();
+        setSidebarCollapsed((v) => !v);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
   }, []);
 
   const toggleMcpServer = useCallback(async (name: string, enabled: boolean) => {
@@ -367,6 +394,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setSidebarTab,
         showContext,
         toggleContext,
+        sidebarCollapsed,
+        toggleSidebar,
+        projectContext,
         sessionQuery,
         setSessionQuery,
         selectSession,

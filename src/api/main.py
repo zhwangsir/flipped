@@ -101,6 +101,29 @@ async def toggle_mcp_server(name: str, enabled: bool = Query(...)) -> dict[str, 
         raise HTTPException(status_code=404, detail=f"unknown MCP server: {name}")
 
 
+# ---------- 项目上下文（Stage 3 — composer 上下文行 / 状态栏真实分支） ----------
+
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+
+
+@app.get(f"{API_PREFIX}/project/context")
+async def project_context() -> dict[str, str]:
+    """返回项目名 + 当前 git 分支（供 composer 上下文行与状态栏显示真实值）。"""
+    import subprocess
+
+    branch = "unknown"
+    try:
+        out = subprocess.run(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            capture_output=True, text=True, timeout=3, cwd=str(_REPO_ROOT),
+        )
+        if out.returncode == 0:
+            branch = out.stdout.strip() or "detached"
+    except (OSError, subprocess.SubprocessError):
+        pass
+    return {"project": _REPO_ROOT.name, "branch": branch, "mode": "本地模式"}
+
+
 # ---------- 会话管理 ----------
 
 @app.post(f"{API_PREFIX}/sessions", response_model=Session)

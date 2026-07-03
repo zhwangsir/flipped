@@ -73,6 +73,13 @@ export interface Metrics {
 export type ContextTab = 'editor' | 'diff' | 'term' | 'browser' | 'problems' | 'mcp';
 export type SidebarTab = 'chats' | 'files';
 
+/** /project/context 返回的项目上下文（Stage 3 — composer 上下文行 / 状态栏）。 */
+export interface ProjectContext {
+  project: string;
+  branch: string;
+  mode: string;
+}
+
 /** /mcp/servers 返回的真实 MCP 服务器（M7.3）。 */
 export interface McpServer {
   name: string;

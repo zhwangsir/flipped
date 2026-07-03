@@ -5,8 +5,24 @@ function fmtTok(n: number): string {
   return n >= 1000 ? (n / 1000).toFixed(1) + 'k tok' : n + ' tok';
 }
 
+const MODEL_LABEL: Record<string, { name: string; alias: string }> = {
+  coder: { name: 'Kimi-K2.7', alias: 'coder' },
+  architect: { name: 'GLM-5.2', alias: 'architect' },
+};
+
 export function StatusBar() {
-  const { connection, error, sessionStatus, progress, errorCount, approvalPending, metrics } = useApp();
+  const {
+    connection,
+    error,
+    sessionStatus,
+    progress,
+    errorCount,
+    approvalPending,
+    metrics,
+    projectContext,
+    selectedModel,
+  } = useApp();
+  const model = MODEL_LABEL[selectedModel] || { name: selectedModel, alias: '' };
 
   const connLabel =
     connection === 'connected'
@@ -32,7 +48,7 @@ export function StatusBar() {
   return (
     <footer className='statusbar'>
       <span className='sb'>
-        <IconGit size={13} /> <span className='mono'>main</span>
+        <IconGit size={13} /> <span className='mono'>{projectContext?.branch || 'main'}</span>
       </span>
       <span className={'sb ' + (sessionStatus === 'done' ? 'ok' : sessionStatus === 'running' ? 'accent' : '')}>
         {sessionStatus === 'done' ? <IconCheck size={13} /> : sessionStatus === 'running' ? <IconHourglass size={13} /> : <IconBolt size={13} />}
@@ -63,7 +79,7 @@ export function StatusBar() {
         </span>
       )}
       <span className='sb accent'>
-        <IconBolt size={13} /> Kimi-K2.7 · <span className='mono'>coder</span>
+        <IconBolt size={13} /> {model.name} · <span className='mono'>{model.alias}</span>
       </span>
       <span className='sb'>
         <IconCube size={13} /> 沙盒 <span className='mono'>py3.12</span>
