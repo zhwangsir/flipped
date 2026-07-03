@@ -6,6 +6,7 @@ import { ContextPanel } from "./components/ContextPanel";
 import { Launcher } from "./components/Launcher";
 import { CommandPalette } from "./components/CommandPalette";
 import { Settings } from "./components/Settings";
+import { Plugins } from "./components/Plugins";
 import { TerminalDrawer } from "./components/TerminalDrawer";
 import { AppProvider, useApp } from "./store";
 
@@ -30,6 +31,7 @@ function AppShell() {
       <TerminalDrawer />
       <CommandPalette />
       <Settings />
+      <Plugins />
     </div>
   );
 }

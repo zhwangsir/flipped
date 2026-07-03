@@ -30,9 +30,9 @@ export function Sidebar() {
     selectSession,
     createSession,
     deleteSession,
-    setContextTab,
     setPaletteOpen,
     setSettingsOpen,
+    setPluginsOpen,
     projectContext,
   } = useApp();
   const { theme, toggle } = useTheme();
@@ -99,7 +99,7 @@ export function Sidebar() {
         >
           <IconClock size={16} /> 已安排
         </button>
-        <button className="side-nav-item" onClick={() => setContextTab("mcp")}>
+        <button className="side-nav-item" onClick={() => setPluginsOpen(true)}>
           <IconPuzzle size={16} /> 插件
         </button>
       </nav>
