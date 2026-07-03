@@ -32,6 +32,7 @@ import {
   fetchProjectFiles,
   fetchProjectFile,
   fetchProjectDiff,
+  openProject as apiOpenProject,
   renderBrowser as apiRenderBrowser,
   connectEvents,
 } from './api';
@@ -82,6 +83,7 @@ interface AppState {
   prefillComposer: (text: string) => void;
   projectContext: ProjectContext | null;
   projectFiles: FileNode[];
+  openProject: (path: string) => Promise<{ name: string; path: string }>;
   openedFile: { path: string; content: string } | null;
   openFile: (path: string) => Promise<void>;
   browserRender: BrowserRender | null;
@@ -196,6 +198,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
     fetchProjectFiles()
       .then((r) => setProjectFiles(r.tree))
       .catch(() => {});
+  }, []);
+
+  // 选择/导入文件夹作为活动项目 → 切换后刷新上下文/文件树/diff(项目名与文件夹解耦)
+  const openProject = useCallback(async (path: string) => {
+    const r = await apiOpenProject(path);
+    setOpenedFile(null);
+    await Promise.all([
+      fetchProjectContext().then(setProjectContext).catch(() => {}),
+      fetchProjectFiles().then((f) => setProjectFiles(f.tree)).catch(() => setProjectFiles([])),
+      fetchProjectDiff().then((d) => setGitDiff(d.files)).catch(() => setGitDiff([])),
+    ]);
+    return r;
   }, []);
 
   // 点击文件树 → 拉真实文件内容载入编辑器
@@ -506,6 +520,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         prefillComposer,
         projectContext,
         projectFiles,
+        openProject,
         openedFile,
         openFile,
         browserRender,

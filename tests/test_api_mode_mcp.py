@@ -95,6 +95,24 @@ def test_project_file_not_found():
         assert r.status_code == 404
 
 
+def test_project_open_switches_active_folder(tmp_path):
+    """POST /project/open 选择文件夹 → 项目名/路径切换(名与文件夹解耦)。"""
+    from api.project_state import set_project_root, REPO_ROOT
+
+    d = tmp_path / "myproj"
+    d.mkdir()
+    try:
+        with TestClient(app) as c:
+            r = c.post(f"{API_PREFIX}/project/open", json={"path": str(d)})
+            assert r.status_code == 200 and r.json()["name"] == "myproj"
+            ctx = c.get(f"{API_PREFIX}/project/context").json()
+            assert ctx["project"] == "myproj" and ctx["path"] == str(d)
+            bad = c.post(f"{API_PREFIX}/project/open", json={"path": "/no/such/dir/xyz123"})
+            assert bad.status_code == 404
+    finally:
+        set_project_root(REPO_ROOT)  # 复位模块级状态,避免影响其它测试
+
+
 # ---------- 阶段① Session mode 字段（项目/对话分区） ----------
 
 def test_session_mode_field(monkeypatch, tmp_path):

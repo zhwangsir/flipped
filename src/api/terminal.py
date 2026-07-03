@@ -18,11 +18,11 @@ import signal
 import struct
 import subprocess
 import termios
-from pathlib import Path
 
 from fastapi import WebSocket, WebSocketDisconnect
 
-_REPO_ROOT = Path(__file__).resolve().parents[2]
+from .project_state import project_root
+
 _TIOCSCTTY = getattr(termios, "TIOCSCTTY", None)
 
 
@@ -51,7 +51,7 @@ def _spawn_shell() -> tuple[int, subprocess.Popen]:
         stdin=slave_fd,
         stdout=slave_fd,
         stderr=slave_fd,
-        cwd=str(_REPO_ROOT),
+        cwd=str(project_root()),
         env={**os.environ, "TERM": "xterm-256color"},
         preexec_fn=_preexec,
         close_fds=True,

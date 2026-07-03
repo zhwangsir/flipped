@@ -103,32 +103,49 @@ async def toggle_mcp_server(name: str, enabled: bool = Query(...)) -> dict[str, 
 
 # ---------- 项目上下文（Stage 3 — composer 上下文行 / 状态栏真实分支） ----------
 
-_REPO_ROOT = Path(__file__).resolve().parents[2]
+from .project_state import project_root as _project_root, set_project_root
 
 
 @app.websocket(f"{API_PREFIX}/terminal")
 async def terminal_ws(websocket: WebSocket) -> None:
-    """Stage 5 — 真实 pty 终端（作用域=项目根，等价内置终端）。"""
+    """Stage 5 — 真实 pty 终端（作用域=活动项目根，等价内置终端）。"""
     from api.terminal import terminal_bridge
     await terminal_bridge(websocket)
 
 
 @app.get(f"{API_PREFIX}/project/context")
 async def project_context() -> dict[str, str]:
-    """返回项目名 + 当前 git 分支（供 composer 上下文行与状态栏显示真实值）。"""
+    """返回项目名 + 文件夹路径 + 当前 git 分支（供 composer 上下文行与状态栏）。"""
     import subprocess
 
+    root = _project_root()
     branch = "unknown"
     try:
         out = subprocess.run(
             ["git", "rev-parse", "--abbrev-ref", "HEAD"],
-            capture_output=True, text=True, timeout=3, cwd=str(_REPO_ROOT),
+            capture_output=True, text=True, timeout=3, cwd=str(root),
         )
         if out.returncode == 0:
             branch = out.stdout.strip() or "detached"
     except (OSError, subprocess.SubprocessError):
         pass
-    return {"project": _REPO_ROOT.name, "branch": branch, "mode": "本地模式"}
+    return {"project": root.name, "path": str(root), "branch": branch, "mode": "本地模式"}
+
+
+@app.post(f"{API_PREFIX}/project/open")
+async def project_open(req: dict[str, Any]) -> dict[str, str]:
+    """选择/导入一个文件夹作为活动项目(项目名取文件夹 basename)。"""
+    raw = str(req.get("path") or "").strip()
+    if not raw:
+        raise HTTPException(status_code=400, detail="path required")
+    try:
+        p = Path(raw).expanduser().resolve()
+    except OSError:
+        raise HTTPException(status_code=400, detail="无效路径")
+    if not p.is_dir():
+        raise HTTPException(status_code=404, detail="不是有效文件夹")
+    set_project_root(p)
+    return {"name": p.name, "path": str(p)}
 
 
 # ---------- 项目文件树 / 单文件读取（阶段② — 右侧「文件」做真） ----------
@@ -177,7 +194,8 @@ def _list_tree(root: Path) -> list[dict[str, Any]]:
 @app.get(f"{API_PREFIX}/project/files")
 async def project_files() -> dict[str, Any]:
     """项目文件树（供右侧「文件」浏览器）。"""
-    return {"root": _REPO_ROOT.name, "tree": _list_tree(_REPO_ROOT)}
+    root = _project_root()
+    return {"root": root.name, "tree": _list_tree(root)}
 
 
 _DIFF_LINE_CAP = 4000
@@ -222,11 +240,12 @@ async def project_reveal() -> dict[str, Any]:
 
     if sys.platform != "darwin":
         raise HTTPException(status_code=501, detail="仅 macOS 支持在 Finder 中显示")
+    root = _project_root()
     try:
-        subprocess.run(["open", "-R", str(_REPO_ROOT)], timeout=5, check=False)
+        subprocess.run(["open", "-R", str(root)], timeout=5, check=False)
     except (OSError, subprocess.SubprocessError) as e:
         raise HTTPException(status_code=500, detail=f"打开失败: {e}")
-    return {"ok": True, "path": str(_REPO_ROOT)}
+    return {"ok": True, "path": str(root)}
 
 
 @app.get(f"{API_PREFIX}/project/diff")
@@ -237,7 +256,7 @@ async def project_diff() -> dict[str, Any]:
     try:
         out = subprocess.run(
             ["git", "diff", "HEAD", "--no-color"],
-            cwd=str(_REPO_ROOT), capture_output=True, text=True, timeout=6,
+            cwd=str(_project_root()), capture_output=True, text=True, timeout=6,
         )
     except (OSError, subprocess.SubprocessError) as e:
         raise HTTPException(status_code=500, detail=f"git diff 失败: {e}")
@@ -248,7 +267,7 @@ async def project_diff() -> dict[str, Any]:
 @app.get(f"{API_PREFIX}/project/file")
 async def project_file(path: str = Query(..., min_length=1)) -> dict[str, Any]:
     """读取项目内单个文本文件（点击文件树 → 载入编辑器）。含路径穿越防护。"""
-    root = _REPO_ROOT.resolve()
+    root = _project_root().resolve()
     target = (root / path).resolve()
     # 路径穿越防护：必须落在仓库根内
     if target != root and not str(target).startswith(str(root) + os.sep):

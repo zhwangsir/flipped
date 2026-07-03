@@ -248,6 +248,7 @@ export function Conversation() {
     setMode,
     setContextTab,
     projectContext,
+    openProject,
     composerPrefill,
     prefillComposer,
   } = useApp();
@@ -256,6 +257,8 @@ export function Conversation() {
   const [approvalBusy, setApprovalBusy] = useState(false);
   const [plusOpen, setPlusOpen] = useState(false);
   const [projPicker, setProjPicker] = useState(false);
+  const [folderPath, setFolderPath] = useState<string | null>(null);
+  const [folderErr, setFolderErr] = useState('');
   const taRef = useRef<HTMLTextAreaElement>(null);
   const plusWrapRef = useRef<HTMLDivElement>(null);
   const projPickerRef = useRef<HTMLDivElement>(null);
@@ -296,6 +299,19 @@ export function Conversation() {
       setText('');
     } finally {
       setBusy(false);
+    }
+  };
+
+  const submitFolder = async () => {
+    const path = (folderPath || '').trim();
+    if (!path) return;
+    try {
+      await openProject(path);
+      setProjPicker(false);
+      setFolderPath(null);
+      setFolderErr('');
+    } catch (e) {
+      setFolderErr(e instanceof Error ? e.message.replace(/^HTTP \d+: /, '') : '打开失败');
     }
   };
 
@@ -429,34 +445,61 @@ export function Conversation() {
             </button>
             {projPicker && (
               <div className='proj-picker'>
-                <div className='proj-picker-search'>
-                  <IconSearch size={13} />
-                  <input placeholder='搜索项目' aria-label='搜索项目' />
-                </div>
-                <button className='proj-picker-item selected'>
-                  <IconFile size={14} />
-                  <span className='pp-name'>{projectContext?.project || 'flipped'}</span>
-                  <IconCheck size={14} />
-                </button>
-                <div className='proj-picker-item has-sub'>
-                  <IconPlus size={14} />
-                  <span className='pp-name'>New project</span>
-                  <IconChevronRight size={13} />
-                  <div className='proj-subpicker'>
-                    <button className='proj-picker-item'>
-                      <IconPlus size={14} />
-                      <span className='pp-name'>新建空白项目</span>
-                    </button>
-                    <button className='proj-picker-item'>
-                      <IconFolder size={14} />
-                      <span className='pp-name'>使用现有文件夹</span>
-                    </button>
+                {folderPath !== null ? (
+                  <div className='proj-folder'>
+                    <div className='proj-folder-h'>选择项目文件夹</div>
+                    <input
+                      className='proj-folder-input mono'
+                      autoFocus
+                      value={folderPath}
+                      placeholder='粘贴文件夹绝对路径，如 /Users/…/my-app'
+                      onChange={(e) => { setFolderPath(e.target.value); setFolderErr(''); }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') submitFolder();
+                        else if (e.key === 'Escape') setFolderPath(null);
+                      }}
+                    />
+                    {folderErr && <div className='proj-folder-err'>{folderErr}</div>}
+                    <div className='proj-folder-actions'>
+                      <button onClick={() => { setFolderPath(null); setFolderErr(''); }}>取消</button>
+                      <button className='primary' disabled={!folderPath.trim()} onClick={submitFolder}>打开</button>
+                    </div>
                   </div>
-                </div>
-                <button className='proj-picker-item' onClick={() => setProjPicker(false)}>
-                  <IconX size={14} />
-                  <span className='pp-name'>不使用项目</span>
-                </button>
+                ) : (
+                  <>
+                    <div className='proj-picker-search'>
+                      <IconSearch size={13} />
+                      <input placeholder='搜索项目' aria-label='搜索项目' />
+                    </div>
+                    <button className='proj-picker-item selected'>
+                      <IconFile size={14} />
+                      <span className='pp-name'>{projectContext?.project || 'flipped'}</span>
+                      <IconCheck size={14} />
+                    </button>
+                    <div className='proj-picker-item has-sub'>
+                      <IconPlus size={14} />
+                      <span className='pp-name'>New project</span>
+                      <IconChevronRight size={13} />
+                      <div className='proj-subpicker'>
+                        <button className='proj-picker-item' onClick={() => setFolderPath('')}>
+                          <IconPlus size={14} />
+                          <span className='pp-name'>新建空白项目</span>
+                        </button>
+                        <button
+                          className='proj-picker-item'
+                          onClick={() => setFolderPath(projectContext?.path || '')}
+                        >
+                          <IconFolder size={14} />
+                          <span className='pp-name'>使用现有文件夹</span>
+                        </button>
+                      </div>
+                    </div>
+                    <button className='proj-picker-item' onClick={() => setProjPicker(false)}>
+                      <IconX size={14} />
+                      <span className='pp-name'>不使用项目</span>
+                    </button>
+                  </>
+                )}
               </div>
             )}
           </div>
@@ -484,7 +527,7 @@ export function Conversation() {
     return (
       <section className='center center-new'>
         <div className='new-thread'>
-          <h1 className='empty-hero'>我们应该在 flipped 中构建什么？</h1>
+          <h1 className='empty-hero'>我们应该在 {projectContext?.project || 'flipped'} 中构建什么？</h1>
           {composer}
         </div>
       </section>

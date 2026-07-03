@@ -66,6 +66,13 @@ export function fetchProjectFiles(): Promise<{ root: string; tree: FileNode[] }>
   return api<{ root: string; tree: FileNode[] }>('/project/files');
 }
 
+export function openProject(path: string): Promise<{ name: string; path: string }> {
+  return api<{ name: string; path: string }>('/project/open', {
+    method: 'POST',
+    body: JSON.stringify({ path }),
+  });
+}
+
 export function fetchProjectFile(path: string): Promise<{ path: string; content: string }> {
   return api<{ path: string; content: string }>(`/project/file?path=${encodeURIComponent(path)}`);
 }

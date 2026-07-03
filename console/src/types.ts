@@ -113,6 +113,7 @@ export type SidebarTab = 'chats' | 'files';
 /** /project/context 返回的项目上下文（Stage 3 — composer 上下文行 / 状态栏）。 */
 export interface ProjectContext {
   project: string;
+  path?: string;
   branch: string;
   mode: string;
 }
