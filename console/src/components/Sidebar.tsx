@@ -30,8 +30,6 @@ export function Sidebar() {
     selectSession,
     createSession,
     deleteSession,
-    sessionQuery,
-    setSessionQuery,
     setContextTab,
     setPaletteOpen,
     projectContext,
@@ -53,16 +51,9 @@ export function Sidebar() {
     return () => document.removeEventListener("mousedown", onDown);
   }, [projMenu]);
 
-  const q = sessionQuery.trim().toLowerCase();
-  const filtered = q ? sessions.filter((s) => s.title.toLowerCase().includes(q)) : sessions;
   // chat 模式 → 对话区；agent/plan(或历史无 mode)→ 项目区
-  const projectThreads = filtered.filter((s) => (s.mode ?? "agent") !== "chat");
-  const chatThreads = filtered.filter((s) => s.mode === "chat");
-
-  const focusSearch = () => {
-    setNavView("threads");
-    requestAnimationFrame(() => document.getElementById("side-search-input")?.focus());
-  };
+  const projectThreads = sessions.filter((s) => (s.mode ?? "agent") !== "chat");
+  const chatThreads = sessions.filter((s) => s.mode === "chat");
 
   const renderThread = (s: Session) => (
     <div
@@ -98,7 +89,7 @@ export function Sidebar() {
         >
           <IconPlus size={16} /> 新对话
         </button>
-        <button className="side-nav-item" onClick={focusSearch}>
+        <button className="side-nav-item" onClick={() => setPaletteOpen(true)}>
           <IconSearch size={16} /> 搜索
         </button>
         <button
@@ -111,22 +102,6 @@ export function Sidebar() {
           <IconPuzzle size={16} /> 插件
         </button>
       </nav>
-
-      <div className="side-search">
-        <IconSearch size={13} />
-        <input
-          id="side-search-input"
-          value={sessionQuery}
-          onChange={(e) => setSessionQuery(e.target.value)}
-          placeholder="搜索会话…"
-          aria-label="搜索会话"
-        />
-        {sessionQuery && (
-          <button className="side-search-clear" onClick={() => setSessionQuery("")} aria-label="清除">
-            <IconX size={12} />
-          </button>
-        )}
-      </div>
 
       <div className="scroll">
         {navView === "threads" ? (
@@ -195,7 +170,7 @@ export function Sidebar() {
               <div className="side-threads">
                 {projectThreads.map(renderThread)}
                 {projectThreads.length === 0 && (
-                  <div className="side-empty">{q ? "无匹配会话" : "暂无线程 · 点「新对话」"}</div>
+                  <div className="side-empty">暂无线程 · 点「新对话」</div>
                 )}
               </div>
             )}

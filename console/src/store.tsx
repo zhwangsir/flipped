@@ -72,6 +72,8 @@ interface AppState {
   toggleSidebar: () => void;
   paletteOpen: boolean;
   setPaletteOpen: (open: boolean) => void;
+  settingsOpen: boolean;
+  setSettingsOpen: (open: boolean) => void;
   terminalOpen: boolean;
   toggleTerminal: () => void;
   composerPrefill: string;
@@ -124,6 +126,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [showContext, setShowContext] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [terminalOpen, setTerminalOpen] = useState(false);
   const [composerPrefill, setComposerPrefill] = useState('');
   const [projectContext, setProjectContext] = useState<ProjectContext | null>(null);
@@ -493,6 +496,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         toggleSidebar,
         paletteOpen,
         setPaletteOpen,
+        settingsOpen,
+        setSettingsOpen,
         terminalOpen,
         toggleTerminal,
         composerPrefill,

@@ -2446,10 +2446,19 @@ button.mcp-row:hover {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.palette-group {
+.palette-source {
   font-size: var(--text-xs);
   color: var(--text-faint);
   flex: none;
+}
+/* R17 — 命令面板分组 section 头 */
+.palette-section {
+  padding: 12px 11px 5px;
+  font-size: var(--text-xs);
+  color: var(--text-faint);
+}
+.palette-item kbd {
+  margin-left: 4px;
 }
 .palette-empty {
   padding: 26px;
