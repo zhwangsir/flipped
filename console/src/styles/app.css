@@ -7,6 +7,7 @@
   grid-template-areas: "topbar" "body" "status";
   background: var(--bg-app);
   overflow: hidden;
+  position: relative;
 }
 .body {
   grid-area: body;
@@ -1733,4 +1734,63 @@ button.mcp-row:hover {
   border-radius: 4px;
   padding: 1px 5px;
   flex: none;
+}
+
+/* ============ Stage 5 — 终端抽屉 ⌘J(真实 pty) ============ */
+.term-drawer {
+  position: absolute;
+  left: var(--sidebar-w);
+  right: var(--context-w);
+  bottom: var(--statusbar-h);
+  height: 264px;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-base);
+  border-top: 1px solid var(--border);
+  box-shadow: var(--shadow-lg);
+  transform: translateY(calc(100% + var(--statusbar-h)));
+  transition: transform var(--dur) var(--ease);
+}
+.term-drawer.open {
+  transform: translateY(0);
+}
+.term-drawer-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 7px 12px;
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--bg-sunken);
+  flex: none;
+}
+.term-drawer-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+.term-drawer-title .mono {
+  color: var(--text-faint);
+}
+.term-drawer-close {
+  display: grid;
+  place-items: center;
+  color: var(--text-muted);
+  border-radius: var(--radius-xs);
+  padding: 3px;
+}
+.term-drawer-close:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+.term-holder {
+  flex: 1;
+  min-height: 0;
+  padding: 6px 8px;
+  overflow: hidden;
+}
+.term-holder .xterm {
+  height: 100%;
 }

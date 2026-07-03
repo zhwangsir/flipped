@@ -5,6 +5,7 @@ import { Conversation } from "./components/Conversation";
 import { ContextPanel } from "./components/ContextPanel";
 import { StatusBar } from "./components/StatusBar";
 import { CommandPalette } from "./components/CommandPalette";
+import { TerminalDrawer } from "./components/TerminalDrawer";
 import { AppProvider, useApp } from "./store";
 
 function AppShell() {
@@ -17,6 +18,7 @@ function AppShell() {
         <Conversation />
         <ContextPanel />
       </div>
+      <TerminalDrawer />
       <StatusBar />
       <CommandPalette />
     </div>

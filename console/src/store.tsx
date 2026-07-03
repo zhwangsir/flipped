@@ -64,6 +64,8 @@ interface AppState {
   toggleSidebar: () => void;
   paletteOpen: boolean;
   setPaletteOpen: (open: boolean) => void;
+  terminalOpen: boolean;
+  toggleTerminal: () => void;
   projectContext: ProjectContext | null;
   sessionQuery: string;
   setSessionQuery: (q: string) => void;
@@ -102,7 +104,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [showContext, setShowContext] = useState(true);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [terminalOpen, setTerminalOpen] = useState(false);
   const [projectContext, setProjectContext] = useState<ProjectContext | null>(null);
+  const toggleTerminal = useCallback(() => setTerminalOpen((v) => !v), []);
   const [sessionQuery, setSessionQuery] = useState('');
   const wsRef = useRef<{ close: () => void; send: (msg: unknown) => void } | null>(null);
 
@@ -161,6 +165,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       } else if (meta && e.key.toLowerCase() === 'k') {
         e.preventDefault();
         setPaletteOpen((v) => !v);
+      } else if (meta && e.key.toLowerCase() === 'j') {
+        e.preventDefault();
+        setTerminalOpen((v) => !v);
       }
     };
     window.addEventListener('keydown', onKey);
@@ -405,6 +412,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         toggleSidebar,
         paletteOpen,
         setPaletteOpen,
+        terminalOpen,
+        toggleTerminal,
         projectContext,
         sessionQuery,
         setSessionQuery,

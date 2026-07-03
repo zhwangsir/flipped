@@ -61,6 +61,7 @@ export function CommandPalette() {
       })),
       { id: 'toggle-ctx', group: '视图', label: '显示 / 隐藏 右侧面板', icon: <IconLayout size={15} />, run: () => { app.toggleContext(); close(); } },
       { id: 'toggle-sb', group: '视图', label: '折叠 / 展开 侧栏', hint: '⌘B', icon: <IconSidebar size={15} />, run: () => { app.toggleSidebar(); close(); } },
+      { id: 'toggle-term', group: '视图', label: '终端抽屉', hint: '⌘J', icon: <IconTerminal size={15} />, run: () => { app.toggleTerminal(); close(); } },
       { id: 'theme', group: '视图', label: theme === 'dark' ? '切换到 亮色主题' : '切换到 暗色主题', icon: theme === 'dark' ? <IconSun size={15} /> : <IconMoon size={15} />, run: () => { toggle(); close(); } },
       ...app.sessions.slice(0, 8).map((s): Cmd => ({
         id: 'sess-' + s.id, group: '会话', label: '打开 ' + s.title, icon: <IconChat size={15} />, run: () => { app.selectSession(s.id); close(); },

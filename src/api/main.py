@@ -106,6 +106,13 @@ async def toggle_mcp_server(name: str, enabled: bool = Query(...)) -> dict[str, 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
+@app.websocket(f"{API_PREFIX}/terminal")
+async def terminal_ws(websocket: WebSocket) -> None:
+    """Stage 5 — 真实 pty 终端（作用域=项目根，等价内置终端）。"""
+    from api.terminal import terminal_bridge
+    await terminal_bridge(websocket)
+
+
 @app.get(f"{API_PREFIX}/project/context")
 async def project_context() -> dict[str, str]:
     """返回项目名 + 当前 git 分支（供 composer 上下文行与状态栏显示真实值）。"""
