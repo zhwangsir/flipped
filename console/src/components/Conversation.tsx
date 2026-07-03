@@ -248,7 +248,9 @@ export function Conversation() {
     setMode,
     setContextTab,
     projectContext,
+    projects,
     openProject,
+    createProject,
     composerPrefill,
     prefillComposer,
   } = useApp();
@@ -257,8 +259,9 @@ export function Conversation() {
   const [approvalBusy, setApprovalBusy] = useState(false);
   const [plusOpen, setPlusOpen] = useState(false);
   const [projPicker, setProjPicker] = useState(false);
-  const [folderPath, setFolderPath] = useState<string | null>(null);
-  const [folderErr, setFolderErr] = useState('');
+  const [pickerMode, setPickerMode] = useState<null | 'import' | 'new'>(null);
+  const [pickerInput, setPickerInput] = useState('');
+  const [pickerErr, setPickerErr] = useState('');
   const taRef = useRef<HTMLTextAreaElement>(null);
   const plusWrapRef = useRef<HTMLDivElement>(null);
   const projPickerRef = useRef<HTMLDivElement>(null);
@@ -273,11 +276,16 @@ export function Conversation() {
     return () => document.removeEventListener('mousedown', onDown);
   }, [plusOpen]);
 
-  // 项目选择器：点外部关闭
+  // 项目选择器：点外部关闭(并重置输入模式)
   useEffect(() => {
     if (!projPicker) return;
     const onDown = (e: MouseEvent) => {
-      if (!projPickerRef.current?.contains(e.target as Node)) setProjPicker(false);
+      if (!projPickerRef.current?.contains(e.target as Node)) {
+        setProjPicker(false);
+        setPickerMode(null);
+        setPickerInput('');
+        setPickerErr('');
+      }
     };
     document.addEventListener('mousedown', onDown);
     return () => document.removeEventListener('mousedown', onDown);
@@ -302,16 +310,21 @@ export function Conversation() {
     }
   };
 
-  const submitFolder = async () => {
-    const path = (folderPath || '').trim();
-    if (!path) return;
+  const closePicker = () => {
+    setProjPicker(false);
+    setPickerMode(null);
+    setPickerInput('');
+    setPickerErr('');
+  };
+  const submitPicker = async () => {
+    const v = pickerInput.trim();
+    if (!v) return;
     try {
-      await openProject(path);
-      setProjPicker(false);
-      setFolderPath(null);
-      setFolderErr('');
+      if (pickerMode === 'new') await createProject(v);
+      else await openProject(v);
+      closePicker();
     } catch (e) {
-      setFolderErr(e instanceof Error ? e.message.replace(/^HTTP \d+: /, '') : '打开失败');
+      setPickerErr(e instanceof Error ? e.message.replace(/^HTTP \d+: /, '') : '操作失败');
     }
   };
 
@@ -440,29 +453,34 @@ export function Conversation() {
         <div className='composer-context'>
           <div className='ctx-proj-wrap' ref={projPickerRef}>
             <button className='ctx-item ctx-proj' onClick={() => setProjPicker((o) => !o)}>
-              <IconFile size={12} /> {projectContext?.project || 'flipped'}
+              <IconFile size={12} /> {projectContext?.project || '选择项目'}
               <IconChevronDown size={11} />
             </button>
             {projPicker && (
               <div className='proj-picker'>
-                {folderPath !== null ? (
+                {pickerMode !== null ? (
                   <div className='proj-folder'>
-                    <div className='proj-folder-h'>选择项目文件夹</div>
+                    <div className='proj-folder-h'>{pickerMode === 'new' ? '新建空白项目' : '导入现有文件夹'}</div>
                     <input
                       className='proj-folder-input mono'
                       autoFocus
-                      value={folderPath}
-                      placeholder='粘贴文件夹绝对路径，如 /Users/…/my-app'
-                      onChange={(e) => { setFolderPath(e.target.value); setFolderErr(''); }}
+                      value={pickerInput}
+                      placeholder={pickerMode === 'new' ? '项目名，如 my-app' : '粘贴文件夹绝对路径，如 /Users/…/my-app'}
+                      onChange={(e) => { setPickerInput(e.target.value); setPickerErr(''); }}
                       onKeyDown={(e) => {
-                        if (e.key === 'Enter') submitFolder();
-                        else if (e.key === 'Escape') setFolderPath(null);
+                        if (e.key === 'Enter') submitPicker();
+                        else if (e.key === 'Escape') { setPickerMode(null); setPickerInput(''); setPickerErr(''); }
                       }}
                     />
-                    {folderErr && <div className='proj-folder-err'>{folderErr}</div>}
+                    {pickerMode === 'import' && (
+                      <div className='proj-folder-hint'>外部文件夹会拷进 ~/projects，沙盒经 /projects 挂载才能访问</div>
+                    )}
+                    {pickerErr && <div className='proj-folder-err'>{pickerErr}</div>}
                     <div className='proj-folder-actions'>
-                      <button onClick={() => { setFolderPath(null); setFolderErr(''); }}>取消</button>
-                      <button className='primary' disabled={!folderPath.trim()} onClick={submitFolder}>打开</button>
+                      <button onClick={() => { setPickerMode(null); setPickerInput(''); setPickerErr(''); }}>取消</button>
+                      <button className='primary' disabled={!pickerInput.trim()} onClick={submitPicker}>
+                        {pickerMode === 'new' ? '创建' : '导入'}
+                      </button>
                     </div>
                   </div>
                 ) : (
@@ -471,33 +489,35 @@ export function Conversation() {
                       <IconSearch size={13} />
                       <input placeholder='搜索项目' aria-label='搜索项目' />
                     </div>
-                    <button className='proj-picker-item selected'>
-                      <IconFile size={14} />
-                      <span className='pp-name'>{projectContext?.project || 'flipped'}</span>
-                      <IconCheck size={14} />
-                    </button>
+                    {projects.length === 0 && (
+                      <div className='proj-picker-empty'>~/projects 下暂无项目 · 新建或导入一个</div>
+                    )}
+                    {projects.map((p) => (
+                      <button
+                        key={p.host}
+                        className={'proj-picker-item' + (projectContext?.project === p.name ? ' selected' : '')}
+                        onClick={() => { openProject(p.host); closePicker(); }}
+                      >
+                        <IconFile size={14} />
+                        <span className='pp-name'>{p.name}</span>
+                        {projectContext?.project === p.name && <IconCheck size={14} />}
+                      </button>
+                    ))}
                     <div className='proj-picker-item has-sub'>
                       <IconPlus size={14} />
                       <span className='pp-name'>New project</span>
                       <IconChevronRight size={13} />
                       <div className='proj-subpicker'>
-                        <button className='proj-picker-item' onClick={() => setFolderPath('')}>
+                        <button className='proj-picker-item' onClick={() => { setPickerMode('new'); setPickerInput(''); }}>
                           <IconPlus size={14} />
                           <span className='pp-name'>新建空白项目</span>
                         </button>
-                        <button
-                          className='proj-picker-item'
-                          onClick={() => setFolderPath(projectContext?.path || '')}
-                        >
+                        <button className='proj-picker-item' onClick={() => { setPickerMode('import'); setPickerInput(''); }}>
                           <IconFolder size={14} />
-                          <span className='pp-name'>使用现有文件夹</span>
+                          <span className='pp-name'>导入现有文件夹</span>
                         </button>
                       </div>
                     </div>
-                    <button className='proj-picker-item' onClick={() => setProjPicker(false)}>
-                      <IconX size={14} />
-                      <span className='pp-name'>不使用项目</span>
-                    </button>
                   </>
                 )}
               </div>
@@ -527,7 +547,11 @@ export function Conversation() {
     return (
       <section className='center center-new'>
         <div className='new-thread'>
-          <h1 className='empty-hero'>我们应该在 {projectContext?.project || 'flipped'} 中构建什么？</h1>
+          <h1 className='empty-hero'>
+            {projectContext?.project
+              ? `我们应该在 ${projectContext.project} 中构建什么？`
+              : '选择或导入一个项目开始'}
+          </h1>
           {composer}
         </div>
       </section>

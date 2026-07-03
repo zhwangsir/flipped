@@ -43,74 +43,109 @@ def test_mcp_toggle_unknown_404(monkeypatch, tmp_path):
         assert r.status_code == 404
 
 
-# ---------- Stage 3 项目上下文 ----------
+# ---------- 项目模型:flipped=工具, 项目=~/projects/<名> 导入(默认无项目) ----------
 
-def test_project_context():
-    """/project/context 返回项目名 + git 分支 + 模式（供 composer 上下文行/状态栏）。"""
-    with TestClient(app) as c:
-        r = c.get(f"{API_PREFIX}/project/context")
-        assert r.status_code == 200
-        data = r.json()
-        assert set(data) >= {"project", "branch", "mode"}
-        assert data["project"]  # 非空项目名
-        assert data["mode"] == "本地模式"
+def _mk_projects_dir(monkeypatch, tmp_path):
+    """把项目主目录指到 tmp,并清空活动项目。"""
+    from api import project_state as ps
 
-
-# ---------- 阶段② 项目文件树 / 单文件读取 ----------
-
-def test_project_files_tree():
-    """/project/files 返回文件树，跳过依赖/构建产物。"""
-    with TestClient(app) as c:
-        r = c.get(f"{API_PREFIX}/project/files")
-        assert r.status_code == 200
-        data = r.json()
-        assert data["root"]
-        assert isinstance(data["tree"], list) and data["tree"]
-        blob = str(data["tree"])
-        assert "node_modules" not in blob  # 被忽略
-        # 顶层应含已知目录
-        top = {n["name"] for n in data["tree"]}
-        assert "src" in top or "console" in top
+    pdir = tmp_path / "projects"
+    pdir.mkdir()
+    monkeypatch.setattr(ps, "PROJECTS_DIR", pdir)
+    ps.clear_active()
+    return ps, pdir
 
 
-def test_project_file_read():
-    """/project/file 读取仓库内文本文件，返回内容。"""
-    with TestClient(app) as c:
-        r = c.get(f"{API_PREFIX}/project/file", params={"path": "STATE.json"})
-        assert r.status_code == 200
-        assert r.json()["content"].lstrip().startswith("{")
-
-
-def test_project_file_traversal_blocked():
-    """路径穿越必须被拒（403）。"""
-    with TestClient(app) as c:
-        r = c.get(f"{API_PREFIX}/project/file", params={"path": "../../../../etc/passwd"})
-        assert r.status_code == 403
-
-
-def test_project_file_not_found():
-    """不存在的路径 → 404。"""
-    with TestClient(app) as c:
-        r = c.get(f"{API_PREFIX}/project/file", params={"path": "no/such/file.xyz"})
-        assert r.status_code == 404
-
-
-def test_project_open_switches_active_folder(tmp_path):
-    """POST /project/open 选择文件夹 → 项目名/路径切换(名与文件夹解耦)。"""
-    from api.project_state import set_project_root, REPO_ROOT
-
-    d = tmp_path / "myproj"
-    d.mkdir()
+def test_project_context_none_by_default(monkeypatch, tmp_path):
+    """默认无活动项目(flipped 仓库不再当项目)→ project=None。"""
+    ps, _ = _mk_projects_dir(monkeypatch, tmp_path)
     try:
         with TestClient(app) as c:
-            r = c.post(f"{API_PREFIX}/project/open", json={"path": str(d)})
-            assert r.status_code == 200 and r.json()["name"] == "myproj"
-            ctx = c.get(f"{API_PREFIX}/project/context").json()
-            assert ctx["project"] == "myproj" and ctx["path"] == str(d)
-            bad = c.post(f"{API_PREFIX}/project/open", json={"path": "/no/such/dir/xyz123"})
-            assert bad.status_code == 404
+            data = c.get(f"{API_PREFIX}/project/context").json()
+            assert data["project"] is None and data["path"] is None
+            assert data["mode"] == "本地模式"
     finally:
-        set_project_root(REPO_ROOT)  # 复位模块级状态,避免影响其它测试
+        ps.clear_active()
+
+
+def test_project_context_active(monkeypatch, tmp_path):
+    """设活动项目 → 返回名/host路径/沙盒路径(/projects/<名>)。"""
+    ps, pdir = _mk_projects_dir(monkeypatch, tmp_path)
+    d = pdir / "myapp"
+    d.mkdir()
+    ps.set_active(d)
+    try:
+        with TestClient(app) as c:
+            ctx = c.get(f"{API_PREFIX}/project/context").json()
+            assert ctx["project"] == "myapp" and ctx["path"] == str(d)
+            assert ctx["sandbox"] == "/projects/myapp"  # 沙盒路径映射
+    finally:
+        ps.clear_active()
+
+
+def test_project_files_needs_project_then_tree(monkeypatch, tmp_path):
+    """无项目 → needs_project 空树;设项目 → 树(跳过 node_modules)。"""
+    ps, pdir = _mk_projects_dir(monkeypatch, tmp_path)
+    try:
+        with TestClient(app) as c:
+            empty = c.get(f"{API_PREFIX}/project/files").json()
+            assert empty["needs_project"] is True and empty["tree"] == []
+            d = pdir / "p"
+            (d / "src").mkdir(parents=True)
+            (d / "src" / "x.py").write_text("x")
+            (d / "node_modules").mkdir()
+            ps.set_active(d)
+            data = c.get(f"{API_PREFIX}/project/files").json()
+            top = {n["name"] for n in data["tree"]}
+            assert "src" in top and "node_modules" not in top
+    finally:
+        ps.clear_active()
+
+
+def test_project_file_read_and_guards(monkeypatch, tmp_path):
+    """读文件正常;路径穿越 403;不存在 404;无项目 400。"""
+    ps, pdir = _mk_projects_dir(monkeypatch, tmp_path)
+    d = pdir / "p"
+    d.mkdir()
+    (d / "readme.txt").write_text("hello")
+    try:
+        with TestClient(app) as c:
+            assert c.get(f"{API_PREFIX}/project/file", params={"path": "readme.txt"}).status_code == 400  # 无项目
+            ps.set_active(d)
+            ok = c.get(f"{API_PREFIX}/project/file", params={"path": "readme.txt"})
+            assert ok.status_code == 200 and ok.json()["content"] == "hello"
+            assert c.get(f"{API_PREFIX}/project/file", params={"path": "../../etc/passwd"}).status_code == 403
+            assert c.get(f"{API_PREFIX}/project/file", params={"path": "nope.xyz"}).status_code == 404
+    finally:
+        ps.clear_active()
+
+
+def test_projects_list_create_open(monkeypatch, tmp_path):
+    """列表 / 新建 / 打开(外部→拷进 ~/projects)/ 沙盒路径。"""
+    ps, pdir = _mk_projects_dir(monkeypatch, tmp_path)
+    try:
+        with TestClient(app) as c:
+            # 新建空白项目
+            r = c.post(f"{API_PREFIX}/projects", json={"name": "app1"})
+            assert r.status_code == 200 and r.json()["name"] == "app1"
+            assert (pdir / "app1").is_dir()
+            assert r.json()["sandbox"] == "/projects/app1"
+            # 列表含之
+            lst = c.get(f"{API_PREFIX}/projects").json()
+            assert any(p["name"] == "app1" for p in lst["projects"])
+            # 外部文件夹 → 拷进项目主目录
+            ext = tmp_path / "ext-app"
+            ext.mkdir()
+            (ext / "main.py").write_text("print(1)")
+            (ext / "node_modules").mkdir()
+            r2 = c.post(f"{API_PREFIX}/project/open", json={"path": str(ext)})
+            assert r2.status_code == 200 and r2.json()["name"] == "ext-app"
+            assert (pdir / "ext-app" / "main.py").is_file()
+            assert not (pdir / "ext-app" / "node_modules").exists()  # 重依赖被排除
+            # 非法项目名
+            assert c.post(f"{API_PREFIX}/projects", json={"name": "a/b"}).status_code == 400
+    finally:
+        ps.clear_active()
 
 
 # ---------- 阶段① Session mode 字段（项目/对话分区） ----------

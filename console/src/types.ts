@@ -112,10 +112,18 @@ export type SidebarTab = 'chats' | 'files';
 
 /** /project/context 返回的项目上下文（Stage 3 — composer 上下文行 / 状态栏）。 */
 export interface ProjectContext {
-  project: string;
-  path?: string;
-  branch: string;
+  project: string | null;
+  path?: string | null;
+  sandbox?: string | null;
+  branch: string | null;
   mode: string;
+}
+
+/** ~/projects 下的一个项目(host 路径 ↔ 沙盒 /projects/<名>)。 */
+export interface Project {
+  name: string;
+  host: string;
+  sandbox: string;
 }
 
 /** /mcp/servers 返回的真实 MCP 服务器（M7.3）。 */

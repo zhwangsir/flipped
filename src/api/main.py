@@ -103,49 +103,100 @@ async def toggle_mcp_server(name: str, enabled: bool = Query(...)) -> dict[str, 
 
 # ---------- 项目上下文（Stage 3 — composer 上下文行 / 状态栏真实分支） ----------
 
-from .project_state import project_root as _project_root, set_project_root
+from . import project_state as ps
 
 
 @app.websocket(f"{API_PREFIX}/terminal")
 async def terminal_ws(websocket: WebSocket) -> None:
-    """Stage 5 — 真实 pty 终端（作用域=活动项目根，等价内置终端）。"""
+    """Stage 5 — 真实 pty 终端（作用域=活动项目根，无项目则回退项目主目录）。"""
     from api.terminal import terminal_bridge
     await terminal_bridge(websocket)
 
 
 @app.get(f"{API_PREFIX}/project/context")
-async def project_context() -> dict[str, str]:
-    """返回项目名 + 文件夹路径 + 当前 git 分支（供 composer 上下文行与状态栏）。"""
+async def project_context() -> dict[str, Any]:
+    """返回活动项目(名/host路径/沙盒路径) + git 分支;无项目 project=None。"""
     import subprocess
 
-    root = _project_root()
+    proj = ps.active_project()
+    if not proj:
+        return {"project": None, "path": None, "sandbox": None, "branch": None, "mode": "本地模式"}
     branch = "unknown"
     try:
         out = subprocess.run(
             ["git", "rev-parse", "--abbrev-ref", "HEAD"],
-            capture_output=True, text=True, timeout=3, cwd=str(root),
+            capture_output=True, text=True, timeout=3, cwd=proj["host"],
         )
         if out.returncode == 0:
             branch = out.stdout.strip() or "detached"
     except (OSError, subprocess.SubprocessError):
         pass
-    return {"project": root.name, "path": str(root), "branch": branch, "mode": "本地模式"}
+    return {
+        "project": proj["name"], "path": proj["host"], "sandbox": proj["sandbox"],
+        "branch": branch, "mode": "本地模式",
+    }
+
+
+@app.get(f"{API_PREFIX}/projects")
+async def list_projects_endpoint() -> dict[str, Any]:
+    """列出项目主目录(~/projects)下的项目 + 当前活动项目。"""
+    return {
+        "projects_dir": str(ps.PROJECTS_DIR),
+        "projects": ps.list_projects(),
+        "active": ps.active_project(),
+    }
+
+
+@app.post(f"{API_PREFIX}/projects")
+async def create_project(req: dict[str, Any]) -> dict[str, Any]:
+    """在项目主目录下新建空白项目文件夹并设为活动项目。"""
+    name = str(req.get("name") or "").strip()
+    if not name or "/" in name or "\\" in name or name.startswith("."):
+        raise HTTPException(status_code=400, detail="项目名非法")
+    dest = ps.PROJECTS_DIR / name
+    if dest.exists():
+        raise HTTPException(status_code=409, detail="项目已存在")
+    try:
+        dest.mkdir(parents=True)
+    except OSError as e:
+        raise HTTPException(status_code=500, detail=f"创建失败: {e}")
+    return ps.set_active(dest)
 
 
 @app.post(f"{API_PREFIX}/project/open")
-async def project_open(req: dict[str, Any]) -> dict[str, str]:
-    """选择/导入一个文件夹作为活动项目(项目名取文件夹 basename)。"""
+async def project_open(req: dict[str, Any]) -> dict[str, Any]:
+    """打开/导入项目为活动项目。
+
+    - 路径已在 ~/projects 下 → 直接设为活动;
+    - 外部文件夹 → 拷进 ~/projects/<basename> 再设为活动(沙盒经 /projects 挂载才可访问)。
+      拷贝保留 .git(审查需要),排除 node_modules 等重依赖/构建产物。
+    """
     raw = str(req.get("path") or "").strip()
     if not raw:
         raise HTTPException(status_code=400, detail="path required")
     try:
-        p = Path(raw).expanduser().resolve()
+        src = Path(raw).expanduser().resolve()
     except OSError:
         raise HTTPException(status_code=400, detail="无效路径")
-    if not p.is_dir():
+    if not src.is_dir():
         raise HTTPException(status_code=404, detail="不是有效文件夹")
-    set_project_root(p)
-    return {"name": p.name, "path": str(p)}
+    if ps.is_within_projects(src):
+        return ps.set_active(src)
+    # 外部文件夹:拷进项目主目录,让沙盒(/projects 挂载)可访问
+    import shutil
+
+    dest = ps.PROJECTS_DIR / src.name
+    if dest.exists():
+        raise HTTPException(status_code=409, detail=f"~/projects/{src.name} 已存在,请改名或直接打开")
+    try:
+        ps.PROJECTS_DIR.mkdir(parents=True, exist_ok=True)
+        shutil.copytree(src, dest, ignore=shutil.ignore_patterns(
+            "node_modules", ".venv", "venv", "__pycache__", "dist", "build",
+            ".pytest_cache", ".mypy_cache", ".ruff_cache", ".DS_Store", ".next", "target",
+        ))
+    except OSError as e:
+        raise HTTPException(status_code=500, detail=f"导入失败: {e}")
+    return ps.set_active(dest)
 
 
 # ---------- 项目文件树 / 单文件读取（阶段② — 右侧「文件」做真） ----------
@@ -193,8 +244,10 @@ def _list_tree(root: Path) -> list[dict[str, Any]]:
 
 @app.get(f"{API_PREFIX}/project/files")
 async def project_files() -> dict[str, Any]:
-    """项目文件树（供右侧「文件」浏览器）。"""
-    root = _project_root()
+    """项目文件树（供右侧「文件」浏览器）。无活动项目返回空树 + needs_project。"""
+    root = ps.project_root()
+    if root is None:
+        return {"root": None, "tree": [], "needs_project": True}
     return {"root": root.name, "tree": _list_tree(root)}
 
 
@@ -240,7 +293,9 @@ async def project_reveal() -> dict[str, Any]:
 
     if sys.platform != "darwin":
         raise HTTPException(status_code=501, detail="仅 macOS 支持在 Finder 中显示")
-    root = _project_root()
+    root = ps.project_root()
+    if root is None:
+        raise HTTPException(status_code=400, detail="未选择项目")
     try:
         subprocess.run(["open", "-R", str(root)], timeout=5, check=False)
     except (OSError, subprocess.SubprocessError) as e:
@@ -253,10 +308,13 @@ async def project_diff() -> dict[str, Any]:
     """工作区真实 git 变更（相对 HEAD），供右侧「变更/审查」渲染真 +/- diff。"""
     import subprocess
 
+    root = ps.project_root()
+    if root is None:
+        return {"files": []}
     try:
         out = subprocess.run(
             ["git", "diff", "HEAD", "--no-color"],
-            cwd=str(_project_root()), capture_output=True, text=True, timeout=6,
+            cwd=str(root), capture_output=True, text=True, timeout=6,
         )
     except (OSError, subprocess.SubprocessError) as e:
         raise HTTPException(status_code=500, detail=f"git diff 失败: {e}")
@@ -267,7 +325,10 @@ async def project_diff() -> dict[str, Any]:
 @app.get(f"{API_PREFIX}/project/file")
 async def project_file(path: str = Query(..., min_length=1)) -> dict[str, Any]:
     """读取项目内单个文本文件（点击文件树 → 载入编辑器）。含路径穿越防护。"""
-    root = _project_root().resolve()
+    root = ps.project_root()
+    if root is None:
+        raise HTTPException(status_code=400, detail="未选择项目")
+    root = root.resolve()
     target = (root / path).resolve()
     # 路径穿越防护：必须落在仓库根内
     if target != root and not str(target).startswith(str(root) + os.sep):
@@ -458,7 +519,8 @@ async def _run_orchestrator(session_id: str, task_id: str, req: TaskRequest) -> 
     cfg = req.context.get("orchestrator") or {}
     goal = req.description
     verify_cmd = cfg.get("verify_cmd", ["true"])
-    cwd = cfg.get("cwd", "/workspace")
+    # agent 工作目录 = 活动项目在沙盒里的路径(/projects/<名>);无项目回退 /workspace
+    cwd = cfg.get("cwd") or ps.sandbox_cwd()
     db_path = FLIPPED_CHECKPOINT_DB
     store.update(session_id, goal=goal, verify_cmd=verify_cmd, cwd=cwd, checkpoint_db_path=db_path)
     try:
@@ -544,7 +606,8 @@ async def _run_openhands(session_id: str, task_id: str, description: str, model_
         task_id=task_id,
         bus=bus,
         agent_host=os.environ.get("OPENHANDS_AGENT_HOST", "http://localhost:8000"),
-        working_dir=os.environ.get("OPENHANDS_WORKING_DIR", "/workspace"),
+        # agent 工作目录 = 活动项目沙盒路径(/projects/<名>);无项目回退 /workspace
+        working_dir=os.environ.get("OPENHANDS_WORKING_DIR") or ps.sandbox_cwd(),
         model_alias=model,
         base_url=base_url,
         mcp_config=enabled_mcp_config(),

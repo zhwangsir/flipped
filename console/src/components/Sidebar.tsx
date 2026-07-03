@@ -40,7 +40,7 @@ export function Sidebar() {
   const [projOpen, setProjOpen] = useState(true);
   const [projMenu, setProjMenu] = useState(false);
   const moreRef = useRef<HTMLDivElement>(null);
-  const projectName = projectContext?.project || "flipped";
+  const projectName = projectContext?.project || "未选择项目";
 
   // 项目「⋯」菜单点外部关闭
   useEffect(() => {

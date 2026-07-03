@@ -1082,6 +1082,17 @@ body.resizing {
   font-size: var(--text-xs);
   color: var(--danger);
 }
+.proj-folder-hint {
+  margin-top: 7px;
+  font-size: var(--text-xs);
+  color: var(--text-faint);
+  line-height: 1.5;
+}
+.proj-picker-empty {
+  padding: 10px 12px;
+  font-size: var(--text-xs);
+  color: var(--text-faint);
+}
 .proj-folder-actions {
   display: flex;
   justify-content: flex-end;

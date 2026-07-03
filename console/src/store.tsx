@@ -14,6 +14,7 @@ import type {
   ContextTab,
   SidebarTab,
   ProjectContext,
+  Project,
   FileNode,
   BrowserRender,
   GitDiffFile,
@@ -33,6 +34,8 @@ import {
   fetchProjectFile,
   fetchProjectDiff,
   openProject as apiOpenProject,
+  fetchProjects,
+  createProject as apiCreateProject,
   renderBrowser as apiRenderBrowser,
   connectEvents,
 } from './api';
@@ -82,8 +85,11 @@ interface AppState {
   composerPrefill: string;
   prefillComposer: (text: string) => void;
   projectContext: ProjectContext | null;
+  projects: Project[];
+  refreshProjects: () => Promise<void>;
+  openProject: (path: string) => Promise<Project>;
+  createProject: (name: string) => Promise<Project>;
   projectFiles: FileNode[];
-  openProject: (path: string) => Promise<{ name: string; path: string }>;
   openedFile: { path: string; content: string } | null;
   openFile: (path: string) => Promise<void>;
   browserRender: BrowserRender | null;
@@ -133,6 +139,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [terminalOpen, setTerminalOpen] = useState(false);
   const [composerPrefill, setComposerPrefill] = useState('');
   const [projectContext, setProjectContext] = useState<ProjectContext | null>(null);
+  const [projects, setProjects] = useState<Project[]>([]);
   const [projectFiles, setProjectFiles] = useState<FileNode[]>([]);
   const [openedFile, setOpenedFile] = useState<{ path: string; content: string } | null>(null);
   const [browserRender, setBrowserRender] = useState<BrowserRender | null>(null);
@@ -200,17 +207,46 @@ export function AppProvider({ children }: { children: ReactNode }) {
       .catch(() => {});
   }, []);
 
-  // 选择/导入文件夹作为活动项目 → 切换后刷新上下文/文件树/diff(项目名与文件夹解耦)
-  const openProject = useCallback(async (path: string) => {
-    const r = await apiOpenProject(path);
+  // 项目导入 — 挂载时拉 ~/projects 项目列表
+  useEffect(() => {
+    fetchProjects()
+      .then((r) => setProjects(r.projects))
+      .catch(() => {});
+  }, []);
+
+  const refreshProjects = useCallback(async () => {
+    try {
+      const r = await fetchProjects();
+      setProjects(r.projects);
+    } catch {
+      setProjects([]);
+    }
+  }, []);
+
+  // 切换活动项目后刷新上下文/文件树/diff/项目列表(项目 = ~/projects/<名>,与工具本体分离)
+  const refreshAfterSwitch = useCallback(async () => {
     setOpenedFile(null);
     await Promise.all([
       fetchProjectContext().then(setProjectContext).catch(() => {}),
       fetchProjectFiles().then((f) => setProjectFiles(f.tree)).catch(() => setProjectFiles([])),
       fetchProjectDiff().then((d) => setGitDiff(d.files)).catch(() => setGitDiff([])),
+      refreshProjects(),
     ]);
+  }, [refreshProjects]);
+
+  // 选择/导入文件夹作为活动项目(外部文件夹后端会拷进 ~/projects)
+  const openProject = useCallback(async (path: string) => {
+    const r = await apiOpenProject(path);
+    await refreshAfterSwitch();
     return r;
-  }, []);
+  }, [refreshAfterSwitch]);
+
+  // 在 ~/projects 下新建空白项目并设为活动
+  const createProject = useCallback(async (name: string) => {
+    const r = await apiCreateProject(name);
+    await refreshAfterSwitch();
+    return r;
+  }, [refreshAfterSwitch]);
 
   // 点击文件树 → 拉真实文件内容载入编辑器
   const openFile = useCallback(async (path: string) => {
@@ -519,8 +555,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
         composerPrefill,
         prefillComposer,
         projectContext,
-        projectFiles,
+        projects,
+        refreshProjects,
         openProject,
+        createProject,
+        projectFiles,
         openedFile,
         openFile,
         browserRender,

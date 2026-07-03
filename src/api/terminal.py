@@ -21,7 +21,7 @@ import termios
 
 from fastapi import WebSocket, WebSocketDisconnect
 
-from .project_state import project_root
+from .project_state import project_root, PROJECTS_DIR
 
 _TIOCSCTTY = getattr(termios, "TIOCSCTTY", None)
 
@@ -51,7 +51,7 @@ def _spawn_shell() -> tuple[int, subprocess.Popen]:
         stdin=slave_fd,
         stdout=slave_fd,
         stderr=slave_fd,
-        cwd=str(project_root()),
+        cwd=str(project_root() or PROJECTS_DIR),
         env={**os.environ, "TERM": "xterm-256color"},
         preexec_fn=_preexec,
         close_fds=True,

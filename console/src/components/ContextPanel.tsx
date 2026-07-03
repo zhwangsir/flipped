@@ -293,7 +293,7 @@ export function ContextPanel() {
   const editorLang = activeFile ? activeFile.language || langOf(activeFile.path) : 'python';
   const editorPath = activeFile ? activeFile.path : 'app.py';
   const crumbSegs = editorPath.split('/').filter(Boolean);
-  const projectName = projectContext?.project || 'flipped';
+  const projectName = projectContext?.project || '项目';
   const fileLabel = crumbSegs[crumbSegs.length - 1] || editorPath;
 
   const submitComment = (ln: number) => {
@@ -434,7 +434,9 @@ export function ContextPanel() {
         {tab === 'files' && (
           <div className="file-tree">
             {projectFiles.length === 0 ? (
-              <div className="side-empty">加载文件树…</div>
+              <div className="side-empty">
+                {projectContext?.project ? '空项目 · 暂无文件' : '未选择项目 · 在底部「选择项目」导入或新建'}
+              </div>
             ) : (
               projectFiles.map((n) => (
                 <FileTreeNode

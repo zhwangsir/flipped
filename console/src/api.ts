@@ -1,5 +1,5 @@
 /** Console ↔ orchestration-api HTTP + WebSocket 客户端。 */
-import type { Session, ApiEvent, Metrics, McpServer, ProjectContext, FileNode, BrowserRender, GitDiffFile } from './types';
+import type { Session, ApiEvent, Metrics, McpServer, ProjectContext, Project, FileNode, BrowserRender, GitDiffFile } from './types';
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined) || 'http://127.0.0.1:8001';
 const API_PREFIX = '/api/v1';
@@ -66,11 +66,19 @@ export function fetchProjectFiles(): Promise<{ root: string; tree: FileNode[] }>
   return api<{ root: string; tree: FileNode[] }>('/project/files');
 }
 
-export function openProject(path: string): Promise<{ name: string; path: string }> {
-  return api<{ name: string; path: string }>('/project/open', {
+export function openProject(path: string): Promise<Project> {
+  return api<Project>('/project/open', {
     method: 'POST',
     body: JSON.stringify({ path }),
   });
+}
+
+export function fetchProjects(): Promise<{ projects_dir: string; projects: Project[]; active: Project | null }> {
+  return api<{ projects_dir: string; projects: Project[]; active: Project | null }>('/projects');
+}
+
+export function createProject(name: string): Promise<Project> {
+  return api<Project>('/projects', { method: 'POST', body: JSON.stringify({ name }) });
 }
 
 export function fetchProjectFile(path: string): Promise<{ path: string; content: string }> {
