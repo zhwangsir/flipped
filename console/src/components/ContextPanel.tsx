@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from 'react';
 import { useApp } from '../store';
 import { diffLines, terminalLines, editorCode, problems } from '../mock';
-import { IconCode, IconFile, IconTerminal, IconBrowser, IconWarn, IconPuzzle } from '../icons';
+import { IconCode, IconFile, IconTerminal, IconBrowser, IconWarn, IconPuzzle, IconChat, IconX } from '../icons';
 
 const KEYWORDS = new Set(['from', 'import', 'def', 'return', 'if', 'not', 'in', 'raise', 'class', 'for', 'while', 'with', 'as']);
 const LITS = new Set(['None', 'True', 'False']);
@@ -51,8 +51,11 @@ export function ContextPanel() {
     contextTab: tab,
     setContextTab: setTab,
     showContext,
+    prefillComposer,
   } = useApp();
   const [activePath, setActivePath] = useState<string | null>(null);
+  const [commentLine, setCommentLine] = useState<number | null>(null);
+  const [commentText, setCommentText] = useState('');
   if (!showContext) return null;
 
   // M7.2 — 编辑器展示真实沙盒文件内容（来自 file_editor 动作携带的 file_text）
@@ -61,6 +64,15 @@ export function ContextPanel() {
     realFiles.find((f) => f.path === activePath) || realFiles[realFiles.length - 1] || null;
   const editorLines = (activeFile?.content ?? editorCode).split('\n');
   const editorLang = activeFile ? activeFile.language || langOf(activeFile.path) : 'python';
+  const fileLabel = activeFile ? activeFile.path.split('/').pop() || activeFile.path : 'app.py';
+
+  const submitComment = (ln: number) => {
+    const c = commentText.trim();
+    if (!c) return;
+    prefillComposer(`关于 ${fileLabel}:${ln} — ${c}`);
+    setCommentLine(null);
+    setCommentText('');
+  };
 
   const hasTerm = terminalBlocks.length > 0;
   const hasBrowser = browserView !== null;
@@ -113,12 +125,63 @@ export function ContextPanel() {
               {!activeFile && <span className="chip" style={{ marginLeft: 'auto' }}>示例预览</span>}
             </div>
             <div className="editor">
-              {editorLines.map((l, i) => (
-                <div className="eln" key={i}>
-                  <span className="gn">{i + 1}</span>
-                  <span className="c">{highlight(l)}</span>
-                </div>
-              ))}
+              {editorLines.map((l, i) => {
+                const ln = i + 1;
+                return (
+                  <div className="eln-wrap" key={i}>
+                    <div className="eln">
+                      <span className="gn">{ln}</span>
+                      <span className="c">{highlight(l)}</span>
+                      {activeFile && (
+                        <button
+                          className="eln-comment"
+                          title={`对第 ${ln} 行评论`}
+                          aria-label={`对第 ${ln} 行评论`}
+                          onClick={() => {
+                            setCommentLine(ln);
+                            setCommentText('');
+                          }}
+                        >
+                          <IconChat size={11} />
+                        </button>
+                      )}
+                    </div>
+                    {commentLine === ln && (
+                      <div className="line-comment">
+                        <div className="line-comment-ref">
+                          {fileLabel}:{ln}
+                        </div>
+                        <textarea
+                          value={commentText}
+                          autoFocus
+                          placeholder="写下对这行的意见，回车发给 flipped…"
+                          onChange={(e) => setCommentText(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' && !e.shiftKey) {
+                              e.preventDefault();
+                              submitComment(ln);
+                            } else if (e.key === 'Escape') {
+                              setCommentLine(null);
+                            }
+                          }}
+                        />
+                        <div className="line-comment-actions">
+                          <button onClick={() => setCommentLine(null)}>
+                            <IconX size={12} /> 取消
+                          </button>
+                          <button
+                            className="primary"
+                            disabled={!commentText.trim()}
+                            onClick={() => submitComment(ln)}
+                          >
+                            发送到输入区
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           </>
         )}

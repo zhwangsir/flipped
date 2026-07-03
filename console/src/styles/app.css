@@ -17,73 +17,6 @@
   background: var(--bg-base);
 }
 
-/* ============ activity rail ============ */
-.rail {
-  grid-area: rail;
-  background: var(--bg-app);
-  border-right: 1px solid var(--border-subtle);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: 10px 0 8px;
-  gap: 4px;
-}
-.rail-mark {
-  width: 30px;
-  height: 30px;
-  border-radius: 8px;
-  background: var(--primary);
-  color: var(--on-primary);
-  display: grid;
-  place-items: center;
-  font-weight: 700;
-  font-size: 15px;
-  margin-bottom: 8px;
-}
-.rail-btn {
-  width: 40px;
-  height: 38px;
-  border-radius: 9px;
-  display: grid;
-  place-items: center;
-  color: var(--text-faint);
-  position: relative;
-  transition: color var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease);
-}
-.rail-btn:hover {
-  color: var(--text-secondary);
-  background: var(--bg-surface);
-}
-.rail-btn.active {
-  color: var(--accent-text);
-  background: var(--accent-soft);
-}
-.rail-btn.active::before {
-  content: "";
-  position: absolute;
-  left: -10px;
-  top: 8px;
-  bottom: 8px;
-  width: 2.5px;
-  border-radius: 2px;
-  background: var(--accent);
-}
-.rail-spacer {
-  flex: 1;
-}
-.rail-avatar {
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  background: color-mix(in oklab, var(--purple) 26%, var(--bg-elevated));
-  border: 1px solid color-mix(in oklab, var(--purple) 40%, var(--border));
-  display: grid;
-  place-items: center;
-  font-size: 11px;
-  color: var(--purple);
-  margin-top: 4px;
-}
-
 /* ============ topbar (glass) ============ */
 .topbar {
   grid-area: topbar;
@@ -1028,6 +961,93 @@
 .eln {
   display: grid;
   grid-template-columns: 44px 1fr;
+  position: relative;
+}
+/* §3.4 — 行内评论：hover 行尾出 💬，评论预填 composer 回喂 agent */
+.eln-comment {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: grid;
+  place-items: center;
+  width: 19px;
+  height: 19px;
+  border-radius: var(--radius-xs);
+  color: var(--text-faint);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  opacity: 0;
+  transition: opacity var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+.eln:hover .eln-comment {
+  opacity: 1;
+}
+.eln-comment:hover {
+  color: var(--text-primary);
+  border-color: var(--border);
+}
+.line-comment {
+  margin: 5px 10px 8px 44px;
+  padding: 9px;
+  border: 1px solid color-mix(in oklab, var(--blue) 28%, var(--border));
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface);
+  font-family: var(--font-sans);
+}
+.line-comment-ref {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+.line-comment textarea {
+  width: 100%;
+  min-height: 46px;
+  resize: vertical;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xs);
+  background: var(--bg-base);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--text-sm);
+  padding: 6px 8px;
+  outline: none;
+}
+.line-comment textarea:focus {
+  border-color: color-mix(in oklab, var(--blue) 55%, var(--border-strong));
+}
+.line-comment-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-top: 7px;
+}
+.line-comment-actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--text-xs);
+  padding: 4px 11px;
+  border-radius: var(--radius-xs);
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
+}
+.line-comment-actions button:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+.line-comment-actions button.primary {
+  background: var(--primary);
+  color: var(--on-primary);
+  border-color: transparent;
+}
+.line-comment-actions button.primary:hover {
+  background: var(--primary-hover);
+}
+.line-comment-actions button.primary:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 .eln .gn {
   text-align: right;

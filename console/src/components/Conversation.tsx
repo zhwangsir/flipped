@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useApp } from '../store';
 import type { Role, StreamItem, ToolCall, ToolChild } from '../types';
 import {
@@ -207,10 +207,21 @@ export function Conversation() {
     setMode,
     setContextTab,
     projectContext,
+    composerPrefill,
+    prefillComposer,
   } = useApp();
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
   const [approvalBusy, setApprovalBusy] = useState(false);
+  const taRef = useRef<HTMLTextAreaElement>(null);
+
+  // §3.4 — 行内评论把「关于 文件:行 …」预填进输入框并聚焦（评论回喂 agent）
+  useEffect(() => {
+    if (!composerPrefill) return;
+    setText((t) => (t ? t + '\n' : '') + composerPrefill);
+    prefillComposer('');
+    requestAnimationFrame(() => taRef.current?.focus());
+  }, [composerPrefill, prefillComposer]);
 
   const submit = async () => {
     if (!text.trim() || busy || approvalPending) return;
@@ -307,6 +318,7 @@ export function Conversation() {
         </div>
         <div className={'composer-box ' + (disabled ? 'disabled' : '')}>
           <textarea
+            ref={taRef}
             data-testid='composer-input'
             rows={2}
             placeholder={

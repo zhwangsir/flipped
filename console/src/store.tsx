@@ -66,6 +66,8 @@ interface AppState {
   setPaletteOpen: (open: boolean) => void;
   terminalOpen: boolean;
   toggleTerminal: () => void;
+  composerPrefill: string;
+  prefillComposer: (text: string) => void;
   projectContext: ProjectContext | null;
   sessionQuery: string;
   setSessionQuery: (q: string) => void;
@@ -105,8 +107,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [terminalOpen, setTerminalOpen] = useState(false);
+  const [composerPrefill, setComposerPrefill] = useState('');
   const [projectContext, setProjectContext] = useState<ProjectContext | null>(null);
   const toggleTerminal = useCallback(() => setTerminalOpen((v) => !v), []);
+  const prefillComposer = useCallback((text: string) => setComposerPrefill(text), []);
   const [sessionQuery, setSessionQuery] = useState('');
   const wsRef = useRef<{ close: () => void; send: (msg: unknown) => void } | null>(null);
 
@@ -414,6 +418,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setPaletteOpen,
         terminalOpen,
         toggleTerminal,
+        composerPrefill,
+        prefillComposer,
         projectContext,
         sessionQuery,
         setSessionQuery,
