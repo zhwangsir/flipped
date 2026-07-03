@@ -1,5 +1,4 @@
 import "./styles/app.css";
-import { ActivityBar } from "./components/ActivityBar";
 import { Sidebar } from "./components/Sidebar";
 import { TopBar } from "./components/TopBar";
 import { Conversation } from "./components/Conversation";
@@ -11,7 +10,6 @@ export function App() {
   return (
     <AppProvider>
       <div className="app">
-        <ActivityBar />
         <TopBar />
         <div className="body">
           <Sidebar />

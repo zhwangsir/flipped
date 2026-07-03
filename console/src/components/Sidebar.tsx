@@ -1,8 +1,19 @@
+import { useState } from "react";
 import { useApp } from "../store";
-import { fileTree } from "../mock";
+import { useTheme } from "../hooks/useTheme";
 import { formatWhen } from "../types";
-import { IconPlus, IconFile, IconFolder, IconX, IconSearch } from "../icons";
+import {
+  IconPlus,
+  IconSearch,
+  IconClock,
+  IconPuzzle,
+  IconFile,
+  IconX,
+  IconSun,
+  IconMoon,
+} from "../icons";
 
+/** Codex 风侧栏：全局文字导航 → 项目/线程 → 底部账户区。 */
 export function Sidebar() {
   const {
     sessions,
@@ -10,114 +21,118 @@ export function Sidebar() {
     selectSession,
     createSession,
     deleteSession,
-    changedFiles,
-    sidebarTab: tab,
-    setSidebarTab: setTab,
     sessionQuery,
     setSessionQuery,
+    setContextTab,
   } = useApp();
+  const { theme, toggle } = useTheme();
+  const [navView, setNavView] = useState<"threads" | "scheduled">("threads");
 
   const q = sessionQuery.trim().toLowerCase();
   const filtered = q ? sessions.filter((s) => s.title.toLowerCase().includes(q)) : sessions;
 
+  const focusSearch = () => {
+    setNavView("threads");
+    requestAnimationFrame(() => document.getElementById("side-search-input")?.focus());
+  };
+
   return (
     <aside className="sidebar">
-      <div className="seg">
-        <button className={tab === "chats" ? "active" : ""} onClick={() => setTab("chats")}>
-          会话
+      <nav className="side-nav">
+        <button
+          className="side-nav-item"
+          onClick={() => {
+            createSession("新对话");
+            setNavView("threads");
+          }}
+        >
+          <IconPlus size={16} /> 新对话
         </button>
-        <button className={tab === "files" ? "active" : ""} onClick={() => setTab("files")}>
-          资源管理器
+        <button className="side-nav-item" onClick={focusSearch}>
+          <IconSearch size={16} /> 搜索
         </button>
+        <button
+          className={"side-nav-item" + (navView === "scheduled" ? " active" : "")}
+          onClick={() => setNavView("scheduled")}
+        >
+          <IconClock size={16} /> 已安排
+        </button>
+        <button className="side-nav-item" onClick={() => setContextTab("mcp")}>
+          <IconPuzzle size={16} /> 插件
+        </button>
+      </nav>
+
+      <div className="side-search">
+        <IconSearch size={13} />
+        <input
+          id="side-search-input"
+          value={sessionQuery}
+          onChange={(e) => setSessionQuery(e.target.value)}
+          placeholder="搜索会话…"
+          aria-label="搜索会话"
+        />
+        {sessionQuery && (
+          <button className="side-search-clear" onClick={() => setSessionQuery("")} aria-label="清除">
+            <IconX size={12} />
+          </button>
+        )}
       </div>
 
-      {tab === "chats" ? (
-        <>
-          <button className="new-task" onClick={() => createSession("新任务")}>
-            <IconPlus size={15} /> 新任务
-          </button>
-          <div className="side-search">
-            <IconSearch size={13} />
-            <input
-              value={sessionQuery}
-              onChange={(e) => setSessionQuery(e.target.value)}
-              placeholder="搜索会话…"
-              aria-label="搜索会话"
-            />
-            {sessionQuery && (
-              <button className="side-search-clear" onClick={() => setSessionQuery("")} aria-label="清除">
-                <IconX size={12} />
-              </button>
-            )}
-          </div>
-          <div className="side-label">
-            <span>{q ? "匹配" : "最近"}</span>
-            <span>{filtered.length}</span>
-          </div>
-          <div className="scroll">
-            {filtered.map((s) => (
-              <div
-                key={s.id}
-                className={"session" + (s.id === selectedSessionId ? " active" : "")}
-                onClick={() => selectSession(s.id)}
-              >
-                <div className="session-top">
+      <div className="scroll">
+        {navView === "threads" ? (
+          <>
+            <div className="side-project">
+              <IconFile size={13} />
+              <span className="side-project-name">flipped</span>
+              <span className="side-project-count">{filtered.length}</span>
+            </div>
+            <div className="side-threads">
+              {filtered.map((s) => (
+                <div
+                  key={s.id}
+                  className={"thread" + (s.id === selectedSessionId ? " active" : "")}
+                  onClick={() => selectSession(s.id)}
+                >
                   <span className={"dot " + s.status} />
-                  <span className="session-title">{s.title}</span>
+                  <span className="thread-title">{s.title}</span>
+                  <span className="thread-time">{formatWhen(s.updated_at)}</span>
                   <button
-                    className="session-del"
-                    aria-label="删除会话"
+                    className="thread-del"
                     onClick={(e) => {
                       e.stopPropagation();
                       deleteSession(s.id);
                     }}
+                    aria-label="删除会话"
                   >
-                    <IconX size={12} />
+                    <IconX size={11} />
                   </button>
                 </div>
-                <div className="session-meta">
-                  <span className="chip">{s.model}</span>
-                  <span>{formatWhen(s.updated_at)}</span>
-                </div>
-              </div>
-            ))}
-          </div>
-        </>
-      ) : (
-        <>
-          <div className="side-label">
-            <span>{changedFiles.length > 0 ? "工作区 · 本次变更" : "工作区"}</span>
-            {changedFiles.length > 0 && <span>{changedFiles.length}</span>}
-          </div>
-          <div className="scroll">
-            <div className="tree">
-              {changedFiles.length > 0
-                ? changedFiles.map((f, i) => (
-                    <div key={i} className="tree-row" style={{ paddingLeft: 8 }} title={f.path}>
-                      <span className="ic">
-                        <IconFile size={14} />
-                      </span>
-                      <span className="session-title">{f.path.split("/").pop()}</span>
-                      <span className="tree-badge add">
-                        {f.change === "add" ? "A" : f.change === "del" ? "D" : "M"}
-                      </span>
-                    </div>
-                  ))
-                : fileTree.map((n, i) => (
-                    <div
-                      key={i}
-                      className={"tree-row" + (n.active ? " active" : "")}
-                      style={{ paddingLeft: 8 + n.depth * 14 }}
-                    >
-                      <span className="ic">{n.kind === "folder" ? <IconFolder size={14} /> : <IconFile size={14} />}</span>
-                      <span>{n.name}</span>
-                      {n.badge === "add" && <span className="tree-badge add">A</span>}
-                    </div>
-                  ))}
+              ))}
+              {filtered.length === 0 && (
+                <div className="side-empty">{q ? "无匹配会话" : "暂无会话 · 点「新对话」开始"}</div>
+              )}
             </div>
-          </div>
-        </>
-      )}
+          </>
+        ) : (
+          <div className="side-empty tall">暂无已安排任务</div>
+        )}
+      </div>
+
+      <div className="side-account">
+        <div className="side-avatar">王</div>
+        <div className="side-account-text">
+          <div className="side-account-name">Master</div>
+          <div className="side-account-sub">本地模式</div>
+        </div>
+        <button
+          className="side-theme"
+          onClick={toggle}
+          aria-label={theme === "dark" ? "切换到亮色" : "切换到暗色"}
+          title="切换主题"
+        >
+          {theme === "dark" ? <IconSun size={15} /> : <IconMoon size={15} />}
+        </button>
+      </div>
     </aside>
   );
 }

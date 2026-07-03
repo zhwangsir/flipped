@@ -44,6 +44,9 @@ export const IconSun = ({ size }: P) => (
 export const IconMoon = ({ size }: P) => (
   <svg {...b(size)}><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z" /></svg>
 );
+export const IconClock = ({ size }: P) => (
+  <svg {...b(size)}><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></svg>
+);
 export const IconCube = ({ size }: P) => (
   <svg {...b(size)}><path d="M21 8 12 3 3 8v8l9 5 9-5z" /><path d="M3 8l9 5 9-5M12 13v8" /></svg>
 );
