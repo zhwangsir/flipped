@@ -91,8 +91,6 @@ interface AppState {
   gitDiff: GitDiffFile[];
   gitDiffLoading: boolean;
   loadGitDiff: () => Promise<void>;
-  sessionQuery: string;
-  setSessionQuery: (q: string) => void;
   selectSession: (id: string) => void;
   createSession: (title?: string, mode?: string) => Promise<string>;
   deleteSession: (id: string) => Promise<void>;
@@ -142,7 +140,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [gitDiffLoading, setGitDiffLoading] = useState(false);
   const toggleTerminal = useCallback(() => setTerminalOpen((v) => !v), []);
   const prefillComposer = useCallback((text: string) => setComposerPrefill(text), []);
-  const [sessionQuery, setSessionQuery] = useState('');
   const wsRef = useRef<{ close: () => void; send: (msg: unknown) => void } | null>(null);
 
   const toggleContext = useCallback(() => setShowContext((v) => !v), []);
@@ -518,8 +515,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
         gitDiff,
         gitDiffLoading,
         loadGitDiff,
-        sessionQuery,
-        setSessionQuery,
         selectSession,
         createSession,
         deleteSession,
