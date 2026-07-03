@@ -2,7 +2,7 @@
   "project": "flipped",
   "description": "接入本地 MLX 双模型(GLM-5.2 编排者 / Kimi-K2.7-Code 执行者)的 agentic 代码编辑器平台。fork Roo Code + 自定义驾驭层(强制验证/循环检测/上下文压缩/人工审批/子Agent/可观测性) + MCP 联网与外部能力。",
   "updated": "2026-07-03",
-  "current_milestone": "Codex UI 全面还原（真机拆解）完成 ✅: 依据用户提供的 Codex 桌面版真机拆解指南分 6 stage 落地——S1 配色转真机 Codex(安静暖中性 + 功能色 orange/blue/purple/green-red, 去 teal, 单色激活态) + 中央大问句空状态 + 双主题; S2 侧栏重构为 Codex 结构(文字导航 新对话/搜索/已安排/插件 + 项目/线程 + 底部账户, 移除图标栏); S3 composer 上下文行(项目·本地模式·真实 git 分支) + 顶栏精简 + 侧栏折叠 ⌘B; S4 命令面板 ⌘K; S5 终端抽屉 ⌘J(真实 pty, xterm.js↔WebSocket); S6 编辑器行内评论(§3.4, 评论预填 composer 回喂 agent) + 清理死 CSS。指南可复刻项 §3.1-3.6 + §5 全部完成。另修复关键 bug: 启用 stdio MCP 服务器会让 OpenHands 沙盒 agent 在 MCP 列举阶段 30s 超时→500 崩溃, 已加 sandbox_ready 安全闸。全功能 QA 通过(后端接口/三模式/前端交互/UI 端到端); 全量 109 passed; 构建绿。前端 http://127.0.0.1:5401, 后端 :8011。",
+  "current_milestone": "Codex 仿真度深度强化(基于三路深度调研:官方文档/开源 openai-codex 源码/评测)—— 6 轮完成 ✅: R1 UI 改系统字体栈(SF Pro/Segoe UI, 真机 Codex 实测就是系统字体, 非 Geist；代码仍 Geist Mono)——仿真 #1 关键破绽; R2 工具调用改可折叠卡(mono名+状态芯片+转圈, 输出默认折叠/失败展开); R3 精确 diff 配色(openai/codex 硬编码 #213A2B/#4A221D)+用户消息微染+相对时间; R4 变更 tab 渲染真实 Codex 式 diff(逐文件可折叠, 绿色新增); R5 新线程大问句+composer 垂直居中成一组(招牌); R6 新线程隐藏右栏聚焦中央+修复面板列折叠。调研另确认: 消息扁平文档式/无品牌色/激活态单色。全量 Puppeteer 实测通过, 构建绿。余(更大投入/需后端): 审批两档权限、diff 逐hunk暂存/commit、计划勾选清单、@文件选择、自动化+Triage、worktree、并行线程状态板。",
   "key_facts": {
     "dev_host": "Apple M5 Max, 128GB RAM, 1.1TB 可用磁盘 — 开发/控制节点，非模型宿主",
     "model_cluster": "exo 集群 @ http://100.64.201.37:52415 (内网, OpenAI 兼容)；公网 https://dgmt.top/exo (需 Bearer token)",
