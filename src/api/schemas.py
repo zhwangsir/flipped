@@ -58,6 +58,7 @@ class Session(BaseModel):
     title: str
     status: SessionStatus
     model: str = "coder"
+    mode: str = "agent"  # agent(项目) | plan(项目) | chat(对话) — 驱动侧栏项目/对话分区
     goal: str | None = None
     verify_cmd: list[str] = Field(default_factory=list)
     cwd: str = "/workspace"

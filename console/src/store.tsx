@@ -72,7 +72,7 @@ interface AppState {
   sessionQuery: string;
   setSessionQuery: (q: string) => void;
   selectSession: (id: string) => void;
-  createSession: (title?: string) => Promise<string>;
+  createSession: (title?: string, mode?: string) => Promise<string>;
   deleteSession: (id: string) => Promise<void>;
   cancelTask: () => Promise<void>;
   sendTask: (description: string) => Promise<void>;
@@ -192,12 +192,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setSelectedSessionId(id);
   }, []);
 
-  const createSession = useCallback(async (title = '新任务') => {
-    const s = await apiCreateSession(title);
+  const createSession = useCallback(async (title = '新任务', mode = selectedMode) => {
+    const s = await apiCreateSession(title, mode);
     setSessions((prev) => [s, ...prev]);
     setSelectedSessionId(s.id);
     return s.id;
-  }, []);
+  }, [selectedMode]);
 
   const deleteSession = useCallback(async (id: string) => {
     await apiDeleteSession(id);

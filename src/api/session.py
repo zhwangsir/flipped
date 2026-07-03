@@ -61,11 +61,11 @@ class SessionStore:
         self._counter[session_id] = self._counter.get(session_id, 0) + 1
         return f"{session_id}-{self._counter[session_id]}"
 
-    def create(self, title: str, model: str = "coder") -> Session:
+    def create(self, title: str, model: str = "coder", mode: str = "agent") -> Session:
         sid = f"sess-{uuid.uuid4().hex[:8]}"
         now = datetime.now(timezone.utc).isoformat()
         session = Session(id=sid, title=title, status=SessionStatus.idle, model=model,
-                          created_at=now, updated_at=now)
+                          mode=mode, created_at=now, updated_at=now)
         self._sessions[sid] = session
         self._events[sid] = []
         self._counter[sid] = 0

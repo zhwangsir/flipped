@@ -41,6 +41,8 @@ export interface Session {
   title: string;
   status: SessionStatus;
   model: string;
+  mode?: string; // agent(项目) | plan(项目) | chat(对话)
+  goal?: string | null;
   created_at: string;
   updated_at: string;
 }

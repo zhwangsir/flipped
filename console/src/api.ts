@@ -20,8 +20,11 @@ export function fetchSessions(): Promise<Session[]> {
   return api<Session[]>('/sessions');
 }
 
-export function createSession(title: string): Promise<Session> {
-  return api<Session>(`/sessions?title=${encodeURIComponent(title)}`, { method: 'POST' });
+export function createSession(title: string, mode = 'agent'): Promise<Session> {
+  return api<Session>(
+    `/sessions?title=${encodeURIComponent(title)}&mode=${encodeURIComponent(mode)}`,
+    { method: 'POST' }
+  );
 }
 
 export function createTask(

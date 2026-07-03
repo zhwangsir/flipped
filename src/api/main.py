@@ -134,8 +134,8 @@ async def project_context() -> dict[str, str]:
 # ---------- 会话管理 ----------
 
 @app.post(f"{API_PREFIX}/sessions", response_model=Session)
-async def create_session(title: str = "新任务") -> Session:
-    session = store.create(title=title)
+async def create_session(title: str = "新任务", mode: str = "agent") -> Session:
+    session = store.create(title=title, mode=mode)
     bus.emit(session.id, EventType.status, Role.system,
              {"status": session.status, "progress": 0, "note": "会话已创建"})
     return session

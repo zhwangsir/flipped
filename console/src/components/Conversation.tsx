@@ -15,6 +15,8 @@ import {
   IconTerminal,
   IconBrowser,
   IconFile,
+  IconFolder,
+  IconSparkle,
   IconGit,
 } from '../icons';
 
@@ -250,7 +252,19 @@ export function Conversation() {
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
   const [approvalBusy, setApprovalBusy] = useState(false);
+  const [plusOpen, setPlusOpen] = useState(false);
   const taRef = useRef<HTMLTextAreaElement>(null);
+  const plusWrapRef = useRef<HTMLDivElement>(null);
+
+  // + 菜单：点外部关闭
+  useEffect(() => {
+    if (!plusOpen) return;
+    const onDown = (e: MouseEvent) => {
+      if (!plusWrapRef.current?.contains(e.target as Node)) setPlusOpen(false);
+    };
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [plusOpen]);
 
   // §3.4 — 行内评论把「关于 文件:行 …」预填进输入框并聚焦（评论回喂 agent）
   useEffect(() => {
@@ -303,14 +317,61 @@ export function Conversation() {
             }}
           />
           <div className='composer-bar'>
-            <button
-              className='cbar-plus'
-              disabled={disabled}
-              onClick={() => setText((t) => (t.endsWith('@') || t === '' ? t + '@' : t + ' @'))}
-              title='添加上下文：@ 引用文件'
-            >
-              <IconPlus size={15} />
-            </button>
+            <div className='cbar-plus-wrap' ref={plusWrapRef}>
+              <button
+                className={'cbar-plus' + (plusOpen ? ' active' : '')}
+                disabled={disabled}
+                onClick={() => setPlusOpen((o) => !o)}
+                title='添加'
+                aria-haspopup='menu'
+                aria-expanded={plusOpen}
+              >
+                <IconPlus size={15} />
+              </button>
+              {plusOpen && (
+                <div className='plus-menu' role='menu'>
+                  <div className='plus-menu-label'>添加</div>
+                  <button
+                    className='plus-menu-item'
+                    role='menuitem'
+                    onClick={() => {
+                      setText((t) => (t.endsWith('@') || t === '' ? t + '@' : t + ' @'));
+                      setPlusOpen(false);
+                      requestAnimationFrame(() => taRef.current?.focus());
+                    }}
+                  >
+                    <IconFolder size={15} />
+                    <span className='pm-name'>文件和文件夹</span>
+                    <span className='pm-sub'>@ 引用</span>
+                  </button>
+                  <button
+                    className='plus-menu-item'
+                    role='menuitem'
+                    onClick={() => {
+                      setText((t) => (t ? t + '\n' : '') + '目标：');
+                      setPlusOpen(false);
+                      requestAnimationFrame(() => taRef.current?.focus());
+                    }}
+                  >
+                    <IconSparkle size={15} />
+                    <span className='pm-name'>目标</span>
+                    <span className='pm-sub'>设定持续目标</span>
+                  </button>
+                  <button
+                    className='plus-menu-item'
+                    role='menuitem'
+                    onClick={() => {
+                      setMode('plan');
+                      setPlusOpen(false);
+                    }}
+                  >
+                    <IconCheckCircle size={15} />
+                    <span className='pm-name'>计划模式</span>
+                    <span className='pm-sub'>拆解为步骤</span>
+                  </button>
+                </div>
+              )}
+            </div>
             <button
               className='cbar-access'
               disabled={disabled}
