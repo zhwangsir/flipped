@@ -110,6 +110,21 @@ export const IconCircleAlert = ({ size }: P) => (
 export const IconCheckCircle = ({ size }: P) => (
   <svg {...b(size)}><circle cx="12" cy="12" r="10" /><path d="m9 12 2 2 4-4" /></svg>
 );
+export const IconMore = ({ size }: P) => (
+  <svg {...b(size)}><circle cx="5" cy="12" r="1" /><circle cx="12" cy="12" r="1" /><circle cx="19" cy="12" r="1" /></svg>
+);
+export const IconEdit = ({ size }: P) => (
+  <svg {...b(size)}><path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z" /></svg>
+);
+export const IconPin = ({ size }: P) => (
+  <svg {...b(size)}><path d="M12 17v5" /><path d="M9 3h6l-1 7 3 3H7l3-3z" /></svg>
+);
+export const IconArchive = ({ size }: P) => (
+  <svg {...b(size)}><rect x="3" y="4" width="18" height="4" rx="1" /><path d="M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8M10 12h4" /></svg>
+);
+export const IconChevronRight = ({ size }: P) => (
+  <svg {...b(size)}><path d="m9 6 6 6-6 6" /></svg>
+);
 
 export function ToolIcon({ name, size = 15 }: { name: string; size?: number }) {
   if (name === "terminal") return <IconTerminal size={size} />;

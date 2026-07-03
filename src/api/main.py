@@ -215,6 +215,20 @@ def _parse_unified_diff(text: str) -> list[dict[str, Any]]:
     return files
 
 
+@app.post(f"{API_PREFIX}/project/reveal")
+async def project_reveal() -> dict[str, Any]:
+    """在系统文件管理器中显示项目根目录（侧栏项目「⋯」菜单）。仅 macOS。"""
+    import subprocess
+
+    if sys.platform != "darwin":
+        raise HTTPException(status_code=501, detail="仅 macOS 支持在 Finder 中显示")
+    try:
+        subprocess.run(["open", "-R", str(_REPO_ROOT)], timeout=5, check=False)
+    except (OSError, subprocess.SubprocessError) as e:
+        raise HTTPException(status_code=500, detail=f"打开失败: {e}")
+    return {"ok": True, "path": str(_REPO_ROOT)}
+
+
 @app.get(f"{API_PREFIX}/project/diff")
 async def project_diff() -> dict[str, Any]:
     """工作区真实 git 变更（相对 HEAD），供右侧「变更/审查」渲染真 +/- diff。"""

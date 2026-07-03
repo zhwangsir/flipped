@@ -18,6 +18,8 @@ import {
   IconFolder,
   IconSparkle,
   IconGit,
+  IconSearch,
+  IconChevronRight,
 } from '../icons';
 
 const ROLE: Record<Role, { label: string; cls: string; avatar: string }> = {
@@ -253,8 +255,10 @@ export function Conversation() {
   const [busy, setBusy] = useState(false);
   const [approvalBusy, setApprovalBusy] = useState(false);
   const [plusOpen, setPlusOpen] = useState(false);
+  const [projPicker, setProjPicker] = useState(false);
   const taRef = useRef<HTMLTextAreaElement>(null);
   const plusWrapRef = useRef<HTMLDivElement>(null);
+  const projPickerRef = useRef<HTMLDivElement>(null);
 
   // + 菜单：点外部关闭
   useEffect(() => {
@@ -265,6 +269,16 @@ export function Conversation() {
     document.addEventListener('mousedown', onDown);
     return () => document.removeEventListener('mousedown', onDown);
   }, [plusOpen]);
+
+  // 项目选择器：点外部关闭
+  useEffect(() => {
+    if (!projPicker) return;
+    const onDown = (e: MouseEvent) => {
+      if (!projPickerRef.current?.contains(e.target as Node)) setProjPicker(false);
+    };
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [projPicker]);
 
   // §3.4 — 行内评论把「关于 文件:行 …」预填进输入框并聚焦（评论回喂 agent）
   useEffect(() => {
@@ -408,9 +422,44 @@ export function Conversation() {
           </div>
         </div>
         <div className='composer-context'>
-          <span className='ctx-item'>
-            <IconFile size={12} /> {projectContext?.project || 'flipped'}
-          </span>
+          <div className='ctx-proj-wrap' ref={projPickerRef}>
+            <button className='ctx-item ctx-proj' onClick={() => setProjPicker((o) => !o)}>
+              <IconFile size={12} /> {projectContext?.project || 'flipped'}
+              <IconChevronDown size={11} />
+            </button>
+            {projPicker && (
+              <div className='proj-picker'>
+                <div className='proj-picker-search'>
+                  <IconSearch size={13} />
+                  <input placeholder='搜索项目' aria-label='搜索项目' />
+                </div>
+                <button className='proj-picker-item selected'>
+                  <IconFile size={14} />
+                  <span className='pp-name'>{projectContext?.project || 'flipped'}</span>
+                  <IconCheck size={14} />
+                </button>
+                <div className='proj-picker-item has-sub'>
+                  <IconPlus size={14} />
+                  <span className='pp-name'>New project</span>
+                  <IconChevronRight size={13} />
+                  <div className='proj-subpicker'>
+                    <button className='proj-picker-item'>
+                      <IconPlus size={14} />
+                      <span className='pp-name'>新建空白项目</span>
+                    </button>
+                    <button className='proj-picker-item'>
+                      <IconFolder size={14} />
+                      <span className='pp-name'>使用现有文件夹</span>
+                    </button>
+                  </div>
+                </div>
+                <button className='proj-picker-item' onClick={() => setProjPicker(false)}>
+                  <IconX size={14} />
+                  <span className='pp-name'>不使用项目</span>
+                </button>
+              </div>
+            )}
+          </div>
           <span className='ctx-sep'>·</span>
           <select
             className='ctx-mode'

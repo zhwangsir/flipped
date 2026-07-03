@@ -81,6 +81,10 @@ export function fetchProjectDiff(): Promise<{ files: GitDiffFile[] }> {
   return api<{ files: GitDiffFile[] }>('/project/diff');
 }
 
+export function revealProject(): Promise<{ ok: boolean }> {
+  return api<{ ok: boolean }>('/project/reveal', { method: 'POST' });
+}
+
 export function toggleMcpServer(name: string, enabled: boolean): Promise<{ name: string; enabled: boolean }> {
   return api(`/mcp/servers/${encodeURIComponent(name)}/toggle?enabled=${enabled}`, { method: 'POST' });
 }

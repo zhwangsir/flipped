@@ -1,23 +1,28 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useApp } from "../store";
 import { useTheme } from "../hooks/useTheme";
 import { formatWhen } from "../types";
 import type { Session } from "../types";
+import { revealProject } from "../api";
 import {
   IconPlus,
   IconSearch,
   IconClock,
   IconPuzzle,
   IconFolder,
-  IconChat,
   IconChevronDown,
   IconGear,
+  IconGit,
+  IconMore,
+  IconEdit,
+  IconPin,
+  IconArchive,
   IconX,
   IconSun,
   IconMoon,
 } from "../icons";
 
-/** Codex 风侧栏：全局文字导航 → 项目(可折叠) / 对话(可折叠) → 底部设置(无账户)。 */
+/** Codex 风侧栏：文字导航 → 「项目」标签 + flipped 可折叠行(名后 chevron + hover ✎/⋯) / 「对话」→ 底部设置(无账户)。 */
 export function Sidebar() {
   const {
     sessions,
@@ -29,11 +34,24 @@ export function Sidebar() {
     setSessionQuery,
     setContextTab,
     setPaletteOpen,
+    projectContext,
   } = useApp();
   const { theme, toggle } = useTheme();
   const [navView, setNavView] = useState<"threads" | "scheduled">("threads");
   const [projOpen, setProjOpen] = useState(true);
-  const [convOpen, setConvOpen] = useState(true);
+  const [projMenu, setProjMenu] = useState(false);
+  const moreRef = useRef<HTMLDivElement>(null);
+  const projectName = projectContext?.project || "flipped";
+
+  // 项目「⋯」菜单点外部关闭
+  useEffect(() => {
+    if (!projMenu) return;
+    const onDown = (e: MouseEvent) => {
+      if (!moreRef.current?.contains(e.target as Node)) setProjMenu(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [projMenu]);
 
   const q = sessionQuery.trim().toLowerCase();
   const filtered = q ? sessions.filter((s) => s.title.toLowerCase().includes(q)) : sessions;
@@ -113,44 +131,81 @@ export function Sidebar() {
       <div className="scroll">
         {navView === "threads" ? (
           <>
-            {/* 项目区（可折叠） */}
-            <button className="side-section" onClick={() => setProjOpen((o) => !o)}>
-              <span className={"side-section-chev" + (projOpen ? " open" : "")}>
-                <IconChevronDown size={11} />
-              </span>
-              <span className="side-section-label">项目</span>
-            </button>
+            {/* 项目 —— 纯标签 */}
+            <div className="side-group-label">项目</div>
+            {/* flipped —— 可折叠项目行(名后 chevron + hover ✎/⋯) */}
+            <div className={"side-project" + (projMenu ? " force-actions" : "")}>
+              <button className="side-project-main" onClick={() => setProjOpen((o) => !o)}>
+                <IconFolder size={14} />
+                <span className="side-project-name">{projectName}</span>
+                <span className={"side-project-chev" + (projOpen ? " open" : "")}>
+                  <IconChevronDown size={12} />
+                </span>
+              </button>
+              <button
+                className="side-proj-act"
+                title="在此项目新建对话"
+                onClick={() => {
+                  createSession("新对话");
+                  setProjOpen(true);
+                }}
+              >
+                <IconEdit size={13} />
+              </button>
+              <div className="side-proj-morewrap" ref={moreRef}>
+                <button
+                  className="side-proj-act"
+                  title="更多"
+                  aria-haspopup="menu"
+                  onClick={() => setProjMenu((o) => !o)}
+                >
+                  <IconMore size={15} />
+                </button>
+                {projMenu && (
+                  <div className="proj-menu" role="menu">
+                    <button className="proj-menu-item" onClick={() => setProjMenu(false)}>
+                      <IconPin size={14} /> 置顶项目
+                    </button>
+                    <button
+                      className="proj-menu-item"
+                      onClick={() => {
+                        revealProject().catch(() => {});
+                        setProjMenu(false);
+                      }}
+                    >
+                      <IconFolder size={14} /> 在 Finder 中显示
+                    </button>
+                    <button className="proj-menu-item" onClick={() => setProjMenu(false)}>
+                      <IconGit size={14} /> 创建永久工作树
+                    </button>
+                    <button className="proj-menu-item" onClick={() => setProjMenu(false)}>
+                      <IconEdit size={14} /> 重命名项目
+                    </button>
+                    <button className="proj-menu-item" onClick={() => setProjMenu(false)}>
+                      <IconArchive size={14} /> 归档对话
+                    </button>
+                    <button className="proj-menu-item danger" onClick={() => setProjMenu(false)}>
+                      <IconX size={14} /> 移除
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
             {projOpen && (
-              <>
-                <div className="side-project">
-                  <IconFolder size={13} />
-                  <span className="side-project-name">flipped</span>
-                  <span className="side-project-count">{projectThreads.length}</span>
-                </div>
-                <div className="side-threads">
-                  {projectThreads.map(renderThread)}
-                  {projectThreads.length === 0 && (
-                    <div className="side-empty">{q ? "无匹配会话" : "暂无线程 · 点「新对话」"}</div>
-                  )}
-                </div>
-              </>
-            )}
-
-            {/* 对话区（可折叠，chat 模式会话） */}
-            <button className="side-section" onClick={() => setConvOpen((o) => !o)}>
-              <span className={"side-section-chev" + (convOpen ? " open" : "")}>
-                <IconChevronDown size={11} />
-              </span>
-              <IconChat size={12} />
-              <span className="side-section-label">对话</span>
-              {chatThreads.length > 0 && <span className="side-section-count">{chatThreads.length}</span>}
-            </button>
-            {convOpen && (
-              <div className="side-threads conv">
-                {chatThreads.map(renderThread)}
-                {chatThreads.length === 0 && <div className="side-empty">暂无聊天</div>}
+              <div className="side-threads">
+                {projectThreads.map(renderThread)}
+                {projectThreads.length === 0 && (
+                  <div className="side-empty">{q ? "无匹配会话" : "暂无线程 · 点「新对话」"}</div>
+                )}
               </div>
             )}
+
+            {/* 对话 —— 纯标签 */}
+            <div className="side-group-label">对话</div>
+            <div className="side-threads conv">
+              {chatThreads.map(renderThread)}
+              {chatThreads.length === 0 && <div className="side-empty">暂无聊天</div>}
+            </div>
           </>
         ) : (
           <div className="side-empty tall">暂无已安排任务</div>
