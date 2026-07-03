@@ -632,7 +632,10 @@
 }
 .turn.user .turn-text {
   color: var(--text-primary);
-  font-size: var(--text-md);
+  font-size: var(--text-base);
+  background: var(--user-msg-bg);
+  border-radius: var(--radius-sm);
+  padding: 8px 11px;
 }
 .tools {
   display: flex;
@@ -1195,10 +1198,19 @@
   user-select: none;
 }
 .diff-row.add {
-  background: oklch(30% 0.06 155 / 0.15);
+  background: var(--diff-add-bg);
+}
+.diff-row.del {
+  background: var(--diff-del-bg);
 }
 .diff-row.add .tx {
   color: var(--diff-add-text);
+}
+.diff-row.del .tx {
+  color: var(--diff-del-text);
+}
+.diff-row.del .sign {
+  color: var(--danger);
 }
 .diff-row .sign {
   color: var(--success);

@@ -99,6 +99,11 @@
   --info: oklch(62% 0.19 262);      /* = blue */
   --diff-add-text: oklch(78% 0.15 150);
   --diff-del-text: oklch(74% 0.16 25);
+  /* 精确 Codex diff 行底色(openai/codex diff_render.rs 硬编码值) */
+  --diff-add-bg: #213a2b;
+  --diff-del-bg: #4a221d;
+  /* 用户消息近乎隐形的微染底(白 @ ~5%) */
+  --user-msg-bg: oklch(100% 0 0 / 0.05);
 
   --syn-kw: oklch(74% 0.1 300);
   --syn-str: oklch(74% 0.1 150);
@@ -161,6 +166,10 @@
   --info: oklch(52% 0.22 262);
   --diff-add-text: oklch(48% 0.16 150);
   --diff-del-text: oklch(52% 0.21 25);
+  /* 精确 Codex diff 行底色(light) */
+  --diff-add-bg: #dafbe1;
+  --diff-del-bg: #ffebe9;
+  --user-msg-bg: oklch(0% 0 0 / 0.035);
 
   --syn-kw: oklch(46% 0.17 300);
   --syn-str: oklch(46% 0.13 150);

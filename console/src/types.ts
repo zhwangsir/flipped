@@ -151,5 +151,9 @@ export function formatWhen(iso: string): string {
   if (sec < 60) return '刚刚';
   if (sec < 3600) return `${Math.floor(sec / 60)} 分钟前`;
   if (sec < 86400) return `${Math.floor(sec / 3600)} 小时前`;
+  const day = Math.floor(sec / 86400);
+  if (day === 1) return '昨天';
+  if (day < 7) return `${day} 天前`;
+  if (day < 30) return `${Math.floor(day / 7)} 周前`;
   return new Date(iso).toLocaleDateString();
 }
