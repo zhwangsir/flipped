@@ -1,8 +1,8 @@
 {
   "project": "flipped",
   "description": "接入本地 MLX 双模型(GLM-5.2 编排者 / Kimi-K2.7-Code 执行者)的 agentic 代码编辑器平台。fork Roo Code + 自定义驾驭层(强制验证/循环检测/上下文压缩/人工审批/子Agent/可观测性) + MCP 联网与外部能力。",
-  "updated": "2026-07-03",
-  "current_milestone": "Codex 仿真度深度强化(基于三路深度调研:官方文档/开源 openai-codex 源码/评测)—— 6 轮完成 ✅: R1 UI 改系统字体栈(SF Pro/Segoe UI, 真机 Codex 实测就是系统字体, 非 Geist；代码仍 Geist Mono)——仿真 #1 关键破绽; R2 工具调用改可折叠卡(mono名+状态芯片+转圈, 输出默认折叠/失败展开); R3 精确 diff 配色(openai/codex 硬编码 #213A2B/#4A221D)+用户消息微染+相对时间; R4 变更 tab 渲染真实 Codex 式 diff(逐文件可折叠, 绿色新增); R5 新线程大问句+composer 垂直居中成一组(招牌); R6 新线程隐藏右栏聚焦中央+修复面板列折叠。调研另确认: 消息扁平文档式/无品牌色/激活态单色。全量 Puppeteer 实测通过, 构建绿。余(更大投入/需后端): 审批两档权限、diff 逐hunk暂存/commit、计划勾选清单、@文件选择、自动化+Triage、worktree、并行线程状态板。",
+  "updated": "2026-07-04",
+  "current_milestone": "Codex 仿真度深度强化(三路调研:官方文档/openai-codex 源码/评测 + cua-driver 真机实测)—— R1–R13 完成 ✅。R1–R6(调研驱动): 系统字体栈(SF Pro/Segoe UI, 真机实测非 Geist；代码仍 Geist Mono)/工具可折叠卡(状态芯片+转圈, 失败展开)/精确 diff 配色(openai/codex 硬编码 #213A2B·#4A221D 暗, #dafbe1·#ffebe9 亮)/变更 tab 真实逐文件 diff/新线程大问句+composer 居中/新线程隐右栏聚焦中央。R7–R10(真机截图对齐): 默认浅色主题/composer 重构(随心输入·沙盒橙钮·圆形发送·智能体·对话·规划模式)/消息扁平文档式(用户右灰气泡·agent 无头像)/顶栏极简(侧栏钮+线程名)。R11–R13(本轮): 删底部状态栏页脚(真机无此 chrome, 唯一有用的 WS 连接点移顶栏右侧极小点; 网格改两行, 清死 CSS/token)/编辑器 Codex 面包屑(flipped › src › api › main.py, 末段高亮)/工具行动作化(终端 `$ 命令`·文件路径, 去原始枚举 terminal·file_editor)/去假进度(progress>0 才显示百分比与进度条)/review 面板 Markdown 文档渲染(新增 src/lib/markdown.tsx, 纯 React 元素防 XSS, javascript: 链接拦截；.md 走格式化文档, 代码文件仍行号+行内评论)。验证: 隔离 Playwright(自带 Chromium, 不碰用户浏览器)实测新线程/线程/编辑器面包屑全绿 + md 渲染 react-dom/server smoke test 12 断言全过 + tsc/build 绿。余(需后端/待用户反馈): 审批两档权限、diff 逐 hunk 暂存/commit+撤销审核钮、计划勾选清单、@文件选择、自动化+Triage、worktree、并行线程状态板。",
   "key_facts": {
     "dev_host": "Apple M5 Max, 128GB RAM, 1.1TB 可用磁盘 — 开发/控制节点，非模型宿主",
     "model_cluster": "exo 集群 @ http://100.64.201.37:52415 (内网, OpenAI 兼容)；公网 https://dgmt.top/exo (需 Bearer token)",
