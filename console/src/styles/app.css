@@ -1070,9 +1070,12 @@ body.resizing {
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   padding: 8px 10px;
+  outline: none;
+  transition: border-color var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease);
 }
 .proj-folder-input:focus {
-  border-color: var(--blue);
+  border-color: var(--focus-border);
+  box-shadow: var(--focus-ring);
 }
 .proj-folder-err {
   margin-top: 6px;
@@ -1143,7 +1146,7 @@ body.resizing {
   transition: border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
 }
 .composer-box:focus-within {
-  border-color: color-mix(in oklab, var(--blue) 45%, var(--border-strong));
+  border-color: var(--focus-border);
   box-shadow: var(--focus-ring);
 }
 .composer textarea {
@@ -1687,7 +1690,8 @@ body.resizing {
   outline: none;
 }
 .line-comment textarea:focus {
-  border-color: color-mix(in oklab, var(--blue) 55%, var(--border-strong));
+  border-color: var(--focus-border);
+  box-shadow: var(--focus-ring);
 }
 .line-comment-actions {
   display: flex;
@@ -1937,9 +1941,12 @@ body.resizing {
   border: 1px solid var(--border-subtle);
   padding: 5px 10px;
   border-radius: 6px;
+  outline: none;
+  transition: border-color var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease);
 }
 .rbrowser-url:focus {
-  border-color: var(--blue);
+  border-color: var(--focus-border);
+  box-shadow: var(--focus-ring);
 }
 .rbrowser-go {
   flex: none;
@@ -2448,6 +2455,27 @@ button.mcp-row:hover {
   padding: 13px 15px;
   border-bottom: 1px solid var(--border-subtle);
   color: var(--text-muted);
+  transition: border-color var(--dur-fast) var(--ease);
+}
+.palette-search:focus-within {
+  border-bottom-color: var(--focus-border);
+}
+.proj-picker-search {
+  border-radius: var(--radius-sm);
+  transition: background var(--dur-fast) var(--ease);
+}
+.proj-picker-search:focus-within {
+  background: var(--bg-hover);
+}
+
+/* R20 — 统一去除输入框浏览器默认 outline(自定义聚焦环已覆盖) */
+input,
+textarea {
+  outline: none;
+}
+input:focus,
+textarea:focus {
+  outline: none;
 }
 .palette-search input {
   flex: 1;
@@ -3047,6 +3075,12 @@ button.mcp-row:hover {
   background: var(--bg-surface);
   color: var(--text-muted);
   margin-bottom: 28px;
+  transition: border-color var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease);
+}
+.plugins-search:focus-within {
+  border-color: var(--focus-border);
+  box-shadow: var(--focus-ring);
+  color: var(--text-secondary);
 }
 .plugins-search input {
   flex: 1;
