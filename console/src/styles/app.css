@@ -878,14 +878,14 @@
 }
 .composer-box {
   border: 1px solid var(--border);
-  background: var(--bg-surface);
-  border-radius: var(--radius-lg);
-  padding: 11px 13px;
+  background: var(--bg-elevated);
+  border-radius: 16px;
+  padding: 14px 16px 12px;
   box-shadow: var(--shadow-sm);
   transition: border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
 }
 .composer-box:focus-within {
-  border-color: color-mix(in oklab, var(--blue) 55%, var(--border-strong));
+  border-color: color-mix(in oklab, var(--blue) 45%, var(--border-strong));
   box-shadow: var(--focus-ring);
 }
 .composer textarea {
@@ -896,9 +896,9 @@
   background: transparent;
   color: var(--text-primary);
   font: inherit;
-  font-size: var(--text-base);
+  font-size: var(--text-md);
   line-height: 1.55;
-  min-height: 26px;
+  min-height: 30px;
 }
 .composer textarea::placeholder {
   color: var(--text-faint);
@@ -906,8 +906,82 @@
 .composer-bar {
   display: flex;
   align-items: center;
+  gap: 7px;
+  margin-top: 12px;
+}
+/* Codex 式 composer 控制条 */
+.cbar-plus {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  flex: none;
+  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+.cbar-plus:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.cbar-access {
+  display: inline-flex;
+  align-items: center;
   gap: 6px;
-  margin-top: 10px;
+  height: 30px;
+  padding: 0 12px;
+  border-radius: var(--radius-pill);
+  font-size: var(--text-sm);
+  color: var(--orange);
+  border: 1px solid color-mix(in oklab, var(--orange) 26%, var(--border-subtle));
+  transition: border-color var(--dur-fast) var(--ease);
+}
+.cbar-access:hover {
+  border-color: color-mix(in oklab, var(--orange) 45%, var(--border));
+}
+.cbar-effort {
+  height: 30px;
+  padding: 0 9px;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: var(--text-sm);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease);
+}
+.cbar-effort:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.cbar-stop {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 30px;
+  padding: 0 11px;
+  border-radius: var(--radius-pill);
+  color: var(--danger);
+  border: 1px solid color-mix(in oklab, var(--danger) 30%, var(--border));
+  font-size: var(--text-sm);
+}
+/* 上下文行里的模式下拉(替代原模式页签, 呼应 Codex 本地模式⌄) */
+.ctx-mode {
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: var(--text-xs);
+  cursor: pointer;
+  padding: 2px 5px;
+  border-radius: 5px;
+  transition: background var(--dur-fast) var(--ease);
+}
+.ctx-mode:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
 }
 .tool-btn {
   display: inline-flex;
@@ -940,14 +1014,14 @@
   border-color: color-mix(in oklab, var(--orange) 50%, var(--border));
 }
 .send {
-  margin-left: auto;
-  width: 30px;
-  height: 30px;
-  border-radius: var(--radius);
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
   background: var(--primary);
   color: var(--on-primary);
   display: grid;
   place-items: center;
+  flex: none;
   transition: background var(--dur-fast) var(--ease), transform var(--dur-fast) var(--ease);
 }
 .send:hover {
@@ -1963,16 +2037,16 @@ button.mcp-row:hover {
 }
 .new-thread {
   width: 100%;
-  max-width: 680px;
+  max-width: 760px;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 15px;
+  gap: 22px;
   text-align: center;
   animation: rise var(--dur) var(--ease) both;
 }
 .new-thread .empty-hero {
-  margin: 0;
+  margin: 0 0 2px;
 }
 .new-thread .empty-sub {
   margin: 0;
@@ -1980,12 +2054,8 @@ button.mcp-row:hover {
 .new-thread .composer {
   width: 100%;
   border-top: none;
-  padding: 4px 0 0;
+  padding: 0;
   background: transparent;
-}
-.new-thread .modes {
-  align-self: center;
-  margin-bottom: 10px;
 }
 .new-thread .composer-context {
   justify-content: center;

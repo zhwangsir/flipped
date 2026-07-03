@@ -5,12 +5,7 @@ import {
   ToolIcon,
   IconSend,
   IconCheck,
-  IconSparkle,
-  IconChat,
-  IconLayout,
-  IconAt,
-  IconPuzzle,
-  IconCube,
+  IconPlus,
   IconChevronDown,
   IconShield,
   IconX,
@@ -266,41 +261,12 @@ export function Conversation() {
 
   const composer = (
       <div className='composer'>
-        <div className='modes'>
-          <button
-            className={'mode agent' + (selectedMode === 'agent' ? ' active' : '')}
-            onClick={() => setMode('agent')}
-            title='智能体：在沙盒中自主执行、用工具、改文件'
-          >
-            <IconSparkle size={13} /> 智能体
-          </button>
-          <button
-            className={'mode' + (selectedMode === 'chat' ? ' active' : '')}
-            onClick={() => setMode('chat')}
-            title='对话：直连本地模型问答，不执行、不改文件'
-          >
-            <IconChat size={13} /> 对话
-          </button>
-          <button
-            className={'mode' + (selectedMode === 'plan' ? ' active' : '')}
-            onClick={() => setMode('plan')}
-            title='规划：让模型把目标拆成有序步骤，不执行'
-          >
-            <IconLayout size={13} /> 规划
-          </button>
-        </div>
         <div className={'composer-box ' + (disabled ? 'disabled' : '')}>
           <textarea
             ref={taRef}
             data-testid='composer-input'
             rows={2}
-            placeholder={
-              selectedMode === 'chat'
-                ? '和本地模型对话，问任何问题…'
-                : selectedMode === 'plan'
-                ? '描述目标，让模型先出一份分步计划…'
-                : '给 flipped 一个任务，或 @ 引用文件、粘贴报错让它自主修复…'
-            }
+            placeholder='随心输入'
             value={text}
             disabled={disabled}
             onChange={(e) => setText(e.target.value)}
@@ -313,31 +279,29 @@ export function Conversation() {
           />
           <div className='composer-bar'>
             <button
-              className='tool-btn'
+              className='cbar-plus'
               disabled={disabled}
               onClick={() => setText((t) => (t.endsWith('@') || t === '' ? t + '@' : t + ' @'))}
-              title='引用上下文：插入 @'
+              title='添加上下文：@ 引用文件'
             >
-              <IconAt size={13} /> 上下文
+              <IconPlus size={15} />
             </button>
             <button
-              className='tool-btn on'
-              disabled={disabled}
-              onClick={() => setContextTab('mcp')}
-              title='查看 / 开关 MCP 工具'
-            >
-              <IconPuzzle size={13} /> 工具
-            </button>
-            <button
-              className='tool-btn sandbox'
+              className='cbar-access'
               disabled={disabled}
               onClick={() => setContextTab('term')}
-              title='沙盒访问级别 · 查看终端'
+              title='沙盒访问级别（受控 Docker 沙盒）'
             >
-              <IconCube size={13} /> 沙盒 <IconChevronDown size={12} />
+              <IconShield size={13} /> 沙盒 <IconChevronDown size={11} />
             </button>
+            <span className='spacer' />
+            {sessionStatus === 'running' && (
+              <button className='cbar-stop' onClick={() => cancelTask()} title='停止'>
+                <IconX size={13} /> 停止
+              </button>
+            )}
             <select
-              className='tool-btn model-select'
+              className='cbar-effort'
               value={selectedModel}
               onChange={(e) => setModel(e.target.value)}
               disabled={disabled}
@@ -346,11 +310,6 @@ export function Conversation() {
               <option value='coder'>Kimi-K2.7 · coder</option>
               <option value='architect'>GLM-5.2 · architect</option>
             </select>
-            {sessionStatus === 'running' && (
-              <button className='tool-btn stop' onClick={() => cancelTask()}>
-                <IconX size={13} /> 停止
-              </button>
-            )}
             <button
               className='send'
               data-testid='send-button'
@@ -362,19 +321,26 @@ export function Conversation() {
             </button>
           </div>
         </div>
-        {projectContext && (
-          <div className='composer-context'>
-            <span className='ctx-item'>
-              <IconFile size={12} /> {projectContext.project}
-            </span>
-            <span className='ctx-sep'>·</span>
-            <span className='ctx-item'>{projectContext.mode}</span>
-            <span className='ctx-sep'>·</span>
-            <span className='ctx-item mono'>
-              <IconGit size={12} /> {projectContext.branch}
-            </span>
-          </div>
-        )}
+        <div className='composer-context'>
+          <span className='ctx-item'>
+            <IconFile size={12} /> {projectContext?.project || 'flipped'}
+          </span>
+          <span className='ctx-sep'>·</span>
+          <select
+            className='ctx-mode'
+            value={selectedMode}
+            onChange={(e) => setMode(e.target.value)}
+            title='模式：智能体(沙盒执行) / 对话(直连模型) / 规划(拆步骤)'
+          >
+            <option value='agent'>智能体</option>
+            <option value='chat'>对话</option>
+            <option value='plan'>规划</option>
+          </select>
+          <span className='ctx-sep'>·</span>
+          <span className='ctx-item mono'>
+            <IconGit size={12} /> {projectContext?.branch || 'main'}
+          </span>
+        </div>
       </div>
   );
 
@@ -384,21 +350,7 @@ export function Conversation() {
       <section className='center center-new'>
         <div className='new-thread'>
           <h1 className='empty-hero'>我们应该在 flipped 中构建什么？</h1>
-          <div className='empty-sub'>
-            本地模型驱动的 AI 开发工厂 · 在受控沙盒中自主编码、调用工具、修改文件
-          </div>
           {composer}
-          <div className='empty-hints'>
-            <span className='empty-hint'>
-              <IconSparkle size={12} /> 智能体 · 沙盒执行
-            </span>
-            <span className='empty-hint'>
-              <IconChat size={12} /> 对话 · 直连本地模型
-            </span>
-            <span className='empty-hint'>
-              <IconLayout size={12} /> 规划 · 拆解步骤
-            </span>
-          </div>
         </div>
       </section>
     );

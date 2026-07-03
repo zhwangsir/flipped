@@ -5,7 +5,8 @@ const STORAGE_KEY = 'flipped-theme';
 
 function readInitial(): Theme {
   const attr = document.documentElement.getAttribute('data-theme');
-  return attr === 'light' ? 'light' : 'dark';
+  // 默认浅色(与真机 Codex 一致)
+  return attr === 'dark' ? 'dark' : 'light';
 }
 
 /** Theme state synced to <html data-theme> + localStorage (dark default). */
