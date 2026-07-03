@@ -14,6 +14,7 @@ import type {
   ContextTab,
   SidebarTab,
   ProjectContext,
+  FileNode,
 } from './types';
 import { eventToStreamItem } from './types';
 import {
@@ -26,6 +27,8 @@ import {
   getMcpServers,
   toggleMcpServer as apiToggleMcpServer,
   fetchProjectContext,
+  fetchProjectFiles,
+  fetchProjectFile,
   connectEvents,
 } from './api';
 
@@ -69,6 +72,9 @@ interface AppState {
   composerPrefill: string;
   prefillComposer: (text: string) => void;
   projectContext: ProjectContext | null;
+  projectFiles: FileNode[];
+  openedFile: { path: string; content: string } | null;
+  openFile: (path: string) => Promise<void>;
   sessionQuery: string;
   setSessionQuery: (q: string) => void;
   selectSession: (id: string) => void;
@@ -109,6 +115,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [terminalOpen, setTerminalOpen] = useState(false);
   const [composerPrefill, setComposerPrefill] = useState('');
   const [projectContext, setProjectContext] = useState<ProjectContext | null>(null);
+  const [projectFiles, setProjectFiles] = useState<FileNode[]>([]);
+  const [openedFile, setOpenedFile] = useState<{ path: string; content: string } | null>(null);
   const toggleTerminal = useCallback(() => setTerminalOpen((v) => !v), []);
   const prefillComposer = useCallback((text: string) => setComposerPrefill(text), []);
   const [sessionQuery, setSessionQuery] = useState('');
@@ -157,6 +165,24 @@ export function AppProvider({ children }: { children: ReactNode }) {
     fetchProjectContext()
       .then(setProjectContext)
       .catch(() => {});
+  }, []);
+
+  // 阶段② — 拉取项目文件树（右侧「文件」）
+  useEffect(() => {
+    fetchProjectFiles()
+      .then((r) => setProjectFiles(r.tree))
+      .catch(() => {});
+  }, []);
+
+  // 点击文件树 → 拉真实文件内容载入编辑器
+  const openFile = useCallback(async (path: string) => {
+    try {
+      const r = await fetchProjectFile(path);
+      setOpenedFile({ path: r.path, content: r.content });
+      setContextTab('editor');
+    } catch {
+      /* 二进制/超大/读失败：忽略 */
+    }
   }, []);
 
   // Stage 3/4 — Codex 快捷键：⌘B 折叠侧栏 / ⌘K 命令面板
@@ -423,6 +449,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
         composerPrefill,
         prefillComposer,
         projectContext,
+        projectFiles,
+        openedFile,
+        openFile,
         sessionQuery,
         setSessionQuery,
         selectSession,

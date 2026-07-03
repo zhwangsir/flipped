@@ -71,8 +71,16 @@ export interface Metrics {
   context: Record<string, number>;
 }
 
+/** 项目文件树节点（阶段② — 右侧「文件」）。 */
+export interface FileNode {
+  name: string;
+  path: string;
+  type: 'file' | 'dir';
+  children?: FileNode[];
+}
+
 /** 共享 UI 导航状态（M7.5 — 让 ActivityBar/TopBar/composer 真正驱动面板）。 */
-export type ContextTab = 'editor' | 'diff' | 'term' | 'browser' | 'problems' | 'mcp';
+export type ContextTab = 'editor' | 'diff' | 'term' | 'browser' | 'files' | 'problems' | 'mcp';
 export type SidebarTab = 'chats' | 'files';
 
 /** /project/context 返回的项目上下文（Stage 3 — composer 上下文行 / 状态栏）。 */

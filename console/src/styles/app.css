@@ -1148,6 +1148,53 @@
 }
 
 /* editor */
+/* 阶段② — 右侧「文件」文件树 */
+.file-tree {
+  padding: 6px 6px 20px;
+  font-size: var(--text-sm);
+}
+.ft-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 5px 8px;
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  text-align: left;
+  transition: background var(--dur-fast) var(--ease);
+}
+.ft-row:hover {
+  background: var(--bg-hover);
+}
+.ft-row svg {
+  color: var(--text-muted);
+  flex: none;
+}
+.ft-file.active {
+  background: var(--bg-surface);
+  color: var(--text-primary);
+}
+.ft-file.active svg {
+  color: var(--accent-text);
+}
+.ft-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ft-chev {
+  display: grid;
+  place-items: center;
+  color: var(--text-faint);
+  transform: rotate(-90deg);
+  transition: transform var(--dur-fast) var(--ease);
+  flex: none;
+}
+.ft-chev.open {
+  transform: rotate(0deg);
+}
+
 /* R13 — Codex review 面板：.md 渲染成格式化文档(非行号代码) */
 .md-doc {
   padding: 18px 22px 40px;

@@ -131,6 +131,74 @@ async def project_context() -> dict[str, str]:
     return {"project": _REPO_ROOT.name, "branch": branch, "mode": "本地模式"}
 
 
+# ---------- 项目文件树 / 单文件读取（阶段② — 右侧「文件」做真） ----------
+
+_IGNORE_NAMES = {
+    ".git", "node_modules", ".venv", "venv", "__pycache__", "dist", "build",
+    ".devlogs", ".pytest_cache", ".mypy_cache", ".ruff_cache", "chroma",
+    ".DS_Store", ".idea", ".vscode", ".sessions.json",
+}
+_FILES_CAP = 3000  # 总条目上限，避免超大仓库拖垮响应
+_FILE_MAX_BYTES = 512_000  # 单文件读取上限（512KB）
+
+
+def _list_tree(root: Path) -> list[dict[str, Any]]:
+    """递归列出项目树（跳过 vcs/依赖/构建产物与隐藏目录，全局限量）。"""
+    count = 0
+
+    def walk(d: Path, depth: int) -> list[dict[str, Any]]:
+        nonlocal count
+        if depth > 8 or count >= _FILES_CAP:
+            return []
+        try:
+            children = sorted(d.iterdir(), key=lambda p: (p.is_file(), p.name.lower()))
+        except OSError:
+            return []
+        out: list[dict[str, Any]] = []
+        for p in children:
+            if count >= _FILES_CAP:
+                break
+            if p.name in _IGNORE_NAMES:
+                continue
+            if p.name.startswith(".") and p.is_dir():
+                continue
+            count += 1
+            rel = str(p.relative_to(root))
+            if p.is_dir():
+                out.append({"name": p.name, "path": rel, "type": "dir",
+                            "children": walk(p, depth + 1)})
+            else:
+                out.append({"name": p.name, "path": rel, "type": "file"})
+        return out
+
+    return walk(root, 0)
+
+
+@app.get(f"{API_PREFIX}/project/files")
+async def project_files() -> dict[str, Any]:
+    """项目文件树（供右侧「文件」浏览器）。"""
+    return {"root": _REPO_ROOT.name, "tree": _list_tree(_REPO_ROOT)}
+
+
+@app.get(f"{API_PREFIX}/project/file")
+async def project_file(path: str = Query(..., min_length=1)) -> dict[str, Any]:
+    """读取项目内单个文本文件（点击文件树 → 载入编辑器）。含路径穿越防护。"""
+    root = _REPO_ROOT.resolve()
+    target = (root / path).resolve()
+    # 路径穿越防护：必须落在仓库根内
+    if target != root and not str(target).startswith(str(root) + os.sep):
+        raise HTTPException(status_code=403, detail="path outside project")
+    if not target.is_file():
+        raise HTTPException(status_code=404, detail="not a file")
+    if target.stat().st_size > _FILE_MAX_BYTES:
+        raise HTTPException(status_code=413, detail="file too large")
+    try:
+        content = target.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        raise HTTPException(status_code=415, detail="binary or unreadable file")
+    return {"path": path, "content": content}
+
+
 # ---------- 会话管理 ----------
 
 @app.post(f"{API_PREFIX}/sessions", response_model=Session)

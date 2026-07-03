@@ -56,6 +56,57 @@ def test_project_context():
         assert data["mode"] == "本地模式"
 
 
+# ---------- 阶段② 项目文件树 / 单文件读取 ----------
+
+def test_project_files_tree():
+    """/project/files 返回文件树，跳过依赖/构建产物。"""
+    with TestClient(app) as c:
+        r = c.get(f"{API_PREFIX}/project/files")
+        assert r.status_code == 200
+        data = r.json()
+        assert data["root"]
+        assert isinstance(data["tree"], list) and data["tree"]
+        blob = str(data["tree"])
+        assert "node_modules" not in blob  # 被忽略
+        # 顶层应含已知目录
+        top = {n["name"] for n in data["tree"]}
+        assert "src" in top or "console" in top
+
+
+def test_project_file_read():
+    """/project/file 读取仓库内文本文件，返回内容。"""
+    with TestClient(app) as c:
+        r = c.get(f"{API_PREFIX}/project/file", params={"path": "STATE.json"})
+        assert r.status_code == 200
+        assert r.json()["content"].lstrip().startswith("{")
+
+
+def test_project_file_traversal_blocked():
+    """路径穿越必须被拒（403）。"""
+    with TestClient(app) as c:
+        r = c.get(f"{API_PREFIX}/project/file", params={"path": "../../../../etc/passwd"})
+        assert r.status_code == 403
+
+
+def test_project_file_not_found():
+    """不存在的路径 → 404。"""
+    with TestClient(app) as c:
+        r = c.get(f"{API_PREFIX}/project/file", params={"path": "no/such/file.xyz"})
+        assert r.status_code == 404
+
+
+# ---------- 阶段① Session mode 字段（项目/对话分区） ----------
+
+def test_session_mode_field(monkeypatch, tmp_path):
+    """create_session 的 mode 落库并回传（chat→对话区, 默认 agent）。"""
+    monkeypatch.setenv("FLIPPED_SESSION_STORE_PATH", str(tmp_path / "s.json"))
+    with TestClient(app) as c:
+        chat = c.post(f"{API_PREFIX}/sessions", params={"title": "c", "mode": "chat"}).json()
+        assert chat["mode"] == "chat"
+        default = c.post(f"{API_PREFIX}/sessions", params={"title": "d"}).json()
+        assert default["mode"] == "agent"
+
+
 # ---------- M7.4 模式路由 ----------
 
 def test_task_mode_chat_routes_to_run_chat(monkeypatch):

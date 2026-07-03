@@ -1,9 +1,45 @@
 import { useState, type ReactNode } from 'react';
 import { useApp } from '../store';
-import type { ChangedFile } from '../types';
+import type { ChangedFile, FileNode } from '../types';
 import { diffLines, terminalLines, editorCode, problems } from '../mock';
 import { renderMarkdown } from '../lib/markdown';
-import { IconCode, IconFile, IconTerminal, IconBrowser, IconWarn, IconPuzzle, IconChat, IconX, IconChevronDown } from '../icons';
+import { IconCode, IconFile, IconFolder, IconTerminal, IconBrowser, IconWarn, IconPuzzle, IconChat, IconX, IconChevronDown } from '../icons';
+
+/** 递归文件树节点(阶段② — 右侧「文件」)。 */
+function FileTreeNode({ node, depth, activePath, onOpen }: {
+  node: FileNode;
+  depth: number;
+  activePath: string | null;
+  onOpen: (p: string) => void;
+}) {
+  const [open, setOpen] = useState(depth < 1);
+  const pad = 8 + depth * 12;
+  if (node.type === 'dir') {
+    return (
+      <>
+        <button className="ft-row ft-dir" style={{ paddingLeft: pad }} onClick={() => setOpen((o) => !o)}>
+          <span className={'ft-chev' + (open ? ' open' : '')}><IconChevronDown size={11} /></span>
+          <IconFolder size={13} />
+          <span className="ft-name">{node.name}</span>
+        </button>
+        {open && node.children?.map((c) => (
+          <FileTreeNode key={c.path} node={c} depth={depth + 1} activePath={activePath} onOpen={onOpen} />
+        ))}
+      </>
+    );
+  }
+  return (
+    <button
+      className={'ft-row ft-file' + (activePath === node.path ? ' active' : '')}
+      style={{ paddingLeft: pad + 16 }}
+      onClick={() => onOpen(node.path)}
+      title={node.path}
+    >
+      <IconFile size={12} />
+      <span className="ft-name">{node.name}</span>
+    </button>
+  );
+}
 
 const KEYWORDS = new Set(['from', 'import', 'def', 'return', 'if', 'not', 'in', 'raise', 'class', 'for', 'while', 'with', 'as']);
 const LITS = new Set(['None', 'True', 'False']);
@@ -91,6 +127,9 @@ export function ContextPanel() {
     selectedSessionId,
     prefillComposer,
     projectContext,
+    projectFiles,
+    openedFile,
+    openFile,
   } = useApp();
   const [activePath, setActivePath] = useState<string | null>(null);
   const [commentLine, setCommentLine] = useState<number | null>(null);
@@ -101,8 +140,14 @@ export function ContextPanel() {
   // M7.2 — 编辑器展示真实沙盒文件内容（来自 file_editor 动作携带的 file_text）
   // 只认字符串内容，避免历史事件的非字符串 content 导致 .split 崩溃
   const realFiles = changedFiles.filter((f) => typeof f.content === 'string' && f.content.length > 0);
-  const activeFile =
+  const changedActive =
     realFiles.find((f) => f.path === activePath) || realFiles[realFiles.length - 1] || null;
+  // 打开文件树里的文件优先(阶段②);否则回退到本次会话变更的文件
+  const activeFile: { path: string; content: string; language?: string } | null = openedFile
+    ? { path: openedFile.path, content: openedFile.content }
+    : changedActive
+    ? { path: changedActive.path, content: changedActive.content as string, language: changedActive.language }
+    : null;
   const editorSource = typeof activeFile?.content === 'string' ? activeFile.content : editorCode;
   const editorLines = editorSource.split('\n');
   const editorLang = activeFile ? activeFile.language || langOf(activeFile.path) : 'python';
@@ -129,6 +174,9 @@ export function ContextPanel() {
       <div className="tabs">
         <button className={'tab' + (tab === 'editor' ? ' active' : '')} onClick={() => setTab('editor')}>
           <IconCode size={14} /> 编辑器
+        </button>
+        <button className={'tab' + (tab === 'files' ? ' active' : '')} onClick={() => setTab('files')}>
+          <IconFolder size={14} /> 文件
         </button>
         <button className={'tab' + (tab === 'diff' ? ' active' : '')} onClick={() => setTab('diff')}>
           <IconFile size={14} /> 变更 <span className="count">{diffCount}</span>
@@ -242,6 +290,24 @@ export function ContextPanel() {
             </div>
             )}
           </>
+        )}
+
+        {tab === 'files' && (
+          <div className="file-tree">
+            {projectFiles.length === 0 ? (
+              <div className="side-empty">加载文件树…</div>
+            ) : (
+              projectFiles.map((n) => (
+                <FileTreeNode
+                  key={n.path}
+                  node={n}
+                  depth={0}
+                  activePath={openedFile?.path ?? null}
+                  onOpen={openFile}
+                />
+              ))
+            )}
+          </div>
         )}
 
         {tab === 'diff' && (
