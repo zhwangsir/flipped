@@ -2032,3 +2032,15 @@ button.mcp-row:hover {
 .new-thread .composer-context {
   justify-content: center;
 }
+
+/* R10 — 顶栏线程标题(呼应真机 Codex 顶栏显示线程名) */
+.topbar-title {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 420px;
+  margin-left: 4px;
+}
