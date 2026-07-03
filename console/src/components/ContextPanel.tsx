@@ -2,6 +2,7 @@ import { useState, type ReactNode } from 'react';
 import { useApp } from '../store';
 import type { ChangedFile } from '../types';
 import { diffLines, terminalLines, editorCode, problems } from '../mock';
+import { renderMarkdown } from '../lib/markdown';
 import { IconCode, IconFile, IconTerminal, IconBrowser, IconWarn, IconPuzzle, IconChat, IconX, IconChevronDown } from '../icons';
 
 const KEYWORDS = new Set(['from', 'import', 'def', 'return', 'if', 'not', 'in', 'raise', 'class', 'for', 'while', 'with', 'as']);
@@ -177,6 +178,9 @@ export function ContextPanel() {
               <span className="add crumb-lang">{editorLang}</span>
               {!activeFile && <span className="chip">示例预览</span>}
             </div>
+            {activeFile && editorLang === 'markdown' ? (
+              <div className="md-doc">{renderMarkdown(editorSource)}</div>
+            ) : (
             <div className="editor">
               {editorLines.map((l, i) => {
                 const ln = i + 1;
@@ -236,6 +240,7 @@ export function ContextPanel() {
                 );
               })}
             </div>
+            )}
           </>
         )}
 
