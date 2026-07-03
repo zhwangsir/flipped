@@ -42,12 +42,12 @@ function StatusBanner({ status, progress }: { status: string | null; progress: n
         {isRunning && <IconHourglass size={14} />}
       </span>
       <span className='sb-text'>
-        {isRunning && '运行中… ' + progress + '%'}
+        {isRunning && (progress > 0 ? '运行中… ' + progress + '%' : '运行中…')}
         {isDone && '任务已完成'}
         {isReview && '待人工审批'}
         {isError && '执行出错'}
       </span>
-      {isRunning && (
+      {isRunning && progress > 0 && (
         <div className='progress-track'>
           <span className='progress-fill' style={{ width: progress + '%' }} />
         </div>
@@ -166,10 +166,26 @@ function ChildIcon({ type }: { type: ToolChild['type'] }) {
 
 const STATUS_TEXT: Record<string, string> = { ok: '完成', running: '运行中', error: '失败' };
 
+const ACTION_LABEL: Record<string, string> = {
+  terminal: '终端命令',
+  file_editor: '编辑文件',
+  browser: '浏览器',
+  search: '搜索',
+};
+
+/** Codex 式动作行主文本：终端显示 `$ 命令`、文件显示路径(等宽)，其余显示摘要或动作名。 */
+function toolPrimary(tool: ToolCall): { text: string; mono: boolean } {
+  const summary = tool.summary && tool.summary !== tool.tool ? tool.summary : '';
+  if (tool.tool === 'terminal') return { text: '$ ' + (summary || '命令'), mono: true };
+  if (tool.tool === 'file_editor') return { text: summary || '编辑文件', mono: true };
+  return { text: summary || ACTION_LABEL[tool.tool] || tool.tool, mono: false };
+}
+
 function ToolRow({ tool }: { tool: ToolCall }) {
   const hasBody = (tool.children && tool.children.length > 0) || !!tool.detail;
   // Codex 式：输出默认折叠，失败自动展开
   const [open, setOpen] = useState(tool.status === 'error');
+  const primary = toolPrimary(tool);
   return (
     <div className={'tool-card ' + tool.status}>
       <button
@@ -181,8 +197,7 @@ function ToolRow({ tool }: { tool: ToolCall }) {
         <span className='tool-ic'>
           <ToolIcon name={tool.tool} />
         </span>
-        <span className='tool-name mono'>{tool.tool}</span>
-        {tool.summary && tool.summary !== tool.tool && <span className='tool-sum'>{tool.summary}</span>}
+        <span className={'tool-label' + (primary.mono ? ' mono' : '')}>{primary.text}</span>
         <span className={'tool-status ' + tool.status}>
           {tool.status === 'running' && <span className='tool-spin' />}
           {tool.status === 'ok' && <IconCheck size={11} />}

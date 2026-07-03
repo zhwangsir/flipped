@@ -654,19 +654,20 @@
   color: var(--text-muted);
   flex: none;
 }
-.tool-name {
+/* R12 — Codex 动作行主文本(取代原始工具枚举名) */
+.tool-label {
   font-size: var(--text-sm);
-  color: var(--text-primary);
-  flex: none;
-}
-.tool-sum {
-  font-size: var(--text-xs);
-  color: var(--text-muted);
+  color: var(--text-secondary);
+  flex: 1;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  flex: 1;
-  min-width: 0;
+}
+.tool-label.mono {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-primary);
 }
 .tool-det {
   font-family: var(--font-mono);
