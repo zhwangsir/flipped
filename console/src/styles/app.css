@@ -74,12 +74,12 @@
   width: 28px;
   height: 28px;
   border-radius: 50%;
-  background: var(--bg-elevated);
-  border: 1px solid var(--border);
+  background: color-mix(in oklab, var(--purple) 26%, var(--bg-elevated));
+  border: 1px solid color-mix(in oklab, var(--purple) 40%, var(--border));
   display: grid;
   place-items: center;
   font-size: 11px;
-  color: var(--text-secondary);
+  color: var(--purple);
   margin-top: 4px;
 }
 
@@ -305,8 +305,7 @@
   flex: none;
 }
 .dot.running {
-  background: var(--accent);
-  box-shadow: 0 0 8px var(--accent-glow);
+  background: var(--success);
   animation: pulse-dot 1.6s var(--ease) infinite;
 }
 .dot.done {
@@ -317,10 +316,9 @@
 }
 .dot.connected {
   background: var(--success);
-  box-shadow: 0 0 8px rgba(34, 197, 94, 0.35);
 }
 .dot.connecting {
-  background: var(--accent);
+  background: var(--info);
   animation: pulse-dot 1.2s var(--ease) infinite;
 }
 .dot.error {
@@ -394,40 +392,31 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 9px;
+  gap: 14px;
   text-align: center;
+  padding: 0 var(--sp-6);
   animation: rise var(--dur) var(--ease) both;
 }
-.empty-mark {
-  width: 46px;
-  height: 46px;
-  border-radius: 13px;
-  background: var(--bg-elevated);
-  border: 1px solid var(--border);
-  color: var(--text-secondary);
-  display: grid;
-  place-items: center;
-  font-weight: 700;
-  font-size: 23px;
-  box-shadow: var(--shadow-sm);
-  margin-bottom: 3px;
-}
-.empty-title {
-  font-size: var(--text-lg);
+/* Codex 招牌：用一句大问句替代空白页 */
+.empty-hero {
+  font-size: var(--text-hero);
   font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
   color: var(--text-primary);
-  letter-spacing: -0.01em;
+  max-width: 620px;
+  margin: 0;
 }
 .empty-sub {
   font-size: var(--text-sm);
   color: var(--text-muted);
-  max-width: 400px;
+  max-width: 440px;
   line-height: var(--leading-body);
 }
 .empty-hints {
   display: flex;
   gap: 7px;
-  margin-top: 10px;
+  margin-top: 6px;
   flex-wrap: wrap;
   justify-content: center;
 }
@@ -443,7 +432,7 @@
   background: var(--bg-surface);
 }
 .empty-hint svg {
-  color: var(--accent-text);
+  color: var(--text-muted);
 }
 .turn {
   display: grid;
@@ -698,8 +687,8 @@
   transition: border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
 }
 .composer-box:focus-within {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px var(--accent-soft);
+  border-color: color-mix(in oklab, var(--blue) 55%, var(--border-strong));
+  box-shadow: var(--focus-ring);
 }
 .composer textarea {
   width: 100%;
@@ -739,9 +728,18 @@
   border-color: var(--border);
 }
 .tool-btn.on {
-  color: var(--accent-text);
-  border-color: var(--accent-soft);
-  background: var(--accent-soft);
+  color: var(--text-primary);
+  border-color: var(--border);
+  background: var(--bg-hover);
+}
+/* 沙盒访问级别 — 呼应 Codex 的橙色「完全访问」警告语义 */
+.tool-btn.sandbox {
+  color: var(--orange);
+  border-color: color-mix(in oklab, var(--orange) 30%, var(--border-subtle));
+}
+.tool-btn.sandbox:hover {
+  color: var(--orange);
+  border-color: color-mix(in oklab, var(--orange) 50%, var(--border));
 }
 .send {
   margin-left: auto;

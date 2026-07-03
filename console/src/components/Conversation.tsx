@@ -248,25 +248,29 @@ export function Conversation() {
         )}
         {stream.length === 0 && !approvalPending && (
           <div className='empty-state'>
-            <div className='empty-mark'>f</div>
-            <div className='empty-title'>flipped</div>
-            <div className='empty-sub'>
-              {selectedSessionId
-                ? '等待事件流… · WebSocket ' + connection
-                : '本地模型驱动的 AI 开发工厂 · 在受控沙盒中自主编码、调用工具、修改文件'}
-            </div>
-            {!selectedSessionId && (
-              <div className='empty-hints'>
-                <span className='empty-hint'>
-                  <IconSparkle size={12} /> 智能体 · 沙盒执行
-                </span>
-                <span className='empty-hint'>
-                  <IconChat size={12} /> 对话 · 直连本地模型
-                </span>
-                <span className='empty-hint'>
-                  <IconLayout size={12} /> 规划 · 拆解步骤
-                </span>
-              </div>
+            {selectedSessionId ? (
+              <>
+                <h1 className='empty-hero'>准备就绪</h1>
+                <div className='empty-sub'>等待事件流… · WebSocket {connection}</div>
+              </>
+            ) : (
+              <>
+                <h1 className='empty-hero'>我们应该在 flipped 中构建什么？</h1>
+                <div className='empty-sub'>
+                  本地模型驱动的 AI 开发工厂 · 在受控沙盒中自主编码、调用工具、修改文件
+                </div>
+                <div className='empty-hints'>
+                  <span className='empty-hint'>
+                    <IconSparkle size={12} /> 智能体 · 沙盒执行
+                  </span>
+                  <span className='empty-hint'>
+                    <IconChat size={12} /> 对话 · 直连本地模型
+                  </span>
+                  <span className='empty-hint'>
+                    <IconLayout size={12} /> 规划 · 拆解步骤
+                  </span>
+                </div>
+              </>
             )}
           </div>
         )}
@@ -338,10 +342,10 @@ export function Conversation() {
               <IconPuzzle size={13} /> 工具
             </button>
             <button
-              className='tool-btn'
+              className='tool-btn sandbox'
               disabled={disabled}
               onClick={() => setContextTab('term')}
-              title='查看沙盒终端'
+              title='沙盒访问级别 · 查看终端'
             >
               <IconCube size={13} /> 沙盒 <IconChevronDown size={12} />
             </button>
