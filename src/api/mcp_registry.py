@@ -134,12 +134,18 @@ def toggle_server(name: str, enabled: bool) -> dict[str, Any]:
 def enabled_mcp_config() -> dict[str, Any]:
     """把已启用的服务器转成 OpenHands Agent 的 mcp_config。
 
-    无启用项时返回 {}，使 Agent 行为与不传 mcp_config 完全一致。
+    仅注入 enabled 且 sandbox_ready 的服务器。当前种子服务器（flipped/fetch/
+    filesystem/git）以 stdio 方式定义，无法在 OpenHands Docker 沙盒内启动，
+    强行注入会让 agent 在 MCP 列举阶段挂起 30s 并 500 崩溃。故默认都不 sandbox_ready：
+    开关仍真实持久化，但不会把不可用的 MCP 注入沙盒、拖垮 agent 执行。
+    未来某个服务器做成沙盒可达（如 http 传输）后，将其 sandbox_ready 置 True 即自动注入。
+
+    无可注入项时返回 {}，使 Agent 行为与不传 mcp_config 完全一致。
     """
     data = _load()
     servers: dict[str, Any] = {}
     for name, cfg in data.items():
-        if not cfg.get("enabled"):
+        if not cfg.get("enabled") or not cfg.get("sandbox_ready"):
             continue
         if cfg.get("transport") == "http" and cfg.get("url"):
             entry: dict[str, Any] = {"url": cfg["url"]}

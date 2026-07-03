@@ -34,16 +34,30 @@ def test_enabled_config_empty_by_default(tmp_cfg):
     assert enabled_mcp_config() == {}
 
 
-def test_toggle_persists_and_builds_config(tmp_cfg):
+def test_toggle_persists_but_does_not_inject_unless_sandbox_ready(tmp_cfg):
     toggle_server("flipped", True)
     # 持久化：重新读取仍启用
     assert next(s["enabled"] for s in list_servers() if s["name"] == "flipped") is True
-    assert enabled_mcp_config() == {
-        "mcpServers": {"flipped": {"command": "python", "args": ["-m", "mcp_server"]}}
-    }
-    # 关闭后回到空配置
+    # 安全闸：种子服务器非 sandbox_ready，启用后也不注入沙盒（避免拖垮 agent）
+    assert enabled_mcp_config() == {}
     toggle_server("flipped", False)
     assert enabled_mcp_config() == {}
+
+
+def test_sandbox_ready_server_is_injected(tmp_cfg, monkeypatch):
+    """一旦某服务器标记 sandbox_ready 且启用，即注入 mcp_config。"""
+    from api import mcp_registry
+
+    def _seed_ready() -> dict:
+        return {
+            "demo": {
+                "description": "d", "transport": "http", "url": "http://x/mcp",
+                "sandbox_ready": True, "enabled": True,
+            }
+        }
+
+    monkeypatch.setattr(mcp_registry, "_seed", _seed_ready)
+    assert enabled_mcp_config() == {"mcpServers": {"demo": {"url": "http://x/mcp"}}}
 
 
 def test_toggle_unknown_raises(tmp_cfg):
