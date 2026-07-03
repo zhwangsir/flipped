@@ -37,13 +37,11 @@ button {
   background: none;
 }
 
-/* keyboard focus — restrained teal ring, only for keyboard nav (ring follows each
-   element's own border-radius, so circular/rounded controls stay intact) */
+/* 键盘可达性焦点环 —— 仅给按钮/链接/可聚焦项(键盘导航)。
+   输入框不走这里:它们各自由所在容器(composer-box / palette / …)统一管理聚焦，
+   避免与容器的聚焦效果叠成双重边框。 */
 button:focus-visible,
 a:focus-visible,
-input:focus-visible,
-select:focus-visible,
-textarea:focus-visible,
 [tabindex]:focus-visible {
   outline: none;
   box-shadow: var(--focus-ring);

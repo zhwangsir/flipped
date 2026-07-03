@@ -81,8 +81,8 @@
   --blue: oklch(62% 0.19 262);      /* links / update / focus  ~#2f6bff */
   --orange: oklch(68% 0.15 55);     /* sandbox / access warning ~#e07a2f */
   --purple: oklch(72% 0.13 295);    /* account avatar          ~#a78bfa */
-  --focus-ring: 0 0 0 3px oklch(62% 0.19 262 / 0.28);
-  --focus-border: color-mix(in oklab, var(--blue) 55%, var(--border-strong));
+  --focus-ring: 0 0 0 3px color-mix(in oklab, var(--text-primary) 8%, transparent);
+  --focus-border: color-mix(in oklab, var(--text-primary) 22%, var(--border-strong));
 
   /* monochrome primary CTA (white on dark) */
   --primary: oklch(95% 0.002 70);
@@ -150,8 +150,8 @@
   --blue: oklch(52% 0.22 262);
   --orange: oklch(58% 0.16 50);
   --purple: oklch(58% 0.16 295);
-  --focus-ring: 0 0 0 3px oklch(52% 0.22 262 / 0.15);
-  --focus-border: color-mix(in oklab, var(--blue) 60%, var(--border-strong));
+  --focus-ring: 0 0 0 3px color-mix(in oklab, var(--text-primary) 8%, transparent);
+  --focus-border: color-mix(in oklab, var(--text-primary) 22%, var(--border-strong));
 
   --primary: oklch(27% 0.006 85);        /* near-black button, white label */
   --primary-hover: oklch(18% 0.006 85);
