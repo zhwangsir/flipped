@@ -1,5 +1,5 @@
 /** Console ↔ orchestration-api HTTP + WebSocket 客户端。 */
-import type { Session, ApiEvent, Metrics, McpServer, ProjectContext, FileNode, BrowserRender } from './types';
+import type { Session, ApiEvent, Metrics, McpServer, ProjectContext, FileNode, BrowserRender, GitDiffFile } from './types';
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined) || 'http://127.0.0.1:8001';
 const API_PREFIX = '/api/v1';
@@ -75,6 +75,10 @@ export function renderBrowser(url: string): Promise<BrowserRender> {
     method: 'POST',
     body: JSON.stringify({ url }),
   });
+}
+
+export function fetchProjectDiff(): Promise<{ files: GitDiffFile[] }> {
+  return api<{ files: GitDiffFile[] }>('/project/diff');
 }
 
 export function toggleMcpServer(name: string, enabled: boolean): Promise<{ name: string; enabled: boolean }> {

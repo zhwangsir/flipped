@@ -180,6 +180,57 @@ async def project_files() -> dict[str, Any]:
     return {"root": _REPO_ROOT.name, "tree": _list_tree(_REPO_ROOT)}
 
 
+_DIFF_LINE_CAP = 4000
+
+
+def _parse_unified_diff(text: str) -> list[dict[str, Any]]:
+    """把 `git diff` 统一 diff 解析成 [{path, added, removed, lines:[{type,text}]}]。"""
+    files: list[dict[str, Any]] = []
+    cur: dict[str, Any] | None = None
+    budget = _DIFF_LINE_CAP
+    for line in text.splitlines():
+        if line.startswith("diff --git"):
+            path = line.split(" b/")[-1] if " b/" in line else line[len("diff --git "):]
+            cur = {"path": path, "added": 0, "removed": 0, "lines": []}
+            files.append(cur)
+            continue
+        if cur is None:
+            continue
+        if line.startswith(("index ", "--- ", "+++ ", "new file", "deleted file",
+                            "similarity", "rename ", "old mode", "new mode", "Binary ")):
+            continue
+        if budget <= 0:
+            continue
+        budget -= 1
+        if line.startswith("@@"):
+            cur["lines"].append({"type": "hunk", "text": line})
+        elif line.startswith("+"):
+            cur["added"] += 1
+            cur["lines"].append({"type": "add", "text": line[1:]})
+        elif line.startswith("-"):
+            cur["removed"] += 1
+            cur["lines"].append({"type": "del", "text": line[1:]})
+        else:
+            cur["lines"].append({"type": "ctx", "text": line[1:] if line.startswith(" ") else line})
+    return files
+
+
+@app.get(f"{API_PREFIX}/project/diff")
+async def project_diff() -> dict[str, Any]:
+    """工作区真实 git 变更（相对 HEAD），供右侧「变更/审查」渲染真 +/- diff。"""
+    import subprocess
+
+    try:
+        out = subprocess.run(
+            ["git", "diff", "HEAD", "--no-color"],
+            cwd=str(_REPO_ROOT), capture_output=True, text=True, timeout=6,
+        )
+    except (OSError, subprocess.SubprocessError) as e:
+        raise HTTPException(status_code=500, detail=f"git diff 失败: {e}")
+    files = _parse_unified_diff(out.stdout) if out.returncode == 0 else []
+    return {"files": files}
+
+
 @app.get(f"{API_PREFIX}/project/file")
 async def project_file(path: str = Query(..., min_length=1)) -> dict[str, Any]:
     """读取项目内单个文本文件（点击文件树 → 载入编辑器）。含路径穿越防护。"""

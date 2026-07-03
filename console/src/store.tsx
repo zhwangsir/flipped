@@ -16,6 +16,7 @@ import type {
   ProjectContext,
   FileNode,
   BrowserRender,
+  GitDiffFile,
 } from './types';
 import { eventToStreamItem } from './types';
 import {
@@ -30,6 +31,7 @@ import {
   fetchProjectContext,
   fetchProjectFiles,
   fetchProjectFile,
+  fetchProjectDiff,
   renderBrowser as apiRenderBrowser,
   connectEvents,
 } from './api';
@@ -81,6 +83,9 @@ interface AppState {
   browserLoading: boolean;
   browserError: string | null;
   renderBrowser: (url: string) => Promise<void>;
+  gitDiff: GitDiffFile[];
+  gitDiffLoading: boolean;
+  loadGitDiff: () => Promise<void>;
   sessionQuery: string;
   setSessionQuery: (q: string) => void;
   selectSession: (id: string) => void;
@@ -126,6 +131,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [browserRender, setBrowserRender] = useState<BrowserRender | null>(null);
   const [browserLoading, setBrowserLoading] = useState(false);
   const [browserError, setBrowserError] = useState<string | null>(null);
+  const [gitDiff, setGitDiff] = useState<GitDiffFile[]>([]);
+  const [gitDiffLoading, setGitDiffLoading] = useState(false);
   const toggleTerminal = useCallback(() => setTerminalOpen((v) => !v), []);
   const prefillComposer = useCallback((text: string) => setComposerPrefill(text), []);
   const [sessionQuery, setSessionQuery] = useState('');
@@ -205,6 +212,19 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setBrowserError(e instanceof Error ? e.message : String(e));
     } finally {
       setBrowserLoading(false);
+    }
+  }, []);
+
+  // 阶段②c — 拉工作区真实 git diff（审查面板）
+  const loadGitDiff = useCallback(async () => {
+    setGitDiffLoading(true);
+    try {
+      const r = await fetchProjectDiff();
+      setGitDiff(r.files);
+    } catch {
+      setGitDiff([]);
+    } finally {
+      setGitDiffLoading(false);
     }
   }, []);
 
@@ -479,6 +499,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
         browserLoading,
         browserError,
         renderBrowser,
+        gitDiff,
+        gitDiffLoading,
+        loadGitDiff,
         sessionQuery,
         setSessionQuery,
         selectSession,

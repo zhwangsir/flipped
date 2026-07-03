@@ -79,6 +79,18 @@ export interface FileNode {
   children?: FileNode[];
 }
 
+/** 工作区真实 git diff（阶段②c — 审查面板）。 */
+export interface GitDiffLine {
+  type: 'add' | 'del' | 'ctx' | 'hunk';
+  text: string;
+}
+export interface GitDiffFile {
+  path: string;
+  added: number;
+  removed: number;
+  lines: GitDiffLine[];
+}
+
 /** 浏览器真内核渲染结果（阶段②b — 选中元素追踪）。 */
 export interface BrowserElement {
   tag: string;

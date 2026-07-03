@@ -123,6 +123,39 @@ def test_browser_render_requires_url():
         assert r.status_code == 422
 
 
+# ---------- 阶段②c 工作区 git diff（审查面板） ----------
+
+def test_project_diff_endpoint():
+    """/project/diff 返回 {files: [...]}（内容随工作树状态变化）。"""
+    with TestClient(app) as c:
+        r = c.get(f"{API_PREFIX}/project/diff")
+        assert r.status_code == 200
+        assert isinstance(r.json()["files"], list)
+
+
+def test_parse_unified_diff():
+    """统一 diff 解析：正确切分文件 + 标记 add/del/hunk/ctx。"""
+    from api.main import _parse_unified_diff
+
+    sample = (
+        "diff --git a/foo.py b/foo.py\n"
+        "index 111..222 100644\n"
+        "--- a/foo.py\n"
+        "+++ b/foo.py\n"
+        "@@ -1,3 +1,3 @@\n"
+        " keep\n"
+        "-old line\n"
+        "+new line\n"
+    )
+    files = _parse_unified_diff(sample)
+    assert len(files) == 1
+    f = files[0]
+    assert f["path"] == "foo.py"
+    assert f["added"] == 1 and f["removed"] == 1
+    types = [ln["type"] for ln in f["lines"]]
+    assert types == ["hunk", "ctx", "del", "add"]
+
+
 # ---------- M7.4 模式路由 ----------
 
 def test_task_mode_chat_routes_to_run_chat(monkeypatch):

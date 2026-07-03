@@ -1,9 +1,9 @@
-import { useState, type ReactNode } from 'react';
+import { useState, useEffect, type ReactNode } from 'react';
 import { useApp } from '../store';
 import type { ChangedFile, FileNode, BrowserElement } from '../types';
-import { diffLines, terminalLines, editorCode, problems } from '../mock';
+import { terminalLines, editorCode, problems } from '../mock';
 import { renderMarkdown } from '../lib/markdown';
-import { IconCode, IconFile, IconFolder, IconTerminal, IconBrowser, IconWarn, IconPuzzle, IconChat, IconX, IconChevronDown, IconEye } from '../icons';
+import { IconCode, IconFile, IconFolder, IconTerminal, IconBrowser, IconWarn, IconPuzzle, IconChat, IconX, IconChevronDown, IconEye, IconCheck } from '../icons';
 
 /** 递归文件树节点(阶段② — 右侧「文件」)。 */
 function FileTreeNode({ node, depth, activePath, onOpen }: {
@@ -128,6 +128,57 @@ function BrowserTab() {
           )}
         </>
       )}
+    </div>
+  );
+}
+
+/** 工作区真实 git diff 审查视图(阶段②c)。无会话变更时展示 `git diff HEAD` 的真 +/- diff。 */
+function GitDiffView() {
+  const { gitDiff, gitDiffLoading, loadGitDiff } = useApp();
+  useEffect(() => {
+    loadGitDiff();
+  }, [loadGitDiff]);
+
+  if (gitDiffLoading && gitDiff.length === 0) {
+    return <div className="side-empty">读取 git 变更…</div>;
+  }
+  if (gitDiff.length === 0) {
+    return (
+      <div className="rdiff-clean">
+        <IconCheck size={18} /> 工作区无未提交变更 · 干净的树
+      </div>
+    );
+  }
+  return (
+    <div className="rdiff">
+      <div className="file-head">
+        <IconFile size={13} /> 工作区 git 变更{' '}
+        <span className="add">{gitDiff.length} 个文件</span>
+        <button className="rdiff-refresh" onClick={() => loadGitDiff()} title="刷新">
+          刷新
+        </button>
+      </div>
+      {gitDiff.map((f) => (
+        <div className="rdiff-file" key={f.path}>
+          <div className="rdiff-fhead mono">
+            <IconFile size={12} />
+            <span className="rdiff-path">{f.path}</span>
+            <span className="rdiff-stat">
+              <span className="add">+{f.added}</span> <span className="del">−{f.removed}</span>
+            </span>
+          </div>
+          <div className="rdiff-body">
+            {f.lines.map((l, i) => (
+              <div className={'rdiff-row ' + l.type} key={i}>
+                <span className="rdiff-sign">
+                  {l.type === 'add' ? '+' : l.type === 'del' ? '-' : l.type === 'hunk' ? '' : ' '}
+                </span>
+                <span className="rdiff-tx">{l.text}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
     </div>
   );
 }
@@ -413,19 +464,7 @@ export function ContextPanel() {
               </div>
             </>
           ) : (
-            <>
-              <div className="file-head">
-                <IconFile size={13} /> app.py <span className="add">+14 −0</span>
-              </div>
-              <div className="diff">
-                {diffLines.map((l, i) => (
-                  <div className={'diff-row ' + l.type} key={i}>
-                    <span className="ln">{i + 1}</span>
-                    <span className="tx">{l.type === 'add' && <span className="sign">+ </span>}{l.text}</span>
-                  </div>
-                ))}
-              </div>
-            </>
+            <GitDiffView />
           )
         )}
 

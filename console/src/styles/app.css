@@ -1148,6 +1148,111 @@
 }
 
 /* editor */
+/* 阶段②c — 工作区真实 git diff 审查 */
+.rdiff-clean {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  justify-content: center;
+  padding: 48px 20px;
+  color: var(--text-faint);
+  font-size: var(--text-sm);
+}
+.rdiff-clean svg {
+  color: var(--success);
+}
+.rdiff .file-head {
+  gap: 8px;
+}
+.rdiff-refresh {
+  margin-left: auto;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  padding: 3px 9px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-subtle);
+  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+.rdiff-refresh:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.rdiff-file {
+  border-bottom: 1px solid var(--border-subtle);
+}
+.rdiff-fhead {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 12px;
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  background: var(--bg-sunken);
+  position: sticky;
+  top: 0;
+}
+.rdiff-fhead svg {
+  color: var(--text-muted);
+  flex: none;
+}
+.rdiff-path {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rdiff-stat {
+  margin-left: auto;
+  flex: none;
+  font-variant-numeric: tabular-nums;
+}
+.rdiff-stat .add {
+  color: var(--diff-add-text);
+}
+.rdiff-stat .del {
+  color: var(--diff-del-text);
+}
+.rdiff-body {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  line-height: 1.65;
+}
+.rdiff-row {
+  display: grid;
+  grid-template-columns: 16px 1fr;
+}
+.rdiff-sign {
+  text-align: center;
+  user-select: none;
+  color: var(--text-faint);
+}
+.rdiff-tx {
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--text-secondary);
+  padding-right: 10px;
+}
+.rdiff-row.add {
+  background: var(--diff-add-bg);
+}
+.rdiff-row.add .rdiff-tx,
+.rdiff-row.add .rdiff-sign {
+  color: var(--diff-add-text);
+}
+.rdiff-row.del {
+  background: var(--diff-del-bg);
+}
+.rdiff-row.del .rdiff-tx,
+.rdiff-row.del .rdiff-sign {
+  color: var(--diff-del-text);
+}
+.rdiff-row.hunk .rdiff-tx {
+  color: var(--text-faint);
+  background: var(--bg-sunken);
+}
+.rdiff-row.ctx .rdiff-tx {
+  color: var(--text-muted);
+}
+
 /* 阶段② — 右侧「文件」文件树 */
 .file-tree {
   padding: 6px 6px 20px;
