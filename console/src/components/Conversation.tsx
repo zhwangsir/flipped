@@ -159,32 +159,49 @@ function ChildIcon({ type }: { type: ToolChild['type'] }) {
   return <IconCheck size={12} />;
 }
 
+const STATUS_TEXT: Record<string, string> = { ok: '完成', running: '运行中', error: '失败' };
+
 function ToolRow({ tool }: { tool: ToolCall }) {
+  const hasBody = (tool.children && tool.children.length > 0) || !!tool.detail;
+  // Codex 式：输出默认折叠，失败自动展开
+  const [open, setOpen] = useState(tool.status === 'error');
   return (
-    <div className='tool'>
-      <span className='tool-ic'>
-        <ToolIcon name={tool.tool} />
-      </span>
-      <div className='tool-body'>
-        <div className='tool-sum'>{tool.summary}</div>
-        {tool.detail && <div className='tool-det'>{tool.detail}</div>}
-        {tool.children && tool.children.length > 0 && (
-          <div className='tool-children'>
-            {tool.children.map((c, i) => (
-              <div className={'tool-child ' + c.type} key={i}>
-                <span className='tool-child-ic'>
-                  <ChildIcon type={c.type} />
-                </span>
-                <span className='tool-child-tx'>{c.text}</span>
-              </div>
-            ))}
-          </div>
+    <div className={'tool-card ' + tool.status}>
+      <button
+        type='button'
+        className='tool-head'
+        onClick={() => hasBody && setOpen((o) => !o)}
+        disabled={!hasBody}
+      >
+        <span className='tool-ic'>
+          <ToolIcon name={tool.tool} />
+        </span>
+        <span className='tool-name mono'>{tool.tool}</span>
+        {tool.summary && tool.summary !== tool.tool && <span className='tool-sum'>{tool.summary}</span>}
+        <span className={'tool-status ' + tool.status}>
+          {tool.status === 'running' && <span className='tool-spin' />}
+          {tool.status === 'ok' && <IconCheck size={11} />}
+          {STATUS_TEXT[tool.status] || tool.status}
+        </span>
+        {hasBody && (
+          <span className={'tool-chev' + (open ? ' open' : '')}>
+            <IconChevronDown size={13} />
+          </span>
         )}
-      </div>
-      <span className={'tool-status ' + tool.status}>
-        {tool.status === 'ok' && <IconCheck size={11} />}
-        {tool.status === 'ok' ? '完成' : tool.status === 'running' ? '运行中' : tool.status}
-      </span>
+      </button>
+      {open && hasBody && (
+        <div className='tool-expand'>
+          {tool.detail && <div className='tool-det'>{tool.detail}</div>}
+          {tool.children?.map((c, i) => (
+            <div className={'tool-child ' + c.type} key={i}>
+              <span className='tool-child-ic'>
+                <ChildIcon type={c.type} />
+              </span>
+              <pre className='tool-child-tx'>{c.text}</pre>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
