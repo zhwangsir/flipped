@@ -615,6 +615,10 @@ async def _run_orchestrator(session_id: str, task_id: str, req: TaskRequest) -> 
                 **nodes,
             )
         if final.get("verified"):
+            # F7 交付步:验收通过 → 沙盒内自动提交成果(真实项目 + 非 mock + 未禁用)
+            if (not os.environ.get("FLIPPED_MOCK_ORCHESTRATOR")
+                    and ps.active_project() and cfg.get("auto_commit", True)):
+                await _deliver(session_id, goal, cwd)
             store.update_status(session_id, SessionStatus.done)
         elif final.get("stop_reason") in ("worker_error", "overseer_abort", "loop_detected", "circuit_breaker"):
             store.update_status(session_id, SessionStatus.error)
@@ -624,6 +628,34 @@ async def _run_orchestrator(session_id: str, task_id: str, req: TaskRequest) -> 
         store.update_status(session_id, SessionStatus.error)
         bus.emit(session_id, EventType.error, Role.system,
                  {"message": f"Orchestrator failed: {exc}"})
+
+
+async def _deliver(session_id: str, goal: str, cwd: str) -> None:
+    """交付步:在沙盒内提交验收通过的成果,并 emit 可见交付事件(F7)。"""
+    from executor.sandbox_deliver import make_sandbox_deliver
+    from executor.openhands_worker import OpenHandsWorker
+
+    deliver = make_sandbox_deliver(
+        agent_host=os.environ.get("OPENHANDS_AGENT_HOST", "http://localhost:8000"),
+        working_dir=cwd,
+        api_key=OpenHandsWorker._default_agent_api_key(),
+    )
+    try:
+        result = await asyncio.to_thread(deliver, goal)
+    except Exception as exc:  # noqa: BLE001 交付失败不该翻转已通过的验收
+        bus.emit(session_id, EventType.message, Role.worker,
+                 {"text": f"⚠️ 交付(提交)失败,成果仍在工作区: {exc}", "source": "deliver"})
+        return
+    if result.get("committed"):
+        subject = result["message"].splitlines()[0]
+        bus.emit(session_id, EventType.message, Role.worker,
+                 {"text": f"📦 已交付 · git commit\n{subject}", "source": "deliver"})
+    elif result.get("nochange"):
+        bus.emit(session_id, EventType.message, Role.worker,
+                 {"text": "📦 无文件变更,跳过提交。", "source": "deliver"})
+    else:
+        bus.emit(session_id, EventType.message, Role.worker,
+                 {"text": f"⚠️ 交付未提交:\n{result.get('output', '')[-400:]}", "source": "deliver"})
 
 
 async def _resume_orchestrator(session: Session) -> None:
