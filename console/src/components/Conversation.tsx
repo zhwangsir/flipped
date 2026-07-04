@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useApp } from '../store';
 import type { Role, StreamItem, ToolCall, ToolChild } from '../types';
 import {
@@ -249,6 +249,7 @@ export function Conversation() {
     setContextTab,
     projectContext,
     projects,
+    projectFiles,
     openProject,
     createProject,
     composerPrefill,
@@ -262,6 +263,27 @@ export function Conversation() {
   const [pickerMode, setPickerMode] = useState<null | 'import' | 'new'>(null);
   const [pickerInput, setPickerInput] = useState('');
   const [pickerErr, setPickerErr] = useState('');
+  const [mention, setMention] = useState<string | null>(null); // @ 之后的查询串,null=未提及
+  const [mentionSel, setMentionSel] = useState(0);
+
+  // 扁平化项目文件路径(供 @ 提及)
+  const flatFiles = useMemo(() => {
+    const out: string[] = [];
+    const walk = (nodes: typeof projectFiles) => {
+      for (const n of nodes) {
+        if (n.type === 'file') out.push(n.path);
+        else if (n.children) walk(n.children);
+      }
+    };
+    walk(projectFiles);
+    return out;
+  }, [projectFiles]);
+
+  const mentionMatches = useMemo(() => {
+    if (mention === null) return [];
+    const q = mention.toLowerCase();
+    return flatFiles.filter((f) => f.toLowerCase().includes(q)).slice(0, 8);
+  }, [mention, flatFiles]);
   const taRef = useRef<HTMLTextAreaElement>(null);
   const plusWrapRef = useRef<HTMLDivElement>(null);
   const projPickerRef = useRef<HTMLDivElement>(null);
@@ -341,9 +363,46 @@ export function Conversation() {
   const disabled = busy || approvalPending !== null;
   const isNewThread = !selectedSessionId && stream.length === 0 && !approvalPending;
 
+  // @ 提及:根据光标前的 @token 更新查询串
+  const onComposerChange = (value: string, cursor: number) => {
+    setText(value);
+    const m = /(?:^|\s)@([^\s@]*)$/.exec(value.slice(0, cursor));
+    setMention(m ? m[1] : null);
+    setMentionSel(0);
+  };
+  const pickMention = (path: string) => {
+    const ta = taRef.current;
+    const cursor = ta ? ta.selectionStart : text.length;
+    const before = text.slice(0, cursor).replace(/@([^\s@]*)$/, '@' + path + ' ');
+    const next = before + text.slice(cursor);
+    setText(next);
+    setMention(null);
+    requestAnimationFrame(() => {
+      if (ta) {
+        ta.focus();
+        ta.setSelectionRange(before.length, before.length);
+      }
+    });
+  };
+
   const composer = (
       <div className='composer'>
         <div className={'composer-box ' + (disabled ? 'disabled' : '')}>
+          {mention !== null && mentionMatches.length > 0 && (
+            <div className='mention-menu'>
+              <div className='mention-label'>项目文件</div>
+              {mentionMatches.map((f, i) => (
+                <button
+                  key={f}
+                  className={'mention-item mono' + (i === mentionSel ? ' active' : '')}
+                  onMouseMove={() => setMentionSel(i)}
+                  onClick={() => pickMention(f)}
+                >
+                  <IconFile size={12} /> {f}
+                </button>
+              ))}
+            </div>
+          )}
           <textarea
             ref={taRef}
             data-testid='composer-input'
@@ -351,8 +410,14 @@ export function Conversation() {
             placeholder='随心输入'
             value={text}
             disabled={disabled}
-            onChange={(e) => setText(e.target.value)}
+            onChange={(e) => onComposerChange(e.target.value, e.target.selectionStart)}
             onKeyDown={(e) => {
+              if (mention !== null && mentionMatches.length > 0) {
+                if (e.key === 'ArrowDown') { e.preventDefault(); setMentionSel((s) => Math.min(s + 1, mentionMatches.length - 1)); return; }
+                if (e.key === 'ArrowUp') { e.preventDefault(); setMentionSel((s) => Math.max(s - 1, 0)); return; }
+                if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); pickMention(mentionMatches[mentionSel]); return; }
+                if (e.key === 'Escape') { e.preventDefault(); setMention(null); return; }
+              }
               if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
                 submit();
