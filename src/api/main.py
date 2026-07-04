@@ -1,6 +1,6 @@
 """flipped orchestration API。
 
-入口: uvicorn src.api.main:app --host 127.0.0.1 --port 8001
+入口: PYTHONPATH=src uvicorn api.main:app --host 127.0.0.1 --port 8011  (见 scripts/dev_up.sh)
 """
 from __future__ import annotations
 
