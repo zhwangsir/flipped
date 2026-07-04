@@ -163,6 +163,7 @@ body.resizing {
   padding: 0 22px;
   min-width: 0;
   overflow: hidden;
+  border-left: 1px solid var(--border-subtle);
 }
 .launcher-item {
   display: flex;
