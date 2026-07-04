@@ -1,5 +1,5 @@
 import { useApp } from "../store";
-import { IconSidebar, IconLayout } from "../icons";
+import { IconSidebar, IconLayout, IconBolt } from "../icons";
 
 const CONN_LABEL: Record<string, string> = {
   connected: "已连接",
@@ -8,10 +8,19 @@ const CONN_LABEL: Record<string, string> = {
   idle: "未连接",
 };
 
-/** Codex 顶栏：极度克制。左侧栏折叠钮 + 线程标题，右侧极小连接点 + 面板折叠钮。 */
+/** token 数紧凑显示：12345 → 12.3k，1234567 → 1.2M。 */
+function formatTokens(n: number): string {
+  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + "M";
+  if (n >= 1_000) return (n / 1_000).toFixed(1) + "k";
+  return String(n);
+}
+
+/** Codex 顶栏：极度克制。左侧栏折叠钮 + 线程标题，右侧用量芯片 + 极小连接点 + 面板折叠钮。 */
 export function TopBar() {
-  const { toggleSidebar, toggleContext, selectedSessionId, sessions, connection } = useApp();
+  const { toggleSidebar, toggleContext, selectedSessionId, sessions, connection, metrics } = useApp();
   const session = sessions.find((s) => s.id === selectedSessionId);
+  const llm = metrics?.llm;
+  const calls = llm?.total_calls ?? 0;
   return (
     <header className="topbar">
       <button
@@ -24,6 +33,23 @@ export function TopBar() {
       </button>
       {session && <span className="topbar-title">{session.title}</span>}
       <span className="spacer" />
+      {calls > 0 && llm && (
+        <span
+          className="topbar-usage mono"
+          data-testid="usage-chip"
+          title={
+            "本地模型累计用量(编排/监督 LLM)\n" +
+            `调用 ${calls} 次 · 错误 ${llm.errors ?? 0}\n` +
+            `prompt ${formatTokens(llm.prompt_tokens ?? 0)} + completion ${formatTokens(
+              llm.completion_tokens ?? 0
+            )} = ${formatTokens(llm.total_tokens ?? 0)} tokens\n` +
+            `平均延迟 ${Math.round(llm.avg_latency_ms ?? 0)}ms`
+          }
+        >
+          <IconBolt size={11} />
+          {formatTokens(llm.total_tokens ?? 0)}
+        </span>
+      )}
       <span
         className={"topbar-conn dot " + connection}
         title={"WebSocket " + (CONN_LABEL[connection] || connection)}

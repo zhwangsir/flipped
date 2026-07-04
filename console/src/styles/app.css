@@ -2835,6 +2835,28 @@ textarea:focus {
   margin-right: 2px;
   opacity: 0.9;
 }
+/* F10 — 顶栏用量芯片(本地模型累计 token,自主循环预算感知) */
+.topbar-usage {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-right: 8px;
+  padding: 2px 8px;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-pill);
+  cursor: default;
+  user-select: none;
+}
+.topbar-usage svg {
+  opacity: 0.7;
+}
+.topbar-usage:hover {
+  color: var(--text-secondary);
+  border-color: var(--border);
+}
 
 /* ============ 阶段③b — 设置页(全屏 overlay,对齐真机 Codex) ============ */
 .settings-overlay {
