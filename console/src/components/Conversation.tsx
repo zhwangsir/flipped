@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useApp } from '../store';
 import type { Role, StreamItem, ToolCall, ToolChild } from '../types';
+import { isTauri, pickFolder } from '../lib/native';
 import {
   ToolIcon,
   IconSend,
@@ -349,6 +350,24 @@ export function Conversation() {
       setPickerErr(e instanceof Error ? e.message.replace(/^HTTP \d+: /, '') : '操作失败');
     }
   };
+  // 「导入现有文件夹」:桌面壳弹原生选择框;浏览器回退到粘贴路径输入
+  const importFolder = async () => {
+    if (isTauri()) {
+      const p = await pickFolder();
+      if (!p) return; // 取消
+      try {
+        await openProject(p);
+        closePicker();
+      } catch (e) {
+        setPickerMode('import');
+        setPickerInput(p);
+        setPickerErr(e instanceof Error ? e.message.replace(/^HTTP \d+: /, '') : '导入失败');
+      }
+    } else {
+      setPickerMode('import');
+      setPickerInput('');
+    }
+  };
 
   const handleApprove = () => {
     setApprovalBusy(true);
@@ -577,7 +596,7 @@ export function Conversation() {
                           <IconPlus size={14} />
                           <span className='pp-name'>新建空白项目</span>
                         </button>
-                        <button className='proj-picker-item' onClick={() => { setPickerMode('import'); setPickerInput(''); }}>
+                        <button className='proj-picker-item' onClick={importFolder}>
                           <IconFolder size={14} />
                           <span className='pp-name'>导入现有文件夹</span>
                         </button>
