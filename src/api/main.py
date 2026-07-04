@@ -569,22 +569,27 @@ async def _run_orchestrator(session_id: str, task_id: str, req: TaskRequest) -> 
                 supervisor=sup, worker=work, overseer=over, verifier=ver,
             )
         else:
-            # F1d — 有真实验收命令时,在沙盒内执行(代码/依赖在容器里;cwd=沙盒路径天然成立)
-            verifier_kwargs: dict[str, Any] = {}
+            # F1d — 验收在沙盒内执行(代码/依赖在容器里;cwd=沙盒路径天然成立);
+            #        无真实命令(['true'])时保留 host 默认 verifier,免无谓沙盒往返。
+            from driving.orchestrator import _safe_default_verifier
+            base_verifier = _safe_default_verifier
             if verify_cmd != ["true"]:
                 from executor.sandbox_verify import make_sandbox_verifier
                 from executor.openhands_worker import OpenHandsWorker
-                verifier_kwargs["verifier"] = make_sandbox_verifier(
+                base_verifier = make_sandbox_verifier(
                     agent_host=os.environ.get("OPENHANDS_AGENT_HOST", "http://localhost:8000"),
                     working_dir=cwd,
                     api_key=OpenHandsWorker._default_agent_api_key(),
                 )
+            # F2 — 每步实时推 WS 事件(supervisor/worker/overseer/verify),去黑盒
+            from api.orchestrator_stream import build_streaming_nodes
+            nodes = build_streaming_nodes(bus, session_id, base_verifier)
             final = await asyncio.to_thread(
                 drive_orchestrated,
                 goal=goal, cwd=cwd, verify_cmd=verify_cmd,
                 thread_id=session_id, db_path=db_path,
                 require_approval=cfg.get("require_approval", False),
-                **verifier_kwargs,
+                **nodes,
             )
         if final.get("verified"):
             store.update_status(session_id, SessionStatus.done)

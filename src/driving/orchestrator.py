@@ -150,51 +150,60 @@ def cline_worker(state: OrchestratorState) -> dict:
     return {"last_obs": obs, "signatures": sigs, "history": hist, "worker_error": werr}
 
 
-def openhands_worker(state: OrchestratorState) -> dict:
-    """Kimi via OpenHands SDK 在 Docker 沙盒中执行当前子任务。
+def make_openhands_worker(bus=None, session_id: str | None = None) -> WorkerFn:
+    """构建 OpenHands worker 节点(Kimi via SDK 在 Docker 沙盒执行子任务)。
 
-    这是 Phase B 的默认执行器：Supervisor(GLM) 拆子任务 -> OpenHands Worker(Kimi)
-    -> Overseer(GLM) 监督。Worker 通过 `model_router` 动态选择 LiteLLM proxy 或直连 exo。
+    Supervisor(GLM) 拆子任务 -> 本 Worker(Kimi) -> Overseer(GLM) 监督;Worker 经
+    `model_router` 动态选 LiteLLM proxy 或直连 exo。
+
+    - bus/session_id 给定 → worker 沙盒轨迹事件推到**真实会话**(F2 全程可见);
+    - 省略 → NullEventBus(默认,兼容直连编排/测试,不污染会话流)。
     """
-    session_id = f"orch-{uuid.uuid4().hex[:8]}"
-    task_id = f"subtask-{uuid.uuid4().hex[:8]}"
-    bus = NullEventBus()
-    worker_base_url, worker_model_alias = resolve_worker_model_config()
-    worker = OpenHandsWorker(
-        session_id=session_id,
-        task_id=task_id,
-        bus=bus,
-        agent_host=os.environ.get("OPENHANDS_AGENT_HOST", "http://localhost:8000"),
-        working_dir=state["cwd"],
-        model_alias=worker_model_alias,
-        base_url=worker_base_url,
-    )
-    try:
-        summary = worker.run(state["current_subtask"])
-    except Exception as e:  # noqa: BLE001
-        err_sig = f"error:{type(e).__name__}"
+
+    def node(state: OrchestratorState) -> dict:
+        sid = session_id or f"orch-{uuid.uuid4().hex[:8]}"
+        task_id = f"subtask-{uuid.uuid4().hex[:8]}"
+        event_bus = bus if bus is not None else NullEventBus()
+        worker_base_url, worker_model_alias = resolve_worker_model_config()
+        worker = OpenHandsWorker(
+            session_id=sid,
+            task_id=task_id,
+            bus=event_bus,
+            agent_host=os.environ.get("OPENHANDS_AGENT_HOST", "http://localhost:8000"),
+            working_dir=state["cwd"],
+            model_alias=worker_model_alias,
+            base_url=worker_base_url,
+        )
+        try:
+            summary = worker.run(state["current_subtask"])
+        except Exception as e:  # noqa: BLE001
+            err_sig = f"error:{type(e).__name__}"
+            return {
+                "last_obs": {"ok": False, "summary": {"tool_calls": 0}, "error": str(e)},
+                "signatures": state.get("signatures", []) + [err_sig],
+                "history": state.get("history", []) + [{"step": "worker", "summary": {"tool_calls": 0}, "error": True}],
+                "worker_error": True,
+            }
+
+        sig = _openhands_signature(worker.events)
+        tool_calls = sum(1 for e in worker.events if type(e).__name__ == "ActionEvent")
+        ok = summary.get("status") == "done"
+        werr = (not ok) and tool_calls == 0
+        hist = state.get("history", []) + [
+            {"step": "worker", "summary": {"tool_calls": tool_calls, **summary}, "signature": sig, "error": werr}
+        ]
         return {
-            "last_obs": {"ok": False, "summary": {"tool_calls": 0}, "error": str(e)},
-            "signatures": state.get("signatures", []) + [err_sig],
-            "history": state.get("history", []) + [{"step": "worker", "summary": {"tool_calls": 0}, "error": True}],
-            "worker_error": True,
+            "last_obs": {"ok": ok, "summary": {"tool_calls": tool_calls, **summary}},
+            "signatures": state.get("signatures", []) + [sig],
+            "history": hist,
+            "worker_error": werr,
         }
 
-    sig = _openhands_signature(worker.events)
-    tool_calls = sum(1 for e in worker.events if type(e).__name__ == "ActionEvent")
-    ok = summary.get("status") == "done"
-    werr = (not ok) and tool_calls == 0
-    hist = state.get("history", []) + [
-        {"step": "worker", "summary": {"tool_calls": tool_calls, **summary}, "signature": sig, "error": werr}
-    ]
-    return {
-        "last_obs": {"ok": ok, "summary": {"tool_calls": tool_calls, **summary}},
-        "signatures": state.get("signatures", []) + [sig],
-        "history": hist,
-        "worker_error": werr,
-    }
+    return node
 
 
+# 默认 worker 节点(NullEventBus,不推事件)。F2 的可见 worker 由 make_openhands_worker(bus, sid) 构建。
+openhands_worker = make_openhands_worker()
 default_worker = openhands_worker
 
 
