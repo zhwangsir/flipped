@@ -322,6 +322,20 @@ async def project_diff() -> dict[str, Any]:
     return {"files": files}
 
 
+@app.get(f"{API_PREFIX}/project/verify")
+async def project_verify() -> dict[str, Any]:
+    """探测活动项目的验收命令(自主模式据此自我验证)。无项目 → detected=False。"""
+    from driving.verify_detect import detect_verify_command
+
+    root = ps.project_root()
+    if root is None:
+        return {"command": ["true"], "label": "(未选择项目)", "source": "none",
+                "confidence": "none", "detected": False}
+    plan = detect_verify_command(root)
+    return {"command": plan.command, "label": plan.label, "source": plan.source,
+            "confidence": plan.confidence, "detected": plan.detected}
+
+
 @app.get(f"{API_PREFIX}/project/file")
 async def project_file(path: str = Query(..., min_length=1)) -> dict[str, Any]:
     """读取项目内单个文本文件（点击文件树 → 载入编辑器）。含路径穿越防护。"""
