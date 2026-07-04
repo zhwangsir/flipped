@@ -2759,6 +2759,11 @@ textarea:focus {
 .term-holder .xterm {
   height: 100%;
 }
+/* 面板「终端」tab 里的 pty:panel-body 非 flex,需显式撑满其 grid 高度 */
+.term-holder.term-panel {
+  height: 100%;
+  box-sizing: border-box;
+}
 
 /* ============ Codex 式变更文件 diff 块(R4) ============ */
 .diff-files {

@@ -1,7 +1,7 @@
 /** Console ↔ orchestration-api HTTP + WebSocket 客户端。 */
 import type { Session, ApiEvent, Metrics, McpServer, ProjectContext, Project, FileNode, BrowserRender, GitDiffFile } from './types';
 
-const API_BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined) || 'http://127.0.0.1:8001';
+const API_BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined) || 'http://127.0.0.1:8011';
 const API_PREFIX = '/api/v1';
 
 async function api<T>(path: string, init?: RequestInit): Promise<T> {

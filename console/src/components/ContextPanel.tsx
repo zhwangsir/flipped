@@ -1,8 +1,8 @@
 import { useState, useEffect, type ReactNode } from 'react';
 import { useApp } from '../store';
 import type { ChangedFile, FileNode, BrowserElement } from '../types';
-import { terminalLines } from '../mock';
 import { renderMarkdown } from '../lib/markdown';
+import { PtyTerminal } from './PtyTerminal';
 import { IconFile, IconFolder, IconTerminal, IconBrowser, IconReview, IconChat, IconX, IconChevronDown, IconEye, IconCheck } from '../icons';
 
 /** 递归文件树节点(阶段② — 右侧「文件」)。 */
@@ -258,7 +258,6 @@ function langOf(path: string): string {
 
 export function ContextPanel() {
   const {
-    terminalBlocks,
     changedFiles,
     contextTab: tab,
     setContextTab: setTab,
@@ -292,7 +291,6 @@ export function ContextPanel() {
     setCommentText('');
   };
 
-  const hasTerm = terminalBlocks.length > 0;
   const hasFiles = changedFiles.length > 0;
 
   return (
@@ -410,22 +408,7 @@ export function ContextPanel() {
           )
         )}
 
-        {tab === 'term' && (
-          <div className="term">
-            {hasTerm
-              ? terminalBlocks.map((b, i) => (
-                  <div key={i}>
-                    <div className="cmd">$ {b.command}</div>
-                    {b.output.split('\n').map((o, j) => (
-                      <div key={j} className={o.includes('passed') || o.includes('200') || b.exit === 0 ? 'ok' : ''}>{o}</div>
-                    ))}
-                  </div>
-                ))
-              : terminalLines.map((l, i) => (
-                  <div key={i} className={l.startsWith('$') ? 'cmd' : l.includes('passed') || l.includes('200') ? 'ok' : ''}>{l}</div>
-                ))}
-          </div>
-        )}
+        {tab === 'term' && <PtyTerminal active={tab === 'term'} className="term-panel" />}
 
         {tab === 'browser' && <BrowserTab />}
       </div>
