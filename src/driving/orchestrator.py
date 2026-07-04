@@ -66,6 +66,7 @@ class OrchestratorState(TypedDict, total=False):
     goal: str
     cwd: str
     verify_cmd: list[str]
+    project_rules: str
     data_dir: str
     max_iterations: int
     loop_threshold: int
@@ -110,8 +111,22 @@ def _make_llm(alias: str, temperature: float = 0, callbacks=None):
                       callbacks=callbacks)
 
 
+def _build_supervisor_prompt(state: OrchestratorState) -> str:
+    """构建 supervisor 拆解 prompt(含项目规则/反馈/历史摘要)。抽出便于单测。"""
+    fb = state.get("feedback", "")
+    summary_note = ""
+    ctx_summary = state.get("context_summary")
+    if ctx_summary:
+        summary_note = f"\n历史摘要：{ctx_summary.get('digest', '')}"
+    rules = state.get("project_rules", "")
+    rules_note = f"\n项目规则(务必遵守项目约定)：\n{rules}\n" if rules else ""
+    return (f"目标：{state['goal']}\n工作目录：{state['cwd']}\n{rules_note}"
+            f"{'反馈(上一轮验收失败/监督意见，必须据此调整)：' + fb if fb else '这是首轮。'}{summary_note}\n"
+            "你是架构调度者。给出执行者下一步要做的【一个】自包含子任务；若相信目标已达成则 believe_done=true。")
+
+
 def default_supervisor(state: OrchestratorState) -> dict:
-    """GLM 调度：据目标 + 反馈，给出下一步子任务（干净结构化），或相信已完成。"""
+    """GLM 调度：据目标 + 项目规则 + 反馈，给出下一步子任务（干净结构化），或相信已完成。"""
     from pydantic import BaseModel, Field
 
     class Plan(BaseModel):
@@ -119,14 +134,7 @@ def default_supervisor(state: OrchestratorState) -> dict:
         subtask: str = Field(description="给执行者(coder)的下一步具体子任务，自包含、含必要上下文，勿引用历史")
         rationale: str = Field(description="一句话理由")
 
-    fb = state.get("feedback", "")
-    summary_note = ""
-    ctx_summary = state.get("context_summary")
-    if ctx_summary:
-        summary_note = f"\n历史摘要：{ctx_summary.get('digest', '')}"
-    msg = (f"目标：{state['goal']}\n工作目录：{state['cwd']}\n"
-           f"{'反馈(上一轮验收失败/监督意见，必须据此调整)：' + fb if fb else '这是首轮。'}{summary_note}\n"
-           "你是架构调度者。给出执行者下一步要做的【一个】自包含子任务；若相信目标已达成则 believe_done=true。")
+    msg = _build_supervisor_prompt(state)
     try:
         # method="function_calling"：GLM/exo 不支持 json_schema(langchain 默认)，但支持工具调用(M0.4)
         plan = _make_llm("architect", callbacks=[MetricsCallbackHandler()]).with_structured_output(Plan, method="function_calling").invoke(msg)
@@ -390,6 +398,7 @@ def drive_orchestrated(goal: str, cwd: str, verify_cmd: list, *,
                        max_iterations: int = 4, loop_threshold: int = DEFAULT_LOOP_THRESHOLD,
                        thread_id: str = "default", db_path: str = ":memory:",
                        data_dir: str | None = None, require_approval: bool = False,
+                       project_rules: str = "",
                        max_context_tokens: int = 10000, keep_recent: int = 4,
                        summarizer: Callable | None = None,
                        max_checkpoints: int = 50,
@@ -405,6 +414,7 @@ def drive_orchestrated(goal: str, cwd: str, verify_cmd: list, *,
 
     initial: OrchestratorState = {
         "goal": goal, "cwd": cwd, "verify_cmd": verify_cmd, "data_dir": data_dir,
+        "project_rules": project_rules,
         "max_iterations": max_iterations, "loop_threshold": loop_threshold,
         "require_approval": require_approval, "worker_error": False,
         "iteration": 0, "signatures": [], "feedback": "", "verified": False,
