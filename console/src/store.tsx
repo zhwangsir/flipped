@@ -20,7 +20,7 @@ import type {
   BrowserRender,
   GitDiffFile,
 } from './types';
-import { eventToStreamItem } from './types';
+import { eventToStreamItem, detectServerUrl } from './types';
 import {
   fetchSessions,
   createSession as apiCreateSession,
@@ -58,6 +58,7 @@ interface AppState {
   browserView: BrowserView | null;
   changedFiles: ChangedFile[];
   plan: PlanState | null;
+  detectedServerUrl: string | null;
   metrics: Metrics | null;
   mcpServers: McpServer[];
   toggleMcpServer: (name: string, enabled: boolean) => Promise<void>;
@@ -128,6 +129,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [browserView, setBrowserView] = useState<BrowserView | null>(null);
   const [changedFiles, setChangedFiles] = useState<ChangedFile[]>([]);
   const [plan, setPlan] = useState<PlanState | null>(null);
+  const [detectedServerUrl, setDetectedServerUrl] = useState<string | null>(null);
   const [metrics, setMetrics] = useState<Metrics | null>(null);
   const [mcpServers, setMcpServers] = useState<McpServer[]>([]);
   const [selectedModel, setSelectedModel] = useState('coder');
@@ -381,6 +383,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setBrowserView(null);
       setChangedFiles([]);
       setPlan(null);
+      setDetectedServerUrl(null);
       return;
     }
 
@@ -396,6 +399,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setBrowserView(null);
     setChangedFiles([]);
     setPlan(null);
+    setDetectedServerUrl(null);
 
     const appendEvent = (ev: ApiEvent) => {
       // M6.1 — 从事件流派生 ContextPanel 的真实上下文数据
@@ -404,6 +408,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
           ...prev,
           { command: ev.payload.command || '', output: ev.payload.output || '', exit: ev.payload.exit_code },
         ]);
+        // F9+ — 从 agent 终端输出探测 dev server URL,供浏览器面板一键实时预览
+        const found = detectServerUrl(`${ev.payload.command || ''}\n${ev.payload.output || ''}`);
+        if (found) setDetectedServerUrl(found);
       } else if (ev.type === 'browser') {
         setBrowserView({ url: ev.payload.url, title: ev.payload.title, screenshot: ev.payload.screenshot });
       } else if (ev.type === 'file_change') {
@@ -552,6 +559,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         browserView,
         changedFiles,
         plan,
+        detectedServerUrl,
         metrics,
         mcpServers,
         toggleMcpServer,

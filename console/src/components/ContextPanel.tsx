@@ -50,6 +50,7 @@ function BrowserTab() {
     renderBrowser,
     browserView,
     prefillComposer,
+    detectedServerUrl,
   } = useApp();
   const [url, setUrl] = useState(browserRender?.url || browserView?.url || '');
   const [selected, setSelected] = useState<BrowserElement | null>(null);
@@ -97,6 +98,20 @@ function BrowserTab() {
           {browserLoading ? '渲染…' : '截图'}
         </button>
       </div>
+      {detectedServerUrl && detectedServerUrl !== liveUrl && (
+        <button
+          className="rbrowser-detected"
+          data-testid="detected-server"
+          onClick={() => {
+            setUrl(detectedServerUrl);
+            setView('live');
+            setLiveUrl(detectedServerUrl);
+          }}
+          title="agent 终端里检测到本地服务,点击实时预览"
+        >
+          <IconEye size={12} /> 检测到本地服务 <span className="mono">{detectedServerUrl}</span> · 预览
+        </button>
+      )}
       {view === 'live' ? (
         liveUrl ? (
           <iframe

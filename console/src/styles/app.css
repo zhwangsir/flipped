@@ -2114,6 +2114,28 @@ body.resizing {
   color: var(--text-primary);
   border-color: var(--border-strong);
 }
+/* 探测到 agent 终端里的 dev server → 一键实时预览(Windsurf 式) */
+.rbrowser-detected {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 6px 10px;
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  background: color-mix(in oklab, var(--success) 8%, var(--bg-surface));
+  border: none;
+  border-bottom: 1px solid var(--border-subtle);
+  cursor: pointer;
+  text-align: left;
+}
+.rbrowser-detected:hover {
+  background: color-mix(in oklab, var(--success) 14%, var(--bg-surface));
+  color: var(--text-primary);
+}
+.rbrowser-detected .mono {
+  color: var(--text-primary);
+}
 /* 实时可交互预览 iframe(本地 dev server) */
 .rbrowser-live {
   flex: 1;

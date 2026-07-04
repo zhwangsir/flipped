@@ -204,6 +204,15 @@ export function eventToStreamItem(ev: ApiEvent): StreamItem | null {
   }
 }
 
+/** 从终端输出探测本地 dev server URL(Windsurf 式实时预览)。无则 null。 */
+const SERVER_URL_RE = /https?:\/\/(?:localhost|127\.0\.0\.1|0\.0\.0\.0)(?::\d+)?(?:\/[^\s'"]*)?/i;
+export function detectServerUrl(text: string): string | null {
+  if (!text) return null;
+  const m = text.match(SERVER_URL_RE);
+  if (!m) return null;
+  return m[0].replace('0.0.0.0', 'localhost').replace(/\/+$/, '');
+}
+
 /** 简单的相对时间，用于会话列表。 */
 export function formatWhen(iso: string): string {
   const then = new Date(iso).getTime();
