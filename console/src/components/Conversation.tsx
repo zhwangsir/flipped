@@ -612,8 +612,9 @@ export function Conversation() {
             className='ctx-mode'
             value={selectedMode}
             onChange={(e) => setMode(e.target.value)}
-            title='模式：智能体(沙盒执行) / 对话(直连模型) / 规划(拆步骤)'
+            title='模式：自主(拆→写→测→修→循环,全自动) / 智能体(沙盒单次执行) / 对话(直连模型) / 规划(拆步骤)'
           >
+            <option value='auto'>自主</option>
             <option value='agent'>智能体</option>
             <option value='chat'>对话</option>
             <option value='plan'>规划</option>

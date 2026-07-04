@@ -441,6 +441,20 @@ async def cancel_session(session_id: str) -> Session:
 
 # ---------- 任务派发 ----------
 
+def _select_runner(mode: str, has_orchestrator: bool, mock: bool) -> str:
+    """据 mode/上下文选执行器(纯函数,可测)。
+
+    - auto(F3 一等自主模式)或显式 orchestrator 配置 → 完整多 Agent 监督循环
+    - chat/plan → 直连模型对话/规划,不启沙盒
+    - 其余(agent) → 单次 OpenHands 沙盒执行(mock 时走事件流模拟)
+    """
+    if mode == "auto" or has_orchestrator:
+        return "orchestrator"
+    if mode in ("chat", "plan"):
+        return "chat"
+    return "mock" if mock else "openhands"
+
+
 @app.post(f"{API_PREFIX}/sessions/{{session_id}}/tasks", response_model=TaskResponse)
 async def create_task(session_id: str, req: TaskRequest) -> TaskResponse:
     session = store.get(session_id)
@@ -451,14 +465,15 @@ async def create_task(session_id: str, req: TaskRequest) -> TaskResponse:
     bus.emit(session_id, EventType.status, Role.system,
              {"status": "running", "progress": 0, "note": f"任务 {task_id} 已派发"})
     mode = req.context.get("mode", "agent")
-    if req.context.get("orchestrator"):
+    runner = _select_runner(mode, bool(req.context.get("orchestrator")), MOCK_WORKER)
+    if runner == "orchestrator":
         t = asyncio.create_task(_run_orchestrator(session_id, task_id, req))
-    elif mode in ("chat", "plan"):
+    elif runner == "chat":
         # 对话/规划模式：直连本地模型，不启动沙盒
         t = asyncio.create_task(
             _run_chat(session_id, task_id, req.description, req.context.get("model", "coder"), mode)
         )
-    elif MOCK_WORKER:
+    elif runner == "mock":
         t = asyncio.create_task(_mock_run(session_id, task_id, req.description))
     else:
         t = asyncio.create_task(_run_openhands(session_id, task_id, req.description, req.context.get("model", "coder")))
