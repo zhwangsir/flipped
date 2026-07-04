@@ -317,7 +317,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const selectSession = useCallback((id: string) => {
     setSelectedSessionId(id);
-  }, []);
+    // 会话绑定项目 → 选中会话时把活动项目切到它的项目(文件树/审查/终端/agent 都跟着走)
+    const s = sessions.find((x) => x.id === id);
+    if (s?.project && s.project !== projectContext?.path) {
+      openProject(s.project).catch(() => {});
+    }
+  }, [sessions, projectContext, openProject]);
 
   const createSession = useCallback(async (title = '新任务', mode = selectedMode) => {
     const s = await apiCreateSession(title, mode);

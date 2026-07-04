@@ -42,6 +42,8 @@ export interface Session {
   status: SessionStatus;
   model: string;
   mode?: string; // agent(项目) | plan(项目) | chat(对话)
+  project?: string | null;       // 所属项目 host 路径
+  project_name?: string | null;  // 项目名
   goal?: string | null;
   created_at: string;
   updated_at: string;

@@ -160,6 +160,25 @@ def test_session_mode_field(monkeypatch, tmp_path):
         assert default["mode"] == "agent"
 
 
+def test_session_binds_active_project(monkeypatch, tmp_path):
+    """建会话时捕获活动项目(切回会话时项目跟着切);无项目则 project=None。"""
+    ps, pdir = _mk_projects_dir(monkeypatch, tmp_path)
+    monkeypatch.setenv("FLIPPED_SESSION_STORE_PATH", str(tmp_path / "s.json"))
+    d = pdir / "projA"
+    d.mkdir()
+    ps.set_active(d)
+    try:
+        with TestClient(app) as c:
+            s = c.post(f"{API_PREFIX}/sessions", params={"title": "t"}).json()
+            assert s["project"] == str(d) and s["project_name"] == "projA"
+        ps.clear_active()
+        with TestClient(app) as c:
+            s2 = c.post(f"{API_PREFIX}/sessions", params={"title": "t2"}).json()
+            assert s2["project"] is None and s2["project_name"] is None
+    finally:
+        ps.clear_active()
+
+
 # ---------- 阶段②b 浏览器渲染（URL 校验，不启浏览器） ----------
 
 def test_browser_render_rejects_non_http():

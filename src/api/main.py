@@ -365,7 +365,13 @@ async def browser_render(req: BrowserRenderRequest) -> dict[str, Any]:
 
 @app.post(f"{API_PREFIX}/sessions", response_model=Session)
 async def create_session(title: str = "新任务", mode: str = "agent") -> Session:
-    session = store.create(title=title, mode=mode)
+    # 捕获当前活动项目 → 会话绑定该项目(切回会话时项目跟着切)
+    proj = ps.active_project()
+    session = store.create(
+        title=title, mode=mode,
+        project=proj["host"] if proj else None,
+        project_name=proj["name"] if proj else None,
+    )
     bus.emit(session.id, EventType.status, Role.system,
              {"status": session.status, "progress": 0, "note": "会话已创建"})
     return session
