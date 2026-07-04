@@ -67,6 +67,7 @@ class OrchestratorState(TypedDict, total=False):
     cwd: str
     verify_cmd: list[str]
     project_rules: str
+    repo_map: str
     data_dir: str
     max_iterations: int
     loop_threshold: int
@@ -120,7 +121,9 @@ def _build_supervisor_prompt(state: OrchestratorState) -> str:
         summary_note = f"\n历史摘要：{ctx_summary.get('digest', '')}"
     rules = state.get("project_rules", "")
     rules_note = f"\n项目规则(务必遵守项目约定)：\n{rules}\n" if rules else ""
-    return (f"目标：{state['goal']}\n工作目录：{state['cwd']}\n{rules_note}"
+    repo = state.get("repo_map", "")
+    repo_note = f"\n项目结构(据此把代码放对位置、别重造已有模块)：\n{repo}\n" if repo else ""
+    return (f"目标：{state['goal']}\n工作目录：{state['cwd']}\n{repo_note}{rules_note}"
             f"{'反馈(上一轮验收失败/监督意见，必须据此调整)：' + fb if fb else '这是首轮。'}{summary_note}\n"
             "你是架构调度者。给出执行者下一步要做的【一个】自包含子任务；若相信目标已达成则 believe_done=true。")
 
@@ -398,7 +401,7 @@ def drive_orchestrated(goal: str, cwd: str, verify_cmd: list, *,
                        max_iterations: int = 4, loop_threshold: int = DEFAULT_LOOP_THRESHOLD,
                        thread_id: str = "default", db_path: str = ":memory:",
                        data_dir: str | None = None, require_approval: bool = False,
-                       project_rules: str = "",
+                       project_rules: str = "", repo_map: str = "",
                        max_context_tokens: int = 10000, keep_recent: int = 4,
                        summarizer: Callable | None = None,
                        max_checkpoints: int = 50,
@@ -414,7 +417,7 @@ def drive_orchestrated(goal: str, cwd: str, verify_cmd: list, *,
 
     initial: OrchestratorState = {
         "goal": goal, "cwd": cwd, "verify_cmd": verify_cmd, "data_dir": data_dir,
-        "project_rules": project_rules,
+        "project_rules": project_rules, "repo_map": repo_map,
         "max_iterations": max_iterations, "loop_threshold": loop_threshold,
         "require_approval": require_approval, "worker_error": False,
         "iteration": 0, "signatures": [], "feedback": "", "verified": False,

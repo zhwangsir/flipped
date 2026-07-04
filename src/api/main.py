@@ -574,6 +574,9 @@ async def _run_orchestrator(session_id: str, task_id: str, req: TaskRequest) -> 
     # F6 — 读活动项目的规则文件(AGENTS.md/.cursorrules/CLAUDE.md…)喂给 Supervisor 拆解
     from driving.project_rules import read_project_rules
     project_rules = read_project_rules(ps.project_root())
+    # F5 — 仓库结构地图(技术栈/目录布局)喂给 Supervisor,拆解更贴合项目实际
+    from driving.repo_map import build_repo_map
+    repo_map = build_repo_map(ps.project_root())
     db_path = FLIPPED_CHECKPOINT_DB
     store.update(session_id, goal=goal, verify_cmd=verify_cmd, cwd=cwd, checkpoint_db_path=db_path)
     try:
@@ -581,7 +584,8 @@ async def _run_orchestrator(session_id: str, task_id: str, req: TaskRequest) -> 
             sup, work, over, ver = _mock_orchestrator_fns()
             final = await asyncio.to_thread(
                 drive_orchestrated,
-                goal=goal, cwd=cwd, verify_cmd=verify_cmd, project_rules=project_rules,
+                goal=goal, cwd=cwd, verify_cmd=verify_cmd,
+                project_rules=project_rules, repo_map=repo_map,
                 thread_id=session_id, db_path=db_path,
                 require_approval=cfg.get("require_approval", False),
                 supervisor=sup, worker=work, overseer=over, verifier=ver,
@@ -604,7 +608,8 @@ async def _run_orchestrator(session_id: str, task_id: str, req: TaskRequest) -> 
             nodes = build_streaming_nodes(bus, session_id, base_verifier)
             final = await asyncio.to_thread(
                 drive_orchestrated,
-                goal=goal, cwd=cwd, verify_cmd=verify_cmd, project_rules=project_rules,
+                goal=goal, cwd=cwd, verify_cmd=verify_cmd,
+                project_rules=project_rules, repo_map=repo_map,
                 thread_id=session_id, db_path=db_path,
                 require_approval=cfg.get("require_approval", False),
                 **nodes,

@@ -31,28 +31,40 @@
 
 ## 六大增量(按优先级)
 
-### F1 · 真实自我验证 【地基】🔨 进行中
+> **状态(2026-07-04):F1–F6 全部完成 ✅**。自主循环已可用:选「自主」模式 + 给目标 →
+> 探测怎么验证 → 读项目规则/结构 → 拆子任务(实时计划卡)→ 沙盒执行(轨迹上屏)→
+> 监督 → 沙盒跑真测判定 → 循环。后端 190 tests 全绿。
+> 下一阶段(F7+):交付步(验收通过后沙盒内自动 commit)/并行线程/端到端真机(需 exo LAUNCH 模型)。
+
+### F1 · 真实自我验证 【地基】✅ 完成
 `verify_cmd` 默认 `["true"]`(永远通过)= 循环空转,自主开发是假的。
 - **F1a** 验证命令探测器:读项目文件 → 推断测试/构建命令(pytest / npm test / cargo test / go test / make test …)。纯函数,完全可测。✅
 - **F1b** `GET /project/verify` 端点:活动项目的探测结果(命令 + 来源 + 置信度)。
 - **F1c** 自主模式接线:orchestrator 的 verify_cmd 用探测结果,不再手填。
 - **F1d** 验证在正确位置跑(沙盒/host bind-mount 目录),修 `_safe_default_verifier` 的 cwd 语义。
 
-### F2 · 透明的实时循环
-orchestrator 用 `NullEventBus` = 黑盒。让 Supervisor/Worker/Overseer/Verify 每步都推 WS 事件。
-- 子任务 → plan 事件;Worker → 进度;Overseer → verdict;Verify → 勾选。
+### F2 · 透明的实时循环 ✅ 完成
+`orchestrator_stream.py` 把 Supervisor/Worker/Overseer/Verify 每步产出即 emit WS 事件(去 NullEventBus 黑盒)。
 
-### F3 · 一等「自主」模式
-composer 增 `mode=auto`(与 agent/plan/chat 并列):给目标即启动完整循环,自动探测验证命令,无需手配 orchestrator。
+### F3 · 一等「自主」模式 ✅ 完成
+composer `mode=auto`;`_select_runner` 路由到 orchestrator,自动探测验证命令,无需手配。
 
-### F4 · 实时计划清单(可见脊柱)
-右侧/中央显示 Devin/Qoder 式任务清单:N 步、当前第几步、勾选进度、每步验证状态。
+### F4 · 实时计划清单(可见脊柱)✅ 完成
+`PlanTracker`(后端 emit `plan` 事件)+ `PlanCard`(前端钉流顶,状态图标 ✓/⟳/↻/✗ + 计数)。
 
-### F5 · 仓库记忆(Qoder wiki / Cursor 索引)
-RAG 自动索引活动项目 → 喂给 Supervisor 拆解时的上下文(项目结构/约定)。
+### F5 · 仓库记忆(Qoder wiki / Cursor 索引)✅ 完成
+`repo_map.py` 把活动项目压成紧凑结构地图(技术栈/目录布局)喂 Supervisor。选确定性结构地图而非
+语义 RAG:Supervisor 需布局感知,语义检索对 Worker 更有用而 Worker(OpenHands)已能探索沙盒。
 
-### F6 · 项目规则文件(AGENTS.md / .cursorrules / CLAUDE.md)
-Supervisor/Worker 读取项目根的规则文件,遵守项目特定约定。
+### F6 · 项目规则文件(AGENTS.md / .cursorrules / CLAUDE.md)✅ 完成
+`project_rules.py` 读项目根规则文件(AGENTS.md/CLAUDE.md/.cursorrules/.windsurfrules/…)注入 Supervisor prompt。
+
+## F7+ · 下一阶段(闭环交付与规模化)
+
+- **F7 交付步**:验收通过后在沙盒内自动 `git commit`(生成规范提交信息),给自主开发一个有形产物(Devin/Codex 式)。
+- **F8 端到端真机**:exo LAUNCH 双模型后跑一个真实项目全循环验证(当前受基础设施限制)。
+- **F9 并行线程 / worktree**:多目标并行,状态板(Codex parallel threads)。
+- **F10 成本/预算**:token 预算显示与上限(Devin ACU 式)。
 
 ## 验证纪律
 
