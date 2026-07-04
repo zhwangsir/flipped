@@ -22,7 +22,8 @@ def _api_key() -> str | None:
 
 def _model_id_for_alias(alias: str) -> str:
     env_map = {
-        "architect": os.environ.get("FLIPPED_ARCHITECT_MODEL", "mlx-community/GLM-5.2-fp8"),
+        # F8 实测:集群实际 LAUNCH 的是 DQ4plus-q8(fp8 无实例 404)——默认对齐现实
+        "architect": os.environ.get("FLIPPED_ARCHITECT_MODEL", "mlx-community/GLM-5.2-DQ4plus-q8"),
         "coder": os.environ.get("FLIPPED_CODER_MODEL", "mlx-community/Kimi-K2.7-Code-4bit"),
     }
     return env_map.get(alias, alias)

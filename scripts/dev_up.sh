@@ -47,6 +47,7 @@ else
   PYTHONPATH=src EXO_API_KEY="${EXO_API_KEY:-dummy}" \
     OPENHANDS_AGENT_HOST="http://localhost:$OH_PORT" \
     FLIPPED_MODEL_BASE_URL="$EXO" \
+    FLIPPED_ARCHITECT_MODEL="${FLIPPED_ARCHITECT_MODEL:-mlx-community/GLM-5.2-DQ4plus-q8}" \
     FLIPPED_SESSION_STORE_PATH="${FLIPPED_SESSION_STORE_PATH:-$ROOT/.sessions.json}" \
     nohup .venv/bin/python -m uvicorn api.main:app --host 127.0.0.1 --port "$BACKEND_PORT" \
     > "$LOGDIR/backend.log" 2>&1 &
