@@ -16,6 +16,7 @@ class EventType(str, Enum):
     terminal = "terminal"            # 终端命令/输出
     browser = "browser"              # 浏览器截图/DOM
     status = "status"                # 会话/任务状态变更
+    plan = "plan"                    # 自主循环计划清单快照(F4 · 可见脊柱)
     checkpoint = "checkpoint"        # LangGraph checkpoint 落盘
     approval_request = "approval_request"
     approval_result = "approval_result"
