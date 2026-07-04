@@ -66,7 +66,7 @@ export function CommandPalette() {
     list.push({ id: 'toggle-ctx', section: '面板', label: '切换侧边面板', icon: <IconLayout size={15} />, shortcut: '⌥⌘B', run: () => { app.toggleContext(); close(); } });
     // 配置
     list.push({ id: 'theme', section: '配置', label: theme === 'dark' ? '切换到浅色主题' : '切换到深色主题', icon: theme === 'dark' ? <IconSun size={15} /> : <IconMoon size={15} />, run: () => { toggle(); close(); } });
-    list.push({ id: 'mcp', section: '配置', label: 'MCP', icon: <IconPuzzle size={15} />, run: () => { app.openContext('mcp'); close(); } });
+    list.push({ id: 'mcp', section: '配置', label: 'MCP · 插件', icon: <IconPuzzle size={15} />, run: () => { app.setPluginsOpen(true); close(); } });
     list.push({ id: 'shortcuts', section: '配置', label: '键盘快捷方式', icon: <IconGear size={15} />, run: () => { app.setSettingsOpen(true); close(); } });
     // 切换项目
     list.push({ id: 'proj', section: '切换项目', label: projectName, icon: <IconFile size={15} />, run: () => close() });

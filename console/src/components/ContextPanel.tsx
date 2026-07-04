@@ -1,9 +1,9 @@
 import { useState, useEffect, type ReactNode } from 'react';
 import { useApp } from '../store';
 import type { ChangedFile, FileNode, BrowserElement } from '../types';
-import { terminalLines, editorCode, problems } from '../mock';
+import { terminalLines } from '../mock';
 import { renderMarkdown } from '../lib/markdown';
-import { IconCode, IconFile, IconFolder, IconTerminal, IconBrowser, IconWarn, IconPuzzle, IconChat, IconX, IconChevronDown, IconEye, IconCheck } from '../icons';
+import { IconFile, IconFolder, IconTerminal, IconBrowser, IconReview, IconChat, IconX, IconChevronDown, IconEye, IconCheck } from '../icons';
 
 /** 递归文件树节点(阶段② — 右侧「文件」)。 */
 function FileTreeNode({ node, depth, activePath, onOpen }: {
@@ -260,8 +260,6 @@ export function ContextPanel() {
   const {
     terminalBlocks,
     changedFiles,
-    mcpServers,
-    toggleMcpServer,
     contextTab: tab,
     setContextTab: setTab,
     showContext,
@@ -270,28 +268,18 @@ export function ContextPanel() {
     projectFiles,
     openedFile,
     openFile,
+    closeFile,
   } = useApp();
-  const [activePath, setActivePath] = useState<string | null>(null);
   const [commentLine, setCommentLine] = useState<number | null>(null);
   const [commentText, setCommentText] = useState('');
   // 面板隐藏时不渲染(改为右侧浮动启动器);文件/审查/浏览器等 surface 无需会话即可用
   if (!showContext) return null;
 
-  // M7.2 — 编辑器展示真实沙盒文件内容（来自 file_editor 动作携带的 file_text）
-  // 只认字符串内容，避免历史事件的非字符串 content 导致 .split 崩溃
-  const realFiles = changedFiles.filter((f) => typeof f.content === 'string' && f.content.length > 0);
-  const changedActive =
-    realFiles.find((f) => f.path === activePath) || realFiles[realFiles.length - 1] || null;
-  // 打开文件树里的文件优先(阶段②);否则回退到本次会话变更的文件
-  const activeFile: { path: string; content: string; language?: string } | null = openedFile
-    ? { path: openedFile.path, content: openedFile.content }
-    : changedActive
-    ? { path: changedActive.path, content: changedActive.content as string, language: changedActive.language }
-    : null;
-  const editorSource = typeof activeFile?.content === 'string' ? activeFile.content : editorCode;
+  // 「文件」tab 打开的文件 → 编辑器视图(来自文件树/@/会话变更)
+  const editorSource = openedFile?.content ?? '';
   const editorLines = editorSource.split('\n');
-  const editorLang = activeFile ? activeFile.language || langOf(activeFile.path) : 'python';
-  const editorPath = activeFile ? activeFile.path : 'app.py';
+  const editorPath = openedFile?.path ?? '';
+  const editorLang = openedFile ? langOf(editorPath) : 'text';
   const crumbSegs = editorPath.split('/').filter(Boolean);
   const projectName = projectContext?.project || '项目';
   const fileLabel = crumbSegs[crumbSegs.length - 1] || editorPath;
@@ -306,19 +294,13 @@ export function ContextPanel() {
 
   const hasTerm = terminalBlocks.length > 0;
   const hasFiles = changedFiles.length > 0;
-  const diffCount = hasFiles ? changedFiles.length : 14;
 
   return (
     <section className="context">
+      {/* 面板 tab 与右侧启动器保持一致:审查 / 终端 / 浏览器 / 文件 */}
       <div className="tabs">
-        <button className={'tab' + (tab === 'editor' ? ' active' : '')} onClick={() => setTab('editor')}>
-          <IconCode size={14} /> 编辑器
-        </button>
-        <button className={'tab' + (tab === 'files' ? ' active' : '')} onClick={() => setTab('files')}>
-          <IconFolder size={14} /> 文件
-        </button>
         <button className={'tab' + (tab === 'diff' ? ' active' : '')} onClick={() => setTab('diff')}>
-          <IconFile size={14} /> 变更 <span className="count">{diffCount}</span>
+          <IconReview size={14} /> 审查
         </button>
         <button className={'tab' + (tab === 'term' ? ' active' : '')} onClick={() => setTab('term')}>
           <IconTerminal size={14} /> 终端
@@ -326,129 +308,88 @@ export function ContextPanel() {
         <button className={'tab' + (tab === 'browser' ? ' active' : '')} onClick={() => setTab('browser')}>
           <IconBrowser size={14} /> 浏览器
         </button>
-        <button className={'tab' + (tab === 'problems' ? ' active' : '')} onClick={() => setTab('problems')}>
-          <IconWarn size={14} /> 问题 <span className="count warn">{problems.length}</span>
-        </button>
-        <button className={'tab' + (tab === 'mcp' ? ' active' : '')} onClick={() => setTab('mcp')}>
-          <IconPuzzle size={14} /> MCP
+        <button className={'tab' + (tab === 'files' ? ' active' : '')} onClick={() => setTab('files')}>
+          <IconFolder size={14} /> 文件
         </button>
       </div>
 
       <div className="panel-body">
-        {tab === 'editor' && (
-          <>
-            {realFiles.length > 1 && (
-              <div className="file-tabs">
-                {realFiles.map((f) => (
-                  <button
-                    key={f.path}
-                    className={'file-tab' + (activeFile?.path === f.path ? ' active' : '')}
-                    onClick={() => setActivePath(f.path)}
-                    title={f.path}
-                  >
-                    {f.path.split('/').pop()}
-                  </button>
-                ))}
-              </div>
-            )}
-            <div className="file-head crumb-head">
-              <IconCode size={13} />
-              <nav className="crumbs" aria-label="文件路径">
-                <span className="crumb-seg root">{projectName}</span>
-                {crumbSegs.map((seg, i) => (
-                  <span className="crumb-part" key={i}>
-                    <span className="crumb-div">›</span>
-                    <span className={'crumb-seg' + (i === crumbSegs.length - 1 ? ' leaf' : '')}>{seg}</span>
-                  </span>
-                ))}
-              </nav>
-              <span className="add crumb-lang">{editorLang}</span>
-              {!activeFile && <span className="chip">示例预览</span>}
-            </div>
-            {activeFile && editorLang === 'markdown' ? (
-              <div className="md-doc">{renderMarkdown(editorSource)}</div>
-            ) : (
-            <div className="editor">
-              {editorLines.map((l, i) => {
-                const ln = i + 1;
-                return (
-                  <div className="eln-wrap" key={i}>
-                    <div className="eln">
-                      <span className="gn">{ln}</span>
-                      <span className="c">{highlight(l)}</span>
-                      {activeFile && (
-                        <button
-                          className="eln-comment"
-                          title={`对第 ${ln} 行评论`}
-                          aria-label={`对第 ${ln} 行评论`}
-                          onClick={() => {
-                            setCommentLine(ln);
-                            setCommentText('');
-                          }}
-                        >
-                          <IconChat size={11} />
-                        </button>
-                      )}
-                    </div>
-                    {commentLine === ln && (
-                      <div className="line-comment">
-                        <div className="line-comment-ref">
-                          {fileLabel}:{ln}
-                        </div>
-                        <textarea
-                          value={commentText}
-                          autoFocus
-                          placeholder="写下对这行的意见，回车发给 flipped…"
-                          onChange={(e) => setCommentText(e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter' && !e.shiftKey) {
-                              e.preventDefault();
-                              submitComment(ln);
-                            } else if (e.key === 'Escape') {
-                              setCommentLine(null);
-                            }
-                          }}
-                        />
-                        <div className="line-comment-actions">
-                          <button onClick={() => setCommentLine(null)}>
-                            <IconX size={12} /> 取消
-                          </button>
-                          <button
-                            className="primary"
-                            disabled={!commentText.trim()}
-                            onClick={() => submitComment(ln)}
-                          >
-                            发送到输入区
-                          </button>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-            )}
-          </>
-        )}
-
         {tab === 'files' && (
-          <div className="file-tree">
-            {projectFiles.length === 0 ? (
-              <div className="side-empty">
-                {projectContext?.project ? '空项目 · 暂无文件' : '未选择项目 · 在底部「选择项目」导入或新建'}
+          openedFile ? (
+            <>
+              <div className="file-head crumb-head">
+                <button className="crumb-back" onClick={() => closeFile()} title="返回文件树">
+                  <IconChevronDown size={13} /> 文件
+                </button>
+                <nav className="crumbs" aria-label="文件路径">
+                  <span className="crumb-seg root">{projectName}</span>
+                  {crumbSegs.map((seg, i) => (
+                    <span className="crumb-part" key={i}>
+                      <span className="crumb-div">›</span>
+                      <span className={'crumb-seg' + (i === crumbSegs.length - 1 ? ' leaf' : '')}>{seg}</span>
+                    </span>
+                  ))}
+                </nav>
+                <span className="add crumb-lang">{editorLang}</span>
               </div>
-            ) : (
-              projectFiles.map((n) => (
-                <FileTreeNode
-                  key={n.path}
-                  node={n}
-                  depth={0}
-                  activePath={openedFile?.path ?? null}
-                  onOpen={openFile}
-                />
-              ))
-            )}
-          </div>
+              {editorLang === 'markdown' ? (
+                <div className="md-doc">{renderMarkdown(editorSource)}</div>
+              ) : (
+                <div className="editor">
+                  {editorLines.map((l, i) => {
+                    const ln = i + 1;
+                    return (
+                      <div className="eln-wrap" key={i}>
+                        <div className="eln">
+                          <span className="gn">{ln}</span>
+                          <span className="c">{highlight(l)}</span>
+                          <button
+                            className="eln-comment"
+                            title={`对第 ${ln} 行评论`}
+                            aria-label={`对第 ${ln} 行评论`}
+                            onClick={() => { setCommentLine(ln); setCommentText(''); }}
+                          >
+                            <IconChat size={11} />
+                          </button>
+                        </div>
+                        {commentLine === ln && (
+                          <div className="line-comment">
+                            <div className="line-comment-ref">{fileLabel}:{ln}</div>
+                            <textarea
+                              value={commentText}
+                              autoFocus
+                              placeholder="写下对这行的意见，回车发给 flipped…"
+                              onChange={(e) => setCommentText(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submitComment(ln); }
+                                else if (e.key === 'Escape') { setCommentLine(null); }
+                              }}
+                            />
+                            <div className="line-comment-actions">
+                              <button onClick={() => setCommentLine(null)}><IconX size={12} /> 取消</button>
+                              <button className="primary" disabled={!commentText.trim()} onClick={() => submitComment(ln)}>发送到输入区</button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </>
+          ) : (
+            <div className="file-tree">
+              {projectFiles.length === 0 ? (
+                <div className="side-empty">
+                  {projectContext?.project ? '空项目 · 暂无文件' : '未选择项目 · 在底部「选择项目」导入或新建'}
+                </div>
+              ) : (
+                projectFiles.map((n) => (
+                  <FileTreeNode key={n.path} node={n} depth={0} activePath={null} onOpen={openFile} />
+                ))
+              )}
+            </div>
+          )
         )}
 
         {tab === 'diff' && (
@@ -487,53 +428,6 @@ export function ContextPanel() {
         )}
 
         {tab === 'browser' && <BrowserTab />}
-
-        {tab === 'problems' && (
-          <div className="list">
-            {problems.map((p, i) => (
-              <div className="row-card" key={i}>
-                <span className="lead warn"><IconWarn size={15} /></span>
-                <div className="grow">
-                  <div className="t1">{p.msg}</div>
-                  <div className="t2">{p.file}</div>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {tab === 'mcp' && (
-          <div className="list">
-            {mcpServers.length === 0 && (
-              <div className="row-card">
-                <span className="lead"><IconPuzzle size={15} /></span>
-                <div className="grow">
-                  <div className="t1">暂无 MCP 服务器</div>
-                  <div className="t2">检查后端 /mcp/servers</div>
-                </div>
-              </div>
-            )}
-            {mcpServers.map((s) => (
-              <button
-                type="button"
-                className="row-card mcp-row"
-                key={s.name}
-                onClick={() => toggleMcpServer(s.name, !s.enabled)}
-                title={s.enabled ? '点击停用' : '点击启用'}
-              >
-                <span className="lead"><IconPuzzle size={15} /></span>
-                <div className="grow">
-                  <div className="t1">{s.name} <span className="mcp-transport">{s.transport}</span></div>
-                  <div className="t2">
-                    {s.description} · {s.tool_count} 工具
-                    {s.tools.length > 0 && <span className="mcp-tools"> · {s.tools.join(', ')}</span>}
-                  </div>
-                </div>
-                <span className={'toggle' + (s.enabled ? ' on' : '')} />
-              </button>
-            ))}
-          </div>
-        )}
       </div>
     </section>
   );

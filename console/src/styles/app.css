@@ -1856,6 +1856,25 @@ body.resizing {
 .crumb-head {
   gap: 6px;
 }
+/* R24 — 文件编辑器返回文件树 */
+.crumb-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  flex: none;
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  padding: 3px 7px 3px 4px;
+  border-radius: var(--radius-sm);
+  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+.crumb-back svg {
+  transform: rotate(90deg);
+}
+.crumb-back:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
 .crumbs {
   display: flex;
   align-items: center;

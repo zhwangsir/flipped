@@ -92,6 +92,7 @@ interface AppState {
   projectFiles: FileNode[];
   openedFile: { path: string; content: string } | null;
   openFile: (path: string) => Promise<void>;
+  closeFile: () => void;
   browserRender: BrowserRender | null;
   browserLoading: boolean;
   browserError: string | null;
@@ -129,7 +130,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [selectedModel, setSelectedModel] = useState('coder');
   const [selectedMode, setSelectedMode] = useState('agent');
   const [activeView, setActiveView] = useState('agent');
-  const [contextTab, setContextTab] = useState<ContextTab>('editor');
+  const [contextTab, setContextTab] = useState<ContextTab>('files');
   const [sidebarTab, setSidebarTab] = useState<SidebarTab>('chats');
   const [showContext, setShowContext] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -253,11 +254,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
     try {
       const r = await fetchProjectFile(path);
       setOpenedFile({ path: r.path, content: r.content });
-      setContextTab('editor');
+      setContextTab('files');
     } catch {
       /* 二进制/超大/读失败：忽略 */
     }
   }, []);
+  // 关闭当前打开的文件 → 返回文件树
+  const closeFile = useCallback(() => setOpenedFile(null), []);
 
   // 阶段②b — 用真 Chromium 渲染 URL（右侧「浏览器」实时看效果 + 选中元素追踪）
   const renderBrowser = useCallback(async (url: string) => {
@@ -567,6 +570,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         projectFiles,
         openedFile,
         openFile,
+        closeFile,
         browserRender,
         browserLoading,
         browserError,
