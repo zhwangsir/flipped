@@ -60,6 +60,8 @@ export function Sidebar() {
     return () => document.removeEventListener("mousedown", onDown);
   }, [menuFor]);
 
+  // F9 — 并行看板:跨项目汇总所有运行中线程
+  const running = sessions.filter((s) => s.status === "running");
   // 会话分组:chat → 对话区;其余按 project_name 归到各项目
   const chatThreads = sessions.filter((s) => s.mode === "chat");
   const nonChat = sessions.filter((s) => (s.mode ?? "agent") !== "chat");
@@ -231,6 +233,25 @@ export function Sidebar() {
       <div className="scroll">
         {navView === "threads" ? (
           <>
+            {running.length > 0 && (
+              <div className="side-running" data-testid="running-board">
+                <div className="side-running-head">
+                  <span className="dot running" />
+                  {running.length} 个线程并行运行中
+                </div>
+                {running.map((s) => (
+                  <button
+                    key={s.id}
+                    className={"side-running-row" + (s.id === selectedSessionId ? " active" : "")}
+                    onClick={() => selectSession(s.id)}
+                    title={s.title}
+                  >
+                    <span className="srr-title">{s.title}</span>
+                    {s.project_name && <span className="srr-proj">{s.project_name}</span>}
+                  </button>
+                ))}
+              </div>
+            )}
             <div className="side-group-label">项目</div>
             {groups.length === 0 && (
               <div className="side-empty">~/projects 暂无项目 · 底部「选择项目」新建或导入</div>

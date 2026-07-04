@@ -61,10 +61,13 @@ composer `mode=auto`;`_select_runner` 路由到 orchestrator,自动探测验证�
 
 ## F7+ · 下一阶段(闭环交付与规模化)
 
-- **F7 交付步**:验收通过后在沙盒内自动 `git commit`(生成规范提交信息),给自主开发一个有形产物(Devin/Codex 式)。
-- **F8 端到端真机**:exo LAUNCH 双模型后跑一个真实项目全循环验证(当前受基础设施限制)。
-- **F9 并行线程 / worktree**:多目标并行,状态板(Codex parallel threads)。
-- **F10 成本/预算**:token 预算显示与上限(Devin ACU 式)。
+- **F7 交付步** ✅:验收通过后在沙盒内自动 `git commit`(`sandbox_deliver.py`,注入安全)。
+- **F8 端到端真机** ⏳ 受阻:需 exo LAUNCH 双模型后跑真实项目全循环(基础设施侧,非代码;注入测试兜底)。
+- **F9 并行线程状态板** ✅:轮询 `/sessions` 保鲜全部线程状态 + 侧栏顶「N 个线程并行运行中」看板(Codex parallel threads)。
+- **F10 用量/预算** ✅:顶栏 token 用量芯片(本地模型累计,Devin ACU 式)。
+- **质量硬化** ✅:code-reviewer 独立审查修 3 缺陷(_deliver 异常隔离 / 事件循环阻塞 / resume 一致性)。
+
+> **状态:除 F8(基础设施受阻)外全部完成**。后端 205 tests 绿,前端 tsc+build 绿,关键 UI 经隔离 Playwright 实测。
 
 ## 验证纪律
 

@@ -171,8 +171,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  // F9 — 轮询会话列表:让所有并行线程(非仅选中会话)的状态实时鲜活
   useEffect(() => {
     refreshSessions();
+    const id = setInterval(refreshSessions, 3000);
+    return () => clearInterval(id);
   }, [refreshSessions]);
 
   // M6.3 — 轮询性能指标

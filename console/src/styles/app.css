@@ -247,6 +247,55 @@ body.resizing {
   margin-left: 0;
   padding-left: 0;
 }
+/* F9 — 并行线程看板(跨项目汇总运行中线程,钉侧栏顶) */
+.side-running {
+  margin: 8px 8px 4px;
+  padding: 8px;
+  background: color-mix(in oklab, var(--success) 7%, var(--bg-surface));
+  border: 1px solid color-mix(in oklab, var(--success) 24%, var(--border-subtle));
+  border-radius: var(--radius);
+}
+.side-running-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-bottom: 6px;
+}
+.side-running-row {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  width: 100%;
+  padding: 4px 6px;
+  border: none;
+  background: transparent;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  text-align: left;
+  color: var(--text-primary);
+}
+.side-running-row:hover {
+  background: var(--bg-hover);
+}
+.side-running-row.active {
+  background: var(--bg-active);
+}
+.srr-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-sm);
+}
+.srr-proj {
+  flex: 0 0 auto;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
 .side-project {
   display: flex;
   align-items: center;
