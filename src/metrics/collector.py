@@ -64,6 +64,14 @@ class MetricsCollector:
         with self._lock:
             self._llm.errors += 1
 
+    def record_usage(self, *, prompt_tokens: int, completion_tokens: int, calls: int = 1) -> None:
+        """直接记账 token 用量(无 LLMResult 的来源,如 OpenHands Worker 的沙盒会话统计)。"""
+        with self._lock:
+            self._llm.total_calls += max(0, calls)
+            self._llm.prompt_tokens += max(0, prompt_tokens)
+            self._llm.completion_tokens += max(0, completion_tokens)
+            self._llm.total_tokens += max(0, prompt_tokens) + max(0, completion_tokens)
+
     def record_context(self, *, chars: int, messages: int) -> None:
         """记录每次 LLM 请求的上下文规模（字符数、消息数）。"""
         with self._lock:

@@ -32,7 +32,7 @@ export function TopBar() {
           className="topbar-usage mono"
           data-testid="usage-chip"
           title={
-            "本地模型累计用量(编排/监督 LLM)\n" +
+            "本地模型累计用量(编排/监督 + 沙盒执行)\n" +
             `调用 ${calls} 次 · 错误 ${llm.errors ?? 0}\n` +
             `prompt ${formatTokens(llm.prompt_tokens ?? 0)} + completion ${formatTokens(
               llm.completion_tokens ?? 0

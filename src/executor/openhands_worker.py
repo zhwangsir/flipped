@@ -33,6 +33,25 @@ import openhands.tools.terminal  # noqa: F401
 from api.events import EventBus
 from api.schemas import EventType, Role
 from driving.safety import audit_openhands_events
+from metrics import COLLECTOR
+
+
+def _sum_conversation_usage(state) -> tuple[int, int, int]:
+    """从 OpenHands ConversationState.stats 汇总 (prompt, completion, llm调用数)。
+
+    Worker(Kimi)的推理不经我们的 LangChain callback,F10 用量曾大幅低估——
+    经 SDK 的 ConversationStats.usage_to_metrics 补上。防御式:任何缺字段返回 0。
+    """
+    prompt = completion = calls = 0
+    stats = getattr(state, "stats", None)
+    mapping = getattr(stats, "usage_to_metrics", None) or {}
+    for m in mapping.values():
+        acc = getattr(m, "accumulated_token_usage", None)
+        if acc is not None:
+            prompt += int(getattr(acc, "prompt_tokens", 0) or 0)
+            completion += int(getattr(acc, "completion_tokens", 0) or 0)
+        calls += len(getattr(m, "token_usages", []) or [])
+    return prompt, completion, calls
 
 
 class OpenHandsWorker:
@@ -209,6 +228,13 @@ class OpenHandsWorker:
                 final_state = conversation.state
                 status = getattr(final_state, "execution_status", None)
                 status_done = status == ConversationExecutionStatus.FINISHED
+                # F10 补全:Worker(Kimi)沙盒会话的 token 用量汇入全局统计(尽力而为)
+                try:
+                    p, c, n = _sum_conversation_usage(final_state)
+                    if p or c:
+                        COLLECTOR.record_usage(prompt_tokens=p, completion_tokens=c, calls=n)
+                except Exception:  # noqa: BLE001 统计失败绝不影响任务
+                    pass
                 if self.manage_session_status:
                     self._emit(EventType.status, Role.system,
                                {"status": "done" if status_done else str(status),
