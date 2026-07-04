@@ -23,7 +23,7 @@ def test_verify_detects_pytest(tmp_path: Path):
     try:
         with TestClient(app) as c:
             body = c.get(f"{API_PREFIX}/project/verify").json()
-            assert body["command"] == ["pytest", "-q"]
+            assert body["command"] == ["python3", "-m", "pytest", "-q"]
             assert body["source"] == "pytest"
             assert body["detected"] is True
     finally:

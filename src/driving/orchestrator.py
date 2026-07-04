@@ -184,6 +184,8 @@ def make_openhands_worker(bus=None, session_id: str | None = None) -> WorkerFn:
             working_dir=state["cwd"],
             model_alias=worker_model_alias,
             base_url=worker_base_url,
+            # 子任务模式:不碰会话状态(F8 实测缺陷——曾提前把外层循环的会话覆盖成 done)
+            manage_session_status=False,
         )
         try:
             summary = worker.run(state["current_subtask"])

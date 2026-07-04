@@ -114,9 +114,10 @@ def detect_verify_command(root: Path) -> VerifyPlan:
             return VerifyPlan(command=["make", "test"], label="make test",
                               source="make", confidence="high", detected=True)
 
-    # 2) Python pytest
+    # 2) Python pytest — 用 `python3 -m pytest`:F8 真机实测发现沙盒 sh 的 PATH 里
+    #    没有裸 `pytest` 入口脚本(pip 装了包但 /bin/sh 找不到命令),-m 形式跨环境稳。
     if _has_pytest_signal(root):
-        return VerifyPlan(command=["pytest", "-q"], label="pytest -q",
+        return VerifyPlan(command=["python3", "-m", "pytest", "-q"], label="python3 -m pytest -q",
                           source="pytest", confidence="high", detected=True)
 
     # 3) Node(真实 test 脚本,退而 build)

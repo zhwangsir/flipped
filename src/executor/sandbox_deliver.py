@@ -29,11 +29,19 @@ def build_commit_message(goal: str) -> str:
 
 
 def build_commit_command(message: str) -> str:
-    """构建沙盒内提交命令:无 git 则 init,无变更则 __NOCHANGE__,否则提交并 __COMMITTED__。"""
+    """构建沙盒内提交命令:无 git 则 init,无变更则 __NOCHANGE__,否则提交并 __COMMITTED__。
+
+    F8 实测:无 .gitignore 时 `git add -A` 会把 __pycache__/*.pyc 等垃圾提交进去,
+    故项目没有 .gitignore 时先写一份常见垃圾模式。
+    """
     ident = "-c user.name='flipped' -c user.email='flipped@local'"
     m = _shell_single_quote(message)
+    gitignore = (
+        "[ -f .gitignore ] || printf '__pycache__/\\n*.pyc\\n.pytest_cache/\\n"
+        "node_modules/\\n.venv/\\ndist/\\nbuild/\\n.DS_Store\\n' > .gitignore; "
+    )
     return (
-        "git init -q 2>/dev/null; git add -A && "
+        "git init -q 2>/dev/null; " + gitignore + "git add -A && "
         "(git diff --cached --quiet && echo __NOCHANGE__ || "
         f"(git {ident} commit -q -m {m} && echo __COMMITTED__))"
     )

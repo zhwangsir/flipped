@@ -607,6 +607,8 @@ async def _run_orchestrator(session_id: str, task_id: str, req: TaskRequest) -> 
     # F1c/F5/F6 — 项目上下文读取(阻塞 IO)放进线程,避免卡事件循环
     verify_cmd, project_rules, repo_map = await asyncio.to_thread(_gather_project_context, cfg)
     db_path = FLIPPED_CHECKPOINT_DB
+    # F8 真机实测抓到的缺陷:SqliteSaver 不自动建父目录 → "unable to open database file"
+    Path(db_path).expanduser().parent.mkdir(parents=True, exist_ok=True)
     store.update(session_id, goal=goal, verify_cmd=verify_cmd, cwd=cwd, checkpoint_db_path=db_path)
     try:
         if os.environ.get("FLIPPED_MOCK_ORCHESTRATOR"):

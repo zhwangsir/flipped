@@ -13,7 +13,7 @@ def _touch(root: Path, rel: str, content: str = "") -> None:
 def test_pytest_ini(tmp_path: Path):
     _touch(tmp_path, "pytest.ini", "[pytest]\n")
     plan = detect_verify_command(tmp_path)
-    assert plan.command == ["pytest", "-q"]
+    assert plan.command == ["python3", "-m", "pytest", "-q"]
     assert plan.source == "pytest"
     assert plan.detected is True
     assert plan.confidence == "high"

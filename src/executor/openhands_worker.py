@@ -58,6 +58,7 @@ class OpenHandsWorker:
         tools: list[dict[str, Any]] | None = None,
         mcp_config: dict[str, Any] | None = None,
         timeout: float = 600.0,
+        manage_session_status: bool = True,
     ):
         self.session_id = session_id
         self.task_id = task_id
@@ -70,6 +71,9 @@ class OpenHandsWorker:
         self.tools = tools or self.DEFAULT_TOOLS
         self.mcp_config = mcp_config or {}
         self.timeout = timeout
+        # F8 实测缺陷:orchestrator 模式下 worker 一跑完就把会话状态设 done,
+        # 覆盖了还在继续的外层循环(overseer/verify/下一轮)。False=子任务模式,不碰会话状态。
+        self.manage_session_status = manage_session_status
         self._events: list[OHEvent] = []
         self._lock = threading.Lock()
 
@@ -131,15 +135,21 @@ class OpenHandsWorker:
                 obs = event.observation
                 if obs is not None:
                     payload["summary"] = getattr(obs, "_summary", tool)
-                    # 提取通用字段
+                    # 提取通用字段(F8 实测:TerminalObservation 的输出字段是 content 而非 output)
                     for attr in ("command", "output", "path", "content", "url", "screenshot", "exit_code"):
                         if hasattr(obs, attr):
                             extra[attr] = getattr(obs, attr)
-                    # 终端输出单独给 terminal 事件
-                    if tool == "terminal" and ("command" in extra or "output" in extra):
+                    # 终端输出单独给 terminal 事件(content 兜底 output,截尾防灌爆)
+                    if tool == "terminal" and ("command" in extra or "output" in extra or "content" in extra):
+                        raw_out = extra.get("output") or extra.get("content") or ""
+                        # content 是 TextContent 对象列表(F8 实测) → 提取 .text 而非 repr
+                        if isinstance(raw_out, list):
+                            raw_out = "\n".join(
+                                getattr(c, "text", None) or str(c) for c in raw_out
+                            )
                         self._emit(EventType.terminal, Role.worker,
                                    {"command": extra.get("command", ""),
-                                    "output": extra.get("output", ""),
+                                    "output": str(raw_out)[-4000:],
                                     "exit_code": extra.get("exit_code", 0)})
                     # 文件变更事件由上游 ActionEvent 携带真实内容发出（含 path/change/content），
                     # observation 只保留 tool_result 确认，避免冗余覆盖与把 view 误报成变更。
@@ -199,12 +209,18 @@ class OpenHandsWorker:
                 final_state = conversation.state
                 status = getattr(final_state, "execution_status", None)
                 status_done = status == ConversationExecutionStatus.FINISHED
-                self._emit(EventType.status, Role.system,
-                           {"status": "done" if status_done else str(status),
-                            "progress": 100,
-                            "note": f"执行结束: {status}",
-                            "total_events": len(getattr(final_state, "events", []) or [])})
-                self.bus.set_status(self.session_id, "done" if status_done else str(status))
+                if self.manage_session_status:
+                    self._emit(EventType.status, Role.system,
+                               {"status": "done" if status_done else str(status),
+                                "progress": 100,
+                                "note": f"执行结束: {status}",
+                                "total_events": len(getattr(final_state, "events", []) or [])})
+                    self.bus.set_status(self.session_id, "done" if status_done else str(status))
+                else:
+                    # 子任务模式:只报进度,不定会话终态(外层循环还在跑)
+                    self._emit(EventType.status, Role.system,
+                               {"status": "running", "progress": 60,
+                                "note": f"子任务执行结束: {status}"})
                 return {
                     "status": str(status),
                     "events_count": len(self._events),
@@ -212,8 +228,9 @@ class OpenHandsWorker:
                 }
         except Exception as exc:
             self._emit(EventType.error, Role.system, {"message": str(exc)})
-            self._emit(EventType.status, Role.system, {"status": "error", "progress": 100, "note": str(exc)})
-            self.bus.set_status(self.session_id, "error")
+            if self.manage_session_status:
+                self._emit(EventType.status, Role.system, {"status": "error", "progress": 100, "note": str(exc)})
+                self.bus.set_status(self.session_id, "error")
             raise
 
     @property

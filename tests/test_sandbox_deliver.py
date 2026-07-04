@@ -64,6 +64,8 @@ def test_commit_command_has_add_and_commit():
     assert "git add -A" in cmd
     assert "__NOCHANGE__" in cmd and "__COMMITTED__" in cmd
     assert "git init -q" in cmd
+    # F8 实测:无 .gitignore 时先写常见垃圾模式,防 __pycache__/*.pyc 被提交
+    assert ".gitignore" in cmd and "__pycache__" in cmd
 
 
 def test_commit_command_escapes_single_quotes():

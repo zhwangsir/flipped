@@ -49,7 +49,7 @@ def test_gather_project_context(tmp_path):
     ps.set_active(tmp_path)
     try:
         verify_cmd, rules, repo = _gather_project_context({})
-        assert verify_cmd == ["pytest", "-q"]
+        assert verify_cmd == ["python3", "-m", "pytest", "-q"]
         assert "务必用 pytest" in rules
         assert "技术栈" in repo and "Python" in repo
     finally:
