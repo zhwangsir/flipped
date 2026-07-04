@@ -53,10 +53,22 @@ function BrowserTab() {
   } = useApp();
   const [url, setUrl] = useState(browserRender?.url || browserView?.url || '');
   const [selected, setSelected] = useState<BrowserElement | null>(null);
+  // 实时 iframe(可交互, 首要场景=预览自己的 dev server) vs 截图(元素追踪 / 外部站点)
+  const [view, setView] = useState<'live' | 'shot'>('live');
+  const [liveUrl, setLiveUrl] = useState('');
 
-  const go = () => {
+  const norm = (u: string) => (/^https?:\/\//.test(u) ? u : 'http://' + u.replace(/^\/+/, ''));
+  const goLive = () => {
+    const u = url.trim();
+    if (u) {
+      setView('live');
+      setLiveUrl(norm(u));
+    }
+  };
+  const goShot = () => {
     const u = url.trim();
     if (u && !browserLoading) {
+      setView('shot');
       setSelected(null);
       renderBrowser(u);
     }
@@ -74,14 +86,34 @@ function BrowserTab() {
           className="rbrowser-url mono"
           value={url}
           onChange={(e) => setUrl(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && go()}
+          onKeyDown={(e) => e.key === 'Enter' && goLive()}
           placeholder="http://localhost:5173"
           aria-label="预览地址"
         />
-        <button className="rbrowser-go" onClick={go} disabled={browserLoading || !url.trim()}>
-          {browserLoading ? '渲染中…' : '预览'}
+        <button className="rbrowser-go" onClick={goLive} disabled={!url.trim()} title="实时可交互预览(适合本地 dev server)">
+          实时
+        </button>
+        <button className="rbrowser-go ghost" onClick={goShot} disabled={browserLoading || !url.trim()} title="截图+可点选元素追踪给 agent(适合外部站点)">
+          {browserLoading ? '渲染…' : '截图'}
         </button>
       </div>
+      {view === 'live' ? (
+        liveUrl ? (
+          <iframe
+            className="rbrowser-live"
+            src={liveUrl}
+            title="实时预览"
+            sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals"
+          />
+        ) : (
+          <div className="rbrowser-empty">
+            <IconBrowser size={22} />
+            <div>输入本地 dev server 地址,实时可交互预览</div>
+            <div className="rbrowser-empty-sub">如 http://localhost:5173 · 外部站点可用「截图」追踪元素</div>
+          </div>
+        )
+      ) : (
+        <>
       {browserError && <div className="rbrowser-err">渲染失败：{browserError}</div>}
       {!browserRender && !browserLoading && !browserError && (
         <div className="rbrowser-empty">
@@ -126,6 +158,8 @@ function BrowserTab() {
               </button>
             </div>
           )}
+        </>
+      )}
         </>
       )}
     </div>

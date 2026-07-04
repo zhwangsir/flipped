@@ -2105,6 +2105,23 @@ body.resizing {
 .rbrowser-go:disabled {
   opacity: 0.45;
 }
+.rbrowser-go.ghost {
+  color: var(--text-secondary);
+  background: transparent;
+  border: 1px solid var(--border);
+}
+.rbrowser-go.ghost:hover:not(:disabled) {
+  color: var(--text-primary);
+  border-color: var(--border-strong);
+}
+/* 实时可交互预览 iframe(本地 dev server) */
+.rbrowser-live {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  border: none;
+  background: #ffffff;
+}
 .rbrowser-err {
   margin: 10px;
   padding: 9px 11px;
