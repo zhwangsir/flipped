@@ -5,7 +5,8 @@
   "identifier": "com.flipped.desktop",
   "build": {
     "frontendDist": "../dist",
-    "devUrl": "http://localhost:5401",
+    "devUrl": "http://localhost:5273",
+    "beforeDevCommand": "npm run dev",
     "beforeBuildCommand": "npm run build"
   },
   "app": {
