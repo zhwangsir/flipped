@@ -1,5 +1,6 @@
 import { useApp } from "../store";
 import { IconSidebar, IconLayout, IconBolt } from "../icons";
+import { formatTokens } from "../lib/format";
 
 const CONN_LABEL: Record<string, string> = {
   connected: "已连接",
@@ -7,13 +8,6 @@ const CONN_LABEL: Record<string, string> = {
   error: "连接错误",
   idle: "未连接",
 };
-
-/** token 数紧凑显示：12345 → 12.3k，1234567 → 1.2M。 */
-function formatTokens(n: number): string {
-  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + "M";
-  if (n >= 1_000) return (n / 1_000).toFixed(1) + "k";
-  return String(n);
-}
 
 /** Codex 顶栏：极度克制。左侧栏折叠钮 + 线程标题，右侧用量芯片 + 极小连接点 + 面板折叠钮。 */
 export function TopBar() {
