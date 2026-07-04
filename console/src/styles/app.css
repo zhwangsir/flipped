@@ -3304,3 +3304,87 @@ textarea:focus {
   color: var(--text-faint);
   background: var(--bg-sunken);
 }
+
+/* ── F4 · 自主循环实时计划清单卡（Devin/Qoder 式可见脊柱） ───────────── */
+.plan-card {
+  margin: 0 0 16px;
+  padding: 10px 12px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.plan-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.plan-title {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text-primary);
+  letter-spacing: 0.02em;
+}
+.plan-count {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+.plan-complete {
+  margin-left: auto;
+  font-size: var(--text-xs);
+  color: var(--success);
+  border: 1px solid color-mix(in oklab, var(--success) 40%, transparent);
+  border-radius: var(--radius-pill);
+  padding: 1px 8px;
+}
+.plan-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.plan-step {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 5px 6px;
+  border-radius: var(--radius-sm);
+  font-size: var(--text-base);
+  color: var(--text-primary);
+}
+.plan-step + .plan-step {
+  border-top: 1px solid var(--border-subtle);
+}
+.plan-ico {
+  display: inline-flex;
+  flex: 0 0 auto;
+  color: var(--text-secondary);
+}
+.plan-step.done .plan-ico { color: var(--success); }
+.plan-step.retry .plan-ico { color: var(--warning); }
+.plan-step.aborted .plan-ico { color: var(--danger); }
+.plan-step.running .plan-ico { color: var(--text-secondary); animation: plan-spin 1.6s linear infinite; }
+.plan-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.plan-step.done .plan-text { color: var(--text-secondary); }
+.plan-step.aborted .plan-text { color: var(--text-muted); text-decoration: line-through; }
+.plan-badge {
+  flex: 0 0 auto;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+.plan-step.running .plan-badge { color: var(--text-secondary); }
+@keyframes plan-spin {
+  to { transform: rotate(360deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .plan-step.running .plan-ico { animation: none; }
+}

@@ -36,6 +36,18 @@ export interface StreamItem {
   ok?: boolean;
 }
 
+/** 自主循环实时计划清单（F4 · 可见脊柱）。 */
+export type PlanStepStatus = 'running' | 'done' | 'retry' | 'aborted';
+export interface PlanStep {
+  index: number;
+  text: string;
+  status: PlanStepStatus;
+}
+export interface PlanState {
+  steps: PlanStep[];
+  complete: boolean;
+}
+
 export interface Session {
   id: string;
   title: string;
@@ -185,6 +197,7 @@ export function eventToStreamItem(ev: ApiEvent): StreamItem | null {
     case 'status':
     case 'checkpoint':
     case 'approval_request':
+    case 'plan': // 计划清单单独渲染成卡片，不进消息流
       return null;
     default:
       return { id: ev.id, role, text: JSON.stringify(p) };

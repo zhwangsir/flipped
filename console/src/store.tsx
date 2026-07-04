@@ -9,6 +9,7 @@ import type {
   TerminalBlock,
   BrowserView,
   ChangedFile,
+  PlanState,
   Metrics,
   McpServer,
   ContextTab,
@@ -56,6 +57,7 @@ interface AppState {
   terminalBlocks: TerminalBlock[];
   browserView: BrowserView | null;
   changedFiles: ChangedFile[];
+  plan: PlanState | null;
   metrics: Metrics | null;
   mcpServers: McpServer[];
   toggleMcpServer: (name: string, enabled: boolean) => Promise<void>;
@@ -125,6 +127,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [terminalBlocks, setTerminalBlocks] = useState<TerminalBlock[]>([]);
   const [browserView, setBrowserView] = useState<BrowserView | null>(null);
   const [changedFiles, setChangedFiles] = useState<ChangedFile[]>([]);
+  const [plan, setPlan] = useState<PlanState | null>(null);
   const [metrics, setMetrics] = useState<Metrics | null>(null);
   const [mcpServers, setMcpServers] = useState<McpServer[]>([]);
   const [selectedModel, setSelectedModel] = useState('coder');
@@ -374,6 +377,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setTerminalBlocks([]);
       setBrowserView(null);
       setChangedFiles([]);
+      setPlan(null);
       return;
     }
 
@@ -388,6 +392,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setTerminalBlocks([]);
     setBrowserView(null);
     setChangedFiles([]);
+    setPlan(null);
 
     const appendEvent = (ev: ApiEvent) => {
       // M6.1 — 从事件流派生 ContextPanel 的真实上下文数据
@@ -414,6 +419,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
             },
           ];
         });
+      }
+
+      if (ev.type === 'plan') {
+        // F4 — 自主循环计划清单快照(最新覆盖旧)
+        setPlan({
+          steps: Array.isArray(ev.payload.steps) ? ev.payload.steps : [],
+          complete: !!ev.payload.complete,
+        });
+        return;
       }
 
       if (ev.type === 'status') {
@@ -534,6 +548,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         terminalBlocks,
         browserView,
         changedFiles,
+        plan,
         metrics,
         mcpServers,
         toggleMcpServer,

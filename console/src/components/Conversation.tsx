@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useApp } from '../store';
 import type { Role, StreamItem, ToolCall, ToolChild } from '../types';
 import { isTauri, pickFolder } from '../lib/native';
+import { PlanCard } from './PlanCard';
 import {
   ToolIcon,
   IconSend,
@@ -648,6 +649,7 @@ export function Conversation() {
       <div className='stream'>
         <StatusBanner status={sessionStatus} progress={progress} />
         <ErrorBanner message={lastError} />
+        <PlanCard />
         {approvalPending && (
           <ApprovalCard
             info={approvalPending}
