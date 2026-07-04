@@ -532,15 +532,30 @@ def _mock_orchestrator_fns():
     return supervisor, worker, overseer, verifier
 
 
+def _resolve_verify_cmd(cfg: dict[str, Any], host_root: Path | None) -> list[str]:
+    """自主模式验收命令:显式指定优先;否则据 host 项目根探测(F1c)。
+
+    显式的 ["true"] 视作"未指定"→ 交给探测(它才是要替换掉的空转占位)。
+    """
+    explicit = cfg.get("verify_cmd")
+    if explicit and explicit != ["true"]:
+        return list(explicit)
+    if host_root is not None:
+        from driving.verify_detect import detect_verify_command
+        return detect_verify_command(host_root).command
+    return ["true"]
+
+
 async def _run_orchestrator(session_id: str, task_id: str, req: TaskRequest) -> None:
     """在后台线程运行 orchestrator，并持久化 checkpoint。"""
     from driving.orchestrator import drive_orchestrated
 
     cfg = req.context.get("orchestrator") or {}
     goal = req.description
-    verify_cmd = cfg.get("verify_cmd", ["true"])
     # agent 工作目录 = 活动项目在沙盒里的路径(/projects/<名>);无项目回退 /workspace
     cwd = cfg.get("cwd") or ps.sandbox_cwd()
+    # F1c — 验收命令:显式优先,否则据 host 项目根自动探测(不再默认 ['true'] 空转)
+    verify_cmd = _resolve_verify_cmd(cfg, ps.project_root())
     db_path = FLIPPED_CHECKPOINT_DB
     store.update(session_id, goal=goal, verify_cmd=verify_cmd, cwd=cwd, checkpoint_db_path=db_path)
     try:
@@ -554,11 +569,22 @@ async def _run_orchestrator(session_id: str, task_id: str, req: TaskRequest) -> 
                 supervisor=sup, worker=work, overseer=over, verifier=ver,
             )
         else:
+            # F1d — 有真实验收命令时,在沙盒内执行(代码/依赖在容器里;cwd=沙盒路径天然成立)
+            verifier_kwargs: dict[str, Any] = {}
+            if verify_cmd != ["true"]:
+                from executor.sandbox_verify import make_sandbox_verifier
+                from executor.openhands_worker import OpenHandsWorker
+                verifier_kwargs["verifier"] = make_sandbox_verifier(
+                    agent_host=os.environ.get("OPENHANDS_AGENT_HOST", "http://localhost:8000"),
+                    working_dir=cwd,
+                    api_key=OpenHandsWorker._default_agent_api_key(),
+                )
             final = await asyncio.to_thread(
                 drive_orchestrated,
                 goal=goal, cwd=cwd, verify_cmd=verify_cmd,
                 thread_id=session_id, db_path=db_path,
                 require_approval=cfg.get("require_approval", False),
+                **verifier_kwargs,
             )
         if final.get("verified"):
             store.update_status(session_id, SessionStatus.done)
