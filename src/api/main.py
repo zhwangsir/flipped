@@ -561,6 +561,41 @@ def _resolve_verify_cmd(cfg: dict[str, Any], host_root: Path | None) -> list[str
     return ["true"]
 
 
+def _gather_project_context(cfg: dict[str, Any]) -> tuple[list[str], str, str]:
+    """同步读活动项目的 验收命令(F1c)/规则(F6)/结构地图(F5)。
+
+    这些是阻塞文件 IO(glob/读多个规则文件/iterdir),必须经 asyncio.to_thread 调用,
+    否则跑在事件循环线程上会卡住整个进程的其它会话广播/请求。
+    """
+    from driving.project_rules import read_project_rules
+    from driving.repo_map import build_repo_map
+
+    root = ps.project_root()
+    return (_resolve_verify_cmd(cfg, root), read_project_rules(root), build_repo_map(root))
+
+
+def _build_real_nodes(session_id: str, cwd: str, verify_cmd: list[str]) -> dict[str, Any]:
+    """构建真实执行路径的 orchestrator 节点:沙盒 verifier(有真实命令时)+ F2/F4 事件流。
+
+    首跑与 resume 共用,保证恢复的运行同样可见(不退回 NullEventBus 黑盒)。
+    """
+    from driving.orchestrator import _safe_default_verifier
+
+    # F1d — 有真实命令时在沙盒内验收(cwd=沙盒路径天然成立);['true'] 保留 host 默认免无谓往返
+    base_verifier = _safe_default_verifier
+    if verify_cmd != ["true"]:
+        from executor.sandbox_verify import make_sandbox_verifier
+        from executor.openhands_worker import OpenHandsWorker
+        base_verifier = make_sandbox_verifier(
+            agent_host=os.environ.get("OPENHANDS_AGENT_HOST", "http://localhost:8000"),
+            working_dir=cwd,
+            api_key=OpenHandsWorker._default_agent_api_key(),
+        )
+    # F2/F4 — 每步实时推 WS 事件 + 计划清单
+    from api.orchestrator_stream import build_streaming_nodes
+    return build_streaming_nodes(bus, session_id, base_verifier)
+
+
 async def _run_orchestrator(session_id: str, task_id: str, req: TaskRequest) -> None:
     """在后台线程运行 orchestrator，并持久化 checkpoint。"""
     from driving.orchestrator import drive_orchestrated
@@ -569,14 +604,8 @@ async def _run_orchestrator(session_id: str, task_id: str, req: TaskRequest) -> 
     goal = req.description
     # agent 工作目录 = 活动项目在沙盒里的路径(/projects/<名>);无项目回退 /workspace
     cwd = cfg.get("cwd") or ps.sandbox_cwd()
-    # F1c — 验收命令:显式优先,否则据 host 项目根自动探测(不再默认 ['true'] 空转)
-    verify_cmd = _resolve_verify_cmd(cfg, ps.project_root())
-    # F6 — 读活动项目的规则文件(AGENTS.md/.cursorrules/CLAUDE.md…)喂给 Supervisor 拆解
-    from driving.project_rules import read_project_rules
-    project_rules = read_project_rules(ps.project_root())
-    # F5 — 仓库结构地图(技术栈/目录布局)喂给 Supervisor,拆解更贴合项目实际
-    from driving.repo_map import build_repo_map
-    repo_map = build_repo_map(ps.project_root())
+    # F1c/F5/F6 — 项目上下文读取(阻塞 IO)放进线程,避免卡事件循环
+    verify_cmd, project_rules, repo_map = await asyncio.to_thread(_gather_project_context, cfg)
     db_path = FLIPPED_CHECKPOINT_DB
     store.update(session_id, goal=goal, verify_cmd=verify_cmd, cwd=cwd, checkpoint_db_path=db_path)
     try:
@@ -591,21 +620,7 @@ async def _run_orchestrator(session_id: str, task_id: str, req: TaskRequest) -> 
                 supervisor=sup, worker=work, overseer=over, verifier=ver,
             )
         else:
-            # F1d — 验收在沙盒内执行(代码/依赖在容器里;cwd=沙盒路径天然成立);
-            #        无真实命令(['true'])时保留 host 默认 verifier,免无谓沙盒往返。
-            from driving.orchestrator import _safe_default_verifier
-            base_verifier = _safe_default_verifier
-            if verify_cmd != ["true"]:
-                from executor.sandbox_verify import make_sandbox_verifier
-                from executor.openhands_worker import OpenHandsWorker
-                base_verifier = make_sandbox_verifier(
-                    agent_host=os.environ.get("OPENHANDS_AGENT_HOST", "http://localhost:8000"),
-                    working_dir=cwd,
-                    api_key=OpenHandsWorker._default_agent_api_key(),
-                )
-            # F2 — 每步实时推 WS 事件(supervisor/worker/overseer/verify),去黑盒
-            from api.orchestrator_stream import build_streaming_nodes
-            nodes = build_streaming_nodes(bus, session_id, base_verifier)
+            nodes = _build_real_nodes(session_id, cwd, verify_cmd)
             final = await asyncio.to_thread(
                 drive_orchestrated,
                 goal=goal, cwd=cwd, verify_cmd=verify_cmd,
@@ -631,35 +646,40 @@ async def _run_orchestrator(session_id: str, task_id: str, req: TaskRequest) -> 
 
 
 async def _deliver(session_id: str, goal: str, cwd: str) -> None:
-    """交付步:在沙盒内提交验收通过的成果,并 emit 可见交付事件(F7)。"""
-    from executor.sandbox_deliver import make_sandbox_deliver
-    from executor.openhands_worker import OpenHandsWorker
+    """交付步:在沙盒内提交验收通过的成果,并 emit 可见交付事件(F7)。
 
-    deliver = make_sandbox_deliver(
-        agent_host=os.environ.get("OPENHANDS_AGENT_HOST", "http://localhost:8000"),
-        working_dir=cwd,
-        api_key=OpenHandsWorker._default_agent_api_key(),
-    )
+    **绝不抛异常**——交付是尽力而为,任何失败(读 key/连沙盒/emit)都不该翻转已通过的验收。
+    """
     try:
+        from executor.sandbox_deliver import make_sandbox_deliver
+        from executor.openhands_worker import OpenHandsWorker
+
+        deliver = make_sandbox_deliver(
+            agent_host=os.environ.get("OPENHANDS_AGENT_HOST", "http://localhost:8000"),
+            working_dir=cwd,
+            api_key=OpenHandsWorker._default_agent_api_key(),
+        )
         result = await asyncio.to_thread(deliver, goal)
-    except Exception as exc:  # noqa: BLE001 交付失败不该翻转已通过的验收
-        bus.emit(session_id, EventType.message, Role.worker,
-                 {"text": f"⚠️ 交付(提交)失败,成果仍在工作区: {exc}", "source": "deliver"})
-        return
-    if result.get("committed"):
-        subject = result["message"].splitlines()[0]
-        bus.emit(session_id, EventType.message, Role.worker,
-                 {"text": f"📦 已交付 · git commit\n{subject}", "source": "deliver"})
-    elif result.get("nochange"):
-        bus.emit(session_id, EventType.message, Role.worker,
-                 {"text": "📦 无文件变更,跳过提交。", "source": "deliver"})
-    else:
-        bus.emit(session_id, EventType.message, Role.worker,
-                 {"text": f"⚠️ 交付未提交:\n{result.get('output', '')[-400:]}", "source": "deliver"})
+        if result.get("committed"):
+            subject = result["message"].splitlines()[0]
+            bus.emit(session_id, EventType.message, Role.worker,
+                     {"text": f"📦 已交付 · git commit\n{subject}", "source": "deliver"})
+        elif result.get("nochange"):
+            bus.emit(session_id, EventType.message, Role.worker,
+                     {"text": "📦 无文件变更,跳过提交。", "source": "deliver"})
+        else:
+            bus.emit(session_id, EventType.message, Role.worker,
+                     {"text": f"⚠️ 交付未提交:\n{result.get('output', '')[-400:]}", "source": "deliver"})
+    except Exception as exc:  # noqa: BLE001 交付尽力而为,失败绝不翻转已通过的验收
+        try:
+            bus.emit(session_id, EventType.message, Role.worker,
+                     {"text": f"⚠️ 交付步异常,成果仍在工作区: {exc}", "source": "deliver"})
+        except Exception:
+            pass
 
 
 async def _resume_orchestrator(session: Session) -> None:
-    """从 checkpoint 恢复一个 orchestrator 会话。"""
+    """从 checkpoint 恢复一个 orchestrator 会话(与首跑一致:接 F2/F4 事件流 + F7 交付)。"""
     from driving.orchestrator import resume_orchestrated
 
     bus.emit(session.id, EventType.status, Role.system,
@@ -674,10 +694,13 @@ async def _resume_orchestrator(session: Session) -> None:
                 supervisor=sup, worker=work, overseer=over, verifier=ver,
             )
         else:
+            # 恢复也接实时事件流/计划清单(不退回黑盒)
+            nodes = _build_real_nodes(session.id, session.cwd, session.verify_cmd or ["true"])
             final = await asyncio.to_thread(
                 resume_orchestrated,
                 session.id,
                 session.checkpoint_db_path,
+                **nodes,
             )
         if final is None:
             store.update_status(session.id, SessionStatus.error)
@@ -685,6 +708,10 @@ async def _resume_orchestrator(session: Session) -> None:
                      {"message": "没有找到 checkpoint"})
             return
         if final.get("verified"):
+            # F7 恢复后若验收通过也交付(真实项目 + 非 mock)
+            if (not os.environ.get("FLIPPED_MOCK_ORCHESTRATOR")
+                    and session.cwd and session.cwd != "/workspace"):
+                await _deliver(session.id, session.goal or "", session.cwd)
             store.update_status(session.id, SessionStatus.done)
         elif final.get("done"):
             store.update_status(session.id, SessionStatus.error)

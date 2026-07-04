@@ -77,10 +77,13 @@ class OpenHandsWorker:
     def _default_agent_api_key() -> str:
         if os.environ.get("OPENHANDS_API_KEY"):
             return os.environ["OPENHANDS_API_KEY"]
+        # 去 TOCTOU:直接 try open,文件缺失/权限问题都优雅返回空(绝不抛,免拖垮调用方)
         key_file = os.path.expanduser("~/.openhands/agent-canvas/api-key.txt")
-        if os.path.exists(key_file):
-            return open(key_file).read().strip()
-        return ""
+        try:
+            with open(key_file) as f:
+                return f.read().strip()
+        except OSError:
+            return ""
 
     def _emit(self, type_: EventType, agent: Role | None, payload: dict[str, Any]) -> None:
         self.bus.emit(self.session_id, type_, agent, payload, parent_id=self.task_id)
