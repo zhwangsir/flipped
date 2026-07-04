@@ -160,6 +160,10 @@ async def create_project(req: dict[str, Any]) -> dict[str, Any]:
         dest.mkdir(parents=True)
     except OSError as e:
         raise HTTPException(status_code=500, detail=f"创建失败: {e}")
+    # F8 经验固化:新项目自动带默认 AGENTS.md(测试隔离/python3 -m pytest/换思路等
+    # 实测避坑约定),F6 每轮注入 Supervisor,提升自主任务一次通过率。
+    from driving.project_rules import write_default_rules
+    write_default_rules(dest)
     return ps.set_active(dest)
 
 

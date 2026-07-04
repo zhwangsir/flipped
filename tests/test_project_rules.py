@@ -1,7 +1,7 @@
-"""F6 — 项目规则文件读取 + Supervisor prompt 注入 + drive 线程化。"""
+"""F6 — 项目规则文件读取 + Supervisor prompt 注入 + drive 线程化 + 默认模板。"""
 from pathlib import Path
 
-from driving.project_rules import read_project_rules
+from driving.project_rules import DEFAULT_AGENTS_MD, read_project_rules, write_default_rules
 from driving.orchestrator import _build_supervisor_prompt, drive_orchestrated
 
 
@@ -60,6 +60,47 @@ def test_blank_file_skipped(tmp_path: Path):
     out = read_project_rules(tmp_path)
     assert "## AGENTS.md" not in out
     assert "真规则" in out
+
+
+# ---- 默认规则模板(F8 经验固化) ----
+
+def test_write_default_rules_creates_agents_md(tmp_path: Path):
+    assert write_default_rules(tmp_path) is True
+    text = (tmp_path / "AGENTS.md").read_text(encoding="utf-8")
+    assert "python3 -m pytest" in text       # F8 缺陷③的教训
+    assert "封装在类里" in text                # F8 缺陷⑦(counter 陷阱)的教训
+    assert "换思路" in text                   # 防调试死循环
+
+
+def test_write_default_rules_never_overwrites(tmp_path: Path):
+    (tmp_path / "AGENTS.md").write_text("用户自己的规则", encoding="utf-8")
+    assert write_default_rules(tmp_path) is False
+    assert (tmp_path / "AGENTS.MD".lower()).read_text(encoding="utf-8") == "用户自己的规则"
+
+
+def test_default_template_injected_via_read(tmp_path: Path):
+    # 写入模板 → F6 读取链正常拾取 → 会进 Supervisor prompt
+    write_default_rules(tmp_path)
+    rules = read_project_rules(tmp_path)
+    assert "## AGENTS.md" in rules
+    assert "python3 -m pytest" in rules
+    prompt = _build_supervisor_prompt({"goal": "g", "cwd": "/x", "project_rules": rules})
+    assert "务必遵守项目约定" in prompt and "封装在类里" in prompt
+
+
+def test_create_project_endpoint_writes_template(tmp_path: Path, monkeypatch):
+    from fastapi.testclient import TestClient
+    from api.main import API_PREFIX, app
+    from api import project_state as ps
+    monkeypatch.setattr(ps, "PROJECTS_DIR", tmp_path)
+    try:
+        with TestClient(app) as c:
+            r = c.post(f"{API_PREFIX}/projects", json={"name": "fresh"})
+            assert r.status_code == 200
+            assert (tmp_path / "fresh" / "AGENTS.md").exists()
+            assert DEFAULT_AGENTS_MD == (tmp_path / "fresh" / "AGENTS.md").read_text(encoding="utf-8")
+    finally:
+        ps.clear_active()
 
 
 # ---- Supervisor prompt 注入 ----
