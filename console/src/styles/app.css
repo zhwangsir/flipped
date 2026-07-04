@@ -257,6 +257,28 @@ body.resizing {
 .side-project:hover {
   background: var(--bg-hover);
 }
+/* R22 — 多项目:活动项目高亮 */
+.side-project.active {
+  background: var(--bg-surface);
+}
+.side-project.active .side-project-name {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+.side-project.active > .side-project-main > svg {
+  color: var(--accent-text);
+}
+.side-project-main.static {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  padding: 6px 2px;
+  color: var(--text-faint);
+  font-size: var(--text-sm);
+  cursor: default;
+}
 .side-project-main {
   display: flex;
   align-items: center;
