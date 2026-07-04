@@ -190,9 +190,27 @@ def make_openhands_worker(bus=None, session_id: str | None = None) -> WorkerFn:
         try:
             summary = worker.run(state["current_subtask"])
         except Exception as e:  # noqa: BLE001
+            err_text = str(e)
+            tool_calls = sum(1 for ev in worker.events if type(ev).__name__ == "ActionEvent")
+            # F8 大任务实测缺陷:MaxIterationsReached(子任务卡死在调试循环)/安全审计拦截
+            # 是**任务性失败**——应回灌 supervisor 换更小方案重拆,而非当基础设施故障判死。
+            # 真正的基础设施故障(连不上/模型不可用)特征是一个工具都没调成。
+            task_level = ("MaxIterationsReached" in err_text or "blocked" in err_text
+                          or tool_calls > 0)
+            if task_level:
+                return {
+                    "last_obs": {"ok": False, "summary": {"tool_calls": tool_calls}, "error": err_text},
+                    "signatures": state.get("signatures", []) + [f"stuck:{type(e).__name__}"],
+                    "history": state.get("history", []) + [
+                        {"step": "worker", "summary": {"tool_calls": tool_calls}, "stuck": True}],
+                    "worker_error": False,
+                    "feedback": (state.get("feedback", "")
+                                 + f"\n[执行器未完成子任务({err_text[:180]})。"
+                                   "请拆一个更小、更简单、避开上次卡点的子任务。]").strip(),
+                }
             err_sig = f"error:{type(e).__name__}"
             return {
-                "last_obs": {"ok": False, "summary": {"tool_calls": 0}, "error": str(e)},
+                "last_obs": {"ok": False, "summary": {"tool_calls": 0}, "error": err_text},
                 "signatures": state.get("signatures", []) + [err_sig],
                 "history": state.get("history", []) + [{"step": "worker", "summary": {"tool_calls": 0}, "error": True}],
                 "worker_error": True,
