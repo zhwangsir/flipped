@@ -202,11 +202,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
       .catch(() => {});
   }, []);
 
-  // Stage 3 — 拉取项目上下文（项目名 / 真实 git 分支 / 运行模式）
+  // Stage 3 — 项目上下文(项目名/真实 git 分支)。轮询保鲜:后端活动项目可能被
+  // 其它入口(另一窗口/Tauri/API)切换,UI 冒烟实测一次性 fetch 会显示滞后。
   useEffect(() => {
-    fetchProjectContext()
-      .then(setProjectContext)
-      .catch(() => {});
+    const tick = () =>
+      fetchProjectContext()
+        .then(setProjectContext)
+        .catch(() => {});
+    tick();
+    const id = setInterval(tick, 5000);
+    return () => clearInterval(id);
   }, []);
 
   // 阶段② — 拉取项目文件树（右侧「文件」）
