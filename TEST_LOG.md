@@ -645,3 +645,27 @@
 
 ### 进入 M8.T3
 - 下一步：终端统一到面板（Tauri portable-pty / 子进程终端）。
+
+## [2026-07-06] M8.T3 完成 — Tauri 原生终端面板硬化
+
+### 改动
+- `console/src-tauri/src/terminal.rs`：简化 `close_terminal`，移除无意义的 `resize(0,0)`，仅 `kill` 子进程并释放会话。
+- `console/src/components/PtyTerminal.tsx`：引入 `readyRef` 追踪会话就绪状态；拆分 Tauri 与 Web 初始化路径；在会话尚未就绪就被隐藏/取消时彻底清理，避免再次打开时拿到死终端；保持终端实例在面板隐藏期间存活以保留 shell 状态。
+- 新增 `scripts/verify_m8_t3.sh`：一键复跑 M8.T3 验收。
+
+### 验证
+- 命令：`bash scripts/verify_m8_t3.sh`
+- 输出摘要：
+  - Python 全量回归 `221 passed, 2 warnings`
+  - Console 生产构建 `tsc -b && vite build` 成功
+  - Tauri Rust 构建 `cargo build` 成功
+  - Tauri Rust 单元测试 `6 passed`
+- 结论：✅ 通过；退出码 0。
+
+### 遗留说明
+- Tauri 原生终端的真实运行态（shell 交互、输出回流）需在非沙箱 macOS 真机启动 `cargo tauri dev` 或打包后验证；当前受 Codex 沙箱限制无法启动桌面应用。
+- 缓存权限警告（`/Users/wangzhenyu/.cargo/registry/...` Permission denied）为 cargo 缓存清理行为，与代码无关。
+
+### 进入 M8.T4
+- 下一步：Tauri 菜单/托盘、构建配置、CI 打包脚手架。
+

@@ -46,3 +46,38 @@ export async function closeBrowserWebview(label: string): Promise<void> {
   const { invoke } = await import('@tauri-apps/api/core');
   await invoke('close_browser_webview', { label });
 }
+
+export async function createTerminal(cols: number, rows: number): Promise<string> {
+  if (!isTauri()) return '';
+  const { invoke } = await import('@tauri-apps/api/core');
+  return await invoke('create_terminal', { cols, rows });
+}
+
+export async function writeTerminal(id: string, data: string): Promise<void> {
+  if (!isTauri()) return;
+  const { invoke } = await import('@tauri-apps/api/core');
+  await invoke('write_terminal', { id, data });
+}
+
+export async function resizeTerminal(id: string, cols: number, rows: number): Promise<void> {
+  if (!isTauri()) return;
+  const { invoke } = await import('@tauri-apps/api/core');
+  await invoke('resize_terminal', { id, cols, rows });
+}
+
+export async function closeTerminal(id: string): Promise<void> {
+  if (!isTauri()) return;
+  const { invoke } = await import('@tauri-apps/api/core');
+  await invoke('close_terminal', { id });
+}
+
+export async function listenTerminalData(
+  callback: (id: string, data: string) => void,
+): Promise<() => void> {
+  if (!isTauri()) return () => {};
+  const { listen } = await import('@tauri-apps/api/event');
+  const unlisten = await listen<{ id: string; data: string }>('terminal-data', (event) => {
+    callback(event.payload.id, event.payload.data);
+  });
+  return unlisten;
+}

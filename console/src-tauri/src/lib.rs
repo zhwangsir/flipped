@@ -1,9 +1,11 @@
 mod backend;
 mod browser;
+mod terminal;
 
 use backend::{is_backend_healthy, resolve_backend_root, spawn_backend, BackendHandle};
 use browser::BrowserWebviewManager;
 use tauri::{Emitter, Manager, WindowEvent};
+use terminal::TerminalManager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -28,6 +30,7 @@ pub fn run() {
 
             app.manage(BackendHandle::new(port));
             app.manage(BrowserWebviewManager::new());
+            app.manage(TerminalManager::new());
 
             if auto_start != "0" {
                 std::thread::spawn(move || {
@@ -78,6 +81,10 @@ pub fn run() {
             browser::create_browser_webview,
             browser::update_browser_webview,
             browser::close_browser_webview,
+            terminal::create_terminal,
+            terminal::write_terminal,
+            terminal::resize_terminal,
+            terminal::close_terminal,
         ])
         .on_window_event(|window, event| {
             if let WindowEvent::CloseRequested { .. } = event {
