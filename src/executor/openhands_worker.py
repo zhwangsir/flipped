@@ -76,7 +76,7 @@ class OpenHandsWorker:
         api_key: str | None = None,
         tools: list[dict[str, Any]] | None = None,
         mcp_config: dict[str, Any] | None = None,
-        timeout: float = 600.0,
+        timeout: float | None = None,
         manage_session_status: bool = True,
     ):
         self.session_id = session_id
@@ -89,7 +89,11 @@ class OpenHandsWorker:
         self.api_key = api_key or self._default_agent_api_key()
         self.tools = tools or self.DEFAULT_TOOLS
         self.mcp_config = mcp_config or {}
-        self.timeout = timeout
+        # F8 实测经验:两个可调旋钮(默认与原值一致)。卡死类子任务达迭代上限后由
+        # orchestrator 分类回灌重拆——上限越小止损越快, 但太小会截断正常长任务。
+        self.timeout = timeout if timeout is not None else float(
+            os.environ.get("FLIPPED_WORKER_TIMEOUT", "600"))
+        self.max_iterations = int(os.environ.get("FLIPPED_WORKER_MAX_ITERATIONS", "50"))
         # F8 实测缺陷:orchestrator 模式下 worker 一跑完就把会话状态设 done,
         # 覆盖了还在继续的外层循环(overseer/verify/下一轮)。False=子任务模式,不碰会话状态。
         self.manage_session_status = manage_session_status
@@ -214,7 +218,7 @@ class OpenHandsWorker:
                     agent=agent,
                     workspace=workspace,
                     callbacks=[self._on_event],
-                    max_iteration_per_run=50,
+                    max_iteration_per_run=self.max_iterations,
                     delete_on_close=True,
                 )
                 self._emit(EventType.status, Role.system,
