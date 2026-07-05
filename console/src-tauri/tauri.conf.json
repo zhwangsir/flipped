@@ -23,11 +23,17 @@
     ],
     "security": {
       "csp": null
+    },
+    "trayIcon": {
+      "iconPath": "icons/icon.png"
     }
   },
   "bundle": {
     "active": true,
-    "targets": "all",
+    "targets": [
+      "dmg",
+      "app"
+    ],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -37,6 +43,12 @@
     ],
     "android": {
       "debugApplicationIdSuffix": ".debug"
+    },
+    "shortDescription": "本地模型驱动的 AI 开发工厂",
+    "longDescription": "flipped 是一个接入本地 MLX 双模型（GLM-5.2 编排者 / Kimi-K2.7-Code 执行者）的 agentic 代码编辑器平台。",
+    "macOS": {
+      "minimumSystemVersion": "11.0",
+      "signingIdentity": null
     }
   }
 }

@@ -1,7 +1,7 @@
 {
   "name": "flipped-console",
   "private": true,
-  "version": "0.0.1",
+  "version": "0.1.0",
   "type": "module",
   "description": "flipped Console — 本地模型驱动的 AI 开发工厂前端(Codex 风,多 Agent 监督)",
   "scripts": {

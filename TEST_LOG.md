@@ -669,3 +669,28 @@
 ### 进入 M8.T4
 - 下一步：Tauri 菜单/托盘、构建配置、CI 打包脚手架。
 
+
+## [2026-07-06] M8.T4 完成 — Tauri 菜单/托盘与打包/CI 脚手架
+
+### 实现
+- `console/src-tauri/src/lib.rs`：原生菜单栏（File/Edit/View/Window/Help）+ `New Session` / `Quit` 事件；托盘图标 + Show/Quit 菜单。
+- `console/src-tauri/Cargo.toml`：`tauri` features 含 `unstable`、`tray-icon`。
+- `console/src-tauri/tauri.conf.json`：`version=0.1.0`、`identifier=com.flipped.desktop`、`bundle` targets `["dmg","app"]`、`macOS.minimumSystemVersion=11.0`、`signingIdentity=null`、trayIcon 指向 `icons/icon.png`。
+- `scripts/verify_m8_t4.sh`：静态检查 tauri.conf.json + 图标 + feature；跑 pytest/console build/cargo build/test；尝试 `cargo tauri build`。
+- `.github/workflows/build.yml`：macOS runner 安装 Python/Node/Rust/Tauri CLI，跑 pytest、console build、Tauri release build，上传 bundle artifact。
+
+### 验证
+- 命令：`bash scripts/verify_m8_t4.sh`
+- 输出摘要：
+  - `[1/7]` tauri.conf.json 结构 OK
+  - `[2/7]` 图标文件 OK
+  - `[3/7]` Cargo.toml feature OK
+  - `[4/7]` Python 全量回归 `221 passed, 2 warnings`
+  - `[5/7]` Console 生产构建成功
+  - `[6/7]` Tauri Rust 构建 + 单元测试 `6 passed`
+  - `[7/7]` `cargo tauri build` 成功，产出 `flipped.app` 与 `flipped_0.1.0_aarch64.dmg`
+- 结论：✅ 通过；退出码 0。
+
+### 遗留说明
+- 产物为未签名 `.app`/`.dmg`（`signingIdentity=null`），符合本机无 Apple Developer 证书的现状；CI 中同配置。
+- 真实运行时菜单/托盘行为需在非沙箱 macOS 启动后验证。

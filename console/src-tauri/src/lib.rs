@@ -4,6 +4,8 @@ mod terminal;
 
 use backend::{is_backend_healthy, resolve_backend_root, spawn_backend, BackendHandle};
 use browser::BrowserWebviewManager;
+use tauri::menu::{Menu, MenuItem, Submenu};
+use tauri::tray::TrayIconBuilder;
 use tauri::{Emitter, Manager, WindowEvent};
 use terminal::TerminalManager;
 
@@ -31,6 +33,55 @@ pub fn run() {
             app.manage(BackendHandle::new(port));
             app.manage(BrowserWebviewManager::new());
             app.manage(TerminalManager::new());
+
+            // 原生菜单栏
+            let new_session = MenuItem::with_id(app, "new_session", "New Session", true, None::<&str>)?;
+            let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
+            let file_menu = Submenu::with_items(app, "File", true, &[&new_session, &quit])?;
+            let edit_menu = Submenu::new(app, "Edit", true)?;
+            let view_menu = Submenu::new(app, "View", true)?;
+            let window_menu = Submenu::new(app, "Window", true)?;
+            let help_menu = Submenu::new(app, "Help", true)?;
+            let menu = Menu::with_items(
+                app,
+                &[&file_menu, &edit_menu, &view_menu, &window_menu, &help_menu],
+            )?;
+            app.set_menu(menu)?;
+
+            app.on_menu_event(move |app, event| {
+                match event.id().as_ref() {
+                    "new_session" => {
+                        app.emit("menu-new-session", ()).ok();
+                    }
+                    "quit" => {
+                        app.exit(0);
+                    }
+                    _ => {}
+                }
+            });
+
+            // 托盘图标
+            let tray_show = MenuItem::with_id(app, "tray_show", "Show", true, None::<&str>)?;
+            let tray_quit = MenuItem::with_id(app, "tray_quit", "Quit", true, None::<&str>)?;
+            let tray_menu = Menu::with_items(app, &[&tray_show, &tray_quit])?;
+            // 图标在 tauri.conf.json app.trayIcon 中配置，代码里只挂菜单。
+            TrayIconBuilder::new()
+                .menu(&tray_menu)
+                .on_menu_event(move |app, event| {
+                    match event.id().as_ref() {
+                        "tray_show" => {
+                            if let Some(window) = app.get_webview_window("main") {
+                                let _ = window.show();
+                                let _ = window.set_focus();
+                            }
+                        }
+                        "tray_quit" => {
+                            app.exit(0);
+                        }
+                        _ => {}
+                    }
+                })
+                .build(app)?;
 
             if auto_start != "0" {
                 std::thread::spawn(move || {

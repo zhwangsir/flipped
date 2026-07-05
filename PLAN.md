@@ -87,7 +87,7 @@
    - `console/src/components/PtyTerminal.tsx` 拆分 Tauri 与 Web 初始化路径；引入 `readyRef` 追踪会话就绪状态；隐藏时保留 shell 状态，取消时彻底清理，避免死终端。
    - 新增 `scripts/verify_m8_t3.sh` 一键复跑。
    - 验证：`bash scripts/verify_m8_t3.sh` 通过（Python 221 passed / console build / cargo build / cargo test 6 passed）。
-4. **T4 · 打包/签名/自动更新** 🚧 进行中
+4. **T4 · 打包/签名/自动更新** ✅ 已完成
    - 目标：让 `flipped.app` 可打包、可分发、退出时保留托盘、更新有入口。
    - 子任务：
      1. `console/src-tauri/src/lib.rs` 添加原生菜单（File / View / Window / Help）与托盘图标。
@@ -97,6 +97,7 @@
      5. `scripts/verify_m8_t4.sh`：构建打包产物并检查签名配置（实际签名需 Apple 开发者证书，CI/本地预留接口）。
      6. `.github/workflows/build.yml`：CI 矩阵打包 macOS 应用（未签名 artifact）。
    - 验证：`cargo tauri build` 成功；生成 `.dmg` / `.app`；CI workflow 可干跑。
+  - 验证结果：`bash scripts/verify_m8_t4.sh` 全绿（pytest 221 passed / console build / cargo build/test 6 passed / cargo tauri build 出 flipped.app + .dmg）。
 
 ## 验收
 
