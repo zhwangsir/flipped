@@ -579,3 +579,34 @@
   `POST /sessions` + `POST /tasks` → `_run_openhands` → 沙盒 → 真实 Kimi(exo 直连)。
 - 结果:沙盒创建 `/workspace/mul.py` + 终端运行,status=done(36s),14 events(file_change/terminal/tool_call/tool_result/message/status),无 error → **PASS**。
 - 意义:产品从 Console 用的 API 路径真正端到端可用。
+
+## [2026-07-05] M8.T1 完成 — Tauri 自动拉起后端
+
+### 实现
+- 新增 `console/src-tauri/src/backend.rs`：
+  - `BackendHandle`：Tauri 应用状态，持有 `Mutex<Option<Child>>`，提供 `kill()` 用于退出时清理后端进程。
+  - `resolve_backend_root()`：按 `FLIPPED_ROOT` → `CARGO_MANIFEST_DIR` 父目录 → `current_exe` 向上查找 `.venv/bin/python` 定位项目根。
+  - `is_backend_healthy()`：HTTP 探测 `http://127.0.0.1:{port}/api/v1/sessions`。
+  - `spawn_backend()`：用 `.venv/bin/python -m uvicorn api.main:app` 在沙盒/项目根启动后端，日志追加到 `logs/tauri-backend.log`。
+- `console/src-tauri/src/lib.rs`：
+  - 在 `setup` 中读取 `FLIPPED_BACKEND_PORT` / `FLIPPED_BACKEND_AUTO_START`。
+  - 若后端未运行则后台线程自动拉起，等待健康后 emit `backend-ready` 事件。
+  - `on_window_event` 监听 `CloseRequested`，关闭时 `kill()` 后端子进程。
+
+### Rust 单元测试
+- 命令：`cd console/src-tauri && cargo test`
+- 输出摘要：`2 passed`（`find_project_root_from_nested_dir`、`is_backend_healthy_false_when_nothing_listens`），无代码警告。
+- 结论：✅ 通过。
+
+### 构建验证
+- 命令：`cd console/src-tauri && cargo fmt && cargo build`
+- 输出摘要：`Finished dev profile`（无代码警告，仅 cargo 缓存权限警告）。
+- 结论：✅ 通过。
+
+### 全量 Python 回归
+- 命令：`PYTHONPATH=src .venv/bin/python -m pytest tests/ -q`
+- 输出摘要：`221 passed, 2 warnings`
+- 结论：✅ 通过；Tauri 改动未影响后端。
+
+### 进入 M8.T2
+- 下一步：Tauri 嵌入式可交互浏览器（子 webview 真 Chromium）。

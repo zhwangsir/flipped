@@ -55,3 +55,34 @@
 - **M7.5 侧栏·顶栏·输入区控件全部接真** ✅ — 共享导航状态入 store(activeView/contextTab/sidebarTab/showContext/sessionQuery);ActivityBar 真导航;TopBar 修正硬编码谎报(随 selectedModel/sessionStatus/会话/变更数)+ 布局切换面板;会话搜索过滤;composer @插入/工具→MCP/沙盒→终端;移除无后端支撑的假按钮(运行/main/附件)。
 
 **验收**:全量 **107 passed**;`console build` 绿;Puppeteer 浏览器实测 6 类控件全部生效(搜索过滤 m74→2 / 模型 pill→GLM-5.2 / rail 导航→浏览器·MCP tab / MCP 开关→持久化后端 / 布局→隐藏面板 / 模式→规划+placeholder 变)。
+
+---
+
+# M8 · Tauri 桌面壳硬化
+
+> 背景：UI/功能已全面诚实化，下一步是把外壳从浏览器升级为 Tauri 桌面壳，以支持原生文件夹选择、嵌入式可交互浏览器、一等终端、自动打包/签名。
+> M8 先完成后端自启动，让 `flipped.app` 不依赖外部脚本即可运行。
+
+## 任务
+
+1. **T1 · Tauri 自动拉起后端** ✅ 已完成
+   - 新增 `console/src-tauri/src/backend.rs`：项目根查找、HTTP 健康探测、子进程启动、应用退出时 kill 子进程。
+   - `console/src-tauri/src/lib.rs`：在 `setup` 中启动后台线程自动拉起后端（若未运行），`CloseRequested` 时清理子进程。
+   - 环境变量：`FLIPPED_BACKEND_PORT` / `FLIPPED_BACKEND_AUTO_START` / `FLIPPED_ROOT`。
+   - Rust 单元测试 2 个通过：`find_project_root_from_nested_dir`、`is_backend_healthy_false_when_nothing_listens`。
+   - Rust 模块 `backend.rs`：查找项目根、健康检查、启动 Python backend (`uvicorn api.main:app`)、应用退出时关闭。
+   - `lib.rs` 在 `setup` 中启动后台线程，监听 `CloseRequested` 清理子进程。
+   - 环境变量：`FLIPPED_BACKEND_PORT` / `FLIPPED_BACKEND_AUTO_START` / `FLIPPED_ROOT`。
+   - Rust 单元测试 + `cargo build` 通过。
+2. **T2 · 嵌入式可交互浏览器** ⏳ 待做
+   - 用 Tauri v2 子 webview 真 Chromium 取代 Playwright 静态截图。
+3. **T3 · 终端统一到面板** ⏳ 待做
+   - 用 Tauri portable-pty / 子进程把终端接到右侧面板终端 tab。
+4. **T4 · 打包/签名/自动更新** ⏳ 待做
+   - Rust sidecar 自动拉起后端、原生菜单/托盘、`cargo tauri build`、签名。
+
+## 验收
+
+- `cargo build` 通过；单元测试通过。
+- Tauri 应用启动时，若后端未运行则自动拉起；退出时关闭。
+- 不破坏现有 `predev.sh` 与 Python 测试。
