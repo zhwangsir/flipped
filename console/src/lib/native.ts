@@ -14,3 +14,35 @@ export async function pickFolder(title = '选择项目文件夹'): Promise<strin
   const result = await open({ directory: true, multiple: false, title });
   return typeof result === 'string' ? result : null;
 }
+
+
+export async function createBrowserWebview(
+  label: string,
+  url: string,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+): Promise<void> {
+  if (!isTauri()) return;
+  const { invoke } = await import('@tauri-apps/api/core');
+  await invoke('create_browser_webview', { label, url, x, y, width, height });
+}
+
+export async function updateBrowserWebview(
+  label: string,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+): Promise<void> {
+  if (!isTauri()) return;
+  const { invoke } = await import('@tauri-apps/api/core');
+  await invoke('update_browser_webview', { label, x, y, width, height });
+}
+
+export async function closeBrowserWebview(label: string): Promise<void> {
+  if (!isTauri()) return;
+  const { invoke } = await import('@tauri-apps/api/core');
+  await invoke('close_browser_webview', { label });
+}

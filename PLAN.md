@@ -74,8 +74,11 @@
    - `lib.rs` 在 `setup` 中启动后台线程，监听 `CloseRequested` 清理子进程。
    - 环境变量：`FLIPPED_BACKEND_PORT` / `FLIPPED_BACKEND_AUTO_START` / `FLIPPED_ROOT`。
    - Rust 单元测试 + `cargo build` 通过。
-2. **T2 · 嵌入式可交互浏览器** ⏳ 待做
-   - 用 Tauri v2 子 webview 真 Chromium 取代 Playwright 静态截图。
+2. **T2 · 嵌入式可交互浏览器** ✅ 已完成
+   - 新增 `console/src-tauri/src/browser.rs`：子 webview create/update/close。
+   - `Cargo.toml` 启用 `tauri/unstable` feature 以使用 `Window::add_child`。
+   - `console/src/components/ContextPanel.tsx` 在 Tauri 模式使用 host div + ResizeObserver 同步位置。
+   - 验证：`cargo build` + `cargo test`（4 passed）+ `console npm run build` + Python 全量 221 passed。
 3. **T3 · 终端统一到面板** ⏳ 待做
    - 用 Tauri portable-pty / 子进程把终端接到右侧面板终端 tab。
 4. **T4 · 打包/签名/自动更新** ⏳ 待做

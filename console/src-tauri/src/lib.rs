@@ -1,6 +1,8 @@
 mod backend;
+mod browser;
 
 use backend::{is_backend_healthy, resolve_backend_root, spawn_backend, BackendHandle};
+use browser::BrowserWebviewManager;
 use tauri::{Emitter, Manager, WindowEvent};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -25,6 +27,7 @@ pub fn run() {
             let handle = app.handle().clone();
 
             app.manage(BackendHandle::new(port));
+            app.manage(BrowserWebviewManager::new());
 
             if auto_start != "0" {
                 std::thread::spawn(move || {
@@ -71,6 +74,11 @@ pub fn run() {
 
             Ok(())
         })
+        .invoke_handler(tauri::generate_handler![
+            browser::create_browser_webview,
+            browser::update_browser_webview,
+            browser::close_browser_webview,
+        ])
         .on_window_event(|window, event| {
             if let WindowEvent::CloseRequested { .. } = event {
                 window.app_handle().state::<BackendHandle>().kill();

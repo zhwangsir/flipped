@@ -1,7 +1,8 @@
-import { useState, useEffect, type ReactNode } from 'react';
+import { useState, useEffect, useRef, type ReactNode } from 'react';
 import { useApp } from '../store';
 import type { ChangedFile, FileNode, BrowserElement } from '../types';
 import { renderMarkdown } from '../lib/markdown';
+import { isTauri, createBrowserWebview, updateBrowserWebview, closeBrowserWebview } from '../lib/native';
 import { PtyTerminal } from './PtyTerminal';
 import { IconFile, IconFolder, IconTerminal, IconBrowser, IconReview, IconChat, IconX, IconChevronDown, IconEye, IconCheck } from '../icons';
 
@@ -57,8 +58,33 @@ function BrowserTab() {
   // 实时 iframe(可交互, 首要场景=预览自己的 dev server) vs 截图(元素追踪 / 外部站点)
   const [view, setView] = useState<'live' | 'shot'>('live');
   const [liveUrl, setLiveUrl] = useState('');
+  const hostRef = useRef<HTMLDivElement | null>(null);
 
   const norm = (u: string) => (/^https?:\/\//.test(u) ? u : 'http://' + u.replace(/^\/+/, ''));
+
+  // Tauri desktop: replace the live iframe with a real Chromium child webview overlaid on the host div.
+  useEffect(() => {
+    if (!isTauri() || view !== 'live' || !liveUrl) return;
+    const host = hostRef.current;
+    if (!host) return;
+    const rect = host.getBoundingClientRect();
+    if (rect.width < 1 || rect.height < 1) return;
+    createBrowserWebview('browser-preview', norm(liveUrl), rect.left, rect.top, rect.width, rect.height);
+
+    const update = () => {
+      const r = host.getBoundingClientRect();
+      if (r.width > 0 && r.height > 0) {
+        updateBrowserWebview('browser-preview', r.left, r.top, r.width, r.height);
+      }
+    };
+    const observer = new ResizeObserver(update);
+    observer.observe(host);
+
+    return () => {
+      observer.disconnect();
+      closeBrowserWebview('browser-preview').catch(() => {});
+    };
+  }, [liveUrl, view]);
   const goLive = () => {
     const u = url.trim();
     if (u) {
@@ -114,12 +140,16 @@ function BrowserTab() {
       )}
       {view === 'live' ? (
         liveUrl ? (
-          <iframe
-            className="rbrowser-live"
-            src={liveUrl}
-            title="实时预览"
-            sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals"
-          />
+          isTauri() ? (
+            <div ref={hostRef} className="rbrowser-live-host" style={{ flex: 1, minHeight: 0 }} />
+          ) : (
+            <iframe
+              className="rbrowser-live"
+              src={liveUrl}
+              title="实时预览"
+              sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals"
+            />
+          )
         ) : (
           <div className="rbrowser-empty">
             <IconBrowser size={22} />

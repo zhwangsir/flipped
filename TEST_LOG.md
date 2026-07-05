@@ -610,3 +610,38 @@
 
 ### 进入 M8.T2
 - 下一步：Tauri 嵌入式可交互浏览器（子 webview 真 Chromium）。
+
+## [2026-07-06] M8.T2 完成 — Tauri 嵌入式可交互浏览器
+
+### 实现
+- 新增 `console/src-tauri/src/browser.rs`：
+  - `BrowserWebviewManager`：管理子 webview 句柄集合。
+  - `create_browser_webview`：用 `Window::add_child` 创建真 Chromium 子 webview。
+  - `update_browser_webview`：通过 `set_position`/`set_size` 同步位置/尺寸。
+  - `close_browser_webview`：关闭并移除子 webview。
+- `console/src-tauri/Cargo.toml`：启用 `tauri` crate 的 `unstable` feature，新增 `url` 依赖。
+- `console/src-tauri/src/lib.rs`：注册 browser 模块、state 与三个 invoke handler。
+- `console/src/lib/native.ts`：新增 `createBrowserWebview` / `updateBrowserWebview` / `closeBrowserWebview` 桥接。
+- `console/src/components/ContextPanel.tsx`：Tauri 模式下用 host div + ResizeObserver 实时同步位置，web 模式保留 iframe 与截图回退。
+
+### 修复的编译问题
+- `WebviewBuilder` 与 `Window::add_child` 属于 Tauri v2 的 unstable API，必须启用 `features = ["unstable"]`。
+- `url.parse()` 类型推断失败，改为 `url::Url::parse(&url)`。
+
+### Rust 构建与测试
+- 命令：`cd console/src-tauri && cargo fmt && cargo build && cargo test`
+- 输出摘要：`4 passed`（browser manager 为空、url 解析、backend find root、backend health）；`cargo build` 成功。
+- 结论：✅ 通过。
+
+### Console 构建
+- 命令：`cd console && npm run build`
+- 输出摘要：`tsc -b && vite build` 成功。
+- 结论：✅ 通过。
+
+### Python 全量回归
+- 命令：`PYTHONPATH=src .venv/bin/python -m pytest tests/ -q`
+- 输出摘要：`221 passed, 2 warnings in 9.88s`
+- 结论：✅ 通过；Tauri 浏览器改动未影响后端。
+
+### 进入 M8.T3
+- 下一步：终端统一到面板（Tauri portable-pty / 子进程终端）。

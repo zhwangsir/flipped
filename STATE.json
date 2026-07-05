@@ -2,7 +2,7 @@
   "project": "flipped",
   "description": "接入本地 MLX 双模型(GLM-5.2 编排者 / Kimi-K2.7-Code 执行者)的 agentic 代码编辑器平台。fork Roo Code + 自定义驾驭层(强制验证/循环检测/上下文压缩/人工审批/子Agent/可观测性) + MCP 联网与外部能力。",
   "updated": "2026-07-05",
-  "current_milestone": "M8 · Tauri 桌面壳硬化 (T1 后端自启动完成；T2/T3/T4 待做)",
+  "current_milestone": "M8 · Tauri 桌面壳硬化 (T1/T2 完成；T3/T4 待做)",
   "key_facts": {
     "dev_host": "Apple M5 Max, 128GB RAM, 1.1TB 可用磁盘 — 开发/控制节点，非模型宿主",
     "model_cluster": "exo 集群 @ http://100.64.201.37:52415 (内网, OpenAI 兼容)；公网 https://dgmt.top/exo (需 Bearer token)",
@@ -139,7 +139,7 @@
     "M8": {
       "title": "Tauri 桌面壳硬化",
       "status": "doing",
-      "note": "T1 后端自启动完成；T2/T3/T4 待做。",
+      "note": "T1/T2 完成；T3/T4 待做。",
       "tasks": {
         "M8.T1": {
           "title": "Tauri 自动拉起后端",
@@ -160,6 +160,12 @@
           "title": "打包/签名/自动更新",
           "status": "todo",
           "note": "Rust sidecar、菜单/托盘、cargo tauri build。"
+        },
+        "M8": {
+          "T2": {
+            "status": "done",
+            "note": "Rust 模块 browser.rs 完成 create/update/close 子 webview；Tauri 启用 unstable feature；ContextPanel 在 Tauri 模式使用 host div + ResizeObserver 同步位置；cargo build/test 4 passed；console build 通过；Python 全量 221 passed。"
+          }
         }
       }
     }
