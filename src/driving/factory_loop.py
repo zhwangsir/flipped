@@ -233,12 +233,23 @@ def default_planner(state: FactoryState) -> list[FactoryTask]:
             f"\nUI/UX 设计要求（涉及界面时任务描述必须包含设计约束）：\n{state.design_context}\n"
         )
 
+    # M10.4-D：Gold Memory 经验提示（让 planner 复用历史成功的 verify_cmd 模式）
+    memory_hint = ""
+    try:
+        from driving.gold_memory import build_memory_hint
+        memory_hint = build_memory_hint(state.product_goal, state.design_style) or ""
+        if memory_hint:
+            memory_hint = f"\n{memory_hint}\n"
+    except Exception:
+        pass
+
     msg = (
         f"产品目标：{state.product_goal}\n"
         f"工作目录：{state.cwd}\n"
         "你是产品架构师。把目标拆成多个自包含的开发任务；每个任务必须可被一条验收命令验证。\n"
         "任务要具体、可交付，禁止一次写完整项目。\n"
         f"{design_hint}\n"
+        f"{memory_hint}\n"
         "verify_cmd 硬性规则（违反会导致验收熔断，必须遵守）：\n"
         "1. verify_cmd 数组只有一个元素，即一条单行 shell 命令。\n"
         "2. 禁止多行命令、禁止用 && 连接多条命令、禁止用 python -c 传多行代码。\n"
@@ -307,8 +318,46 @@ def _summarize_orchestrator_result(values: OrchestratorState) -> str:
     return "; ".join(parts)
 
 
+def _looks_like_ui_task(task: FactoryTask, state: FactoryState) -> bool:
+    """启发式判断任务是否涉及 UI 生成（需要追加 design-lint）。
+
+    判定依据（任一即视为 UI 任务）：
+    - design_context 非空（工厂启用了设计系统注入）
+    - 任务描述含 UI 相关关键词（页面/按钮/表单/landing/component/UI/CSS/HTML 等）
+    - verify_cmd 涉及 HTML/CSS 文件检查
+    """
+    if not state.design_context:
+        return False
+    text = (task.description + " " + " ".join(task.verify_cmd)).lower()
+    ui_keywords = (
+        "页面", "按钮", "表单", "布局", "颜色", "字体",
+        "page", "landing", "hero", "navbar", "footer", "sidebar",
+        "button", "form", "card", "modal", "component",
+        "html", "css", "jsx", "tsx", "vue", "svelte",
+        "ui", "ux", "design", "theme", "styling",
+    )
+    return any(kw in text for kw in ui_keywords)
+
+
 def default_orchestrator_fn(task: FactoryTask, state: FactoryState) -> TaskResult:
-    """默认用 drive_orchestrated 执行一个工厂任务；每个任务独立 thread_id/checkpoint。"""
+    """默认用 drive_orchestrated 执行一个工厂任务；每个任务独立 thread_id/checkpoint。
+
+    M10.4-A：对 UI 任务自动追加 design-lint 校验，作为 verify_cmd 之外的程序化硬约束。
+    M10.4-C：第 2 次失败后用 delegate orchestrator（独立 thread_id + 干净上下文）。
+    """
+    # M10.4-C：连续失败 ≥ 2 次时，触发 delegate 子 Agent（避免主上下文被卡死污染）
+    from driving.stuck_detector import delegate_orchestrator
+    if task.attempts >= 3 and task.feedback:
+        # 第 3 次尝试起，改用 delegate（前 2 次正常尝试）
+        stuck_reason = (
+            f"已失败 {task.attempts - 1} 次，最近反馈：{task.feedback[:200]}"
+        )
+        try:
+            return delegate_orchestrator(task, state, stuck_reason)
+        except Exception as e:
+            # delegate 失败时退回正常 orchestrator（避免完全卡死）
+            pass
+
     thread_id = f"{state.factory_id}-{task.id}"
 
     # 尝试构建 sandbox_verifier（在沙箱内验证）；失败则 fallback 到 host verifier
@@ -325,6 +374,14 @@ def default_orchestrator_fn(task: FactoryTask, state: FactoryState) -> TaskResul
         )
     except Exception:
         pass  # fallback 到 drive_orchestrated 默认的 _safe_default_verifier
+
+    # M10.4-A：UI 任务用组合 verifier（base + design-lint），让设计系统成为程序化硬约束
+    if verifier is not None and _looks_like_ui_task(task, state):
+        try:
+            from driving.design_lint import combined_verifier
+            verifier = combined_verifier(verifier, state.design_style or "auto")
+        except Exception:
+            pass  # design-lint 不可用时退回 base verifier
 
     kwargs = dict(
         goal=task.description,
@@ -479,9 +536,40 @@ def run_factory_loop(
                 state.context_summary += (
                     f"\n[{task.id}] {task.description}: done. artifacts={task.artifacts}"
                 )
+                # M10.4-B：记录到 FEATURE_CHECKLIST.json + PROGRESS.md（让无限迭代有长期记忆）
+                try:
+                    from driving.progress_notes import record_task_done
+                    record_task_done(
+                        state.cwd, task.id, task.description,
+                        summary=result.summary, round_num=None,
+                    )
+                except Exception:
+                    pass  # 进展笔记写入失败不影响主循环
+                # M10.4-D：记录到 Gold Memory（让系统越跑越快）
+                try:
+                    from driving.gold_memory import record_task_result
+                    record_task_result(task, state, result)
+                except Exception:
+                    pass
             else:
                 task.status = TaskStatus.failed
                 state.failed.append(result)
+                # M10.4-B：失败也记录（演进者能看到哪些功能反复失败）
+                try:
+                    from driving.progress_notes import record_task_failed
+                    record_task_failed(
+                        state.cwd, task.id, task.description,
+                        reason=f"{result.stop_reason}: {result.summary[:120]}",
+                        round_num=None,
+                    )
+                except Exception:
+                    pass
+                # M10.4-D：失败也记入 Gold Memory（记录失败模式）
+                try:
+                    from driving.gold_memory import record_task_result
+                    record_task_result(task, state, result)
+                except Exception:
+                    pass
                 if task.attempts >= task.max_attempts:
                     state.status = FactoryStatus.paused
                     break

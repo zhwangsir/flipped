@@ -29,6 +29,12 @@ from driving.factory_loop import (
     FactoryStatus,
     run_factory_loop,
 )
+from driving.progress_notes import (
+    init_progress,
+    record_round,
+    summarize_for_evolution,
+    design_brief_from_progress,
+)
 
 
 class RoundSummary(BaseModel):
@@ -66,10 +72,13 @@ class NextGoal(BaseModel):
 
 # ---------- 演进目标生成 ----------
 
-def _evolve_goal(direction: str, rounds: list[RoundSummary]) -> tuple[str, bool, str]:
+def _evolve_goal(direction: str, rounds: list[RoundSummary], cwd: str = "") -> tuple[str, bool, str]:
     """用 GLM 生成下一轮目标。返回 (goal, achieved, reasoning)。
 
-    GLM 看原始方向 + 已完成的轮次摘要，决定下一轮做什么。
+    M10.4-B 增强：读取 FEATURE_CHECKLIST.json + PROGRESS.md 作为长期记忆，
+    让演进者不只是看上一轮摘要（短视），而是看完整进展历史（远视）。
+
+    GLM 看原始方向 + 已完成的轮次摘要 + 完整功能清单，决定下一轮做什么。
     """
     from driving.orchestrator import _invoke_structured, _make_llm
 
@@ -84,14 +93,29 @@ def _evolve_goal(direction: str, rounds: list[RoundSummary]) -> tuple[str, bool,
         for r in rounds
     )
 
+    # M10.4-B：从 PROGRESS.md / FEATURE_CHECKLIST.json 提取长期记忆
+    progress_summary = ""
+    design_contract = ""
+    if cwd:
+        try:
+            progress_summary = summarize_for_evolution(cwd)
+            dc = design_brief_from_progress(cwd)
+            if dc:
+                design_contract = f"\n{dc}\n"
+        except Exception:
+            pass
+
     msg = (
         f"产品方向：{direction}\n\n"
         f"已完成的轮次：\n{rounds_text}\n\n"
+        f"完整功能清单（FEATURE_CHECKLIST）：\n{progress_summary}\n"
+        f"{design_contract}\n"
         "你是产品演进者。基于产品方向和已完成的工作，决定下一轮应该做什么。\n"
         "要求：\n"
         "1. next_goal 必须是基于上一轮成果的**增量演进**，不要重复已完成的工作。\n"
         "2. 如果产品方向已完全达成（所有核心功能都已实现并验证），设 goal_achieved=true。\n"
         "3. next_goal 要具体、可执行，能被拆成 3-7 个开发任务。\n"
+        "4. 优先修复失败的功能（FEATURE_CHECKLIST 里 status=failed 的项）。\n"
     )
 
     try:
@@ -248,7 +272,7 @@ def run_infinite_loop(
     db_path: str = "data/infinite_loop.db",
     factory_db_path: str = "data/factory.db",
     factory_checkpoint_db_path: str = "data/factory_checkpoints.db",
-    evolve_fn: Callable[[str, list[RoundSummary]], tuple[str, bool, str]] | None = None,
+    evolve_fn: Callable[..., tuple[str, bool, str]] | None = None,
     factory_loop_fn: FactoryLoopFn | None = None,
     planner=None,
     orchestrator_fn=None,
@@ -284,6 +308,11 @@ def run_infinite_loop(
             max_rounds=max_rounds,
         )
         save_loop_state(state, db_path)
+        # M10.4-B：初始化长期记忆文件
+        try:
+            init_progress(cwd, direction, design_style)
+        except Exception:
+            pass
     else:
         if state.status != "running":
             return state  # 已完成
@@ -302,8 +331,12 @@ def run_infinite_loop(
             save_loop_state(state, db_path)
             break
 
-        # 生成本轮目标
-        goal, achieved, reasoning = evolve(state.direction, state.rounds)
+        # 生成本轮目标（传 cwd 让演进者读取 FEATURE_CHECKLIST 长期记忆）
+        # 兼容旧签名 evolve(direction, rounds)：若 evolve 不接受 cwd，回退调用
+        try:
+            goal, achieved, reasoning = evolve(state.direction, state.rounds, cwd=state.cwd)
+        except TypeError:
+            goal, achieved, reasoning = evolve(state.direction, state.rounds)
         if achieved:
             state.status = "goal_achieved"
             save_loop_state(state, db_path)
@@ -329,5 +362,16 @@ def run_infinite_loop(
         round_summary = _collect_round_summary(round_num, factory_state)
         state.rounds.append(round_summary)
         save_loop_state(state, db_path)
+
+        # M10.4-B：每轮结束追加 PROGRESS.md 章节 + 更新 checklist rounds_completed
+        try:
+            record_round(
+                state.cwd, round_num, goal,
+                tasks_completed=round_summary.tasks_completed,
+                tasks_failed=round_summary.tasks_failed,
+                summary=round_summary.summary,
+            )
+        except Exception:
+            pass
 
     return state

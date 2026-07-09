@@ -335,7 +335,7 @@ def _direct_glm_tool_call(llm, schema_cls, prompt: str, *, max_retries: int = 3)
                     "enable_thinking": False,
                     "max_tokens": 2048,
                 },
-                timeout=httpx.Timeout(60.0, connect=10.0),
+                timeout=httpx.Timeout(120.0, connect=10.0),
                 trust_env=False,
             )
             r.raise_for_status()

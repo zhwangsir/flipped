@@ -1,8 +1,8 @@
 {
   "project": "flipped",
   "description": "接入本地 MLX 双模型(GLM-5.2 编排者 / Kimi-K2.7-Code 执行者)的 agentic 代码编辑器平台。fork Roo Code + 自定义驾驭层(强制验证/循环检测/上下文压缩/人工审批/子Agent/可观测性) + MCP 联网与外部能力。",
-  "updated": "2026-07-08",
-  "current_milestone": "M9 E2E 验证完成 · 真实 GLM planner + Kimi orchestrator + OpenHands 沙箱全链路跑通 (2/5 任务验证通过，3 个 bug 修复)",
+  "updated": "2026-07-09",
+  "current_milestone": "M10.4 自主无限迭代增强完成 · design-lint + progress_notes + stuck_detector + gold_memory 四件套 (315 passed)",
   "key_facts": {
     "dev_host": "Apple M5 Max, 128GB RAM, 1.1TB 可用磁盘 — 开发/控制节点，非模型宿主",
     "model_cluster": "exo 集群 @ http://100.64.201.37:52415 (内网, OpenAI 兼容)；公网 https://dgmt.top/exo (需 Bearer token)",
@@ -202,6 +202,33 @@
           "title": "工厂 REST API 端点",
           "status": "done",
           "note": "新增 src/api/factory.py（APIRouter）；POST /factories 创建+后台运行、GET /factories 列表、GET /factories/{id} 摘要、GET /factories/{id}/detail 完整状态、POST /factories/{id}/resume 恢复、POST /factories/{id}/pause 暂停；挂载到 main.py。9 个 API 集成测试通过（TestClient + stub planner/orchestrator）。"
+        }
+      }
+    },
+    "M10": {
+      "title": "自主无限迭代 + UI/UX 设计质量最优 + 自我学习",
+      "status": "in_progress",
+      "note": "M10.1-M10.2 + M10.4 完成。目标：只需要给出方向就能自行无限迭代 + UI/UX 设计质量最优 + 系统越跑越快。当前阻塞：M10.3 真实 E2E 依赖 exo 模型 LAUNCH（当前 No instance found for GLM-5.2）。",
+      "tasks": {
+        "M10.1": {
+          "title": "设计系统注入机制",
+          "status": "done",
+          "note": "src/driving/design_context.py：10 种风格精简数据（minimalism/dark/glassmorphism/bento/neumorphism/cyberpunk/organic/retro/brutalism/immersive），含具体 hex 值、字体、动效关键词。build_design_brief() 生成设计简报注入 worker project_rules。infer_style() 自动推断风格。factory_loop SQLite 表新增 design_style/design_context 列 + 旧表迁移。9 单测全过。"
+        },
+        "M10.2": {
+          "title": "无限迭代外层循环",
+          "status": "done",
+          "note": "src/driving/infinite_loop.py：InfiniteLoopState + _evolve_goal(GLM 作为产品演进者看上一轮成果+原始方向生成下一轮 roadmap) + run_infinite_loop 主循环 + SQLite 持久化 + 崩溃恢复。停止条件：用户停止(FLIPPED_STOP_LOOP) / max_rounds / GLM 判定目标达成。7 单测全过。"
+        },
+        "M10.3": {
+          "title": "真实 E2E landing page 验证",
+          "status": "blocked",
+          "note": "scripts/e2e_landing_page.py 已写，但 exo 模型未 LAUNCH（No instance found for GLM-5.2-DQ4plus-q8）。代码层已用注入 mock 验证通过（test_m10_integration.py 3 passed）。等模型 LAUNCH 后可直接跑。"
+        },
+        "M10.4": {
+          "title": "调研网络项目优化点落地",
+          "status": "done",
+          "note": "四个优化点全部落地：(A) design-lint 程序化设计校验闭环（16 单测）；(B) FEATURE_CHECKLIST.json + PROGRESS.md 进展笔记（10 单测）；(C) StuckDetector + delegate 子 Agent 熔断（12 单测）；(D) Gold Memory 自学习机制（11 单测）。全量 315 passed。"
         }
       }
     }
