@@ -165,3 +165,54 @@ def test_clear_memory():
         record_task_result(task, state, _make_result(), db)
         clear_memory(db)
         assert stats(db_path=db)["total_entries"] == 0
+
+
+def test_semantic_search_finds_similar_different_words():
+    """M11.2：不同用词但语义相似的任务能通过向量检索命中。
+
+    MockEmbedding 按空格分词，英文描述有共享单词时余弦相似度 > 0。
+    """
+    from unittest.mock import patch, MagicMock
+    import driving.gold_memory as gm
+
+    # 构造一个简单的 mock embedding：返回基于关键词的向量
+    class FakeEmbed:
+        def embed(self, texts):
+            vecs = []
+            for t in texts:
+                t = t.lower()
+                # 3 维向量：login / page / form
+                v = [0.0, 0.0, 0.0]
+                if "login" in t or "signin" in t or "登录" in t:
+                    v[0] = 1.0
+                if "page" in t or "页面" in t or "页" in t:
+                    v[1] = 1.0
+                if "form" in t or "表单" in t:
+                    v[2] = 1.0
+                norm = sum(x * x for x in v) ** 0.5 or 1.0
+                vecs.append([x / norm for x in v])
+            return vecs
+
+    with tempfile.TemporaryDirectory() as d:
+        db = f"{d}/gold.db"
+        # 记录一个 "create login page" 任务
+        task = _make_task(desc="create login page", verify_cmd=["true"])
+        state = _make_state()
+        result = _make_result(verified=True, summary="login ok")
+
+        with patch.object(gm, "_get_embedding_model", return_value=FakeEmbed()):
+            record_task_result(task, state, result, db)
+            # 用不同用词查询，但语义相同
+            q = query_similar("build a signin page", design_style="dark", db_path=db)
+            assert q.found  # 语义匹配命中
+            assert q.success_rate == 1.0
+
+
+def test_cosine_similarity():
+    """M11.2：余弦相似度计算正确。"""
+    from driving.gold_memory import _cosine_similarity
+    assert _cosine_similarity([1, 0, 0], [1, 0, 0]) == pytest.approx(1.0)
+    assert _cosine_similarity([1, 0, 0], [0, 1, 0]) == pytest.approx(0.0)
+    assert _cosine_similarity([1, 1, 0], [1, 0, 0]) == pytest.approx(0.707, abs=0.01)
+    assert _cosine_similarity([], [1, 0]) == 0.0
+    assert _cosine_similarity([1, 0], [1, 0, 0]) == 0.0  # 维度不匹配

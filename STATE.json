@@ -244,13 +244,13 @@
       "tasks": {
         "M11.1": {
           "title": "累积上下文 overflow 修复（delegate/task-2 后续调用 content_len=4）",
-          "status": "todo",
-          "note": "根因：factory_loop 的 context_summary + delegate feedback 随轮次累积变长，触发 Kimi reasoning 循环。修复：context_summary 注入前压缩到 <100 字符；delegate feedback 截断；检测 content_len<50 时自动重试（已压缩 prompt）。"
+          "status": "done",
+          "note": "factory_loop context_summary 截断到最后 150 字符 + feedback 截断到 80 字符。local_worker prompt 精简（subtask 500/rules 300/feedback 80 字符）。content_len<50 时用最小 prompt 自动重试。21 单测全过（mock 改 side_effect 支持重试调用）。"
         },
         "M11.2": {
           "title": "Gold Memory 语义检索（复用 src/rag/ 向量模块替代 MD5 哈希）",
-          "status": "todo",
-          "note": "P0 低难度高价值。gold_memory._signature() MD5 精确匹配→改为向量余弦相似度 Top-K。复用 src/rag/embeddings.py + vector_store.py。"
+          "status": "done",
+          "note": "gold_memory 新增 task_vector 列 + _embed() + _cosine_similarity()。record_task_result 嵌入任务描述向量存 SQLite。query_similar 先向量余弦相似度 Top-K(阈值 0.5)，fallback 到签名精确匹配。复用 rag.embeddings._default_embedding()（sentence-transformers 优先，MockEmbedding fallback）。2 新单测 + 13 全过。"
         },
         "M11.3": {
           "title": "axe-core + Playwright 真实渲染无障碍检测",

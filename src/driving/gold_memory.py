@@ -1,21 +1,24 @@
-"""Gold Memory 自学习机制（M10.4-D）。
+"""Gold Memory 自学习机制（M10.4-D / M11.2 语义检索增强）。
 
 让系统越跑越快：把每轮成功任务的 (prompt 模式, verify_cmd 模式, 设计风格)
 沉淀成 Gold Memory，下次遇到类似任务时直接复用。
 
 Gold Memory 是一张 SQLite 持久化的"经验表"：
-- 任务描述的关键词签名
+- 任务描述的向量嵌入（M11.2：语义检索替代 MD5 哈希精确匹配）
+- 任务描述的关键词签名（保留作为唯一键 + fallback）
 - 使用的 design_style
 - 成功的 verify_cmd 模式
 - 成功率统计
 - 最近一次成功的 feedback/planner 调整
 
-查询时按关键词签名 + 设计风格做模糊匹配，返回 Top-K 最相关的经验。
+M11.2 查询策略：向量余弦相似度 Top-K（语义匹配）→ fallback 到签名匹配。
+让"实现登录页面"和"创建登录页"能命中同一条经验。
 """
 from __future__ import annotations
 
 import hashlib
 import json
+import math
 import re
 import sqlite3
 from collections import Counter
@@ -38,6 +41,7 @@ CREATE TABLE IF NOT EXISTS gold_memory (
     summary TEXT NOT NULL DEFAULT '',
     success INTEGER NOT NULL,
     created_at TEXT NOT NULL,
+    task_vector TEXT NOT NULL DEFAULT '',
     UNIQUE(task_signature, design_style, verify_cmd)
 )
 """
@@ -48,6 +52,51 @@ _INDEX_SQL = "CREATE INDEX IF NOT EXISTS idx_gold_sig ON gold_memory(task_signat
 def _ensure_table(conn: sqlite3.Connection) -> None:
     conn.execute(_TABLE_SQL)
     conn.execute(_INDEX_SQL)
+    # M11.2 迁移：给旧表加 task_vector 列
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(gold_memory)")}
+    if "task_vector" not in cols:
+        conn.execute("ALTER TABLE gold_memory ADD COLUMN task_vector TEXT NOT NULL DEFAULT ''")
+
+
+# M11.2：模块级 embedding 单例（懒加载，避免每次调用都初始化模型）
+_embedding_model = None
+
+
+def _get_embedding_model():
+    """获取 embedding 模型单例（sentence-transformers 优先，fallback MockEmbedding）。"""
+    global _embedding_model
+    if _embedding_model is not None:
+        return _embedding_model
+    try:
+        from rag.embeddings import _default_embedding
+        _embedding_model = _default_embedding()
+    except Exception:
+        _embedding_model = None
+    return _embedding_model
+
+
+def _embed(text: str) -> list[float]:
+    """把文本嵌入为向量。无 embedding 模型时返回空列表（fallback 到签名匹配）。"""
+    model = _get_embedding_model()
+    if model is None:
+        return []
+    try:
+        vecs = model.embed([text])
+        return vecs[0] if vecs else []
+    except Exception:
+        return []
+
+
+def _cosine_similarity(a: list[float], b: list[float]) -> float:
+    """计算两个向量的余弦相似度。维度不匹配或空向量返回 0。"""
+    if not a or not b or len(a) != len(b):
+        return 0.0
+    dot = sum(x * y for x, y in zip(a, b))
+    norm_a = math.sqrt(sum(x * x for x in a))
+    norm_b = math.sqrt(sum(y * y for y in b))
+    if norm_a == 0 or norm_b == 0:
+        return 0.0
+    return dot / (norm_a * norm_b)
 
 
 def _signature(description: str) -> str:
@@ -103,19 +152,23 @@ def record_task_result(
     """记录一个任务结果到 Gold Memory。"""
     sig = _signature(task.description)
     verify_cmd_str = " ".join(task.verify_cmd) if task.verify_cmd else "true"
+    # M11.2：嵌入任务描述向量，用于语义检索
+    vector = _embed(task.description[:500])
+    vector_json = json.dumps(vector) if vector else ""
     with sqlite3.connect(db_path) as conn:
         _ensure_table(conn)
         conn.execute(
             """
             INSERT INTO gold_memory (
                 task_signature, design_style, description, verify_cmd,
-                stop_reason, summary, success, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                stop_reason, summary, success, created_at, task_vector
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(task_signature, design_style, verify_cmd) DO UPDATE SET
                 stop_reason=excluded.stop_reason,
                 summary=excluded.summary,
                 success=excluded.success,
-                created_at=excluded.created_at
+                created_at=excluded.created_at,
+                task_vector=excluded.task_vector
             """,
             (
                 sig,
@@ -126,6 +179,7 @@ def record_task_result(
                 result.summary[:500],
                 1 if result.verified else 0,
                 datetime.now(timezone.utc).isoformat(),
+                vector_json,
             ),
         )
 
@@ -138,22 +192,52 @@ def query_similar(
 ) -> GoldQueryResult:
     """查询相似任务的历史经验。
 
+    M11.2：先用向量余弦相似度做语义检索（让"实现登录页面"匹配"创建登录页"）。
+    无向量或无语义匹配时，fallback 到签名精确匹配。
+
     返回该任务签名 + 设计风格下的成功率 + 推荐的 verify_cmd。
     """
     sig = _signature(description)
+    query_vec = _embed(description[:500])
+
     with sqlite3.connect(db_path) as conn:
         _ensure_table(conn)
-        # design_style 匹配：精确匹配 OR 有一方是 auto（宽松匹配，让经验跨风格复用）
-        cur = conn.execute(
-            """
-            SELECT verify_cmd, success, stop_reason, summary, design_style
-            FROM gold_memory
-            WHERE task_signature = ? AND (design_style = ? OR design_style = 'auto' OR ? = 'auto')
-            ORDER BY created_at DESC LIMIT ?
-            """,
-            (sig, design_style, design_style, limit),
-        )
-        rows = cur.fetchall()
+        # 1. M11.2 语义检索：取所有带向量的行，计算余弦相似度
+        if query_vec:
+            cur = conn.execute(
+                """
+                SELECT verify_cmd, success, stop_reason, summary, design_style, task_vector
+                FROM gold_memory
+                WHERE task_vector != '' AND (design_style = ? OR design_style = 'auto' OR ? = 'auto')
+                """,
+                (design_style, design_style),
+            )
+            all_rows = cur.fetchall()
+            # 计算相似度并排序
+            scored = []
+            for r in all_rows:
+                try:
+                    stored_vec = json.loads(r[5])
+                except Exception:
+                    continue
+                sim = _cosine_similarity(query_vec, stored_vec)
+                if sim >= 0.5:  # 相似度阈值
+                    scored.append((sim, r))
+            scored.sort(key=lambda x: x[0], reverse=True)
+            rows = [s[1] for s in scored[:limit]]
+
+        # 2. Fallback：签名精确匹配（无向量或语义检索无结果时）
+        if not query_vec or not rows:
+            cur = conn.execute(
+                """
+                SELECT verify_cmd, success, stop_reason, summary, design_style, task_vector
+                FROM gold_memory
+                WHERE task_signature = ? AND (design_style = ? OR design_style = 'auto' OR ? = 'auto')
+                ORDER BY created_at DESC LIMIT ?
+                """,
+                (sig, design_style, design_style, limit),
+            )
+            rows = cur.fetchall()
 
     if not rows:
         return GoldQueryResult(found=False)
