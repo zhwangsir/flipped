@@ -125,8 +125,20 @@ export const IconArchive = ({ size }: P) => (
 export const IconChevronRight = ({ size }: P) => (
   <svg {...b(size)}><path d="m9 6 6 6-6 6" /></svg>
 );
+export const IconChevronLeft = ({ size }: P) => (
+  <svg {...b(size)}><path d="m15 6-6 6 6 6" /></svg>
+);
 export const IconReview = ({ size }: P) => (
   <svg {...b(size)}><rect x="4" y="4" width="16" height="16" rx="2" /><path d="M8 9h4M8 9v6M15 8v8M13 12h4" /></svg>
+);
+export const IconFactory = ({ size }: P) => (
+  <svg {...b(size)}><path d="M3 21V8l6 4V8l6 4V8l6 4v9z" /><path d="M3 21h18M9 13v4M15 13v4" /></svg>
+);
+export const IconPause = ({ size }: P) => (
+  <svg {...b(size)}><rect x="6" y="5" width="4" height="14" rx="1" /><rect x="14" y="5" width="4" height="14" rx="1" /></svg>
+);
+export const IconRefresh = ({ size }: P) => (
+  <svg {...b(size)}><path d="M3 12a9 9 0 0 1 15-6.7L21 8M21 3v5h-5M21 12a9 9 0 0 1-15 6.7L3 16M3 21v-5h5" /></svg>
 );
 
 export function ToolIcon({ name, size = 15 }: { name: string; size?: number }) {

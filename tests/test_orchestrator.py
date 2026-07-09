@@ -172,6 +172,108 @@ def test_worker_error_fast_fail():
     assert final.get("iteration", 0) == 0, "不应进 verify 计数"
 
 
+# ---- GLM function calling 容错加固单测 ----
+
+class _FakeStructured:
+    def __init__(self, responses):
+        self.responses = list(responses)
+        self.calls = 0
+
+    def invoke(self, prompt):
+        resp = self.responses[self.calls]
+        self.calls += 1
+        if isinstance(resp, Exception):
+            raise resp
+        return resp
+
+
+class _FakeLLM:
+    def __init__(self, responses):
+        self.responses = responses
+
+    def with_structured_output(self, schema_cls, method, include_raw):
+        return _FakeStructured(self.responses)
+
+
+def test_overseer_parses_string_issues_from_tool_call_args(monkeypatch):
+    from types import SimpleNamespace
+
+    raw = SimpleNamespace(
+        content="",
+        tool_calls=[{
+            "name": "Verdict",
+            "args": {
+                "efficiency": 0.7,
+                "direction": 0.8,
+                "action": "continue",
+                "issues": "单字符串问题",
+                "rationale": "方向对",
+            },
+            "id": "1",
+            "type": "tool_call",
+        }],
+    )
+
+    def fake_make_llm(alias, callbacks=None):
+        return _FakeLLM([{"parsed": None, "raw": raw}])
+
+    monkeypatch.setattr("driving.orchestrator._make_llm", fake_make_llm)
+
+    from driving.orchestrator import default_overseer
+    state = {"goal": "G", "current_subtask": "s", "signatures": ["a"], "history": [], "last_obs": {"summary": {}}}
+    upd = default_overseer(state)
+    assert upd["verdict"]["action"] == "continue"
+    assert upd["verdict"]["issues"] == ["单字符串问题"]
+
+
+def test_overseer_parses_raw_json_content_when_parsed_none(monkeypatch):
+    from types import SimpleNamespace
+
+    raw = SimpleNamespace(
+        content='思考中...\n{"efficiency":0.9,"direction":1.0,"action":"replan","issues":["绕路"],"rationale":"从JSON解析"}',
+        tool_calls=[],
+    )
+
+    def fake_make_llm(alias, callbacks=None):
+        return _FakeLLM([{"parsed": None, "raw": raw}])
+
+    monkeypatch.setattr("driving.orchestrator._make_llm", fake_make_llm)
+
+    from driving.orchestrator import default_overseer
+    state = {"goal": "G", "current_subtask": "s", "signatures": ["a"], "history": [], "last_obs": {"summary": {}}}
+    upd = default_overseer(state)
+    assert upd["verdict"]["action"] == "replan"
+    assert upd["verdict"]["rationale"] == "从JSON解析"
+
+
+def test_overseer_fail_open_on_empty_response(monkeypatch):
+    def fake_make_llm(alias, callbacks=None):
+        return _FakeLLM([Exception("GLM 返回空响应")])
+
+    monkeypatch.setattr("driving.orchestrator._make_llm", fake_make_llm)
+
+    from driving.orchestrator import default_overseer
+    state = {"goal": "G", "current_subtask": "s", "signatures": ["a"], "history": [], "last_obs": {"summary": {}}}
+    upd = default_overseer(state)
+    assert upd["verdict"]["action"] == "continue"
+    assert "fail-open" in upd["verdict"]["rationale"]
+
+
+def test_supervisor_prompt_forbids_rebuild_on_verify_failure():
+    from driving.orchestrator import _build_supervisor_prompt
+    state = {
+        "goal": "写服务",
+        "cwd": "/tmp",
+        "feedback": "验收命令退出非0:\nImportError: No module named 'foo'",
+        "project_rules": "",
+        "repo_map": "",
+        "context_summary": None,
+    }
+    prompt = _build_supervisor_prompt(state)
+    assert "最小精确修复" in prompt
+    assert "严禁删除" in prompt or "禁止" in prompt
+
+
 if __name__ == "__main__":
     for fn in (test_happy_dispatch_work_oversee_verify, test_supervisor_believe_done_skips_worker,
                test_overseer_abort, test_overseer_replan_then_pass, test_forced_verify_retry,

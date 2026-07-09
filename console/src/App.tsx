@@ -10,6 +10,7 @@ import { CommandPalette } from "./components/CommandPalette";
 import { Settings } from "./components/Settings";
 import { Plugins } from "./components/Plugins";
 import { TerminalDrawer } from "./components/TerminalDrawer";
+import { FactoryPanel } from "./components/FactoryPanel";
 import { AppProvider, useApp } from "./store";
 
 const SIDEBAR_MIN = 200;
@@ -81,6 +82,7 @@ function AppShell() {
       <CommandPalette />
       <Settings />
       <Plugins />
+      <FactoryPanel />
     </div>
   );
 }

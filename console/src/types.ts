@@ -150,6 +150,55 @@ export interface McpServer {
   tool_count: number;
 }
 
+/** 工厂任务状态 */
+export type FactoryTaskStatus = 'pending' | 'running' | 'done' | 'failed';
+export type FactoryStatus = 'pending' | 'running' | 'paused' | 'done' | 'error';
+
+export interface FactoryTask {
+  id: string;
+  description: string;
+  verify_cmd: string[];
+  status: FactoryTaskStatus;
+  attempts: number;
+  feedback: string;
+  depends_on: string[];
+  artifacts: string[];
+}
+
+export interface TaskResult {
+  task: FactoryTask;
+  verified: boolean;
+  stop_reason: string;
+  iteration: number;
+  summary: string;
+}
+
+export interface FactoryDetail {
+  factory_id: string;
+  product_goal: string;
+  cwd: string;
+  status: FactoryStatus;
+  roadmap: FactoryTask[];
+  completed: TaskResult[];
+  failed: TaskResult[];
+  current_task_id: string | null;
+  context_summary: string;
+  iteration_count: number;
+  max_tasks: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface FactorySummary {
+  factory_id: string;
+  product_goal: string;
+  status: FactoryStatus;
+  iteration_count: number;
+  max_tasks: number;
+  created_at: string;
+  updated_at: string;
+}
+
 /** orchestration-api 发过来的原始事件（与 src/api/schemas.py 对齐）。 */
 export interface ApiEvent {
   id: string;

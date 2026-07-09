@@ -104,3 +104,68 @@
 - `cargo build` 通过；单元测试通过。
 - Tauri 应用启动时，若后端未运行则自动拉起；退出时关闭。
 - 不破坏现有 `predev.sh` 与 Python 测试。
+
+---
+
+# M9 · 24h 自治 AI 代码工厂：外层 Master Loop
+
+> 目标：把 flipped 从“完成一次长任务”升级为“不间断地生产并迭代代码”。
+> Master Loop 接收高层产品目标 → 自动生成/维护 roadmap → 逐个派发子任务给 orchestrator → 验收后把成果汇入上下文 → 自动生成下一个改进任务 → 崩溃/断电后可从 checkpoint 续跑。
+
+## 设计原则
+
+1. **与现有 orchestrator 解耦**：Master Loop 不替代 Supervisor/Worker/Overseer，而是把它们当作一个可注入的“任务执行器”。
+2. **状态外置**：工厂状态（roadmap、已完成任务、失败任务、当前任务）全部落盘 SQLite，进程死掉不丢进度。
+3. **确定性单测**：任务生成与执行流程用注入的 stub 验证，不依赖真实 LLM/沙盒。
+4. **可观测**：每个工厂事件 emit 到 EventBus，Console 能实时看到“工厂阶段/任务/结果”。
+5. **熔断与安全**：连续失败同一任务 ≥N 次暂停；高风险动作仍走 orchestrator 的审批 gate。
+
+## 任务拆分
+
+### M9.1 工厂状态与持久化
+- 新增 `src/driving/factory_loop.py`。
+- 定义 `FactoryState`：
+  - `factory_id`, `product_goal`, `cwd`, `roadmap: list[FactoryTask]`
+  - `completed: list[TaskResult]`, `failed: list[TaskResult]`
+  - `current_task_index`, `status: running|paused|done|error`
+  - `context_summary`, `iteration_count`, `max_tasks`
+- `FactoryTask`：`id`, `description`, `verify_cmd`, `status: pending|running|done|failed`, `depends_on`, `artifacts`。
+- SQLite 持久化：`save_factory_state` / `load_factory_state` / `list_factories`。
+
+### M9.2 任务生成（Planner）
+- `planner(state) -> list[FactoryTask]`：用 GLM 把 `product_goal` 拆成可串行/并行的任务列表。
+- 输出结构化 `Roadmap`（Pydantic），含任务描述和验收命令。
+- 失败时 fail-open：把整个产品目标当成一个任务，不阻塞工厂启动。
+
+### M9.3 任务执行闭环
+- `run_factory_loop(...)`：
+  1. 加载/创建 `FactoryState`。
+  2. roadmap 为空 → 调用 planner 生成。
+  3. 取下一个 pending 任务，标记 running，保存。
+  4. 调用注入的 `orchestrator_fn(task)`（默认 `drive_orchestrated`）执行。
+  5. 结果：
+     - `verified=True` → 标记 done，把 artifacts/摘要加入 context_summary，可触发 reflection 追加改进任务。
+     - `verified=False` / abort / worker_error → 标记 failed；若同一任务失败 < max_retries，重新入队并附带失败反馈；否则暂停工厂。
+  6. 每完成一个任务保存状态。
+  7. 达到 `max_tasks` 或 roadmap 耗尽 → 标记 done。
+
+### M9.4 崩溃恢复
+- `resume_factory_loop(factory_id, db_path)`：
+  - 读取最后保存的状态。
+  - 若 `status=running` 且当前任务为 running → 重跑该任务（orchestrator 自身有 checkpoint，可续跑）。
+  - 若 `status=paused/error` → 仅恢复状态，等待外部决定。
+
+### M9.5 反射与持续优化（可选 MVP 后）
+- 每完成若干任务，调用 GLM reflection：根据已完成成果和原始目标，生成新的改进任务追加到 roadmap。
+- 本次先预留接口，不实现完整 reflection，避免过度设计。
+
+## 验收标准
+
+- `tests/test_factory_loop.py`：
+  - planner 注入 stub 生成 roadmap。
+  - 顺序执行 2 个任务并记录结果。
+  - 执行中崩溃（模拟）→ `resume_factory_loop` 续跑，不丢进度。
+  - 同一任务失败 3 次 → 工厂暂停。
+- 全量 `pytest tests/ -q` 仍绿。
+- `console npm run build` 不破坏。
+- 更新 `STATE.json` / `TEST_LOG.md`。

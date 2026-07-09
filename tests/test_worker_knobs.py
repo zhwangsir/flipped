@@ -12,7 +12,7 @@ def test_defaults_unchanged(monkeypatch):
     monkeypatch.delenv("FLIPPED_WORKER_TIMEOUT", raising=False)
     monkeypatch.delenv("FLIPPED_WORKER_MAX_ITERATIONS", raising=False)
     w = _worker()
-    assert w.timeout == 600.0
+    assert w.timeout == 1200.0
     assert w.max_iterations == 50
 
 

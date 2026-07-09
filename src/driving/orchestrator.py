@@ -97,7 +97,7 @@ OverseerFn = Callable[[OrchestratorState], dict]
 VerifierFn = Callable[[list, str], "tuple[bool, str]"]
 
 
-# ---------- 默认实现（GLM/Kimi 经 LiteLLM） ----------
+# 默认实现（GLM/Kimi 经 LiteLLM） ----------
 
 def _make_llm(alias: str, temperature: float = 0, callbacks=None):
     """构建 ChatOpenAI（alias=architect/coder）。
@@ -112,6 +112,92 @@ def _make_llm(alias: str, temperature: float = 0, callbacks=None):
                       callbacks=callbacks)
 
 
+def _parse_raw_response(raw, schema_cls):
+    """从原始 AIMessage 中尽力解析出结构化对象（应对 GLM function calling 偶发异常）。"""
+    import json
+    import re
+
+    # 1) 优先从 tool_calls 参数里取
+    tool_calls = getattr(raw, "tool_calls", None) or []
+    for tc in tool_calls:
+        if isinstance(tc, dict):
+            args = tc.get("function", {}).get("arguments")
+            if args is None:
+                args = tc.get("args")
+        else:
+            args = getattr(getattr(tc, "function", None), "arguments", None)
+            if args is None:
+                args = getattr(tc, "args", None)
+        if args:
+            try:
+                data = json.loads(args) if isinstance(args, str) else dict(args)
+                return schema_cls.model_validate(data)
+            except Exception:
+                pass
+
+    # 2) 从 content 里抠 JSON / 键值对
+    text = ""
+    content = getattr(raw, "content", None)
+    if isinstance(content, str):
+        text = content
+    elif isinstance(content, list):
+        text = "".join(str(c) for c in content)
+
+    # 2a) JSON object / markdown code block
+    candidates = re.findall(r"\{[\s\S]*?\}", text)
+    if not candidates:
+        # 2b) 键值对：efficiency: 0.8
+        pairs = re.findall(r"(\w+)\s*[:=]\s*([^\n,]+)", text)
+        if pairs:
+            data = {}
+            for k, v in pairs:
+                v = v.strip().strip('"\'')
+                if k in ("efficiency", "direction"):
+                    try:
+                        v = float(v)
+                    except ValueError:
+                        continue
+                data[k] = v
+            return schema_cls.model_validate(data)
+    for cand in candidates:
+        try:
+            return schema_cls.model_validate(json.loads(cand))
+        except Exception:
+            continue
+    return None
+
+
+def _invoke_structured(llm, schema_cls, prompt: str, *, max_retries: int = 2):
+    """带重试 + 原始响应兜底的结构化输出调用。
+
+    GLM-5.2 经 exo 的 function calling 偶尔返回 None / 缺字段 / 空响应，
+    重试几次仍失败时，直接从 raw message 解析；再失败才抛异常让调用方 fail-open。
+    """
+    import json
+
+    structured = llm.with_structured_output(schema_cls, method="function_calling", include_raw=True)
+    last_err = None
+    for attempt in range(max_retries + 1):
+        try:
+            resp = structured.invoke(prompt)
+            parsed = resp.get("parsed") if isinstance(resp, dict) else getattr(resp, "parsed", None)
+            if parsed is not None:
+                return parsed
+            raw = resp.get("raw") if isinstance(resp, dict) else getattr(resp, "raw", None)
+            if raw is not None:
+                parsed = _parse_raw_response(raw, schema_cls)
+                if parsed is not None:
+                    return parsed
+            raise ValueError(f"structured output parsed=None, raw={getattr(raw, 'content', raw)!r}")
+        except Exception as e:  # noqa: BLE001
+            last_err = e
+            # 空响应 / 解析失败 值得重试；参数格式错误重试也没用，但先统一重试
+            if attempt < max_retries:
+                import time as _time
+                _time.sleep(0.5 * (attempt + 1))
+    raise last_err or RuntimeError("structured output failed after retries")
+
+
 def _build_supervisor_prompt(state: OrchestratorState) -> str:
     """构建 supervisor 拆解 prompt(含项目规则/反馈/历史摘要)。抽出便于单测。"""
     fb = state.get("feedback", "")
@@ -123,9 +209,20 @@ def _build_supervisor_prompt(state: OrchestratorState) -> str:
     rules_note = f"\n项目规则(务必遵守项目约定)：\n{rules}\n" if rules else ""
     repo = state.get("repo_map", "")
     repo_note = f"\n项目结构(据此把代码放对位置、别重造已有模块)：\n{repo}\n" if repo else ""
+    # 验收失败时，把错误输出注入反馈，并明确禁止“推倒重来”
+    fb_prefix = ""
+    if fb:
+        if "验收命令退出非0" in fb or "监督意见" in fb:
+            fb_prefix = (
+                "反馈(上一轮失败/监督意见，必须据此做**最小精确修复**，\n"
+                "严禁删除已写好的文件或重新创建整个项目；只允许改具体错误行/补缺失文件)：\n"
+            )
+        else:
+            fb_prefix = "反馈(上一轮验收失败/监督意见，必须据此调整)："
     return (f"目标：{state['goal']}\n工作目录：{state['cwd']}\n{repo_note}{rules_note}"
-            f"{'反馈(上一轮验收失败/监督意见，必须据此调整)：' + fb if fb else '这是首轮。'}{summary_note}\n"
-            "你是架构调度者。给出执行者下一步要做的【一个】自包含子任务；若相信目标已达成则 believe_done=true。")
+            f"{fb_prefix}{fb if fb else '这是首轮。'}{summary_note}\n"
+            "你是架构调度者。给出执行者下一步要做的【一个】自包含子任务；"
+            "若相信目标已达成则 believe_done=true。")
 
 
 def default_supervisor(state: OrchestratorState) -> dict:
@@ -140,7 +237,7 @@ def default_supervisor(state: OrchestratorState) -> dict:
     msg = _build_supervisor_prompt(state)
     try:
         # method="function_calling"：GLM/exo 不支持 json_schema(langchain 默认)，但支持工具调用(M0.4)
-        plan = _make_llm("architect", callbacks=[MetricsCallbackHandler()]).with_structured_output(Plan, method="function_calling").invoke(msg)
+        plan = _invoke_structured(_make_llm("architect", callbacks=[MetricsCallbackHandler()]), Plan, msg)
         sub, done, why = plan.subtask, plan.believe_done, plan.rationale
     except Exception as e:  # noqa: BLE001 失败兜底：直接把目标当子任务
         sub, done, why = state["goal"], False, f"(supervisor LLM 失败兜底: {e})"
@@ -253,7 +350,7 @@ def default_overseer(state: OrchestratorState) -> dict:
         return _overseer_ret(state, verdict)
 
     # 2) GLM 方向判断（是否偏离目标 / 效率如何）
-    from pydantic import BaseModel, Field
+    from pydantic import BaseModel, Field, field_validator
 
     class Verdict(BaseModel):
         efficiency: float = Field(description="0-1，worker 这步效率(是否绕路/低产)")
@@ -262,13 +359,21 @@ def default_overseer(state: OrchestratorState) -> dict:
         issues: list[str] = Field(default_factory=list, description="发现的问题")
         rationale: str = Field(description="一句话理由")
 
+        @field_validator("issues", mode="before")
+        @classmethod
+        def _coerce_issues(cls, v):
+            """GLM 偶尔把 list[str] 返回为裸字符串 → 统一包成 list。"""
+            if isinstance(v, str):
+                return [v] if v else []
+            return v or []
+
     summary = (state.get("last_obs") or {}).get("summary", {})
     msg = (f"目标：{state['goal']}\n子任务：{state.get('current_subtask','')}\n"
            f"执行者本步轨迹概览：{summary}\n"
            "你是专属监督者：评估执行者这一步的【效率】(有无绕路/重复/低产)与【方向】(是否朝目标)。"
            "方向明显跑偏→replan；严重无望/危险→abort；正常→continue。")
     try:
-        v = _make_llm("architect", callbacks=[MetricsCallbackHandler()]).with_structured_output(Verdict, method="function_calling").invoke(msg)
+        v = _invoke_structured(_make_llm("architect", callbacks=[MetricsCallbackHandler()]), Verdict, msg)
         verdict = {"efficiency": v.efficiency, "direction": v.direction, "action": v.action,
                    "issues": v.issues, "rationale": v.rationale}
     except Exception as e:  # noqa: BLE001 监督失败 fail-open: 不阻塞，交给强制验证兜底
@@ -294,7 +399,7 @@ def _safe_default_verifier(cmd: list, cwd: str) -> "tuple[bool, str]":
     if classify_risk(command_str) == "high":
         return False, "high-risk command requires approval"
     import subprocess
-    p = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, timeout=300)
+    p = subprocess.run(command_str, shell=True, cwd=cwd, capture_output=True, text=True, timeout=300)
     return p.returncode == 0, (p.stdout + p.stderr)[-2000:]
 
 
@@ -311,7 +416,12 @@ def build_orchestrator(supervisor: SupervisorFn = default_supervisor,
     """编译 Supervisor→Worker→Overseer→(条件)→Verify 多 agent 监督图。节点可注入。"""
 
     def verify(state: OrchestratorState) -> dict:
+        # Worker 刚 finish 后沙箱可能还在清理 → 短暂等待 + 一次重试
+        import time as _time
         ok, output = verifier(state["verify_cmd"], state["cwd"])
+        if not ok and not output.strip():
+            _time.sleep(3)
+            ok, output = verifier(state["verify_cmd"], state["cwd"])
         it = state.get("iteration", 0) + 1
         hist = state.get("history", []) + [{"step": "verify", "ok": ok, "iteration": it}]
         upd = {"iteration": it, "verified": ok, "history": hist}

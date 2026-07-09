@@ -1,8 +1,8 @@
 {
   "project": "flipped",
   "description": "接入本地 MLX 双模型(GLM-5.2 编排者 / Kimi-K2.7-Code 执行者)的 agentic 代码编辑器平台。fork Roo Code + 自定义驾驭层(强制验证/循环检测/上下文压缩/人工审批/子Agent/可观测性) + MCP 联网与外部能力。",
-  "updated": "2026-07-06",
-  "current_milestone": "M8 · Tauri 桌面壳硬化 (T1/T2/T3/T4 完成)",
+  "updated": "2026-07-08",
+  "current_milestone": "M9 E2E 验证完成 · 真实 GLM planner + Kimi orchestrator + OpenHands 沙箱全链路跑通 (2/5 任务验证通过，3 个 bug 修复)",
   "key_facts": {
     "dev_host": "Apple M5 Max, 128GB RAM, 1.1TB 可用磁盘 — 开发/控制节点，非模型宿主",
     "model_cluster": "exo 集群 @ http://100.64.201.37:52415 (内网, OpenAI 兼容)；公网 https://dgmt.top/exo (需 Bearer token)",
@@ -172,6 +172,38 @@
           }
         }
       }
+    },
+    "M9": {
+      "title": "24h 自治 AI 代码工厂：外层 Master Loop",
+      "status": "done",
+      "note": "M9.1-M9.4 完成：新增 src/driving/factory_loop.py，定义 FactoryState/FactoryTask/TaskResult，SQLite 持久化；default_planner 用 GLM 拆 roadmap、失败 fail-open；run_factory_loop 顺序调度/失败重试/3 次暂停；resume_factory_loop 崩溃恢复（running 任务重置为 pending 重跑）。tests/test_factory_loop.py 9 passed。全量 pytest 233 passed + 2 warnings；唯一失败 test_web_search.py::test_returns_results 因 SearXNG 容器 404（已知外部依赖，非 M9 代码缺陷）。console npm run build 通过。",
+      "tasks": {
+        "M9.1": {
+          "title": "工厂状态与持久化",
+          "status": "done",
+          "note": "save_factory_state / load_factory_state / list_factories 落盘 SQLite；Pydantic 模型序列化。"
+        },
+        "M9.2": {
+          "title": "任务生成（Planner）",
+          "status": "done",
+          "note": "default_planner 调 architect(GLM) 输出结构化 Roadmap；异常时 fail-open 为单个任务。"
+        },
+        "M9.3": {
+          "title": "任务执行闭环",
+          "status": "done",
+          "note": "run_factory_loop 顺序执行、失败重试带 feedback、3 次失败暂停；orchestrator_fn 可注入。"
+        },
+        "M9.4": {
+          "title": "崩溃恢复",
+          "status": "done",
+          "note": "resume_factory_loop 加载状态；崩溃时 current_task 状态 running → 重置 pending 重跑。"
+        },
+        "M9.6": {
+          "title": "工厂 REST API 端点",
+          "status": "done",
+          "note": "新增 src/api/factory.py（APIRouter）；POST /factories 创建+后台运行、GET /factories 列表、GET /factories/{id} 摘要、GET /factories/{id}/detail 完整状态、POST /factories/{id}/resume 恢复、POST /factories/{id}/pause 暂停；挂载到 main.py。9 个 API 集成测试通过（TestClient + stub planner/orchestrator）。"
+        }
+      }
     }
   },
   "architecture_decisions": [
@@ -329,10 +361,10 @@
     {
       "id": "ISSUE-6",
       "severity": "medium",
-      "status": "open",
-      "title": "当前 Codex 执行沙箱禁止 Python TCP socket bind 与 outbound 网络连接",
-      "detail": "B5 验证中，Python 无法 bind 127.0.0.1:any-port（Operation not permitted），导致 verify_b5.sh 无法在进程内启动真实 backend。Node 端 vite preview 同样报 EPERM。outbound curl 到 SearXNG 也被阻止。已通过 TestClient 集成测试 + pytest 跳过网络不可达测试的方式兜底，真实浏览器/WS E2E 需在非沙箱环境或 CI 中复跑。",
-      "owner": "环境限制，非代码缺陷"
+      "status": "resolved",
+      "title": "Codex 执行沙箱禁止 Python TCP socket bind 与 outbound 网络连接",
+      "detail": "TRAE IDE 环境无此限制（实测 BIND_OK + exo 可达 + OpenHands 可达）。2026-07-07 真实 E2E 全链路通过：chat/plan/agent 三模式 + OpenHands 沙箱真实创建文件+执行。Codex 沙箱环境仍受限，但非代码缺陷。",
+      "owner": "TRAE环境已解决；Codex沙箱仍有限制"
     }
   ],
   "background_jobs": [

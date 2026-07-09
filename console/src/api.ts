@@ -1,5 +1,5 @@
 /** Console ↔ orchestration-api HTTP + WebSocket 客户端。 */
-import type { Session, ApiEvent, Metrics, McpServer, ProjectContext, Project, FileNode, BrowserRender, GitDiffFile } from './types';
+import type { Session, ApiEvent, Metrics, McpServer, ProjectContext, Project, FileNode, BrowserRender, GitDiffFile, FactoryDetail, FactorySummary } from './types';
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined) || 'http://127.0.0.1:8011';
 const API_PREFIX = '/api/v1';
@@ -102,6 +102,31 @@ export function revealProject(): Promise<{ ok: boolean }> {
 
 export function toggleMcpServer(name: string, enabled: boolean): Promise<{ name: string; enabled: boolean }> {
   return api(`/mcp/servers/${encodeURIComponent(name)}/toggle?enabled=${enabled}`, { method: 'POST' });
+}
+
+// ---- Factory ----
+
+export function listFactories(): Promise<FactorySummary[]> {
+  return api<FactorySummary[]>('/factories');
+}
+
+export function createFactory(product_goal: string, cwd: string, max_tasks = 10): Promise<FactoryDetail> {
+  return api<FactoryDetail>('/factories', {
+    method: 'POST',
+    body: JSON.stringify({ product_goal, cwd, max_tasks }),
+  });
+}
+
+export function getFactoryDetail(factoryId: string): Promise<FactoryDetail> {
+  return api<FactoryDetail>(`/factories/${encodeURIComponent(factoryId)}/detail`);
+}
+
+export function resumeFactory(factoryId: string): Promise<FactoryDetail> {
+  return api<FactoryDetail>(`/factories/${encodeURIComponent(factoryId)}/resume`, { method: 'POST' });
+}
+
+export function pauseFactory(factoryId: string): Promise<FactoryDetail> {
+  return api<FactoryDetail>(`/factories/${encodeURIComponent(factoryId)}/pause`, { method: 'POST' });
 }
 
 export interface EventHandlers {

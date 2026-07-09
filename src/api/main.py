@@ -21,6 +21,7 @@ from .schemas import BrowserRenderRequest, Event, EventType, HealthResponse, Met
 from .session import SessionStore, store
 from driving.safety import validate_secrets
 from metrics import COLLECTOR
+from .factory import router as factory_router
 
 MOCK_WORKER = os.environ.get("FLIPPED_MOCK_WORKER", "0") == "1"
 RUNNING_TASKS: dict[str, asyncio.Task] = {}  # M6.2 — 每会话运行中任务句柄，供取消
@@ -59,6 +60,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.include_router(factory_router)
 
 
 # ---------- 健康检查 ----------

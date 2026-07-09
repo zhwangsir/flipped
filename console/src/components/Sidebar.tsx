@@ -9,6 +9,7 @@ import {
   IconSearch,
   IconClock,
   IconPuzzle,
+  IconFactory,
   IconFolder,
   IconChevronDown,
   IconGear,
@@ -39,6 +40,7 @@ export function Sidebar() {
     setPaletteOpen,
     setSettingsOpen,
     setPluginsOpen,
+    setFactoryOpen,
     projectContext,
     projects,
     openProject,
@@ -227,6 +229,9 @@ export function Sidebar() {
         </button>
         <button className="side-nav-item" onClick={() => setPluginsOpen(true)}>
           <IconPuzzle size={16} /> 插件
+        </button>
+        <button className="side-nav-item" onClick={() => setFactoryOpen(true)}>
+          <IconFactory size={16} /> 工厂
         </button>
       </nav>
 

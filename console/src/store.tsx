@@ -19,6 +19,8 @@ import type {
   FileNode,
   BrowserRender,
   GitDiffFile,
+  FactorySummary,
+  FactoryDetail,
 } from './types';
 import { eventToStreamItem, detectServerUrl } from './types';
 import {
@@ -38,6 +40,11 @@ import {
   fetchProjects,
   createProject as apiCreateProject,
   renderBrowser as apiRenderBrowser,
+  listFactories as apiListFactories,
+  createFactory as apiCreateFactory,
+  getFactoryDetail as apiGetFactoryDetail,
+  resumeFactory as apiResumeFactory,
+  pauseFactory as apiPauseFactory,
   connectEvents,
 } from './api';
 
@@ -110,6 +117,15 @@ interface AppState {
   sendTask: (description: string) => Promise<void>;
   sendApproval: (decision: string, reason?: string) => void;
   refreshSessions: () => Promise<void>;
+  factories: FactorySummary[];
+  factoryDetail: FactoryDetail | null;
+  factoryOpen: boolean;
+  setFactoryOpen: (open: boolean) => void;
+  refreshFactories: () => Promise<void>;
+  createFactory: (productGoal: string, cwd: string, maxTasks?: number) => Promise<string>;
+  selectFactory: (id: string) => void;
+  resumeFactory: (id: string) => Promise<void>;
+  pauseFactory: (id: string) => Promise<void>;
 }
 
 const AppContext = createContext<AppState | null>(null);
@@ -153,6 +169,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [browserError, setBrowserError] = useState<string | null>(null);
   const [gitDiff, setGitDiff] = useState<GitDiffFile[]>([]);
   const [gitDiffLoading, setGitDiffLoading] = useState(false);
+  const [factories, setFactories] = useState<FactorySummary[]>([]);
+  const [factoryDetail, setFactoryDetail] = useState<FactoryDetail | null>(null);
+  const [factoryOpen, setFactoryOpen] = useState(false);
   const toggleTerminal = useCallback(() => setTerminalOpen((v) => !v), []);
   const prefillComposer = useCallback((text: string) => setComposerPrefill(text), []);
   const wsRef = useRef<{ close: () => void; send: (msg: unknown) => void } | null>(null);
@@ -201,6 +220,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
       .then(setMcpServers)
       .catch(() => {});
   }, []);
+
+  // M9 — 选中工厂时轮询详情
+  useEffect(() => {
+    if (!factoryDetail) return;
+    const fid = factoryDetail.factory_id;
+    // 只在 running 时轮询
+    if (factoryDetail.status !== 'running') return;
+    const id = setInterval(() => {
+      apiGetFactoryDetail(fid)
+        .then(setFactoryDetail)
+        .catch(() => {});
+    }, 3000);
+    return () => clearInterval(id);
+  }, [factoryDetail?.factory_id, factoryDetail?.status]);
 
   // Stage 3 — 项目上下文(项目名/真实 git 分支)。轮询保鲜:后端活动项目可能被
   // 其它入口(另一窗口/Tauri/API)切换,UI 冒烟实测一次性 fetch 会显示滞后。
@@ -373,6 +406,48 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const sendApproval = useCallback((decision: string, reason = '') => {
     wsRef.current?.send({ type: 'approval_result', decision, reason });
+  }, []);
+
+  // M9 — 工厂循环
+  const refreshFactories = useCallback(async () => {
+    try {
+      const list = await apiListFactories();
+      setFactories(list);
+    } catch {
+      setFactories([]);
+    }
+  }, []);
+
+  // M9 — 轮询工厂列表
+  useEffect(() => {
+    refreshFactories();
+    const id = setInterval(refreshFactories, 5000);
+    return () => clearInterval(id);
+  }, [refreshFactories]);
+
+  const createFactory = useCallback(async (productGoal: string, cwd: string, maxTasks = 10) => {
+    const d = await apiCreateFactory(productGoal, cwd, maxTasks);
+    setFactoryDetail(d);
+    setFactoryOpen(true);
+    refreshFactories().catch(() => {});
+    return d.factory_id;
+  }, [refreshFactories]);
+
+  const selectFactory = useCallback((id: string) => {
+    apiGetFactoryDetail(id)
+      .then(setFactoryDetail)
+      .catch(() => setFactoryDetail(null));
+    setFactoryOpen(true);
+  }, []);
+
+  const resumeFactory = useCallback(async (id: string) => {
+    const d = await apiResumeFactory(id);
+    setFactoryDetail(d);
+  }, []);
+
+  const pauseFactory = useCallback(async (id: string) => {
+    const d = await apiPauseFactory(id);
+    setFactoryDetail(d);
   }, []);
 
   useEffect(() => {
@@ -616,6 +691,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
         sendTask,
         sendApproval,
         refreshSessions,
+        factories,
+        factoryDetail,
+        factoryOpen,
+        setFactoryOpen,
+        refreshFactories,
+        createFactory,
+        selectFactory,
+        resumeFactory,
+        pauseFactory,
       }}
     >
       {children}
