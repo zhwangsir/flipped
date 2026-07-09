@@ -197,7 +197,11 @@ OrchestratorFn = Callable[[FactoryTask, FactoryState], TaskResult]
 
 
 def default_planner(state: FactoryState) -> list[FactoryTask]:
-    """用 GLM 把产品目标拆成可执行的任务列表；失败时 fail-open 为单个任务。"""
+    """用 GLM 把产品目标拆成可执行的任务列表；失败时 fail-open 为单个任务。
+
+    verify_cmd 硬约束为单行 shell 命令——T3 熔断的根因是 GLM 生成多行 Python
+    用 `&&` 连接，`python -c` 无法执行。这里在 prompt 和后处理两道防线卡死。
+    """
 
     class Roadmap(BaseModel):
         tasks: list[FactoryTask] = Field(
@@ -207,11 +211,21 @@ def default_planner(state: FactoryState) -> list[FactoryTask]:
     msg = (
         f"产品目标：{state.product_goal}\n"
         f"工作目录：{state.cwd}\n"
-        "你是产品架构师。把目标拆成多个自包含的开发任务；每个任务必须可被一条验收命令验证。"
-        "任务要具体、可交付，禁止一次写完整项目。"
+        "你是产品架构师。把目标拆成多个自包含的开发任务；每个任务必须可被一条验收命令验证。\n"
+        "任务要具体、可交付，禁止一次写完整项目。\n\n"
+        "verify_cmd 硬性规则（违反会导致验收熔断，必须遵守）：\n"
+        "1. verify_cmd 数组只有一个元素，即一条单行 shell 命令。\n"
+        "2. 禁止多行命令、禁止用 && 连接多条命令、禁止用 python -c 传多行代码。\n"
+        "3. 正确示例：['pytest tests/test_calc.py -q']、['python -c \"import calc; assert calc.add(1,2)==3\"']、"
+        "['bash -c \"node -e \\\"assert(require(\\'./add\\')(1,2)===3)\\\"\"']\n"
+        "4. 错误示例：['python -c \"def f():\\n  pass\\n\\nf()\" && pytest']（多行+连接，会熔断）\n"
+        "5. 若需要多步验证，写成一条调用测试脚本的命令：['bash scripts/verify_task1.sh']"
     )
     try:
         rm = _invoke_structured(_make_llm("architect"), Roadmap, msg)
+        # 后处理：强制把每个任务的 verify_cmd 规整为单元素数组（防御 GLM 偶发不守约束）
+        for t in rm.tasks:
+            t.verify_cmd = _sanitize_verify_cmd(t.verify_cmd)
         return rm.tasks
     except Exception as e:  # noqa: BLE001 失败兜底：当成一个任务
         return [
@@ -222,6 +236,27 @@ def default_planner(state: FactoryState) -> list[FactoryTask]:
                 feedback=f"(planner fail-open: {e})",
             )
         ]
+
+
+def _sanitize_verify_cmd(cmd: list[str]) -> list[str]:
+    """把 verify_cmd 强制规整为单元素数组：多行/多 && 合并成一条单行命令。
+
+    GLM 偶发不遵守 prompt 约束，这里做最后一道确定性兜底：
+    - 多元素数组 → 用 ; 连接成一条（不用 && 以免短路掩盖问题）
+    - 单元素但含换行 → 压成一行
+    - 空数组 → ['true']（至少不阻塞循环）
+    """
+    if not cmd:
+        return ["true"]
+    # 过滤空串
+    parts = [c.strip() for c in cmd if c and c.strip()]
+    if not parts:
+        return ["true"]
+    # 多条 → 用 ; 合并成单行（; 不短路，能看到所有失败）
+    joined = " ; ".join(parts)
+    # 压掉换行
+    joined = " ".join(joined.split())
+    return [joined]
 
 
 # ---------- Orchestrator 适配 ----------

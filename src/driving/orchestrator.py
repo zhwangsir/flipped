@@ -113,7 +113,15 @@ def _make_llm(alias: str, temperature: float = 0, callbacks=None):
 
 
 def _parse_raw_response(raw, schema_cls):
-    """从原始 AIMessage 中尽力解析出结构化对象（应对 GLM function calling 偶发异常）。"""
+    """从原始 AIMessage 中尽力解析出结构化对象（应对 GLM function calling 偶发异常）。
+
+    GLM-5.2 经 exo 的 function calling 有三类已知故障：
+    1. tool_calls 返回但 arguments 是空串/畸形 JSON
+    2. 把结构化数据当成纯文本塞进 content（不带 tool_calls）
+    3. list[str] 字段被返回为裸字符串或逗号分隔串
+
+    这里逐层兜底：tool_calls → content JSON → content 键值对 → 字段级强转。
+    """
     import json
     import re
 
@@ -131,7 +139,7 @@ def _parse_raw_response(raw, schema_cls):
         if args:
             try:
                 data = json.loads(args) if isinstance(args, str) else dict(args)
-                return schema_cls.model_validate(data)
+                return _coerce_schema(data, schema_cls)
             except Exception:
                 pass
 
@@ -143,8 +151,8 @@ def _parse_raw_response(raw, schema_cls):
     elif isinstance(content, list):
         text = "".join(str(c) for c in content)
 
-    # 2a) JSON object / markdown code block
-    candidates = re.findall(r"\{[\s\S]*?\}", text)
+    # 2a) JSON object / markdown code block（贪婪匹配，应对嵌套花括号）
+    candidates = re.findall(r"\{[\s\S]*\}", text)
     if not candidates:
         # 2b) 键值对：efficiency: 0.8
         pairs = re.findall(r"(\w+)\s*[:=]\s*([^\n,]+)", text)
@@ -152,19 +160,48 @@ def _parse_raw_response(raw, schema_cls):
             data = {}
             for k, v in pairs:
                 v = v.strip().strip('"\'')
-                if k in ("efficiency", "direction"):
+                if k in ("efficiency", "direction", "believe_done"):
                     try:
-                        v = float(v)
+                        v = float(v) if k != "believe_done" else v.lower() in ("true", "1", "yes")
                     except ValueError:
                         continue
                 data[k] = v
-            return schema_cls.model_validate(data)
+            return _coerce_schema(data, schema_cls)
     for cand in candidates:
         try:
-            return schema_cls.model_validate(json.loads(cand))
+            return _coerce_schema(json.loads(cand), schema_cls)
         except Exception:
             continue
     return None
+
+
+def _coerce_schema(data: dict, schema_cls):
+    """把半结构化 dict 强转成 Pydantic schema，对 list[str] / bool 等字段做类型修复。
+
+    GLM 偶发把 list[str] 字段返回为裸字符串或逗号分隔串；bool 返回为 "true"/"false" 字符串。
+    """
+    if not isinstance(data, dict):
+        return None
+    # 拿 schema 的字段类型信息做轻量强转
+    hints = getattr(schema_cls, "model_fields", {})
+    coerced = dict(data)
+    for fname, finfo in hints.items():
+        if fname not in coerced:
+            continue
+        val = coerced[fname]
+        ftype = finfo.annotation if hasattr(finfo, "annotation") else None
+        # list[str] 字段：None → []；裸字符串交给 schema 的 field_validator 处理
+        # （不在这里拆分字符串，因为有些 schema 有自定义 validator 把字符串包成 list）
+        if ftype is list[str] or (hasattr(ftype, "__origin__") and ftype.__origin__ is list):
+            if val is None:
+                coerced[fname] = []
+        # bool 字段：字符串 "true"/"false" → 真 bool
+        elif ftype is bool:
+            if isinstance(val, str):
+                coerced[fname] = val.strip().lower() in ("true", "1", "yes")
+            elif isinstance(val, (int, float)):
+                coerced[fname] = bool(val)
+    return schema_cls.model_validate(coerced)
 
 
 def _invoke_structured(llm, schema_cls, prompt: str, *, max_retries: int = 2):
