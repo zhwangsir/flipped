@@ -2,7 +2,7 @@
   "project": "flipped",
   "description": "接入本地 MLX 双模型(GLM-5.2 编排者 / Kimi-K2.7-Code 执行者)的 agentic 代码编辑器平台。fork Roo Code + 自定义驾驭层(强制验证/循环检测/上下文压缩/人工审批/子Agent/可观测性) + MCP 联网与外部能力。",
   "updated": "2026-07-10",
-  "current_milestone": "M12 RCA 失败根因归因 (372 passed)",
+  "current_milestone": "M13 视觉回归快照对比 (390 passed)",
   "key_facts": {
     "dev_host": "Apple M5 Max, 128GB RAM, 1.1TB 可用磁盘 — 开发/控制节点，非模型宿主",
     "model_cluster": "exo 集群 @ http://100.64.201.37:52415 (内网, OpenAI 兼容)；公网 https://dgmt.top/exo (需 Bearer token)",
@@ -268,6 +268,18 @@
           "title": "RCA 根因分析模块 + factory_loop 对接",
           "status": "done",
           "note": "11 类根因分类 + 模式匹配规则 + fix_suggestion。enrich_feedback 截断防 prompt 过长。factory_loop 失败重试时自动调用 RCA。"
+        }
+      }
+    },
+    "M13": {
+      "title": "视觉回归快照对比",
+      "status": "done",
+      "note": "新增 src/driving/visual_regression.py：Playwright 截图 + Pillow ImageChops 像素差异对比。首次运行保存基线，后续运行对比。阈值可配（默认 5%）。优雅降级（无 PIL/无 Playwright/无 HTML → skip）。make_visual_verifier 适配 verifier 接口。18 单测全过（含真实渲染：相同 HTML diff=0、不同颜色 diff>50%）。全量 390 passed。",
+      "tasks": {
+        "M13.1": {
+          "title": "视觉回归截图+对比模块",
+          "status": "done",
+          "note": "capture_screenshot + compare_images + visual_regression_check + make_visual_verifier。基线存储 data/visual_baselines/{hash}.png。"
         }
       }
     }
