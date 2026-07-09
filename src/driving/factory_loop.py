@@ -630,10 +630,22 @@ def run_factory_loop(
                 if task.attempts >= task.max_attempts:
                     state.status = FactoryStatus.paused
                     break
-                # 重试：保留反馈，状态回到 pending，下次继续
-                task.feedback = (
-                    f"上次尝试失败({result.stop_reason}): {result.summary}"
-                )
+                # M12 RCA：自动分析失败根因，给 supervisor 精确修复建议（而非泛泛"失败了"）
+                try:
+                    from driving.rca import analyze_failure, enrich_feedback
+                    rca = analyze_failure(
+                        stop_reason=result.stop_reason,
+                        summary=result.summary,
+                        feedback=task.feedback,
+                    )
+                    task.feedback = enrich_feedback(
+                        f"上次尝试失败({result.stop_reason}): {result.summary}",
+                        rca,
+                    )
+                except Exception:
+                    task.feedback = (
+                        f"上次尝试失败({result.stop_reason}): {result.summary}"
+                    )
                 task.status = TaskStatus.pending
 
             state.current_task_id = None

@@ -2,7 +2,7 @@
   "project": "flipped",
   "description": "接入本地 MLX 双模型(GLM-5.2 编排者 / Kimi-K2.7-Code 执行者)的 agentic 代码编辑器平台。fork Roo Code + 自定义驾驭层(强制验证/循环检测/上下文压缩/人工审批/子Agent/可观测性) + MCP 联网与外部能力。",
   "updated": "2026-07-10",
-  "current_milestone": "M11 完成：overflow 修复 + 语义检索 + axe-core a11y (350 passed)",
+  "current_milestone": "M12 RCA 失败根因归因 (372 passed)",
   "key_facts": {
     "dev_host": "Apple M5 Max, 128GB RAM, 1.1TB 可用磁盘 — 开发/控制节点，非模型宿主",
     "model_cluster": "exo 集群 @ http://100.64.201.37:52415 (内网, OpenAI 兼容)；公网 https://dgmt.top/exo (需 Bearer token)",
@@ -256,6 +256,18 @@
           "title": "axe-core + Playwright 真实渲染无障碍检测",
           "status": "done",
           "note": "新增 src/driving/a11y_lint.py：Playwright Chromium headless 加载 HTML + 注入 axe-core JS 执行 WCAG 2.1 扫描。severity 映射（critical/serious→error, moderate/minor→warning）。优雅降级（无 axe.min.js/无 Playwright/无 HTML → skip with warning）。axe.min.js 缓存到 data/axe.min.js(554KB)。combined_verifier_with_a11y 三重校验（base+design+a11y）接入 factory_loop。11 单测全过（含真实渲染：image-alt 违规检测、合规 HTML 通过）。全量 350 passed。"
+        }
+      }
+    },
+    "M12": {
+      "title": "RCA 失败根因自动归因",
+      "status": "done",
+      "note": "新增 src/driving/rca.py：分析失败模式分类根因（reasoning_overflow/syntax_error/missing_import/verify_mismatch/design_violation/a11y_violation/timeout/max_iterations/empty_output/infra_failure/unknown），每类根因附带精确 fix_suggestion。factory_loop 失败时自动调用 RCA，enrich_feedback 把根因+建议注入 task.feedback 给下一轮 supervisor。22 单测全过。全量 372 passed。",
+      "tasks": {
+        "M12.1": {
+          "title": "RCA 根因分析模块 + factory_loop 对接",
+          "status": "done",
+          "note": "11 类根因分类 + 模式匹配规则 + fix_suggestion。enrich_feedback 截断防 prompt 过长。factory_loop 失败重试时自动调用 RCA。"
         }
       }
     }
