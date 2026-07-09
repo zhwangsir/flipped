@@ -404,13 +404,20 @@ def default_orchestrator_fn(task: FactoryTask, state: FactoryState) -> TaskResul
     if state.design_context:
         compact_design = f"\n{build_design_brief_compact(state.design_style or 'auto')}"
 
+    # M11.1：截断累积上下文，防止 prompt 过长触发 Kimi reasoning 循环。
+    # context_summary 随轮次增长（每完成一个 task 追加一行），不截断时
+    # 第 2 轮 task-2 的 prompt 会超 1400 字符 → reasoning overflow (content_len=4)。
+    # 只保留最近 150 字符 + feedback 截断到 80 字符，让 prompt 始终 < 400 字符。
+    ctx_tail = state.context_summary[-150:] if state.context_summary else "无"
+    fb_short = task.feedback[:80] if task.feedback else "无"
+
     kwargs = dict(
         goal=task.description,
         cwd=state.cwd,
         verify_cmd=task.verify_cmd or ["true"],
         project_rules=(
-            f"这是工厂任务 {task.id}。已完成的上下文摘要：\n{state.context_summary}\n"
-            f"本任务反馈（若有）：{task.feedback}"
+            f"任务 {task.id}。已完成：{ctx_tail}\n"
+            f"反馈：{fb_short}"
             + compact_design
         ),
         max_iterations=1,

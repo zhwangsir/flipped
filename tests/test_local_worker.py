@@ -57,7 +57,8 @@ def _mock_stream(content: str, finish_reason: str = "stop"):
     lines = _make_stream_lines(content, finish_reason)
     mock_resp = MagicMock()
     mock_resp.raise_for_status = MagicMock()
-    mock_resp.iter_lines = MagicMock(return_value=iter(lines))
+    # M11.1：用 side_effect 让每次调用都返回新迭代器（overflow retry 会调用两次）
+    mock_resp.iter_lines = MagicMock(side_effect=lambda: iter(lines))
     mock_cm = MagicMock()
     mock_cm.__enter__ = MagicMock(return_value=mock_resp)
     mock_cm.__exit__ = MagicMock(return_value=False)
@@ -193,10 +194,11 @@ def test_feedback_passed_to_prompt():
         lines = _make_stream_lines(content)
 
         def fake_stream(*args, **kwargs):
-            captured_kwargs.update(kwargs)
+            if not captured_kwargs:
+                captured_kwargs.update(kwargs)
             mock_resp = MagicMock()
             mock_resp.raise_for_status = MagicMock()
-            mock_resp.iter_lines = MagicMock(return_value=iter(lines))
+            mock_resp.iter_lines = MagicMock(side_effect=lambda: iter(lines))
             cm = MagicMock()
             cm.__enter__ = MagicMock(return_value=mock_resp)
             cm.__exit__ = MagicMock(return_value=False)
@@ -217,10 +219,11 @@ def test_design_context_in_prompt():
         lines = _make_stream_lines(content)
 
         def fake_stream(*args, **kwargs):
-            captured_kwargs.update(kwargs)
+            if not captured_kwargs:
+                captured_kwargs.update(kwargs)
             mock_resp = MagicMock()
             mock_resp.raise_for_status = MagicMock()
-            mock_resp.iter_lines = MagicMock(return_value=iter(lines))
+            mock_resp.iter_lines = MagicMock(side_effect=lambda: iter(lines))
             cm = MagicMock()
             cm.__enter__ = MagicMock(return_value=mock_resp)
             cm.__exit__ = MagicMock(return_value=False)

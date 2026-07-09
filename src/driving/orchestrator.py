@@ -551,15 +551,18 @@ def local_worker(state: OrchestratorState) -> dict:
     base_url, model = resolve_worker_model_config("coder")
     api_key = os.environ.get("EXO_API_KEY") or os.environ.get("LITELLM_MASTER_KEY", "dummy")
 
+    # M11.1：截断 project_rules 和 feedback，防止 prompt 过长触发 reasoning 循环。
+    # E2E 实测：prompt > 1400 字符时 Kimi reasoning_tokens 占满 max_tokens，content ≈ 0。
+    # project_rules 限制 300 字符，feedback 限制 80 字符，subtask 限制 500 字符。
+    _subtask_short = subtask[:500] if subtask else ""
+    _rules_short = project_rules[-300:] if project_rules and len(project_rules) > 300 else (project_rules or "")
+    _feedback_short = feedback[:80] if feedback else ""
+
     prompt = (
-        f"你是代码执行者。在目录 `{cwd}` 下完成以下任务：\n\n"
-        f"## 任务\n{subtask}\n\n"
-        f"## 项目规则 / 设计约束\n{project_rules}\n\n"
-        + (f"## 上一轮反馈\n{feedback}\n\n" if feedback else "")
-        + "## 输出格式\n"
-        "用 ```language:path 格式的代码块输出文件，末尾用 ``` 闭合。\n"
-        "例如 ```html:index.html 后跟 HTML 内容，末尾 ```。\n"
-        "要求：只输出文件块，不要解释说明；路径用相对路径；内容完整不省略。\n"
+        f"在 `{cwd}` 下完成：\n{_subtask_short}\n\n"
+        + (f"约束：{_rules_short}\n" if _rules_short else "")
+        + (f"反馈：{_feedback_short}\n" if _feedback_short else "")
+        + "用 ```html:index.html 格式输出完整代码，末尾 ```。只输出代码块。\n"
     )
 
     # M10.5 根因修复：Kimi-K2.7-Code 在 exo 上即使传 enable_thinking=false，
@@ -614,6 +617,55 @@ def local_worker(state: OrchestratorState) -> dict:
         content = "".join(_content_parts)
         import sys as _sys
         print(f"[local_worker] finish={finish} content_len={len(content)} time={_time.monotonic()-t0:.1f}s", file=_sys.stderr, flush=True)
+
+        # M11.1：reasoning overflow 检测 + 最小 prompt 重试。
+        # 累积上下文/delegate feedback 过长时，Kimi 仍会把 tokens 全用在 reasoning 上，
+        # content_len < 50 说明几乎没产出内容。用最小 prompt（只含任务描述）重试一次。
+        if len(content) < 50:
+            _minimal_prompt = (
+                f"在 `{cwd}` 下完成以下任务，只输出代码块：\n{subtask[:300]}\n"
+                "用 ```html:index.html 格式输出完整 HTML，末尾 ```。"
+            )
+            _retry_parts: list[str] = []
+            _t1 = _time.monotonic()
+            try:
+                with httpx.stream(
+                    "POST",
+                    f"{str(base_url).rstrip('/')}/chat/completions",
+                    headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+                    json={
+                        "model": model,
+                        "messages": [{"role": "user", "content": _minimal_prompt}],
+                        "max_tokens": 4096,
+                        "temperature": 0.1,
+                        "enable_thinking": False,
+                        "chat_template_kwargs": {"enable_thinking": False},
+                        "stream": True,
+                    },
+                    timeout=httpx.Timeout(_kimi_timeout, connect=10.0),
+                    trust_env=False,
+                ) as r2:
+                    r2.raise_for_status()
+                    for line2 in r2.iter_lines():
+                        if not line2 or not line2.startswith("data:"):
+                            continue
+                        payload2 = line2[5:].strip()
+                        if payload2 == "[DONE]":
+                            break
+                        try:
+                            d2 = _json.loads(payload2)
+                        except Exception:
+                            continue
+                        choices2 = d2.get("choices") or []
+                        if not choices2:
+                            continue
+                        delta2 = choices2[0].get("delta", {})
+                        if delta2.get("content"):
+                            _retry_parts.append(delta2["content"])
+                content = "".join(_retry_parts)
+                print(f"[local_worker] overflow_retry content_len={len(content)} time={_time.monotonic()-_t1:.1f}s", file=_sys.stderr, flush=True)
+            except Exception as e2:  # noqa: BLE001
+                print(f"[local_worker] overflow_retry failed: {type(e2).__name__}", file=_sys.stderr, flush=True)
     except Exception as e:  # noqa: BLE001
         import sys
         print(f"[local_worker] httpx failed: {type(e).__name__}: {str(e)[:200]}", file=sys.stderr, flush=True)
