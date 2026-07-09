@@ -21,10 +21,13 @@ def main():
     os.environ["NO_PROXY"] = "100.64.201.37,localhost,127.0.0.1,host.docker.internal"
     os.environ["no_proxy"] = "100.64.201.37,localhost,127.0.0.1,host.docker.internal"
 
-    # cwd 必须在 OpenHands 容器挂载点 $HOME/projects 下，否则 worker 写文件到
-    # 容器内 /tmp，宿主机 verify_cmd 读不到 → verify 必失败。
-    # OpenHandsWorker._to_container_path 会把 $HOME/projects/X 转成 /projects/X。
-    cwd = os.path.expanduser("~/projects/flipped_e2e_landing")
+    # cwd 选择：
+    # - FLIPPED_USE_LOCAL_WORKER=1：LocalWorker 直接写宿主机，用 /tmp 即可
+    # - 默认（OpenHands）：需要 $HOME/projects 挂载到容器 /projects
+    if os.environ.get("FLIPPED_USE_LOCAL_WORKER") == "1":
+        cwd = "/tmp/flipped_e2e_landing"
+    else:
+        cwd = os.path.expanduser("~/projects/flipped_e2e_landing")
     os.makedirs(cwd, exist_ok=True)
 
     # 清理旧 db

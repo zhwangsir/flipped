@@ -346,7 +346,11 @@ def default_orchestrator_fn(task: FactoryTask, state: FactoryState) -> TaskResul
 
     M10.4-A：对 UI 任务自动追加 design-lint 校验，作为 verify_cmd 之外的程序化硬约束。
     M10.4-C：第 2 次失败后用 delegate orchestrator（独立 thread_id + 干净上下文）。
+    M10.5：per-task 硬超时（默认 300s），防止 GLM 挂起阻塞整个循环。
     """
+    # M10.5：per-task 硬超时保护——GLM 挂起时不能阻塞整个循环
+    task_timeout = int(os.environ.get("FLIPPED_TASK_TIMEOUT", "300"))
+
     # M10.4-C：连续失败 ≥ 2 次时，触发 delegate 子 Agent（避免主上下文被卡死污染）
     from driving.stuck_detector import delegate_orchestrator
     if task.attempts >= 3 and task.feedback:
@@ -363,25 +367,34 @@ def default_orchestrator_fn(task: FactoryTask, state: FactoryState) -> TaskResul
     thread_id = f"{state.factory_id}-{task.id}"
 
     # 尝试构建 sandbox_verifier（在沙箱内验证）；失败则 fallback 到 host verifier
+    # M10.3：FLIPPED_USE_LOCAL_WORKER=1 时跳过沙箱 verifier，用宿主机直接验证
     verifier = None
-    try:
-        from executor.sandbox_verify import make_sandbox_verifier
-        from executor.openhands_worker import OpenHandsWorker
-        agent_host = os.environ.get("OPENHANDS_AGENT_HOST", "http://localhost:8000")
-        oh_api_key = OpenHandsWorker._default_agent_api_key()
-        verifier = make_sandbox_verifier(
-            agent_host=agent_host,
-            working_dir=state.cwd,
-            api_key=oh_api_key,
-        )
-    except Exception:
-        pass  # fallback 到 drive_orchestrated 默认的 _safe_default_verifier
+    if os.environ.get("FLIPPED_USE_LOCAL_WORKER") != "1":
+        try:
+            from executor.sandbox_verify import make_sandbox_verifier
+            from executor.openhands_worker import OpenHandsWorker
+            agent_host = os.environ.get("OPENHANDS_AGENT_HOST", "http://localhost:8000")
+            oh_api_key = OpenHandsWorker._default_agent_api_key()
+            verifier = make_sandbox_verifier(
+                agent_host=agent_host,
+                working_dir=state.cwd,
+                api_key=oh_api_key,
+            )
+        except Exception:
+            pass  # fallback 到 drive_orchestrated 默认的 _safe_default_verifier
 
     # M10.4-A：UI 任务用组合 verifier（base + design-lint），让设计系统成为程序化硬约束
-    if verifier is not None and _looks_like_ui_task(task, state):
+    # M10.3：LocalWorker 模式下 verifier=None（跳过沙箱），但 UI 任务仍需 design-lint，
+    # 所以用 _safe_default_verifier 作为 base + design-lint 组合
+    if _looks_like_ui_task(task, state):
         try:
-            from driving.design_lint import combined_verifier
-            verifier = combined_verifier(verifier, state.design_style or "auto")
+            from driving.design_lint import combined_verifier, design_verifier
+            from driving.orchestrator import _safe_default_verifier
+            if verifier is not None:
+                verifier = combined_verifier(verifier, state.design_style or "auto")
+            else:
+                # LocalWorker 模式：base 用宿主机 verifier + design-lint
+                verifier = combined_verifier(_safe_default_verifier, state.design_style or "auto")
         except Exception:
             pass  # design-lint 不可用时退回 base verifier
 
@@ -400,7 +413,37 @@ def default_orchestrator_fn(task: FactoryTask, state: FactoryState) -> TaskResul
     )
     if verifier is not None:
         kwargs["verifier"] = verifier
-    result = drive_orchestrated(**kwargs)
+
+    # M10.5：per-task 硬超时——signal.alarm 只在主线程有效，子线程里跳过
+    import signal
+    import threading
+    timed_out = False
+
+    def _alarm_handler(signum, frame):
+        nonlocal timed_out
+        timed_out = True
+
+    use_alarm = threading.current_thread() is threading.main_thread()
+    old_handler = None
+    if use_alarm:
+        old_handler = signal.signal(signal.SIGALRM, _alarm_handler)
+        signal.alarm(task_timeout)
+
+    try:
+        result = drive_orchestrated(**kwargs)
+    except TimeoutError:
+        result = {"verified": False, "stop_reason": "task_timeout",
+                  "iteration": 0, "feedback": f"任务超时({task_timeout}s)"}
+    finally:
+        if use_alarm:
+            signal.alarm(0)
+            if old_handler is not None:
+                signal.signal(signal.SIGALRM, old_handler)
+
+    if timed_out:
+        result = {"verified": False, "stop_reason": "task_timeout",
+                  "iteration": 0, "feedback": f"任务超时({task_timeout}s)"}
+
     return TaskResult(
         task=task,
         verified=bool(result.get("verified")),

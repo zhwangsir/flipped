@@ -305,7 +305,7 @@ def _invoke_structured(llm, schema_cls, prompt: str, *, max_retries: int = 0):
     raise last_err or RuntimeError("structured output failed after retries")
 
 
-def _direct_glm_tool_call(llm, schema_cls, prompt: str, *, max_retries: int = 3):
+def _direct_glm_tool_call(llm, schema_cls, prompt: str, *, max_retries: int = 1):
     """直调 GLM /v1/chat/completions，纯文本模式输出 JSON，自己解析。
 
     绕过 langchain + 绕过 function calling，直接用纯文本模式让 GLM 输出 JSON。
@@ -525,7 +525,137 @@ def make_openhands_worker(bus=None, session_id: str | None = None) -> WorkerFn:
 
 # 默认 worker 节点(NullEventBus,不推事件)。F2 的可见 worker 由 make_openhands_worker(bus, sid) 构建。
 openhands_worker = make_openhands_worker()
-default_worker = openhands_worker
+
+
+# ---------- LocalWorker（绕过 Docker/OpenHands，直接用 Kimi 写文件） ----------
+
+def local_worker(state: OrchestratorState) -> dict:
+    """本地 worker：直接调 Kimi 生成代码并写文件到 cwd，无需 Docker/沙箱。
+
+    适用场景：简单 UI 任务（landing page / 组件 / 静态页面）。
+    优势：无 Docker 依赖、无 polling 超时、verify_cmd 直接在宿主机跑。
+    劣势：无沙箱隔离，仅用于可信任务。
+
+    协议：让 Kimi 用 ```language:path/to/file 格式的代码块输出文件，
+    worker 解析后写到 cwd 下对应路径。
+    """
+    import os
+    import re
+    import httpx
+
+    cwd = state.get("cwd", ".")
+    subtask = state.get("current_subtask", state.get("goal", ""))
+    project_rules = state.get("project_rules", "")
+    feedback = state.get("feedback", "")
+
+    base_url, model = resolve_worker_model_config("coder")
+    api_key = os.environ.get("EXO_API_KEY") or os.environ.get("LITELLM_MASTER_KEY", "dummy")
+
+    prompt = (
+        f"你是代码执行者。在目录 `{cwd}` 下完成以下任务：\n\n"
+        f"## 任务\n{subtask}\n\n"
+        f"## 项目规则 / 设计约束\n{project_rules}\n\n"
+        + (f"## 上一轮反馈\n{feedback}\n\n" if feedback else "")
+        + "## 输出格式\n"
+        "用以下格式输出每个文件（可输出多个文件）：\n"
+        "```language:path/to/file.ext\n"
+        "文件内容\n"
+        "```\n\n"
+        "示例：\n"
+        "```html:index.html\n"
+        "<!DOCTYPE html>...\n"
+        "```\n"
+        "```css:style.css\n"
+        "body { ... }\n"
+        "```\n\n"
+        "要求：\n"
+        "1. 只输出文件块，不要解释说明\n"
+        "2. 路径用相对路径（相对 cwd）\n"
+        "3. 内容要完整可用，不要省略\n"
+        "4. 遵循项目规则中的设计约束（颜色、字体、响应式等）\n"
+    )
+
+    try:
+        r = httpx.post(
+            f"{str(base_url).rstrip('/')}/chat/completions",
+            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+            json={
+                "model": model,
+                "messages": [{"role": "user", "content": prompt}],
+                "max_tokens": 4096,
+                "temperature": 0.1,
+            },
+            timeout=httpx.Timeout(120.0, connect=10.0),
+            trust_env=False,
+        )
+        r.raise_for_status()
+        data = r.json()
+        content = (data.get("choices") or [{}])[0].get("message", {}).get("content", "") or ""
+        finish = (data.get("choices") or [{}])[0].get("finish_reason", "")
+    except Exception as e:  # noqa: BLE001
+        return {
+            "last_obs": {"ok": False, "summary": {"tool_calls": 0}, "error": str(e)[:200]},
+            "signatures": state.get("signatures", []) + [f"local_worker_error:{type(e).__name__}"],
+            "history": state.get("history", []) + [
+                {"step": "worker", "summary": {"tool_calls": 0}, "error": True}],
+            "worker_error": True,
+        }
+
+    # 解析 ```lang:path 格式的文件块
+    files_written: list[str] = []
+    pattern = re.compile(r"```(?:[\w]+)?:([^\n]+)\n([\s\S]*?)```")
+    for m in pattern.finditer(content):
+        rel_path = m.group(1).strip().strip("`")
+        file_content = m.group(2)
+        # 去掉末尾多余换行
+        if file_content.endswith("\n"):
+            file_content = file_content[:-1]
+        # 安全检查：路径不能逃逸 cwd
+        full_path = os.path.join(cwd, rel_path)
+        norm_cwd = os.path.normpath(cwd)
+        norm_full = os.path.normpath(full_path)
+        if not norm_full.startswith(norm_cwd):
+            continue
+        os.makedirs(os.path.dirname(full_path), exist_ok=True)
+        with open(full_path, "w", encoding="utf-8") as f:
+            f.write(file_content)
+        files_written.append(rel_path)
+
+    # 回退解析：Kimi 有时不加 ```lang:path 前缀，直接输出 HTML/CSS/JS。
+    # 检测裸 HTML（<!DOCTYPE 或 <html）→ 写 index.html
+    # 检测裸 CSS（:root 或 @media 开头）→ 写 style.css
+    if not files_written:
+        stripped = content.strip()
+        if stripped.startswith("<!DOCTYPE") or stripped.startswith("<html") or "<html" in stripped[:200]:
+            path = os.path.join(cwd, "index.html")
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(stripped)
+            files_written.append("index.html")
+        elif stripped.startswith(":root") or stripped.startswith("@media") or stripped.startswith("/*"):
+            path = os.path.join(cwd, "style.css")
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(stripped)
+            files_written.append("style.css")
+
+    tool_calls = len(files_written)
+    # 即使没解析出文件块，只要 Kimi 有响应内容，就不算 infrastructure error。
+    # 让 verifier 决定成败——也许之前的 iteration 已经写了文件，这次只是补充说明。
+    # worker_error=True 会导致 orchestrator 跳过 verify 直接判定失败。
+    ok = tool_calls > 0 or bool(content.strip())
+    sig = f"local:{','.join(sorted(files_written[:5]))}" if files_written else "local:no_files"
+
+    return {
+        "last_obs": {"ok": ok, "summary": {"tool_calls": tool_calls, "files": files_written}},
+        "signatures": state.get("signatures", []) + [sig],
+        "history": state.get("history", []) + [
+            {"step": "worker", "summary": {"tool_calls": tool_calls, "files": files_written},
+             "signature": sig, "error": not ok}],
+        "worker_error": not ok,
+    }
+
+
+# 环境变量切换：FLIPPED_USE_LOCAL_WORKER=1 用本地 worker（绕过 Docker）
+default_worker = local_worker if os.environ.get("FLIPPED_USE_LOCAL_WORKER") == "1" else openhands_worker
 
 
 def default_overseer(state: OrchestratorState) -> dict:
