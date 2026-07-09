@@ -398,6 +398,12 @@ def default_orchestrator_fn(task: FactoryTask, state: FactoryState) -> TaskResul
         except Exception:
             pass  # design-lint 不可用时退回 base verifier
 
+    # M10.5：用 compact 版设计约束，避免长 design_brief 导致 Kimi 陷入 reasoning
+    from driving.design_context import build_design_brief_compact
+    compact_design = ""
+    if state.design_context:
+        compact_design = f"\n{build_design_brief_compact(state.design_style or 'auto')}"
+
     kwargs = dict(
         goal=task.description,
         cwd=state.cwd,
@@ -405,44 +411,40 @@ def default_orchestrator_fn(task: FactoryTask, state: FactoryState) -> TaskResul
         project_rules=(
             f"这是工厂任务 {task.id}。已完成的上下文摘要：\n{state.context_summary}\n"
             f"本任务反馈（若有）：{task.feedback}"
-            + (f"\n\n{state.design_context}" if state.design_context else "")
+            + compact_design
         ),
-        max_iterations=4,
+        max_iterations=1,
         db_path="data/factory_checkpoints.db",
         thread_id=thread_id,
     )
     if verifier is not None:
         kwargs["verifier"] = verifier
 
-    # M10.5：per-task 硬超时——signal.alarm 只在主线程有效，子线程里跳过
-    import signal
+    # M10.5：per-task 硬超时——用 daemon thread + join timeout，不中断 httpx I/O。
+    # signal.alarm 会打断 httpx 的 C 层网络调用导致 worker_error，改用线程隔离。
     import threading
-    timed_out = False
+    result_box: list = []
 
-    def _alarm_handler(signum, frame):
-        nonlocal timed_out
-        timed_out = True
+    def _run():
+        try:
+            result_box.append(drive_orchestrated(**kwargs))
+        except Exception as e:  # noqa: BLE001
+            result_box.append({"verified": False, "stop_reason": "exception",
+                               "iteration": 0, "feedback": f"{type(e).__name__}: {e}"})
 
-    use_alarm = threading.current_thread() is threading.main_thread()
-    old_handler = None
-    if use_alarm:
-        old_handler = signal.signal(signal.SIGALRM, _alarm_handler)
-        signal.alarm(task_timeout)
+    t = threading.Thread(target=_run, daemon=True)
+    t.start()
+    t.join(timeout=task_timeout)
 
-    try:
-        result = drive_orchestrated(**kwargs)
-    except TimeoutError:
+    if t.is_alive():
+        # 线程仍在跑（GLM/Kimi 卡住）——放弃等待，标记超时
         result = {"verified": False, "stop_reason": "task_timeout",
                   "iteration": 0, "feedback": f"任务超时({task_timeout}s)"}
-    finally:
-        if use_alarm:
-            signal.alarm(0)
-            if old_handler is not None:
-                signal.signal(signal.SIGALRM, old_handler)
-
-    if timed_out:
-        result = {"verified": False, "stop_reason": "task_timeout",
-                  "iteration": 0, "feedback": f"任务超时({task_timeout}s)"}
+    elif result_box:
+        result = result_box[0]
+    else:
+        result = {"verified": False, "stop_reason": "unknown",
+                  "iteration": 0, "feedback": "线程结束但无结果"}
 
     return TaskResult(
         task=task,

@@ -48,7 +48,7 @@ def main():
     )
 
     print(f"\n{'='*60}")
-    print(f"[结果] status={state.status.value} rounds={len(state.rounds)}")
+    print(f"[结果] status={state.status} rounds={len(state.rounds)}")
     for r in state.rounds:
         print(f"  第{r.round_num}轮: {r.product_goal}")
         print(f"    完成={r.tasks_completed} 失败={r.tasks_failed}")
@@ -81,7 +81,7 @@ def main():
     else:
         print(f"[判定] 未通过 ❌")
         print(f"  - rounds_ok={all_rounds_ok} design_hex={design_hex_found}")
-        print(f"  - status={state.status.value}")
+        print(f"  - status={state.status}")
         return 1
 
 

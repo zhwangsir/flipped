@@ -1,15 +1,20 @@
-"""LocalWorker 单测（M10.3：绕过 Docker 的本地 worker）。
+"""LocalWorker 单测（M10.3：绕过 Docker 的本地 worker；M10.5 streaming 模式）。
 
 验证：
 1. 解析 ```lang:path 格式文件块
 2. 安全检查：路径不能逃逸 cwd
 3. 正常返回 worker 状态 dict
 4. 异常容错
+
+M10.5：local_worker 改用 httpx.stream（streaming 模式只收 content deltas，
+忽略 reasoning_content）。mock 从 httpx.post 改为 httpx.stream context manager。
 """
 from __future__ import annotations
 
+import json
 import os
 import tempfile
+from contextlib import contextmanager
 from unittest.mock import patch, MagicMock
 
 import pytest
@@ -30,6 +35,36 @@ def _mock_kimi_response(files: dict[str, str]) -> str:
     return "\n\n".join(blocks)
 
 
+def _make_stream_lines(content: str, finish_reason: str = "stop"):
+    """把 content 拆成 SSE data: 行序列，模拟 streaming 响应。"""
+    lines = []
+    # 把 content 拆成小 chunk（每 50 字符一个 delta）
+    for i in range(0, len(content), 50):
+        chunk = content[i:i + 50]
+        lines.append(f"data: {json.dumps({'choices': [{'delta': {'content': chunk}, 'finish_reason': None}]})}")
+    lines.append(f"data: {json.dumps({'choices': [{'delta': {}, 'finish_reason': finish_reason}]})}")
+    lines.append("data: [DONE]")
+    return lines
+
+
+@contextmanager
+def _mock_stream(content: str, finish_reason: str = "stop"):
+    """构造 httpx.stream 的 mock context manager。
+
+    local_worker 用 `with httpx.stream(...) as r: r.iter_lines()` 消费 SSE。
+    这里 mock 返回一个有 raise_for_status() 和 iter_lines() 的对象。
+    """
+    lines = _make_stream_lines(content, finish_reason)
+    mock_resp = MagicMock()
+    mock_resp.raise_for_status = MagicMock()
+    mock_resp.iter_lines = MagicMock(return_value=iter(lines))
+    mock_cm = MagicMock()
+    mock_cm.__enter__ = MagicMock(return_value=mock_resp)
+    mock_cm.__exit__ = MagicMock(return_value=False)
+    with patch("httpx.stream", return_value=mock_cm):
+        yield
+
+
 def _make_state(cwd: str, subtask="写一个 landing page", feedback="") -> OrchestratorState:
     return {
         "cwd": cwd,
@@ -46,13 +81,7 @@ def test_writes_single_file():
     """正常写单个文件到 cwd。"""
     with tempfile.TemporaryDirectory() as d:
         content = _mock_kimi_response({"index.html": "<!DOCTYPE html><h1>Hello</h1>"})
-        mock_resp = MagicMock()
-        mock_resp.json.return_value = {
-            "choices": [{"message": {"content": content}}]
-        }
-        mock_resp.raise_for_status = MagicMock()
-
-        with patch("httpx.post", return_value=mock_resp):
+        with _mock_stream(content):
             state = _make_state(d)
             result = local_worker(state)
 
@@ -72,11 +101,7 @@ def test_writes_multiple_files():
             "style.css": "body { color: #0A84FF; }",
             "app.js": "console.log('hi');",
         })
-        mock_resp = MagicMock()
-        mock_resp.json.return_value = {"choices": [{"message": {"content": content}}]}
-        mock_resp.raise_for_status = MagicMock()
-
-        with patch("httpx.post", return_value=mock_resp):
+        with _mock_stream(content):
             result = local_worker(_make_state(d))
 
         assert result["last_obs"]["summary"]["tool_calls"] == 3
@@ -91,11 +116,7 @@ def test_path_escaping_blocked():
             "../../etc/passwd": "hacked",
             "index.html": "<h1>safe</h1>",
         })
-        mock_resp = MagicMock()
-        mock_resp.json.return_value = {"choices": [{"message": {"content": content}}]}
-        mock_resp.raise_for_status = MagicMock()
-
-        with patch("httpx.post", return_value=mock_resp):
+        with _mock_stream(content):
             result = local_worker(_make_state(d))
 
         # 只有 index.html 被写，../etc/passwd 被拒绝
@@ -108,11 +129,7 @@ def test_path_escaping_blocked():
 def test_empty_response():
     """Kimi 返回空内容 → worker_error=True（无内容 = 基础设施故障）。"""
     with tempfile.TemporaryDirectory() as d:
-        mock_resp = MagicMock()
-        mock_resp.json.return_value = {"choices": [{"message": {"content": ""}}]}
-        mock_resp.raise_for_status = MagicMock()
-
-        with patch("httpx.post", return_value=mock_resp):
+        with _mock_stream(""):
             result = local_worker(_make_state(d))
 
         assert result["worker_error"] is True
@@ -122,11 +139,7 @@ def test_empty_response():
 def test_non_empty_but_unparseable():
     """Kimi 有响应但无文件块 → worker_error=False（让 verifier 决定）。"""
     with tempfile.TemporaryDirectory() as d:
-        mock_resp = MagicMock()
-        mock_resp.json.return_value = {"choices": [{"message": {"content": "这是说明文字，没有文件块"}}]}
-        mock_resp.raise_for_status = MagicMock()
-
-        with patch("httpx.post", return_value=mock_resp):
+        with _mock_stream("这是说明文字，没有文件块"):
             result = local_worker(_make_state(d))
 
         assert result["worker_error"] is False  # 有内容，不算 infra error
@@ -136,7 +149,10 @@ def test_non_empty_but_unparseable():
 def test_http_exception_handled():
     """HTTP 异常被捕获，返回 worker_error。"""
     with tempfile.TemporaryDirectory() as d:
-        with patch("httpx.post", side_effect=Exception("connection refused")):
+        mock_cm = MagicMock()
+        mock_cm.__enter__ = MagicMock(side_effect=Exception("connection refused"))
+        mock_cm.__exit__ = MagicMock(return_value=False)
+        with patch("httpx.stream", return_value=mock_cm):
             result = local_worker(_make_state(d))
 
         assert result["worker_error"] is True
@@ -147,11 +163,7 @@ def test_signatures_recorded():
     """动作签名记录写入的文件名。"""
     with tempfile.TemporaryDirectory() as d:
         content = _mock_kimi_response({"index.html": "<h1>hi</h1>", "style.css": "body{}"})
-        mock_resp = MagicMock()
-        mock_resp.json.return_value = {"choices": [{"message": {"content": content}}]}
-        mock_resp.raise_for_status = MagicMock()
-
-        with patch("httpx.post", return_value=mock_resp):
+        with _mock_stream(content):
             result = local_worker(_make_state(d))
 
         sigs = result["signatures"]
@@ -164,11 +176,7 @@ def test_subdirectory_creation():
     """文件在子目录下时自动创建目录。"""
     with tempfile.TemporaryDirectory() as d:
         content = _mock_kimi_response({"src/components/Header.jsx": "export default () => <h1/>"})
-        mock_resp = MagicMock()
-        mock_resp.json.return_value = {"choices": [{"message": {"content": content}}]}
-        mock_resp.raise_for_status = MagicMock()
-
-        with patch("httpx.post", return_value=mock_resp):
+        with _mock_stream(content):
             result = local_worker(_make_state(d))
 
         assert result["last_obs"]["ok"] is True
@@ -179,16 +187,22 @@ def test_feedback_passed_to_prompt():
     """上一轮 feedback 被注入 prompt。"""
     with tempfile.TemporaryDirectory() as d:
         content = _mock_kimi_response({"index.html": "<h1>fixed</h1>"})
-        mock_resp = MagicMock()
-        mock_resp.json.return_value = {"choices": [{"message": {"content": content}}]}
-        mock_resp.raise_for_status = MagicMock()
-
         captured_kwargs = {}
-        def capture_post(url, **kwargs):
-            captured_kwargs.update(kwargs)
-            return mock_resp
 
-        with patch("httpx.post", side_effect=capture_post):
+        original_stream = MagicMock
+        lines = _make_stream_lines(content)
+
+        def fake_stream(*args, **kwargs):
+            captured_kwargs.update(kwargs)
+            mock_resp = MagicMock()
+            mock_resp.raise_for_status = MagicMock()
+            mock_resp.iter_lines = MagicMock(return_value=iter(lines))
+            cm = MagicMock()
+            cm.__enter__ = MagicMock(return_value=mock_resp)
+            cm.__exit__ = MagicMock(return_value=False)
+            return cm
+
+        with patch("httpx.stream", side_effect=fake_stream):
             local_worker(_make_state(d, feedback="上一次缺少响应式断点"))
 
         prompt = captured_kwargs["json"]["messages"][0]["content"]
@@ -199,30 +213,30 @@ def test_design_context_in_prompt():
     """project_rules（设计约束）被注入 prompt。"""
     with tempfile.TemporaryDirectory() as d:
         content = _mock_kimi_response({"index.html": "<h1>ok</h1>"})
-        mock_resp = MagicMock()
-        mock_resp.json.return_value = {"choices": [{"message": {"content": content}}]}
-        mock_resp.raise_for_status = MagicMock()
+        captured_kwargs = {}
+        lines = _make_stream_lines(content)
 
-        captured = {}
-        def capture(url, **kwargs):
-            captured.update(kwargs)
-            return mock_resp
+        def fake_stream(*args, **kwargs):
+            captured_kwargs.update(kwargs)
+            mock_resp = MagicMock()
+            mock_resp.raise_for_status = MagicMock()
+            mock_resp.iter_lines = MagicMock(return_value=iter(lines))
+            cm = MagicMock()
+            cm.__enter__ = MagicMock(return_value=mock_resp)
+            cm.__exit__ = MagicMock(return_value=False)
+            return cm
 
-        with patch("httpx.post", side_effect=capture):
+        with patch("httpx.stream", side_effect=fake_stream):
             local_worker(_make_state(d))
 
-        assert "#0A84FF" in captured["json"]["messages"][0]["content"]
+        assert "#0A84FF" in captured_kwargs["json"]["messages"][0]["content"]
 
 
 def test_raw_html_fallback():
     """Kimi 输出裸 HTML（无 ```lang:path 前缀）→ 回退写 index.html。"""
     with tempfile.TemporaryDirectory() as d:
         raw_html = "<!DOCTYPE html>\n<html><body><h1>raw</h1></body></html>"
-        mock_resp = MagicMock()
-        mock_resp.json.return_value = {"choices": [{"message": {"content": raw_html}}]}
-        mock_resp.raise_for_status = MagicMock()
-
-        with patch("httpx.post", return_value=mock_resp):
+        with _mock_stream(raw_html):
             result = local_worker(_make_state(d))
 
         assert result["worker_error"] is False
@@ -235,11 +249,7 @@ def test_raw_css_fallback():
     """Kimi 输出裸 CSS → 回退写 style.css。"""
     with tempfile.TemporaryDirectory() as d:
         raw_css = ":root { --color-accent: #0A84FF; }"
-        mock_resp = MagicMock()
-        mock_resp.json.return_value = {"choices": [{"message": {"content": raw_css}}]}
-        mock_resp.raise_for_status = MagicMock()
-
-        with patch("httpx.post", return_value=mock_resp):
+        with _mock_stream(raw_css):
             result = local_worker(_make_state(d))
 
         assert result["worker_error"] is False

@@ -1,8 +1,8 @@
 {
   "project": "flipped",
   "description": "接入本地 MLX 双模型(GLM-5.2 编排者 / Kimi-K2.7-Code 执行者)的 agentic 代码编辑器平台。fork Roo Code + 自定义驾驭层(强制验证/循环检测/上下文压缩/人工审批/子Agent/可观测性) + MCP 联网与外部能力。",
-  "updated": "2026-07-09",
-  "current_milestone": "M10.4 自主无限迭代增强完成 · design-lint + progress_notes + stuck_detector + gold_memory 四件套 (315 passed)",
+  "updated": "2026-07-10",
+  "current_milestone": "M11 累积上下文 overflow 修复 + Gold Memory 语义检索 + a11y 检测 (337 passed)",
   "key_facts": {
     "dev_host": "Apple M5 Max, 128GB RAM, 1.1TB 可用磁盘 — 开发/控制节点，非模型宿主",
     "model_cluster": "exo 集群 @ http://100.64.201.37:52415 (内网, OpenAI 兼容)；公网 https://dgmt.top/exo (需 Bearer token)",
@@ -208,27 +208,54 @@
     "M10": {
       "title": "自主无限迭代 + UI/UX 设计质量最优 + 自我学习",
       "status": "in_progress",
-      "note": "M10.1-M10.2 + M10.4 完成。目标：只需要给出方向就能自行无限迭代 + UI/UX 设计质量最优 + 系统越跑越快。当前阻塞：M10.3 真实 E2E 依赖 exo 模型 LAUNCH（当前 No instance found for GLM-5.2）。",
+      "note": "M10.1-M10.5 完成。E2E worker_error 根因已定位并修复（Kimi reasoning + 长 design_brief）。全量 337 passed。E2E run #2 验证：streaming+compact brief 对首轮调用有效(11/14 worker 调用返回正常 content 3041-12305 bytes)，index.html 含全部设计系统 hex 值。残留：累积上下文后 delegate/task-2 后续调用仍触发 reasoning overflow(content_len=4)，属 M11 范围。",
       "tasks": {
         "M10.1": {
           "title": "设计系统注入机制",
           "status": "done",
-          "note": "src/driving/design_context.py：10 种风格精简数据（minimalism/dark/glassmorphism/bento/neumorphism/cyberpunk/organic/retro/brutalism/immersive），含具体 hex 值、字体、动效关键词。build_design_brief() 生成设计简报注入 worker project_rules。infer_style() 自动推断风格。factory_loop SQLite 表新增 design_style/design_context 列 + 旧表迁移。9 单测全过。"
+          "note": "src/driving/design_context.py：10 种风格精简数据。build_design_brief() + build_design_brief_compact()（M10.5 新增精简版）。9 单测全过。"
         },
         "M10.2": {
           "title": "无限迭代外层循环",
           "status": "done",
-          "note": "src/driving/infinite_loop.py：InfiniteLoopState + _evolve_goal(GLM 作为产品演进者看上一轮成果+原始方向生成下一轮 roadmap) + run_infinite_loop 主循环 + SQLite 持久化 + 崩溃恢复。停止条件：用户停止(FLIPPED_STOP_LOOP) / max_rounds / GLM 判定目标达成。7 单测全过。"
+          "note": "src/driving/infinite_loop.py：InfiniteLoopState + _evolve_goal + run_infinite_loop 主循环 + SQLite 持久化 + 崩溃恢复。7 单测全过。"
         },
         "M10.3": {
           "title": "真实 E2E landing page 验证",
-          "status": "blocked",
-          "note": "scripts/e2e_landing_page.py 已写，但 exo 模型未 LAUNCH（No instance found for GLM-5.2-DQ4plus-q8）。代码层已用注入 mock 验证通过（test_m10_integration.py 3 passed）。等模型 LAUNCH 后可直接跑。"
+          "status": "done",
+          "note": "E2E 跑通：worker 多轮成功生成 index.html（7322-13753 bytes content/轮），含设计系统 hex 值（#0A84FF/#0D0D12/#F5F5F5 全部命中）。worker_error 根因=Kimi reasoning_content 吃光 max_tokens，修复=streaming + compact brief。"
         },
         "M10.4": {
           "title": "调研网络项目优化点落地",
           "status": "done",
-          "note": "四个优化点全部落地：(A) design-lint 程序化设计校验闭环（16 单测）；(B) FEATURE_CHECKLIST.json + PROGRESS.md 进展笔记（10 单测）；(C) StuckDetector + delegate 子 Agent 熔断（12 单测）；(D) Gold Memory 自学习机制（11 单测）。全量 315 passed。"
+          "note": "四个优化点全部落地：(A) design-lint；(B) progress_notes；(C) StuckDetector + delegate；(D) Gold Memory。全量 315 passed。"
+        },
+        "M10.5": {
+          "title": "LocalWorker streaming + compact design brief",
+          "status": "done",
+          "note": "根因：Kimi-K2.7-Code 在 exo 上即使 enable_thinking=false 仍交错生成 reasoning_content，non-streaming 模式下 reasoning 占满 max_tokens(4095/4096)，content 仅 1-2 字节。修复三件套：(1) local_worker 改 httpx.stream streaming 模式只收 content deltas；(2) 新增 build_design_brief_compact(~200字符) 避免长 design_brief(924字符)触发 Kimi reasoning 循环；(3) 精简 prompt 移除 EXAMPLES 代码块示例。12 单测全过（mock 改 httpx.stream），全量 337 passed。"
+        }
+      }
+    },
+    "M11": {
+      "title": "累积上下文 overflow 修复 + Gold Memory 语义检索 + a11y 检测",
+      "status": "in_progress",
+      "note": "基于 E2E run #2 残留问题 + 网络调研报告制定。",
+      "tasks": {
+        "M11.1": {
+          "title": "累积上下文 overflow 修复（delegate/task-2 后续调用 content_len=4）",
+          "status": "todo",
+          "note": "根因：factory_loop 的 context_summary + delegate feedback 随轮次累积变长，触发 Kimi reasoning 循环。修复：context_summary 注入前压缩到 <100 字符；delegate feedback 截断；检测 content_len<50 时自动重试（已压缩 prompt）。"
+        },
+        "M11.2": {
+          "title": "Gold Memory 语义检索（复用 src/rag/ 向量模块替代 MD5 哈希）",
+          "status": "todo",
+          "note": "P0 低难度高价值。gold_memory._signature() MD5 精确匹配→改为向量余弦相似度 Top-K。复用 src/rag/embeddings.py + vector_store.py。"
+        },
+        "M11.3": {
+          "title": "axe-core + Playwright 真实渲染无障碍检测",
+          "status": "todo",
+          "note": "P0 低难度高价值。design_lint 正则升级为真实渲染 axe-core 扫描。复用 console/playwright.config.ts。"
         }
       }
     }

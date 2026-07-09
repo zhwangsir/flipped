@@ -214,3 +214,31 @@ def build_design_brief(
 - 所有颜色值必须用 hex，禁止用英文颜色名 (如 "blue")
 - 动画优先用 CSS transform/opacity，避免触发重排{extra}
 """
+
+
+def build_design_brief_compact(style: str = "auto", product_type: str = "") -> str:
+    """精简版设计约束（~200 字符），避免长 prompt 导致 Kimi 陷入 reasoning 循环。
+
+    M10.5 根因修复：完整 build_design_brief 输出 924 字符，加上任务描述和格式说明后
+    prompt 总长 1400+ 字符，导致 Kimi-K2.7-Code 在 exo 上 reasoning_tokens 占满
+    max_tokens（4096 tokens 中 4095 给了 reasoning，content 只剩 1-2 字节）。
+    精简版只保留核心 hex 值 + 字体 + 格式要求，实测能让 Kimi 正常输出完整 HTML。
+    """
+    if style == "auto":
+        style = infer_style(product_type)
+    brief = STYLE_BRIEFS.get(style)
+    if brief is None:
+        style = infer_style(product_type)
+        brief = STYLE_BRIEFS[style]
+
+    c = brief["colors"]
+    accent = c.get("accent", "#0A84FF")
+    bg = c.get("bg", "#0D0D12")
+    text = c.get("text", "#F5F5F5")
+    font = brief["font"].split(" /")[0]
+
+    return (
+        f"设计约束: 颜色 accent={accent} bg={bg} text={text}; "
+        f"字体 {font}; 用 CSS variables; 含 hover/focus 状态; "
+        f"响应式 768px; focus-visible; hex 值不用英文颜色名。"
+    )

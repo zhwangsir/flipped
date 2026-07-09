@@ -557,26 +557,25 @@ def local_worker(state: OrchestratorState) -> dict:
         f"## 项目规则 / 设计约束\n{project_rules}\n\n"
         + (f"## 上一轮反馈\n{feedback}\n\n" if feedback else "")
         + "## 输出格式\n"
-        "用以下格式输出每个文件（可输出多个文件）：\n"
-        "```language:path/to/file.ext\n"
-        "文件内容\n"
-        "```\n\n"
-        "示例：\n"
-        "```html:index.html\n"
-        "<!DOCTYPE html>...\n"
-        "```\n"
-        "```css:style.css\n"
-        "body { ... }\n"
-        "```\n\n"
-        "要求：\n"
-        "1. 只输出文件块，不要解释说明\n"
-        "2. 路径用相对路径（相对 cwd）\n"
-        "3. 内容要完整可用，不要省略\n"
-        "4. 遵循项目规则中的设计约束（颜色、字体、响应式等）\n"
+        "用 ```language:path 格式的代码块输出文件，末尾用 ``` 闭合。\n"
+        "例如 ```html:index.html 后跟 HTML 内容，末尾 ```。\n"
+        "要求：只输出文件块，不要解释说明；路径用相对路径；内容完整不省略。\n"
     )
 
+    # M10.5 根因修复：Kimi-K2.7-Code 在 exo 上即使传 enable_thinking=false，
+    # 仍会交错生成 reasoning_content（reasoning_tokens 占 max_tokens 的 60-90%）。
+    # 在 non-streaming 模式下，reasoning 先生成用光 max_tokens，content 几乎为空（len=2）。
+    # 解法：改用 streaming 模式，只收集 content deltas，忽略 reasoning_content deltas。
+    # 实测 streaming 能拿到完整 content（2899 bytes），non-streaming 只有 2 bytes。
+    import json as _json
+    import time as _time
+    _kimi_timeout = float(os.environ.get("FLIPPED_KIMI_TIMEOUT", "300"))
+    _content_parts: list[str] = []
+    finish = ""
+    t0 = _time.monotonic()
     try:
-        r = httpx.post(
+        with httpx.stream(
+            "POST",
             f"{str(base_url).rstrip('/')}/chat/completions",
             headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
             json={
@@ -584,15 +583,40 @@ def local_worker(state: OrchestratorState) -> dict:
                 "messages": [{"role": "user", "content": prompt}],
                 "max_tokens": 4096,
                 "temperature": 0.1,
+                "enable_thinking": False,
+                "chat_template_kwargs": {"enable_thinking": False},
+                "stream": True,
             },
-            timeout=httpx.Timeout(120.0, connect=10.0),
+            timeout=httpx.Timeout(_kimi_timeout, connect=10.0),
             trust_env=False,
-        )
-        r.raise_for_status()
-        data = r.json()
-        content = (data.get("choices") or [{}])[0].get("message", {}).get("content", "") or ""
-        finish = (data.get("choices") or [{}])[0].get("finish_reason", "")
+        ) as r:
+            r.raise_for_status()
+            for line in r.iter_lines():
+                if not line or not line.startswith("data:"):
+                    continue
+                payload = line[5:].strip()
+                if payload == "[DONE]":
+                    break
+                try:
+                    d = _json.loads(payload)
+                except Exception:
+                    continue
+                choices = d.get("choices") or []
+                if not choices:
+                    continue
+                ch = choices[0]
+                delta = ch.get("delta", {})
+                # 只收集 content，忽略 reasoning_content——reasoning 是 Kimi 的内部思考
+                if delta.get("content"):
+                    _content_parts.append(delta["content"])
+                if ch.get("finish_reason"):
+                    finish = ch["finish_reason"]
+        content = "".join(_content_parts)
+        import sys as _sys
+        print(f"[local_worker] finish={finish} content_len={len(content)} time={_time.monotonic()-t0:.1f}s", file=_sys.stderr, flush=True)
     except Exception as e:  # noqa: BLE001
+        import sys
+        print(f"[local_worker] httpx failed: {type(e).__name__}: {str(e)[:200]}", file=sys.stderr, flush=True)
         return {
             "last_obs": {"ok": False, "summary": {"tool_calls": 0}, "error": str(e)[:200]},
             "signatures": state.get("signatures", []) + [f"local_worker_error:{type(e).__name__}"],
@@ -621,11 +645,33 @@ def local_worker(state: OrchestratorState) -> dict:
             f.write(file_content)
         files_written.append(rel_path)
 
-    # 回退解析：Kimi 有时不加 ```lang:path 前缀，直接输出 HTML/CSS/JS。
-    # 检测裸 HTML（<!DOCTYPE 或 <html）→ 写 index.html
-    # 检测裸 CSS（:root 或 @media 开头）→ 写 style.css
+    # 回退解析：Kimi 有时不加 ```lang:path 前缀，或加了前缀但没有闭合的 ```。
+    # 1. 先尝试无闭合 ``` 的 pattern（```lang:path\n... 到末尾）
+    if not files_written:
+        no_close_pattern = re.compile(r"```(?:[\w]+)?:([^\n]+)\n([\s\S]+)$")
+        for m in no_close_pattern.finditer(content):
+            rel_path = m.group(1).strip().strip("`")
+            file_content = m.group(2)
+            # 去掉末尾可能的 ``` 和多余换行
+            file_content = file_content.rstrip("`").rstrip()
+            if file_content.endswith("\n"):
+                file_content = file_content[:-1]
+            full_path = os.path.join(cwd, rel_path)
+            norm_cwd = os.path.normpath(cwd)
+            norm_full = os.path.normpath(full_path)
+            if not norm_full.startswith(norm_cwd):
+                continue
+            os.makedirs(os.path.dirname(full_path), exist_ok=True)
+            with open(full_path, "w", encoding="utf-8") as f:
+                f.write(file_content)
+            files_written.append(rel_path)
+
+    # 2. 仍然没解析出文件块 → 检测裸 HTML/CSS（去掉 markdown 标记后写文件）
     if not files_written:
         stripped = content.strip()
+        # 去掉开头的 ```lang:path 标记（如果有）
+        stripped = re.sub(r"^```[^\n]*\n", "", stripped).strip()
+        stripped = stripped.rstrip("`").rstrip()
         if stripped.startswith("<!DOCTYPE") or stripped.startswith("<html") or "<html" in stripped[:200]:
             path = os.path.join(cwd, "index.html")
             with open(path, "w", encoding="utf-8") as f:
