@@ -224,7 +224,9 @@ def default_planner(state: FactoryState) -> list[FactoryTask]:
 
     class Roadmap(BaseModel):
         tasks: list[FactoryTask] = Field(
-            description="把产品目标拆成 3-7 个自包含任务；每个任务含 description 和 verify_cmd"
+            description="把产品目标拆成 2-3 个自包含任务（不超过 3 个）；每个任务含 description 和 verify_cmd。"
+            "description 控制在 60 字以内，verify_cmd 必须是单行 shell 命令。"
+            "输出要紧凑，避免冗长说明——总输出不超过 1500 字符。"
         )
 
     design_hint = ""

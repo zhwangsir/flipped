@@ -15,7 +15,7 @@ PROJECT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 LOG = os.path.join(PROJECT, "TEST_LOG.md")
 
 MODELS = [
-    ("GLM-5.2 (编排者)", "mlx-community/GLM-5.2-DQ4plus-q8"),
+    ("GLM-5.2 (编排者)", "mlx-community/GLM-5.2-fp8"),
     ("Kimi-K2.7-Code (执行者)", "mlx-community/Kimi-K2.7-Code-4bit"),
 ]
 MAX_ITERS = int(os.environ.get("MONITOR_MAX_ITERS", "30"))   # 上限，防止失控空转 (AGENTS.md §6)

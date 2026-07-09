@@ -114,15 +114,17 @@ def _make_llm(alias: str, temperature: float = 0, callbacks=None):
     key = os.environ.get("EXO_API_KEY") or os.environ.get("LITELLM_MASTER_KEY", "dummy")
     # 构造不走代理的 httpx client（内网模型端点必须直连）
     # trust_env=False 让 httpx 忽略系统代理配置(macOS System Preferences / env vars)
-    # timeout=120: GLM reasoning 正常 30-90s，超 120s 大概率卡住，快失败走 fallback
+    # timeout=240: GLM-5.2-fp8 planner/evolve 偶发长 JSON 生成 90-180s，120s 误判超时。
+    # 240s 留余量；超 240s 大概率真卡死，快失败走 fallback。
+    _glm_timeout = float(os.environ.get("FLIPPED_GLM_TIMEOUT", "240"))
     http_client = httpx.Client(
-        timeout=httpx.Timeout(120.0, connect=10.0),
+        timeout=httpx.Timeout(_glm_timeout, connect=10.0),
         trust_env=False,
     )
     return ChatOpenAI(
-        model=model, base_url=base, api_key=key, temperature=temperature, timeout=120,
+        model=model, base_url=base, api_key=key, temperature=temperature, timeout=_glm_timeout,
         callbacks=callbacks, http_client=http_client,
-        # 禁用 openai SDK 内部重试（默认 max_retries=2 → 3 次请求 × 120s = 360s）
+        # 禁用 openai SDK 内部重试（默认 max_retries=2 → 3 次请求 × 240s = 720s）
         # langchain 对 GLM 总是解析失败，SDK 重试纯浪费时间；失败立即走 _direct_glm_tool_call
         max_retries=0,
     )
@@ -169,6 +171,22 @@ def _parse_raw_response(raw, schema_cls):
 
     # 2a) JSON object / markdown code block（贪婪匹配，应对嵌套花括号）
     candidates = re.findall(r"\{[\s\S]*\}", text)
+    # 2a-bis) 退化容错：GLM-5.2-fp8 长输出偶发量化退化，尾部出乱码（\0 / "0.0 0.0" / "0.0.0"）。
+    # 贪婪正则会把乱码里的 } 也吃掉导致 json.loads 失败。逐个尝试时，若失败则截断到最后一个
+    # 看起来合法的 } 再试。这让退化输出也能被抢救出前面的有效 JSON。
+    if candidates:
+        repaired = []
+        for cand in candidates:
+            repaired.append(cand)
+            # 截断到最后一个非乱码 } —— 找最后一个后面只跟空白/```/换行的 }
+            for i in range(len(cand) - 1, -1, -1):
+                if cand[i] == "}":
+                    tail = cand[i + 1:].strip().strip("`").strip()
+                    # 合法 } 后面应该是空或只有 ``` markdown 标记
+                    if not tail or tail.startswith("```") or tail == "```":
+                        repaired.append(cand[: i + 1])
+                        break
+        candidates = repaired
     if not candidates:
         # 2b) 键值对：efficiency: 0.8
         pairs = re.findall(r"(\w+)\s*[:=]\s*([^\n,]+)", text)
@@ -311,6 +329,8 @@ def _direct_glm_tool_call(llm, schema_cls, prompt: str, *, max_retries: int = 3)
     base_url = getattr(llm, "openai_api_base", "") or getattr(llm, "base_url", "")
     model = getattr(llm, "model_name", "") or getattr(llm, "model", "")
     api_key = getattr(llm, "openai_api_key", "") or "dummy"
+    # 与 _make_llm 一致的超时：默认 240s，可用 FLIPPED_GLM_TIMEOUT 环境变量覆盖。
+    _glm_timeout = float(os.environ.get("FLIPPED_GLM_TIMEOUT", "240"))
 
     schema_json = schema_cls.model_json_schema()
     # 在 prompt 末尾追加 schema 说明，让 GLM 输出 JSON
@@ -332,10 +352,13 @@ def _direct_glm_tool_call(llm, schema_cls, prompt: str, *, max_retries: int = 3)
                     # enable_thinking=false: 关闭 GLM-5.2 reasoning 模式。
                     # reasoning 模式下 reasoning tokens 占满 max_tokens，content 为空。
                     # 关闭后 reasoning_tokens=0，响应 <10s。
+                    # max_tokens=1500: GLM-5.2-fp8 在长输出(>1800 tokens)时会量化退化，
+                    # 尾部输出乱码(\0 0.0 0.0 等)。1500 tokens 足够输出 2-3 个任务的紧凑 JSON，
+                    # 又避免触发退化。planner 的 Roadmap schema 已限制 2-3 任务 + 60 字 description。
                     "enable_thinking": False,
-                    "max_tokens": 2048,
+                    "max_tokens": int(os.environ.get("FLIPPED_GLM_MAX_TOKENS", "1500")),
                 },
-                timeout=httpx.Timeout(120.0, connect=10.0),
+                timeout=httpx.Timeout(_glm_timeout, connect=10.0),
                 trust_env=False,
             )
             r.raise_for_status()
@@ -348,10 +371,14 @@ def _direct_glm_tool_call(llm, schema_cls, prompt: str, *, max_retries: int = 3)
                     type("R", (), {"content": content, "tool_calls": []})(), schema_cls)
                 if parsed is not None:
                     return parsed
-            # 空响应
+            # 空响应（GLM 回了内容但 _parse_raw_response 解析失败）
             finish_reason = choice.get("finish_reason", "")
             print(f"[glm_fallback] attempt {attempt + 1}/{max_retries} 空响应: "
                   f"finish_reason={finish_reason} content_len={len(content)}", file=sys.stderr)
+            # 调试：打印 content 头尾各 300 字符，看 GLM 实际输出格式
+            if content:
+                print(f"[glm_fallback] content 头 300: {content[:300]!r}", file=sys.stderr)
+                print(f"[glm_fallback] content 尾 300: {content[-300:]!r}", file=sys.stderr)
             last_err = RuntimeError(f"GLM 空响应 finish_reason={finish_reason}")
         except Exception as e:  # noqa: BLE001
             last_err = e

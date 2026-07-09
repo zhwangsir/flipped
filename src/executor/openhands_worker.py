@@ -83,7 +83,12 @@ class OpenHandsWorker:
         self.task_id = task_id
         self.bus = bus
         self.agent_host = agent_host
-        self.working_dir = working_dir
+        # 宿主机 cwd → OpenHands 容器内路径转换。
+        # dev_up.sh 把 $HOME/projects 挂到容器的 /projects，所以宿主机
+        # $HOME/projects/X 在容器内是 /projects/X。worker 写文件到容器内
+        # /projects/X，宿主机 verify_cmd 读 $HOME/projects/X 才能找到同一文件。
+        # 若 cwd 不在挂载点下（如 /tmp），容器内是独立 tmpfs，宿主机读不到 → verify 必失败。
+        self.working_dir = self._to_container_path(working_dir)
         self.model_alias = model_alias or os.environ.get("OPENHANDS_MODEL", "coder")
         self.base_url = base_url or os.environ.get("OPENHANDS_BASE_URL", "http://host.docker.internal:4000/v1")
         self.api_key = api_key or self._default_agent_api_key()
@@ -100,6 +105,28 @@ class OpenHandsWorker:
         self.manage_session_status = manage_session_status
         self._events: list[OHEvent] = []
         self._lock = threading.Lock()
+
+    @staticmethod
+    def _to_container_path(host_path: str) -> str:
+        """把宿主机路径转成 OpenHands 容器内可见路径。
+
+        dev_up.sh 挂载 `$HOME/projects:/projects`，所以宿主机
+        `$HOME/projects/X` 在容器内是 `/projects/X`。其它路径原样返回
+        （容器内可能看不到，调用方应保证 cwd 在挂载点下）。
+        """
+        if not host_path:
+            return host_path
+        home = os.path.expanduser("~")
+        projects_host = os.path.join(home, "projects")
+        # 规范化两边都去掉尾部 /，再做前缀比较
+        norm_host = os.path.normpath(projects_host)
+        norm_cwd = os.path.normpath(host_path)
+        if norm_cwd == norm_host:
+            return "/projects"
+        if norm_cwd.startswith(norm_host + os.sep):
+            rel = os.path.relpath(norm_cwd, norm_host)
+            return f"/projects/{rel}"
+        return host_path
 
     @staticmethod
     def _default_agent_api_key() -> str:
