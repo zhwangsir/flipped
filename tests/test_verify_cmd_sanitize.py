@@ -19,8 +19,26 @@ def test_sanitize_empty_returns_true():
 
 def test_sanitize_single_passthrough():
     from driving.factory_loop import _sanitize_verify_cmd
-    cmd = ["pytest tests/test_calc.py -q"]
-    assert _sanitize_verify_cmd(cmd) == ["pytest tests/test_calc.py -q"]
+    cmd = ["python -m pytest tests/test_calc.py -q"]
+    assert _sanitize_verify_cmd(cmd) == ["python -m pytest tests/test_calc.py -q"]
+
+
+def test_sanitize_bare_pytest_replaced():
+    """裸 pytest（沙箱 PATH 里没有 pytest 可执行文件）→ python -m pytest。
+
+    T3 熔断根因：OpenHands 沙箱 `pytest: command not found`。
+    """
+    from driving.factory_loop import _sanitize_verify_cmd
+    assert _sanitize_verify_cmd(["pytest tests/test_calc.py -q"]) == [
+        "python -m pytest tests/test_calc.py -q"
+    ]
+    # 已正确的不重复替换
+    assert _sanitize_verify_cmd(["python -m pytest tests/"]) == [
+        "python -m pytest tests/"
+    ]
+    # 多命令里的裸 pytest 也替换
+    result = _sanitize_verify_cmd(["echo hi", "pytest tests/"])
+    assert "python -m pytest tests/" in result[0]
 
 
 def test_sanitize_multi_element_joined_with_semicolon():

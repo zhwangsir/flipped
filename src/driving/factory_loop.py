@@ -216,10 +216,11 @@ def default_planner(state: FactoryState) -> list[FactoryTask]:
         "verify_cmd 硬性规则（违反会导致验收熔断，必须遵守）：\n"
         "1. verify_cmd 数组只有一个元素，即一条单行 shell 命令。\n"
         "2. 禁止多行命令、禁止用 && 连接多条命令、禁止用 python -c 传多行代码。\n"
-        "3. 正确示例：['pytest tests/test_calc.py -q']、['python -c \"import calc; assert calc.add(1,2)==3\"']、"
+        "3. 正确示例：['python -m pytest tests/test_calc.py -q']、['python -c \"import calc; assert calc.add(1,2)==3\"']、"
         "['bash -c \"node -e \\\"assert(require(\\'./add\\')(1,2)===3)\\\"\"']\n"
         "4. 错误示例：['python -c \"def f():\\n  pass\\n\\nf()\" && pytest']（多行+连接，会熔断）\n"
-        "5. 若需要多步验证，写成一条调用测试脚本的命令：['bash scripts/verify_task1.sh']"
+        "5. 若需要多步验证，写成一条调用测试脚本的命令：['bash scripts/verify_task1.sh']\n"
+        "6. 禁止用裸 pytest 命令（沙箱 PATH 里没有 pytest 可执行文件）；必须用 python -m pytest。"
     )
     try:
         rm = _invoke_structured(_make_llm("architect"), Roadmap, msg)
@@ -228,6 +229,10 @@ def default_planner(state: FactoryState) -> list[FactoryTask]:
             t.verify_cmd = _sanitize_verify_cmd(t.verify_cmd)
         return rm.tasks
     except Exception as e:  # noqa: BLE001 失败兜底：当成一个任务
+        import sys
+        import traceback
+        print(f"[planner] fail-open: {type(e).__name__}: {e}", file=sys.stderr)
+        traceback.print_exc(file=sys.stderr)
         return [
             FactoryTask(
                 id="task-fallback",
@@ -245,7 +250,11 @@ def _sanitize_verify_cmd(cmd: list[str]) -> list[str]:
     - 多元素数组 → 用 ; 连接成一条（不用 && 以免短路掩盖问题）
     - 单元素但含换行 → 压成一行
     - 空数组 → ['true']（至少不阻塞循环）
+    - 裸 `pytest` → `python -m pytest`（OpenHands 沙箱 PATH 里没有 pytest 可执行文件，
+      T3 熔断的根因；用 python -m 走模块路径，只要 python 装了 pytest 就能跑）
     """
+    import re
+
     if not cmd:
         return ["true"]
     # 过滤空串
@@ -256,6 +265,8 @@ def _sanitize_verify_cmd(cmd: list[str]) -> list[str]:
     joined = " ; ".join(parts)
     # 压掉换行
     joined = " ".join(joined.split())
+    # 裸 pytest → python -m pytest（lookbehind 避免重复替换已正确的 `python -m pytest`）
+    joined = re.sub(r"(?<!-m\s)pytest\b", "python -m pytest", joined)
     return [joined]
 
 

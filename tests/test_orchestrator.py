@@ -196,6 +196,10 @@ class _FakeLLM:
 
 
 def test_overseer_parses_string_issues_from_tool_call_args(monkeypatch):
+    # 这两个测试专门验证 langchain 路径的 _parse_raw_response 对 raw 的解析。
+    # _invoke_structured 默认走 _direct_glm_tool_call（绕过 langchain），
+    # 这里显式启用 langchain 路径才能命中 with_structured_output → raw 兜底解析。
+    monkeypatch.setenv("FLIPPED_USE_LANGCHAIN", "1")
     from types import SimpleNamespace
 
     raw = SimpleNamespace(
@@ -227,6 +231,7 @@ def test_overseer_parses_string_issues_from_tool_call_args(monkeypatch):
 
 
 def test_overseer_parses_raw_json_content_when_parsed_none(monkeypatch):
+    monkeypatch.setenv("FLIPPED_USE_LANGCHAIN", "1")
     from types import SimpleNamespace
 
     raw = SimpleNamespace(

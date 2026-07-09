@@ -38,7 +38,7 @@ def is_endpoint_healthy(base_url: str, timeout: float = 5.0) -> bool:
     """Check whether an OpenAI-compatible endpoint is reachable."""
     url = f"{base_url.rstrip('/')}/models"
     try:
-        r = httpx.get(url, headers=_headers(), timeout=timeout, follow_redirects=True)
+        r = httpx.get(url, headers=_headers(), timeout=timeout, follow_redirects=True, trust_env=False)
         return r.status_code == 200
     except Exception:
         return False
@@ -48,7 +48,7 @@ def is_model_available(base_url: str, model_id: str, timeout: float = 5.0) -> bo
     """Check whether a specific model id is listed by the endpoint."""
     url = f"{base_url.rstrip('/')}/models"
     try:
-        r = httpx.get(url, headers=_headers(), timeout=timeout, follow_redirects=True)
+        r = httpx.get(url, headers=_headers(), timeout=timeout, follow_redirects=True, trust_env=False)
         if r.status_code != 200:
             return False
         data = r.json().get("data", [])

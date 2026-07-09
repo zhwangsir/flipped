@@ -26,6 +26,7 @@ SAFE_BASE_COMMANDS = {
     "make", "cargo", "rustc", "go", "javac", "java", "docker", "docker-compose", "pwd",
     "which", "dirname", "basename", "head", "tail", "wc", "sort", "uniq", "xargs", "tar",
     "zip", "unzip", "chmod", "chown", "curl", "wget", "sh", "bash", "zsh",
+    "true", "false", "test", "expr", "bc", "python-config",
 }
 
 

@@ -103,13 +103,29 @@ def _make_llm(alias: str, temperature: float = 0, callbacks=None):
     """构建 ChatOpenAI（alias=architect/coder）。
 
     运行时根据 `model_router.resolve_model_config` 自动选择 LiteLLM proxy 或直连 exo。
+
+    关键修复：langchain_openai 的 httpx 会自动走系统代理(macOS System Preferences)，
+    导致对内网模型端点(100.64.x.x)的请求被代理 502。这里显式传 http_client 绕过。
     """
     from langchain_openai import ChatOpenAI
+    import httpx
 
     base, model = resolve_model_config(alias)
     key = os.environ.get("EXO_API_KEY") or os.environ.get("LITELLM_MASTER_KEY", "dummy")
-    return ChatOpenAI(model=model, base_url=base, api_key=key, temperature=temperature, timeout=300,
-                      callbacks=callbacks)
+    # 构造不走代理的 httpx client（内网模型端点必须直连）
+    # trust_env=False 让 httpx 忽略系统代理配置(macOS System Preferences / env vars)
+    # timeout=120: GLM reasoning 正常 30-90s，超 120s 大概率卡住，快失败走 fallback
+    http_client = httpx.Client(
+        timeout=httpx.Timeout(120.0, connect=10.0),
+        trust_env=False,
+    )
+    return ChatOpenAI(
+        model=model, base_url=base, api_key=key, temperature=temperature, timeout=120,
+        callbacks=callbacks, http_client=http_client,
+        # 禁用 openai SDK 内部重试（默认 max_retries=2 → 3 次请求 × 120s = 360s）
+        # langchain 对 GLM 总是解析失败，SDK 重试纯浪费时间；失败立即走 _direct_glm_tool_call
+        max_retries=0,
+    )
 
 
 def _parse_raw_response(raw, schema_cls):
@@ -201,16 +217,45 @@ def _coerce_schema(data: dict, schema_cls):
                 coerced[fname] = val.strip().lower() in ("true", "1", "yes")
             elif isinstance(val, (int, float)):
                 coerced[fname] = bool(val)
+        # str 字段：int/float → str（GLM 偶发把字符串答案返回为数字）
+        elif ftype is str and not isinstance(val, str):
+            coerced[fname] = str(val)
     return schema_cls.model_validate(coerced)
 
 
-def _invoke_structured(llm, schema_cls, prompt: str, *, max_retries: int = 2):
+def _invoke_structured(llm, schema_cls, prompt: str, *, max_retries: int = 0):
     """带重试 + 原始响应兜底的结构化输出调用。
 
-    GLM-5.2 经 exo 的 function calling 偶尔返回 None / 缺字段 / 空响应，
-    重试几次仍失败时，直接从 raw message 解析；再失败才抛异常让调用方 fail-open。
+    GLM-5.2 经 exo 的 function calling 有已知兼容问题：
+    1. langchain_openai 无法解析 GLM 的 tool_calls（function 对象多了 id 字段）→ parsed=None
+    2. with_structured_output 内部创建的 openai client 绕过我们传的 http_client(trust_env=False)
+       → 走系统代理卡住（macOS System Preferences 的 http_proxy）
+
+    解法：默认直接调 _direct_glm_tool_call（裸 httpx + trust_env=False，绕过 langchain）。
+    设 FLIPPED_USE_LANGCHAIN=1 可启用 langchain 路径（调试/对比用）。
     """
-    import json
+    import os
+    import sys
+
+    # 默认 fast path：直接走 _direct_glm_tool_call，绕过 langchain
+    if os.environ.get("FLIPPED_USE_LANGCHAIN") != "1":
+        parsed = None
+        err: Exception | None = None
+        try:
+            parsed = _direct_glm_tool_call(llm, schema_cls, prompt)
+        except Exception as e2:  # noqa: BLE001
+            print(f"[invoke_structured] _direct_glm_tool_call 抛异常: "
+                  f"{type(e2).__name__}: {e2}", file=sys.stderr)
+            err = e2
+        if parsed is not None:
+            return parsed
+        raise RuntimeError(
+            f"structured output failed: direct_glm_fallback="
+            f"{'returned None (GLM 空响应)' if err is None else f'{type(err).__name__}: {err}'}"
+        )
+
+    # langchain 路径（仅 FLIPPED_USE_LANGCHAIN=1 时走，调试用）
+    import time as _time
 
     structured = llm.with_structured_output(schema_cls, method="function_calling", include_raw=True)
     last_err = None
@@ -225,14 +270,98 @@ def _invoke_structured(llm, schema_cls, prompt: str, *, max_retries: int = 2):
                 parsed = _parse_raw_response(raw, schema_cls)
                 if parsed is not None:
                     return parsed
-            raise ValueError(f"structured output parsed=None, raw={getattr(raw, 'content', raw)!r}")
+            raise ValueError("langchain structured output returned parsed=None")
         except Exception as e:  # noqa: BLE001
             last_err = e
-            # 空响应 / 解析失败 值得重试；参数格式错误重试也没用，但先统一重试
             if attempt < max_retries:
-                import time as _time
                 _time.sleep(0.5 * (attempt + 1))
+
+    # langchain 失败 → 直调 GLM fallback
+    try:
+        parsed = _direct_glm_tool_call(llm, schema_cls, prompt)
+        if parsed is not None:
+            return parsed
+    except Exception as e2:  # noqa: BLE001
+        print(f"[invoke_structured] _direct_glm_tool_call 抛异常: "
+              f"{type(e2).__name__}: {e2}", file=sys.stderr)
     raise last_err or RuntimeError("structured output failed after retries")
+
+
+def _direct_glm_tool_call(llm, schema_cls, prompt: str, *, max_retries: int = 3):
+    """直调 GLM /v1/chat/completions，纯文本模式输出 JSON，自己解析。
+
+    绕过 langchain + 绕过 function calling，直接用纯文本模式让 GLM 输出 JSON。
+
+    **为什么不用 function calling**：
+    1. langchain_openai 对 GLM/exo 的 tool_calls 格式解析有 bug（function 对象多了 id 字段）
+    2. GLM-5.2 关闭 reasoning 后即使传了 tools 也不走 tool_calls，而是把 JSON 放在 content 里
+    3. GLM-5.2 开 reasoning 模式时 reasoning tokens 占满 max_tokens，tool_calls 为空
+
+    **关闭 reasoning（关键）**：enable_thinking=false。reasoning 模式下 reasoning tokens
+    会占满 max_tokens，导致 content 为空。关闭后响应 <10s，max_tokens=2048 完全够用。
+
+    prompt 末尾追加 schema 的 JSON 格式说明，GLM 在 content 里输出 JSON，
+    用 _parse_raw_response 解析。
+    """
+    import json
+    import sys
+    import time as _time
+    import httpx
+
+    base_url = getattr(llm, "openai_api_base", "") or getattr(llm, "base_url", "")
+    model = getattr(llm, "model_name", "") or getattr(llm, "model", "")
+    api_key = getattr(llm, "openai_api_key", "") or "dummy"
+
+    schema_json = schema_cls.model_json_schema()
+    # 在 prompt 末尾追加 schema 说明，让 GLM 输出 JSON
+    full_prompt = (
+        f"{prompt}\n\n"
+        f"请输出 JSON，符合以下 JSON Schema（只输出 JSON，不要其他内容）：\n"
+        f"{json.dumps(schema_json, ensure_ascii=False, indent=2)}"
+    )
+
+    last_err: Exception | None = None
+    for attempt in range(max_retries):
+        try:
+            r = httpx.post(
+                f"{str(base_url).rstrip('/')}/chat/completions",
+                headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+                json={
+                    "model": model,
+                    "messages": [{"role": "user", "content": full_prompt}],
+                    # enable_thinking=false: 关闭 GLM-5.2 reasoning 模式。
+                    # reasoning 模式下 reasoning tokens 占满 max_tokens，content 为空。
+                    # 关闭后 reasoning_tokens=0，响应 <10s。
+                    "enable_thinking": False,
+                    "max_tokens": 2048,
+                },
+                timeout=httpx.Timeout(60.0, connect=10.0),
+                trust_env=False,
+            )
+            r.raise_for_status()
+            data = r.json()
+            choice = (data.get("choices") or [{}])[0]
+            msg = choice.get("message", {}) or {}
+            content = msg.get("content", "") or ""
+            if content:
+                parsed = _parse_raw_response(
+                    type("R", (), {"content": content, "tool_calls": []})(), schema_cls)
+                if parsed is not None:
+                    return parsed
+            # 空响应
+            finish_reason = choice.get("finish_reason", "")
+            print(f"[glm_fallback] attempt {attempt + 1}/{max_retries} 空响应: "
+                  f"finish_reason={finish_reason} content_len={len(content)}", file=sys.stderr)
+            last_err = RuntimeError(f"GLM 空响应 finish_reason={finish_reason}")
+        except Exception as e:  # noqa: BLE001
+            last_err = e
+            print(f"[glm_fallback] attempt {attempt + 1}/{max_retries} 异常: "
+                  f"{type(e).__name__}: {e}", file=sys.stderr)
+        if attempt < max_retries - 1:
+            _time.sleep(0.5 * (attempt + 1))
+    if last_err:
+        print(f"[glm_fallback] 全部 {max_retries} 次重试失败: {last_err}", file=sys.stderr)
+    return None
 
 
 def _build_supervisor_prompt(state: OrchestratorState) -> str:
