@@ -384,17 +384,20 @@ def default_orchestrator_fn(task: FactoryTask, state: FactoryState) -> TaskResul
             pass  # fallback 到 drive_orchestrated 默认的 _safe_default_verifier
 
     # M10.4-A：UI 任务用组合 verifier（base + design-lint），让设计系统成为程序化硬约束
+    # M11.3：升级为三重校验 base + design-lint + a11y（axe-core 真实渲染扫描）
     # M10.3：LocalWorker 模式下 verifier=None（跳过沙箱），但 UI 任务仍需 design-lint，
     # 所以用 _safe_default_verifier 作为 base + design-lint 组合
     if _looks_like_ui_task(task, state):
         try:
-            from driving.design_lint import combined_verifier, design_verifier
+            from driving.a11y_lint import combined_verifier_with_a11y
+            from driving.design_lint import combined_verifier
             from driving.orchestrator import _safe_default_verifier
-            if verifier is not None:
-                verifier = combined_verifier(verifier, state.design_style or "auto")
-            else:
-                # LocalWorker 模式：base 用宿主机 verifier + design-lint
-                verifier = combined_verifier(_safe_default_verifier, state.design_style or "auto")
+            _base = verifier if verifier is not None else _safe_default_verifier
+            try:
+                verifier = combined_verifier_with_a11y(_base, state.design_style or "auto")
+            except Exception:
+                # a11y 不可用时退回 design-lint 组合
+                verifier = combined_verifier(_base, state.design_style or "auto")
         except Exception:
             pass  # design-lint 不可用时退回 base verifier
 

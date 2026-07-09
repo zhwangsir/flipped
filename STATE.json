@@ -2,7 +2,7 @@
   "project": "flipped",
   "description": "接入本地 MLX 双模型(GLM-5.2 编排者 / Kimi-K2.7-Code 执行者)的 agentic 代码编辑器平台。fork Roo Code + 自定义驾驭层(强制验证/循环检测/上下文压缩/人工审批/子Agent/可观测性) + MCP 联网与外部能力。",
   "updated": "2026-07-10",
-  "current_milestone": "M11 累积上下文 overflow 修复 + Gold Memory 语义检索 + a11y 检测 (337 passed)",
+  "current_milestone": "M11 完成：overflow 修复 + 语义检索 + axe-core a11y (350 passed)",
   "key_facts": {
     "dev_host": "Apple M5 Max, 128GB RAM, 1.1TB 可用磁盘 — 开发/控制节点，非模型宿主",
     "model_cluster": "exo 集群 @ http://100.64.201.37:52415 (内网, OpenAI 兼容)；公网 https://dgmt.top/exo (需 Bearer token)",
@@ -238,9 +238,9 @@
       }
     },
     "M11": {
-      "title": "累积上下文 overflow 修复 + Gold Memory 语义检索 + a11y 检测",
-      "status": "in_progress",
-      "note": "基于 E2E run #2 残留问题 + 网络调研报告制定。",
+      "title": "累积上下文 overflow 修复 + Gold Memory 语义检索 + axe-core a11y 检测",
+      "status": "done",
+      "note": "三个子任务全部完成。350 passed (+11 a11y 测试)。",
       "tasks": {
         "M11.1": {
           "title": "累积上下文 overflow 修复（delegate/task-2 后续调用 content_len=4）",
@@ -254,8 +254,8 @@
         },
         "M11.3": {
           "title": "axe-core + Playwright 真实渲染无障碍检测",
-          "status": "todo",
-          "note": "P0 低难度高价值。design_lint 正则升级为真实渲染 axe-core 扫描。复用 console/playwright.config.ts。"
+          "status": "done",
+          "note": "新增 src/driving/a11y_lint.py：Playwright Chromium headless 加载 HTML + 注入 axe-core JS 执行 WCAG 2.1 扫描。severity 映射（critical/serious→error, moderate/minor→warning）。优雅降级（无 axe.min.js/无 Playwright/无 HTML → skip with warning）。axe.min.js 缓存到 data/axe.min.js(554KB)。combined_verifier_with_a11y 三重校验（base+design+a11y）接入 factory_loop。11 单测全过（含真实渲染：image-alt 违规检测、合规 HTML 通过）。全量 350 passed。"
         }
       }
     }
