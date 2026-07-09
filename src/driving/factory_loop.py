@@ -21,6 +21,7 @@ from pydantic import BaseModel, Field
 
 from driving.orchestrator import OrchestratorState, drive_orchestrated
 from driving.orchestrator import _invoke_structured, _make_llm  # noqa: WPS450
+from driving.design_context import build_design_brief, infer_style
 
 
 class TaskStatus(str, Enum):
@@ -71,6 +72,10 @@ class FactoryState(BaseModel):
     context_summary: str = ""
     iteration_count: int = 0
     max_tasks: int = 10
+    # M10.1 设计系统注入：worker 执行任务时把 design_context 注入 project_rules，
+    # 让生成的 UI 代码遵循设计系统（具体 hex 值、字体、动效、组件状态、响应式、无障碍）
+    design_style: str = "auto"
+    design_context: str = ""
     created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     updated_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
@@ -97,6 +102,8 @@ CREATE TABLE IF NOT EXISTS factory_states (
     context_summary TEXT NOT NULL,
     iteration_count INTEGER NOT NULL,
     max_tasks INTEGER NOT NULL,
+    design_style TEXT NOT NULL DEFAULT 'auto',
+    design_context TEXT NOT NULL DEFAULT '',
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 )
@@ -105,6 +112,12 @@ CREATE TABLE IF NOT EXISTS factory_states (
 
 def _ensure_table(conn: sqlite3.Connection) -> None:
     conn.execute(_TABLE_SQL)
+    # M10.1 迁移：给旧表加 design_style 和 design_context 列
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(factory_states)")}
+    if "design_style" not in cols:
+        conn.execute("ALTER TABLE factory_states ADD COLUMN design_style TEXT NOT NULL DEFAULT 'auto'")
+    if "design_context" not in cols:
+        conn.execute("ALTER TABLE factory_states ADD COLUMN design_context TEXT NOT NULL DEFAULT ''")
 
 
 def _state_to_row(state: FactoryState) -> tuple:
@@ -120,6 +133,8 @@ def _state_to_row(state: FactoryState) -> tuple:
         state.context_summary,
         state.iteration_count,
         state.max_tasks,
+        state.design_style,
+        state.design_context,
         state.created_at,
         datetime.now(timezone.utc).isoformat(),
     )
@@ -138,6 +153,8 @@ def _row_to_state(row: sqlite3.Row) -> FactoryState:
         context_summary=row["context_summary"],
         iteration_count=row["iteration_count"],
         max_tasks=row["max_tasks"],
+        design_style=row["design_style"],
+        design_context=row["design_context"],
         created_at=row["created_at"],
         updated_at=row["updated_at"],
     )
@@ -153,8 +170,8 @@ def save_factory_state(state: FactoryState, db_path: str) -> None:
             INSERT INTO factory_states (
                 factory_id, product_goal, cwd, status, roadmap_json, completed_json,
                 failed_json, current_task_id, context_summary, iteration_count,
-                max_tasks, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                max_tasks, design_style, design_context, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(factory_id) DO UPDATE SET
                 product_goal=excluded.product_goal,
                 cwd=excluded.cwd,
@@ -166,6 +183,8 @@ def save_factory_state(state: FactoryState, db_path: str) -> None:
                 context_summary=excluded.context_summary,
                 iteration_count=excluded.iteration_count,
                 max_tasks=excluded.max_tasks,
+                design_style=excluded.design_style,
+                design_context=excluded.design_context,
                 updated_at=excluded.updated_at
             """,
             _state_to_row(state),
@@ -208,11 +227,18 @@ def default_planner(state: FactoryState) -> list[FactoryTask]:
             description="把产品目标拆成 3-7 个自包含任务；每个任务含 description 和 verify_cmd"
         )
 
+    design_hint = ""
+    if state.design_context:
+        design_hint = (
+            f"\nUI/UX 设计要求（涉及界面时任务描述必须包含设计约束）：\n{state.design_context}\n"
+        )
+
     msg = (
         f"产品目标：{state.product_goal}\n"
         f"工作目录：{state.cwd}\n"
         "你是产品架构师。把目标拆成多个自包含的开发任务；每个任务必须可被一条验收命令验证。\n"
-        "任务要具体、可交付，禁止一次写完整项目。\n\n"
+        "任务要具体、可交付，禁止一次写完整项目。\n"
+        f"{design_hint}\n"
         "verify_cmd 硬性规则（违反会导致验收熔断，必须遵守）：\n"
         "1. verify_cmd 数组只有一个元素，即一条单行 shell 命令。\n"
         "2. 禁止多行命令、禁止用 && 连接多条命令、禁止用 python -c 传多行代码。\n"
@@ -307,6 +333,7 @@ def default_orchestrator_fn(task: FactoryTask, state: FactoryState) -> TaskResul
         project_rules=(
             f"这是工厂任务 {task.id}。已完成的上下文摘要：\n{state.context_summary}\n"
             f"本任务反馈（若有）：{task.feedback}"
+            + (f"\n\n{state.design_context}" if state.design_context else "")
         ),
         max_iterations=4,
         db_path="data/factory_checkpoints.db",
@@ -352,11 +379,16 @@ def run_factory_loop(
     db_path: str = "data/factory.db",
     checkpoint_db_path: str = "data/factory_checkpoints.db",
     max_tasks: int = 10,
+    design_style: str = "auto",
     planner: PlannerFn | None = None,
     orchestrator_fn: OrchestratorFn | None = None,
     event_bus=None,
 ) -> FactoryState:
-    """启动/继续一个工厂循环；状态持久化到 db_path，支持崩溃恢复。"""
+    """启动/继续一个工厂循环；状态持久化到 db_path，支持崩溃恢复。
+
+    design_style: UI/UX 设计风格（auto/minimalism/dark/glassmorphism/bento/...
+    auto 时根据 product_goal 自动推断。生成的 UI 代码会遵循设计系统。
+    """
     planner = planner or default_planner
     orchestrator_fn = orchestrator_fn or default_orchestrator_fn
     bus = event_bus if event_bus is not None else NullEventBus()
@@ -371,6 +403,8 @@ def run_factory_loop(
             status=FactoryStatus.running,
             roadmap=[],
             max_tasks=max_tasks,
+            design_style=design_style,
+            design_context=build_design_brief(design_style, product_type=product_goal),
         )
         state.roadmap = planner(state)
         save_factory_state(state, db_path)
