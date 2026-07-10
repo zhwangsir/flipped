@@ -915,3 +915,111 @@ h1 { font-size: 37px; }
     assert "alt=" in content.lower()
     assert "13px" not in content
     assert "37px" not in content
+
+
+# ---------- M26: 动画性能 auto-fix（transition 非 transform/opacity 属性移除） ----------
+
+
+def test_auto_fix_transition_bad_props():
+    """transition 中的 margin/padding/left 等属性应被移除，只保留 transform/opacity。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_animation_performance
+
+    html = """<html lang="zh"><head>
+<meta name="viewport" content="width=device-width">
+<style>
+.card { transition: margin 0.3s ease, transform 0.2s, opacity 0.3s; }
+.box { transition: padding 0.5s, left 0.3s ease-in; }
+</style></head><body><div class="card">C</div></body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        fixed = auto_fix_animation_performance(td)
+        with open(os.path.join(td, "index.html"), "r") as f:
+            content = f.read()
+
+    assert fixed is True
+    # .card 只保留 transform 和 opacity
+    assert "transition: transform 0.2s, opacity 0.3s" in content or \
+           "transition: transform 0.2s,opacity 0.3s" in content
+    # .box 的 padding/left 都被移除 → 空 transition 应被移除整个属性
+    assert "padding 0.5s" not in content
+    assert "left 0.3s" not in content
+
+
+def test_auto_fix_transition_good_no_change():
+    """只用 transform/opacity 的 transition 不应修改。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_animation_performance
+
+    html = """<html lang="zh"><head>
+<meta name="viewport" content="width=device-width">
+<style>
+.card { transition: transform 0.3s ease, opacity 0.2s; }
+</style></head><body><div class="card">C</div></body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        fixed = auto_fix_animation_performance(td)
+
+    assert fixed is False
+
+
+def test_auto_fix_transition_all_bad_removed():
+    """全是非 transform/opacity 属性的 transition 应被整个移除。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_animation_performance
+
+    html = """<html lang="zh"><head>
+<meta name="viewport" content="width=device-width">
+<style>
+.box { transition: width 0.3s, height 0.5s; color: red; }
+</style></head><body><div class="box">B</div></body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        fixed = auto_fix_animation_performance(td)
+        with open(os.path.join(td, "index.html"), "r") as f:
+            content = f.read()
+
+    assert fixed is True
+    assert "transition" not in content or "transition: ;" not in content
+
+
+def test_auto_fix_transition_empty_dir():
+    """空目录不应报错。"""
+    import tempfile
+    from driving.design_context import auto_fix_animation_performance
+
+    with tempfile.TemporaryDirectory() as td:
+        fixed = auto_fix_animation_performance(td)
+    assert fixed is False
+
+
+def test_auto_fix_design_issues_includes_animation():
+    """auto_fix_design_issues 应同时包含动画性能修复。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_design_issues
+
+    html = """<html><head><style>
+body { padding: 13px; }
+.card { transition: margin 0.3s; }
+</style></head><body><div class="card">C</div></body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        fixed = auto_fix_design_issues(td)
+        with open(os.path.join(td, "index.html"), "r") as f:
+            content = f.read()
+
+    assert fixed is True
+    assert "margin 0.3s" not in content
+    assert "13px" not in content

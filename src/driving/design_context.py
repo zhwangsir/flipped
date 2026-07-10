@@ -661,12 +661,89 @@ def auto_fix_html_structure(cwd: str) -> bool:
     return changed
 
 
+# transition 允许的性能友好属性（transform/opacity 不会触发重排）
+_PERF_OK_PROPS = {"transform", "opacity"}
+
+
+def auto_fix_animation_performance(cwd: str) -> bool:
+    """自动修正 transition 中的非性能友好属性。
+
+    只保留 transform/opacity（不触发重排），移除 margin/padding/left/top/
+    width/height 等（会触发重排）。如果整个 transition 都是坏属性，移除整个
+    transition 声明。返回是否做过修改。
+    """
+    import os as _os
+    import re as _re
+
+    changed = False
+    for fname in _os.listdir(cwd) if _os.path.exists(cwd) else []:
+        if not fname.endswith(".html"):
+            continue
+        fpath = _os.path.join(cwd, fname)
+        if not _os.path.isfile(fpath):
+            continue
+        try:
+            content = open(fpath, "r", encoding="utf-8").read()
+        except Exception:
+            continue
+
+        original = content
+
+        def _fix_transition(m):
+            nonlocal changed
+            full = m.group(0)  # 整个 transition: ...; 或 transition: ...}
+            # 提取 transition 的值部分
+            val_match = _re.match(r"(transition\s*:\s*)([^;}]+)([;}])", full, _re.IGNORECASE)
+            if not val_match:
+                return full
+            prefix = val_match.group(1)
+            val = val_match.group(2)
+            suffix = val_match.group(3)
+
+            # 按逗号分割各个属性 transition
+            parts = [p.strip() for p in val.split(",")]
+            good_parts = []
+            for part in parts:
+                # 每部分第一个词是 CSS 属性名
+                prop = part.split()[0].lower() if part.split() else ""
+                if prop in _PERF_OK_PROPS:
+                    good_parts.append(part)
+                # else: 坏属性，跳过
+
+            if len(good_parts) == len(parts):
+                # 没有移除任何属性，不修改
+                return full
+
+            changed = True
+            if not good_parts:
+                # 全部移除 → 删除整个 transition 声明（包括后面的 ;）
+                return suffix if suffix == ";" else ""
+            return prefix + ", ".join(good_parts) + suffix
+
+        content = _re.sub(
+            r"transition\s*:\s*[^;}]+[;}]",
+            _fix_transition,
+            content,
+            flags=_re.IGNORECASE,
+        )
+
+        if content != original:
+            changed = True
+            try:
+                open(fpath, "w", encoding="utf-8").write(content)
+            except Exception:
+                pass
+
+    return changed
+
+
 def auto_fix_design_issues(cwd: str) -> bool:
     """组合调用所有 auto-fix 函数，返回是否做过任何修改。"""
     changed1 = auto_fix_spacing_grid(cwd)
     changed2 = auto_fix_typography_scale(cwd)
     changed3 = auto_fix_html_structure(cwd)
-    return changed1 or changed2 or changed3
+    changed4 = auto_fix_animation_performance(cwd)
+    return changed1 or changed2 or changed3 or changed4
 
 
 # ---------- M19: 设计质量校验器 ----------

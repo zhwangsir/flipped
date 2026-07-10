@@ -2,7 +2,7 @@
   "project": "flipped",
   "description": "接入本地 MLX 双模型(GLM-5.2 编排者 / Kimi-K2.7-Code 执行者)的 agentic 代码编辑器平台。fork Roo Code + 自定义驾驭层(强制验证/循环检测/上下文压缩/人工审批/子Agent/可观测性) + MCP 联网与外部能力。",
   "updated": "2026-07-10",
-  "current_milestone": "M25 HTML 结构 auto-fix (500 passed, post-generation 修复 viewport+lang+img alt)",
+  "current_milestone": "M26 动画性能 auto-fix (505 passed, transition 非 transform/opacity 属性移除)",
   "key_facts": {
     "dev_host": "Apple M5 Max, 128GB RAM, 1.1TB 可用磁盘 — 开发/控制节点，非模型宿主",
     "model_cluster": "exo 集群 @ http://100.64.201.37:52415 (内网, OpenAI 兼容)；公网 https://dgmt.top/exo (需 Bearer token)",
@@ -444,6 +444,18 @@
           "title": "auto_fix_html_structure + auto_fix_design_issues 更新",
           "status": "done",
           "note": "meta viewport + html lang + img alt 三项确定性修复。8 TDD 测试。500 passed。"
+        }
+      }
+    },
+    "M26": {
+      "title": "动画性能 auto-fix（transition 非 transform/opacity 属性移除）",
+      "status": "done",
+      "note": "扩展 auto-fix 系统覆盖动画性能维度。新增 auto_fix_animation_performance()：扫描 transition 声明，按逗号分割各属性，只保留 transform/opacity（不触发重排），移除 margin/padding/left/top/width/height 等（触发重排）。如果全部属性都被移除，删除整个 transition 声明。auto_fix_design_issues 组合函数更新为调用 spacing+typography+html_structure+animation 四组修复。5 TDD 测试全过。全量 505 passed。设计质量 auto-fix 系统现在覆盖 7 个维度：hex值(M15) + 间距网格(M24) + 字体比例(M24) + meta viewport(M25) + html lang(M25) + img alt(M25) + 动画性能(M26)。",
+      "tasks": {
+        "M26.1": {
+          "title": "auto_fix_animation_performance + auto_fix_design_issues 更新",
+          "status": "done",
+          "note": "transition 非 transform/opacity 属性移除 + 组合函数更新。5 TDD 测试。505 passed。"
         }
       }
     }
