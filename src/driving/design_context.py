@@ -477,6 +477,115 @@ def check_typography_scale(cwd: str) -> list[dict]:
     return violations
 
 
+# ---------- M24: 间距/字体 auto-fix（post-generation 确定性修复） ----------
+
+
+def _nearest_value(val: int, allowed: set[int], prefer_smaller_on_tie: bool = True) -> int:
+    """找到集合中与 val 最近的值。平局时按 prefer_smaller_on_tie 决定取大或取小。"""
+    if val in allowed:
+        return val
+    return min(allowed, key=lambda v: (abs(val - v), v if prefer_smaller_on_tie else -v))
+
+
+def auto_fix_spacing_grid(cwd: str) -> bool:
+    """自动修正非 8px 网格的间距值为最近的网格值。
+
+    参考 M15 auto-fix 模式：不依赖模型遵守约束，在代码层面强制修正。
+    扫描 HTML 文件的 padding/margin/gap px 值，
+    非网格值替换为最近网格值（平局取较小值，符合"收紧间距"直觉）。
+    返回是否做过修改。
+    """
+    import os as _os
+    import re as _re
+
+    changed = False
+    for fname in _os.listdir(cwd) if _os.path.exists(cwd) else []:
+        if not fname.endswith(".html"):
+            continue
+        fpath = _os.path.join(cwd, fname)
+        if not _os.path.isfile(fpath):
+            continue
+        try:
+            content = open(fpath, "r", encoding="utf-8").read()
+        except Exception:
+            continue
+
+        def _replace(m):
+            nonlocal changed
+            val = int(m.group(2))
+            if val in _GRID_VALUES:
+                return m.group(0)
+            nearest = _nearest_value(val, _GRID_VALUES, prefer_smaller_on_tie=True)
+            changed = True
+            return f"{m.group(1)}{nearest}{m.group(3)}"
+
+        new_content = _re.sub(
+            r"((?:padding|margin|gap)[\w-]*\s*:\s*)(\d+)(px)",
+            _replace,
+            content,
+            flags=_re.IGNORECASE,
+        )
+        if new_content != content:
+            try:
+                open(fpath, "w", encoding="utf-8").write(new_content)
+            except Exception:
+                pass
+
+    return changed
+
+
+def auto_fix_typography_scale(cwd: str) -> bool:
+    """自动修正非标准字号为最近的模块化比例字号。
+
+    平局取较大值（字号偏大可读性更好）。
+    返回是否做过修改。
+    """
+    import os as _os
+    import re as _re
+
+    changed = False
+    for fname in _os.listdir(cwd) if _os.path.exists(cwd) else []:
+        if not fname.endswith(".html"):
+            continue
+        fpath = _os.path.join(cwd, fname)
+        if not _os.path.isfile(fpath):
+            continue
+        try:
+            content = open(fpath, "r", encoding="utf-8").read()
+        except Exception:
+            continue
+
+        def _replace(m):
+            nonlocal changed
+            val = int(m.group(2))
+            if val in _TYPE_SCALE:
+                return m.group(0)
+            nearest = _nearest_value(val, _TYPE_SCALE, prefer_smaller_on_tie=False)
+            changed = True
+            return f"{m.group(1)}{nearest}{m.group(3)}"
+
+        new_content = _re.sub(
+            r"(font-size\s*:\s*)(\d+)(px)",
+            _replace,
+            content,
+            flags=_re.IGNORECASE,
+        )
+        if new_content != content:
+            try:
+                open(fpath, "w", encoding="utf-8").write(new_content)
+            except Exception:
+                pass
+
+    return changed
+
+
+def auto_fix_design_issues(cwd: str) -> bool:
+    """组合调用所有 auto-fix 函数，返回是否做过任何修改。"""
+    changed1 = auto_fix_spacing_grid(cwd)
+    changed2 = auto_fix_typography_scale(cwd)
+    return changed1 or changed2
+
+
 # ---------- M19: 设计质量校验器 ----------
 
 def lint_design_quality(cwd: str) -> list[dict]:

@@ -618,3 +618,133 @@ def test_lint_design_quality_includes_typography():
 
     typo_violations = [v for v in violations if v["rule"] == "typography_scale"]
     assert len(typo_violations) >= 1
+
+
+# ---------- M24: 间距/字体 auto-fix ----------
+
+
+def test_auto_fix_spacing_grid():
+    """非网格间距值应被自动修正为最近网格值。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_spacing_grid
+
+    html = """<html><head><style>
+body { padding: 13px; margin: 7px; }
+.card { padding: 25px; gap: 10px; }
+</style></head><body><p>test</p></body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        fixed = auto_fix_spacing_grid(td)
+        with open(os.path.join(td, "index.html"), "r") as f:
+            content = f.read()
+
+    assert fixed is True
+    # 13 → 12, 7 → 8, 25 → 24, 10 → 8
+    assert "13px" not in content
+    assert "12px" in content
+    assert "24px" in content
+    assert "8px" in content
+
+
+def test_auto_fix_spacing_grid_no_change():
+    """已合规的间距不应被修改。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_spacing_grid
+
+    html = """<html><head><style>
+body { padding: 16px; margin: 32px; }
+</style></head><body></body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        fixed = auto_fix_spacing_grid(td)
+        with open(os.path.join(td, "index.html"), "r") as f:
+            content = f.read()
+
+    assert fixed is False
+    assert "16px" in content
+    assert "32px" in content
+
+
+def test_auto_fix_typography_scale():
+    """非标准字号应被自动修正为最近标准字号。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_typography_scale
+
+    html = """<html><head><style>
+body { font-size: 16px; }
+h1 { font-size: 37px; }
+h2 { font-size: 23px; }
+p { font-size: 14px; }
+</style></head><body><h1>T</h1></body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        fixed = auto_fix_typography_scale(td)
+        with open(os.path.join(td, "index.html"), "r") as f:
+            content = f.read()
+
+    assert fixed is True
+    # 37 → 38, 23 → 24, 14 stays (already in scale)
+    assert "37px" not in content
+    assert "38px" in content
+    assert "24px" in content
+
+
+def test_auto_fix_typography_scale_no_change():
+    """已合规的字号不应被修改。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_typography_scale
+
+    html = """<html><head><style>
+body { font-size: 16px; }
+h1 { font-size: 48px; }
+</style></head><body></body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        fixed = auto_fix_typography_scale(td)
+
+    assert fixed is False
+
+
+def test_auto_fix_design_issues_combined():
+    """auto_fix_design_issues 应同时修复间距和字体。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_design_issues
+
+    html = """<html><head><style>
+body { padding: 13px; font-size: 16px; }
+h1 { font-size: 37px; margin-bottom: 25px; }
+</style></head><body><h1>T</h1></body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        fixed = auto_fix_design_issues(td)
+        with open(os.path.join(td, "index.html"), "r") as f:
+            content = f.read()
+
+    assert fixed is True
+    assert "13px" not in content  # spacing fixed
+    assert "37px" not in content  # typography fixed
+
+
+def test_auto_fix_empty_dir():
+    """空目录不应报错。"""
+    import tempfile
+    from driving.design_context import auto_fix_design_issues
+
+    with tempfile.TemporaryDirectory() as td:
+        fixed = auto_fix_design_issues(td)
+    assert fixed is False

@@ -2,7 +2,7 @@
   "project": "flipped",
   "description": "接入本地 MLX 双模型(GLM-5.2 编排者 / Kimi-K2.7-Code 执行者)的 agentic 代码编辑器平台。fork Roo Code + 自定义驾驭层(强制验证/循环检测/上下文压缩/人工审批/子Agent/可观测性) + MCP 联网与外部能力。",
   "updated": "2026-07-10",
-  "current_milestone": "M23 间距网格 + 字体比例校验 (486 passed, 设计质量系统 9 项确定性检查)",
+  "current_milestone": "M24 间距/字体 auto-fix (492 passed, post-generation 确定性修复间距+字体)",
   "key_facts": {
     "dev_host": "Apple M5 Max, 128GB RAM, 1.1TB 可用磁盘 — 开发/控制节点，非模型宿主",
     "model_cluster": "exo 集群 @ http://100.64.201.37:52415 (内网, OpenAI 兼容)；公网 https://dgmt.top/exo (需 Bearer token)",
@@ -420,6 +420,18 @@
           "title": "check_spacing_grid + check_typography_scale + lint 集成",
           "status": "done",
           "note": "8px网格校验 + 模块化字体比例校验 + lint 集成。9 TDD 测试。486 passed。"
+        }
+      }
+    },
+    "M24": {
+      "title": "间距/字体 auto-fix（post-generation 确定性修复）",
+      "status": "done",
+      "note": "与 M15 hex auto-fix 同理：不依赖模型遵守 8px 网格 / 模块化字体比例约束，在代码层面把非网格间距修正为最近网格值、非标准字号修正为最近标准字号。新增 _nearest_value() 辅助函数（平局时间距取较小、字号取较大）、auto_fix_spacing_grid()（扫描 padding/margin/gap px 值替换为最近网格值）、auto_fix_typography_scale()（扫描 font-size px 值替换为最近标准字号）、auto_fix_design_issues() 组合函数。集成到 local_worker 文件写入后自动调用（M15 hex auto-fix 之后）。6 TDD 测试全过。全量 492 passed。",
+      "tasks": {
+        "M24.1": {
+          "title": "auto_fix_spacing_grid + auto_fix_typography_scale + auto_fix_design_issues + local_worker 集成",
+          "status": "done",
+          "note": "三个 auto-fix 函数 + _nearest_value 辅助 + local_worker 集成。6 TDD 测试。492 passed。"
         }
       }
     }

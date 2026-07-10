@@ -895,6 +895,15 @@ def local_worker(state: OrchestratorState) -> dict:
         if _hex_map:
             _auto_fix_hex_in_dir(cwd, _hex_map)
 
+        # M24: post-generation 间距/字体 auto-fix。
+        # 与 hex auto-fix 同理：不依赖模型遵守 8px 网格 / 模块化字体比例约束，
+        # 在代码层面把非网格间距修正为最近网格值、非标准字号修正为最近标准字号。
+        try:
+            from driving.design_context import auto_fix_design_issues
+            auto_fix_design_issues(cwd)
+        except Exception:
+            pass
+
     tool_calls = len(files_written)
     # 即使没解析出文件块，只要 Kimi 有响应内容，就不算 infrastructure error。
     # 让 verifier 决定成败——也许之前的 iteration 已经写了文件，这次只是补充说明。
