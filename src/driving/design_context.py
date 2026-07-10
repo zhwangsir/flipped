@@ -737,13 +737,91 @@ def auto_fix_animation_performance(cwd: str) -> bool:
     return changed
 
 
+# 默认 CSS 变量系统（dark 风格的值，worker 未定义 --color-* 时注入）
+_DEFAULT_CSS_VARS = """  --color-bg: #0D0D12;
+  --color-text: #F5F5F5;
+  --color-accent: #0A84FF;
+  --color-text-muted: #9E9E9E;
+  --color-surface: #1E1E2E;
+"""
+
+
+def auto_fix_css_variables(cwd: str) -> bool:
+    """自动注入 CSS 变量系统。
+
+    - 有 :root 但缺少 --color-* 变量 → 在 :root 内追加默认 --color-* 变量
+    - 完全没有 :root → 在 <style> 开头注入完整 :root { --color-*: ...; }
+
+    默认值用 dark 风格的配色（worker 不提供变量系统时的合理回退）。
+    返回是否做过修改。
+    """
+    import os as _os
+    import re as _re
+
+    changed = False
+    for fname in _os.listdir(cwd) if _os.path.exists(cwd) else []:
+        if not fname.endswith(".html"):
+            continue
+        fpath = _os.path.join(cwd, fname)
+        if not _os.path.isfile(fpath):
+            continue
+        try:
+            content = open(fpath, "r", encoding="utf-8").read()
+        except Exception:
+            continue
+
+        original = content
+
+        has_root = ":root" in content.lower()
+        has_color_vars = "--color-bg" in content and "--color-text" in content
+
+        if has_color_vars:
+            # 已有 --color-* 变量，不需要修复
+            continue
+
+        if has_root:
+            # 有 :root 但缺少 --color-* → 在 :root { 后追加
+            def _inject_in_root(m):
+                nonlocal changed
+                changed = True
+                return m.group(1) + _DEFAULT_CSS_VARS + m.group(2)
+
+            content = _re.sub(
+                r"(:root\s*\{)(\s*)",
+                _inject_in_root,
+                content,
+                count=1,
+                flags=_re.IGNORECASE,
+            )
+        elif "<style" in content.lower():
+            # 没有 :root 但有 <style> → 在 <style> 后注入完整 :root 块
+            content = _re.sub(
+                r"(<style[^>]*>)",
+                r"\1:root {" + _DEFAULT_CSS_VARS + "}",
+                content,
+                count=1,
+                flags=_re.IGNORECASE,
+            )
+            changed = True
+
+        if content != original:
+            changed = True
+            try:
+                open(fpath, "w", encoding="utf-8").write(content)
+            except Exception:
+                pass
+
+    return changed
+
+
 def auto_fix_design_issues(cwd: str) -> bool:
     """组合调用所有 auto-fix 函数，返回是否做过任何修改。"""
     changed1 = auto_fix_spacing_grid(cwd)
     changed2 = auto_fix_typography_scale(cwd)
     changed3 = auto_fix_html_structure(cwd)
     changed4 = auto_fix_animation_performance(cwd)
-    return changed1 or changed2 or changed3 or changed4
+    changed5 = auto_fix_css_variables(cwd)
+    return changed1 or changed2 or changed3 or changed4 or changed5
 
 
 # ---------- M19: 设计质量校验器 ----------

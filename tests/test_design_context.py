@@ -1023,3 +1023,111 @@ body { padding: 13px; }
     assert fixed is True
     assert "margin 0.3s" not in content
     assert "13px" not in content
+
+
+# ---------- M27: CSS 变量注入 auto-fix ----------
+
+
+def test_auto_fix_css_variables_missing():
+    """有 :root 但缺少 --color-* 变量时应注入默认变量系统。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_css_variables
+
+    html = """<html lang="zh"><head>
+<meta name="viewport" content="width=device-width">
+<style>
+:root { --gap: 16px; }
+body { background: #0D0D12; color: #F5F5F5; }
+</style></head><body><p>test</p></body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        fixed = auto_fix_css_variables(td)
+        with open(os.path.join(td, "index.html"), "r") as f:
+            content = f.read()
+
+    assert fixed is True
+    assert "--color-bg" in content
+    assert "--color-text" in content
+    assert "--color-accent" in content
+
+
+def test_auto_fix_css_variables_present():
+    """已有 --color-* 变量不应修改。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_css_variables
+
+    html = """<html lang="zh"><head>
+<meta name="viewport" content="width=device-width">
+<style>
+:root { --color-bg: #0D0D12; --color-text: #F5F5F5; --color-accent: #0A84FF; }
+body { background: var(--color-bg); }
+</style></head><body><p>test</p></body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        fixed = auto_fix_css_variables(td)
+
+    assert fixed is False
+
+
+def test_auto_fix_css_variables_no_root():
+    """没有 :root 时应注入完整的 :root 变量块。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_css_variables
+
+    html = """<html lang="zh"><head>
+<meta name="viewport" content="width=device-width">
+<style>
+body { background: #0D0D12; color: #F5F5F5; }
+</style></head><body><p>test</p></body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        fixed = auto_fix_css_variables(td)
+        with open(os.path.join(td, "index.html"), "r") as f:
+            content = f.read()
+
+    assert fixed is True
+    assert ":root" in content
+    assert "--color-bg" in content
+    assert "--color-text" in content
+
+
+def test_auto_fix_css_variables_empty_dir():
+    """空目录不应报错。"""
+    import tempfile
+    from driving.design_context import auto_fix_css_variables
+
+    with tempfile.TemporaryDirectory() as td:
+        fixed = auto_fix_css_variables(td)
+    assert fixed is False
+
+
+def test_auto_fix_design_issues_includes_css_variables():
+    """auto_fix_design_issues 应同时包含 CSS 变量注入。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_design_issues
+
+    html = """<html><head><style>
+:root { --gap: 16px; }
+body { padding: 13px; }
+</style></head><body><p>test</p></body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        fixed = auto_fix_design_issues(td)
+        with open(os.path.join(td, "index.html"), "r") as f:
+            content = f.read()
+
+    assert fixed is True
+    assert "--color-bg" in content
+    assert "13px" not in content

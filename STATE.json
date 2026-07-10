@@ -2,7 +2,7 @@
   "project": "flipped",
   "description": "接入本地 MLX 双模型(GLM-5.2 编排者 / Kimi-K2.7-Code 执行者)的 agentic 代码编辑器平台。fork Roo Code + 自定义驾驭层(强制验证/循环检测/上下文压缩/人工审批/子Agent/可观测性) + MCP 联网与外部能力。",
   "updated": "2026-07-10",
-  "current_milestone": "M26 动画性能 auto-fix (505 passed, transition 非 transform/opacity 属性移除)",
+  "current_milestone": "M27 CSS 变量注入 auto-fix (510 passed, 缺少 --color-* 时注入默认变量系统)",
   "key_facts": {
     "dev_host": "Apple M5 Max, 128GB RAM, 1.1TB 可用磁盘 — 开发/控制节点，非模型宿主",
     "model_cluster": "exo 集群 @ http://100.64.201.37:52415 (内网, OpenAI 兼容)；公网 https://dgmt.top/exo (需 Bearer token)",
@@ -456,6 +456,18 @@
           "title": "auto_fix_animation_performance + auto_fix_design_issues 更新",
           "status": "done",
           "note": "transition 非 transform/opacity 属性移除 + 组合函数更新。5 TDD 测试。505 passed。"
+        }
+      }
+    },
+    "M27": {
+      "title": "CSS 变量注入 auto-fix（缺少 --color-* 时注入默认变量系统）",
+      "status": "done",
+      "note": "扩展 auto-fix 系统覆盖 CSS 变量系统维度。新增 auto_fix_css_variables()：(1) 有 :root 但缺少 --color-* 变量时在 :root 内追加默认 --color-bg/--color-text/--color-accent/--color-text-muted/--color-surface 变量；(2) 完全没有 :root 但有 <style> 时在 <style> 后注入完整 :root 块。默认值用 dark 风格配色。auto_fix_design_issues 组合函数更新为调用 spacing+typography+html_structure+animation+css_variables 五组修复。5 TDD 测试全过。全量 510 passed。设计质量 auto-fix 系统现在覆盖 8 个维度。",
+      "tasks": {
+        "M27.1": {
+          "title": "auto_fix_css_variables + auto_fix_design_issues 更新",
+          "status": "done",
+          "note": "CSS 变量注入 + 组合函数更新。5 TDD 测试。510 passed。"
         }
       }
     }
