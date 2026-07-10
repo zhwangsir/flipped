@@ -748,3 +748,170 @@ def test_auto_fix_empty_dir():
     with tempfile.TemporaryDirectory() as td:
         fixed = auto_fix_design_issues(td)
     assert fixed is False
+
+
+# ---------- M25: HTML 结构 auto-fix（meta viewport + lang + img alt） ----------
+
+
+def test_auto_fix_meta_viewport_missing():
+    """缺少 meta viewport 应自动注入。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_html_structure
+
+    html = """<html><head><title>Test</title></head>
+<body><p>Hello</p></body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        fixed = auto_fix_html_structure(td)
+        with open(os.path.join(td, "index.html"), "r") as f:
+            content = f.read()
+
+    assert fixed is True
+    assert "viewport" in content.lower()
+    assert "width=device-width" in content
+
+
+def test_auto_fix_meta_viewport_present():
+    """已有 meta viewport（且 lang 和 img alt 也齐全）不应修改。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_html_structure
+
+    html = """<html lang="zh"><head>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Test</title></head><body><p>Hello</p></body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        fixed = auto_fix_html_structure(td)
+
+    assert fixed is False
+
+
+def test_auto_fix_html_lang_missing():
+    """<html> 缺少 lang 属性应自动添加。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_html_structure
+
+    html = """<html><head>
+<meta name="viewport" content="width=device-width">
+</head><body><p>Hello</p></body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        fixed = auto_fix_html_structure(td)
+        with open(os.path.join(td, "index.html"), "r") as f:
+            content = f.read()
+
+    assert fixed is True
+    assert 'lang=' in content
+
+
+def test_auto_fix_html_lang_present():
+    """已有 lang 属性（且 viewport 和 img alt 也齐全）不应修改。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_html_structure
+
+    html = """<html lang="en"><head>
+<meta name="viewport" content="width=device-width">
+</head><body><p>Hello</p></body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        fixed = auto_fix_html_structure(td)
+
+    assert fixed is False
+
+
+def test_auto_fix_img_alt_missing():
+    """<img> 缺少 alt 属性应自动添加空 alt。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_html_structure
+
+    html = """<html lang="zh"><head>
+<meta name="viewport" content="width=device-width">
+</head><body>
+<img src="photo.jpg" width="100">
+<img src="icon.png" height="20">
+</body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        fixed = auto_fix_html_structure(td)
+        with open(os.path.join(td, "index.html"), "r") as f:
+            content = f.read()
+
+    assert fixed is True
+    # 所有 img 都应有 alt
+    import re
+    img_tags = re.findall(r"<img\s+[^>]*>", content, re.IGNORECASE)
+    for img in img_tags:
+        assert "alt=" in img.lower(), f"img 仍缺少 alt: {img}"
+
+
+def test_auto_fix_img_alt_present():
+    """已有 alt 属性的 img 不应修改。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_html_structure
+
+    html = """<html lang="zh"><head>
+<meta name="viewport" content="width=device-width">
+</head><body>
+<img src="photo.jpg" alt="A photo" width="100">
+</body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        fixed = auto_fix_html_structure(td)
+
+    assert fixed is False
+
+
+def test_auto_fix_html_structure_empty_dir():
+    """空目录不应报错。"""
+    import tempfile
+    from driving.design_context import auto_fix_html_structure
+
+    with tempfile.TemporaryDirectory() as td:
+        fixed = auto_fix_html_structure(td)
+    assert fixed is False
+
+
+def test_auto_fix_design_issues_includes_html_structure():
+    """auto_fix_design_issues 应同时修复间距+字体+HTML结构。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_design_issues
+
+    html = """<html><head><style>
+body { padding: 13px; font-size: 16px; }
+h1 { font-size: 37px; }
+</style></head><body>
+<img src="x.jpg">
+</body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        fixed = auto_fix_design_issues(td)
+        with open(os.path.join(td, "index.html"), "r") as f:
+            content = f.read()
+
+    assert fixed is True
+    assert "viewport" in content.lower()
+    assert "lang=" in content
+    assert "alt=" in content.lower()
+    assert "13px" not in content
+    assert "37px" not in content

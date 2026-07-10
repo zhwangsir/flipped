@@ -579,11 +579,94 @@ def auto_fix_typography_scale(cwd: str) -> bool:
     return changed
 
 
+def auto_fix_html_structure(cwd: str) -> bool:
+    """自动修正 HTML 结构性问题：meta viewport、html lang、img alt。
+
+    参考 M15 auto-fix 模式：不依赖模型遵守约束，在代码层面强制修正。
+    - 缺少 meta viewport → 在 <head> 后注入
+    - <html> 缺少 lang 属性 → 添加 lang="zh"
+    - <img> 缺少 alt 属性 → 添加 alt=""（空 alt 对装饰性图片是 WCAG 合规的）
+    返回是否做过修改。
+    """
+    import os as _os
+    import re as _re
+
+    changed = False
+    for fname in _os.listdir(cwd) if _os.path.exists(cwd) else []:
+        if not fname.endswith(".html"):
+            continue
+        fpath = _os.path.join(cwd, fname)
+        if not _os.path.isfile(fpath):
+            continue
+        try:
+            content = open(fpath, "r", encoding="utf-8").read()
+        except Exception:
+            continue
+
+        original = content
+
+        # 1. meta viewport
+        if "viewport" not in content.lower() and "<head" in content.lower():
+            # 在 <head> 标签后注入 viewport meta
+            content = _re.sub(
+                r"(<head[^>]*>)",
+                r'\1<meta name="viewport" content="width=device-width, initial-scale=1">',
+                content,
+                count=1,
+                flags=_re.IGNORECASE,
+            )
+
+        # 2. html lang
+        if "<html" in content.lower():
+            # 检查 <html> 标签是否已有 lang 属性（匹配 <html> 和 <html ...>）
+            html_match = _re.search(r"<html[^>]*>", content, _re.IGNORECASE)
+            if html_match and "lang=" not in html_match.group(0).lower():
+                # 在 <html 后添加 lang="zh"
+                content = _re.sub(
+                    r"(<html)(\s|>)",
+                    r'\1 lang="zh"\2',
+                    content,
+                    count=1,
+                    flags=_re.IGNORECASE,
+                )
+
+        # 3. img alt — 给所有缺少 alt 的 <img> 添加 alt=""
+        def _add_alt(m):
+            nonlocal changed
+            tag = m.group(0)
+            if "alt=" in tag.lower():
+                return tag
+            # 在 <img 后、> 前插入 alt=""
+            # 处理自闭合 <img ... /> 和非自闭合 <img ...>
+            if tag.endswith("/>"):
+                return tag[:-2] + ' alt="" />'
+            else:
+                return tag[:-1] + ' alt="">'
+
+        new_content = _re.sub(
+            r"<img\s+[^>]*>",
+            _add_alt,
+            content,
+            flags=_re.IGNORECASE,
+        )
+        content = new_content
+
+        if content != original:
+            changed = True
+            try:
+                open(fpath, "w", encoding="utf-8").write(content)
+            except Exception:
+                pass
+
+    return changed
+
+
 def auto_fix_design_issues(cwd: str) -> bool:
     """组合调用所有 auto-fix 函数，返回是否做过任何修改。"""
     changed1 = auto_fix_spacing_grid(cwd)
     changed2 = auto_fix_typography_scale(cwd)
-    return changed1 or changed2
+    changed3 = auto_fix_html_structure(cwd)
+    return changed1 or changed2 or changed3
 
 
 # ---------- M19: 设计质量校验器 ----------

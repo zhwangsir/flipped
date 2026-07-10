@@ -2,7 +2,7 @@
   "project": "flipped",
   "description": "接入本地 MLX 双模型(GLM-5.2 编排者 / Kimi-K2.7-Code 执行者)的 agentic 代码编辑器平台。fork Roo Code + 自定义驾驭层(强制验证/循环检测/上下文压缩/人工审批/子Agent/可观测性) + MCP 联网与外部能力。",
   "updated": "2026-07-10",
-  "current_milestone": "M24 间距/字体 auto-fix (492 passed, post-generation 确定性修复间距+字体)",
+  "current_milestone": "M25 HTML 结构 auto-fix (500 passed, post-generation 修复 viewport+lang+img alt)",
   "key_facts": {
     "dev_host": "Apple M5 Max, 128GB RAM, 1.1TB 可用磁盘 — 开发/控制节点，非模型宿主",
     "model_cluster": "exo 集群 @ http://100.64.201.37:52415 (内网, OpenAI 兼容)；公网 https://dgmt.top/exo (需 Bearer token)",
@@ -432,6 +432,18 @@
           "title": "auto_fix_spacing_grid + auto_fix_typography_scale + auto_fix_design_issues + local_worker 集成",
           "status": "done",
           "note": "三个 auto-fix 函数 + _nearest_value 辅助 + local_worker 集成。6 TDD 测试。492 passed。"
+        }
+      }
+    },
+    "M25": {
+      "title": "HTML 结构 auto-fix（meta viewport + lang + img alt）",
+      "status": "done",
+      "note": "扩展 auto-fix 系统覆盖 HTML 结构性问题。新增 auto_fix_html_structure()：(1) 缺少 meta viewport 时在 <head> 后注入；(2) <html> 缺少 lang 时添加 lang=\"zh\"；(3) <img> 缺少 alt 时添加 alt=\"\"（空 alt 对装饰性图片是 WCAG 合规的）。auto_fix_design_issues 组合函数更新为调用 spacing+typography+html_structure 三组修复。8 TDD 测试全过。全量 500 passed。设计质量 auto-fix 系统现在覆盖：hex 值(M15) + 间距网格(M24) + 字体比例(M24) + meta viewport(M25) + html lang(M25) + img alt(M25)。",
+      "tasks": {
+        "M25.1": {
+          "title": "auto_fix_html_structure + auto_fix_design_issues 更新",
+          "status": "done",
+          "note": "meta viewport + html lang + img alt 三项确定性修复。8 TDD 测试。500 passed。"
         }
       }
     }
