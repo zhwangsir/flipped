@@ -2,7 +2,7 @@
   "project": "flipped",
   "description": "接入本地 MLX 双模型(GLM-5.2 编排者 / Kimi-K2.7-Code 执行者)的 agentic 代码编辑器平台。fork Roo Code + 自定义驾驭层(强制验证/循环检测/上下文压缩/人工审批/子Agent/可观测性) + MCP 联网与外部能力。",
   "updated": "2026-07-11",
-  "current_milestone": "M41 确定性 design fix fallback (604 passed, GLM不可用时确定性接管迭代)",
+  "current_milestone": "M42 factory_loop 默认自动接入 proposer + design_fix_fallback (605 passed)",
   "key_facts": {
     "dev_host": "Apple M5 Max, 128GB RAM, 1.1TB 可用磁盘 — 开发/控制节点，非模型宿主",
     "model_cluster": "exo 集群 @ http://100.64.201.37:52415 (内网, OpenAI 兼容)；公网 https://dgmt.top/exo (需 Bearer token)",
@@ -636,6 +636,18 @@
           "title": "propose_design_fix_task + factory_loop 集成 + 4 测试",
           "status": "done",
           "note": "确定性 fallback 函数 + factory_loop design_fix_fallback 参数 + 4 测试。604 passed。"
+        }
+      }
+    },
+    "M42": {
+      "title": "factory_loop 默认自动接入 proposer + design_fix_fallback",
+      "status": "done",
+      "note": "run_factory_loop 在 task_proposer/design_fix_fallback 为 None 时自动延迟导入 propose_next_task 和 propose_design_fix_task。通过 FLIPPED_AUTO_PROPOSER 环境变量控制（默认1=启用，0=禁用）。conftest.py 测试中设 FLIPPED_AUTO_PROPOSER=0 避免不必要的 GLM 调用。新增 1 个集成测试验证自动接入行为（mock GLM 不可用，验证 design_fix_fallback 确定性接管）。全量 605 passed（+1，无回归）。核心价值：调用方无需显式传入即可获得完整的'无限迭代'能力。",
+      "tasks": {
+        "M42.1": {
+          "title": "默认接入 + 环境变量控制 + conftest + 1 测试",
+          "status": "done",
+          "note": "FLIPPED_AUTO_PROPOSER 环境变量 + conftest 禁用 + 自动接入集成测试。605 passed。"
         }
       }
     }

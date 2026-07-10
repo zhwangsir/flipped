@@ -263,11 +263,8 @@ def test_factory_loop_uses_proposer_when_roadmap_empty():
             orchestrator_fn=fake_orchestrator,
         )
 
-    # 初始 roadmap 有 1 个任务 + proposer 生成 1 个 = 2 个完成
-    # 但 proposer 集成还没加到 factory_loop 里——这个测试验证集成后行为
-    # 当前 factory_loop 不会调用 proposer，所以这里先验证测试框架就绪
-    # 集成代码会在下一步实现
-    assert state.status.value == "done"  # 当前行为：roadmap 用完就 done
+    # 初始 roadmap 有 1 个任务，auto-proposer 被 conftest 禁用，roadmap 用完就 done
+    assert state.status.value == "done"
 
 
 def test_factory_loop_with_proposer_continues_iteration():
@@ -571,3 +568,42 @@ def test_factory_loop_uses_design_fix_fallback():
     # 初始 1 + fallback 1 = 2 个任务
     assert len(state.completed) == 2
     assert state.completed[1].task.id == "design-fix-1"
+
+
+def test_factory_loop_auto_proposer_enabled_by_env(monkeypatch):
+    """M42: FLIPPED_AUTO_PROPOSER=1 时，不传 task_proposer 也自动接入。
+
+    验证默认行为：GLM 不可用时（mock 异常），design_fix_fallback
+    确定性接管。有低分 HTML 时生成修复任务。
+    """
+    from driving.factory_loop import run_factory_loop, FactoryTask, TaskResult
+
+    monkeypatch.setenv("FLIPPED_AUTO_PROPOSER", "1")
+
+    # mock GLM 不可用（propose_next_task 会 fail-open 返回 None）
+    def fake_orchestrator(task, state):
+        return TaskResult(task=task, verified=True, stop_reason="verified", iteration=1)
+
+    bad_html = "<html><head></head><body><img src='x.jpg'></body></html>"
+
+    with tempfile.TemporaryDirectory() as d:
+        with open(os.path.join(d, "index.html"), "w") as f:
+            f.write(bad_html)
+        with patch("driving.task_proposer._invoke_structured", side_effect=RuntimeError("no GLM")):
+            state = run_factory_loop(
+                product_goal="test",
+                cwd=d,
+                db_path=os.path.join(d, "test_factory.db"),
+                checkpoint_db_path=os.path.join(d, "test_ckpt.db"),
+                max_tasks=10,
+                max_rounds=3,
+                planner=lambda s: [FactoryTask(id="t0", description="init", verify_cmd=["true"])],
+                orchestrator_fn=fake_orchestrator,
+                # 不传 task_proposer 和 design_fix_fallback，验证自动接入
+            )
+
+    # 初始 1 + GLM 失败后 design_fix_fallback 接管 ≥1 = ≥2 个任务
+    assert len(state.completed) >= 2
+    # 至少有一个 design-fix 任务
+    fix_tasks = [r for r in state.completed if "design-fix" in r.task.id]
+    assert len(fix_tasks) >= 1

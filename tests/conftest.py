@@ -9,6 +9,8 @@ import pytest
 _test_session_path = os.path.join(tempfile.gettempdir(), "flipped_test_sessions.json")
 os.environ["FLIPPED_SESSION_STORE_PATH"] = _test_session_path
 os.environ.setdefault("EXO_API_KEY", "dummy")
+# M42: 测试中禁用默认 auto-proposer，避免不必要的 GLM 调用
+os.environ.setdefault("FLIPPED_AUTO_PROPOSER", "0")
 if os.path.exists(_test_session_path):
     os.remove(_test_session_path)
 

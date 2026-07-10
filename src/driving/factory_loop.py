@@ -619,6 +619,23 @@ def run_factory_loop(
     orchestrator_fn = orchestrator_fn or default_orchestrator_fn
     bus = event_bus if event_bus is not None else NullEventBus()
 
+    # M42: 默认自动接入自主任务生成 + 确定性 design fix fallback
+    # 调用方无需显式传入即可获得"无限迭代"能力
+    # 测试中可通过 FLIPPED_AUTO_PROPOSER=0 禁用
+    _auto_proposer = os.environ.get("FLIPPED_AUTO_PROPOSER", "1") != "0"
+    if task_proposer is None and _auto_proposer:
+        try:
+            from driving.task_proposer import propose_next_task
+            task_proposer = propose_next_task
+        except Exception:
+            pass
+    if design_fix_fallback is None and _auto_proposer:
+        try:
+            from driving.task_proposer import propose_design_fix_task
+            design_fix_fallback = propose_design_fix_task
+        except Exception:
+            pass
+
     state = load_factory_state(factory_id, db_path) if factory_id else None
     if state is None:
         factory_id = factory_id or f"factory-{uuid.uuid4().hex[:8]}"
