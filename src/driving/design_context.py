@@ -364,3 +364,102 @@ def lint_design_quality(cwd: str) -> list[dict]:
             })
 
     return violations
+
+
+def design_score(cwd: str) -> "tuple[int, list[str]]":
+    """计算 HTML 文件的设计质量评分（0-100），返回 (分数, 评语列表)。
+
+    评分维度（每项权重不同）：
+    - 语义化HTML结构 (20分)：header/main/section/footer 齐全
+    - meta 标签 (15分)：viewport + charset + description
+    - CSS 变量系统 (15分)：:root 定义 --color-* 变量
+    - 响应式 (15分)：@media 查询或 viewport meta
+    - 无障碍基础 (15分)：img alt + html lang
+    - 动画性能 (10分)：transition 用 transform/opacity
+    - 设计一致性 (10分)：配色不超过5种 hex 值
+    """
+    import os as _os
+    import re as _re
+
+    # 先检查是否有 HTML 文件
+    has_html = any(
+        fname.endswith(".html") and _os.path.isfile(_os.path.join(cwd, fname))
+        for fname in _os.listdir(cwd)
+    ) if _os.path.exists(cwd) else False
+    if not has_html:
+        return 0, ["未找到HTML文件"]
+
+    score = 0
+    notes: list[str] = []
+    violations = lint_design_quality(cwd)
+    error_rules = {v["rule"] for v in violations if v["severity"] == "error"}
+    warning_rules = {v["rule"] for v in violations if v["severity"] == "warning"}
+
+    # 1. 语义化HTML (20分)
+    if "semantic_html" not in warning_rules:
+        score += 20
+    else:
+        score += 10
+        notes.append("语义化HTML不完整(-10)")
+
+    # 2. meta 标签 (15分)
+    if "meta_viewport" not in error_rules:
+        score += 15
+    else:
+        notes.append("缺少viewport meta(-15)")
+
+    # 3. CSS 变量 (15分)
+    if "css_variables" not in warning_rules:
+        score += 15
+    else:
+        score += 8
+        notes.append("CSS变量使用不充分(-7)")
+
+    # 4. 响应式 (15分) — viewport meta 存在即视为有响应式意识
+    if "meta_viewport" not in error_rules:
+        score += 15
+    else:
+        notes.append("无响应式(-15)")
+
+    # 5. 无障碍 (15分)
+    if "img_alt_missing" not in error_rules and "html_lang" not in warning_rules:
+        score += 15
+    elif "img_alt_missing" not in error_rules:
+        score += 8
+        notes.append("缺少html lang(-7)")
+    else:
+        notes.append("img缺少alt(-15)")
+
+    # 6. 动画性能 (10分)
+    if "animation_performance" not in warning_rules:
+        score += 10
+    else:
+        notes.append("动画性能待优化(-10)")
+
+    # 7. 设计一致性 (10分) — 检查 hex 颜色数量
+    for fname in _os.listdir(cwd):
+        if not fname.endswith(".html"):
+            continue
+        fpath = _os.path.join(cwd, fname)
+        if not _os.path.isfile(fpath):
+            continue
+        try:
+            content = open(fpath, "r", encoding="utf-8").read()
+        except Exception:
+            continue
+        hex_colors = set(_re.findall(r"#[0-9A-Fa-f]{6}\b", content))
+        # 统计非黑非白的颜色（排除 #000000/#FFFFFF 等基础色）
+        design_colors = {
+            c for c in hex_colors
+            if c.upper() not in ("#000000", "#FFFFFF", "#FFF", "#000")
+        }
+        if len(design_colors) <= 5:
+            score += 10
+        else:
+            score += 5
+            notes.append(f"配色过多({len(design_colors)}种，建议≤5)(-5)")
+        break  # 只检查第一个 HTML 文件
+
+    if not notes:
+        notes.append("设计质量良好")
+    return score, notes

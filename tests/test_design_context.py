@@ -237,3 +237,62 @@ def test_lint_design_quality_empty_dir():
     with tempfile.TemporaryDirectory() as td:
         violations = lint_design_quality(td)
     assert violations == []
+
+
+# ---------- M20: design_score 评分系统 ----------
+
+
+def test_design_score_perfect_html():
+    """良好 HTML 应得高分。"""
+    import tempfile
+    import os
+    from driving.design_context import design_score
+
+    good_html = """<!DOCTYPE html>
+<html lang="zh"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+:root { --color-accent: #0A84FF; --color-bg: #0D0D12; --color-text: #F5F5F5; }
+body { transition: opacity 0.3s ease; transform: translateY(0); }
+</style>
+</head><body>
+<header><nav>Logo</nav></header>
+<main><section><h1>Title</h1></section></main>
+<footer>Copyright</footer>
+</body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(good_html)
+        score, notes = design_score(td)
+
+    assert score >= 80, f"良好HTML应得≥80分，实际{score}: {notes}"
+
+
+def test_design_score_bad_html_low():
+    """差 HTML 应得低分。"""
+    import tempfile
+    import os
+    from driving.design_context import design_score
+
+    bad_html = """<html><head></head><body>
+<img src="x.jpg">
+</body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(bad_html)
+        score, notes = design_score(td)
+
+    assert score < 50, f"差HTML应得<50分，实际{score}: {notes}"
+
+
+def test_design_score_empty_dir():
+    """空目录应得0分。"""
+    import tempfile
+    from driving.design_context import design_score
+
+    with tempfile.TemporaryDirectory() as td:
+        score, notes = design_score(td)
+
+    assert score == 0
