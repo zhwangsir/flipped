@@ -966,3 +966,42 @@
 - **真实模型能力**：GLM 成功拆分任务；Kimi 成功在 OpenHands 沙箱创建文件。
 - **已知限制**：GLM 生成的 verify_cmd 有时包含多行 Python 代码用 `&&` 连接，`python -c` 无法执行；Kimi 有时不替换 `raise NotImplementedError` 而只验证 import。
 - **下一步改进**：planner prompt 约束 verify_cmd 必须是单行可执行命令；Supervisor 在反馈中提醒 Worker 替换 NotImplementedError。
+
+## [2026-07-10] M14.4 finish=length 输出截断自动续生成（continuation 机制）
+
+### 测试命令
+```bash
+.venv/bin/python -m pytest tests/test_local_worker.py -x -q
+.venv/bin/python -m pytest -q
+```
+
+### 输出摘要
+**tests/test_local_worker.py**（M14.4 新增 7 测试）:
+```
+19 passed, 1 warning in 2.79s
+```
+新增测试:
+- test_needs_continuation_finish_length_unclosed_fence ✓
+- test_needs_continuation_finish_stop ✓
+- test_needs_continuation_finish_length_closed ✓
+- test_needs_continuation_empty_content ✓
+- test_needs_continuation_no_fence ✓
+- test_finish_length_triggers_continuation（集成：截断→续生成→拼接完整文件）✓
+- test_finish_length_max_continuation_retries（集成：max 2 次后回退解析）✓
+
+**全量回归**:
+```
+1 failed, 434 passed, 2 warnings in 30.09s
+```
+- 434 passed（M14.3 时 427 → +7 新测试）
+- 1 failed = test_web_search.py::test_returns_results（SearXNG 返回 404，外部服务问题，非回归）
+
+### 修复的 bug
+1. **overflow_retry 误触发**（orchestrator.py:650）：
+   - 旧：`if len(content) < 50:` → finish=length 且 content 短(47字符)时触发 overflow_retry，替换 content 丢失文件块开头
+   - 新：`if len(content) < 50 and not _needs_continuation(content, finish):` → 有未闭合代码块时跳过 overflow_retry，走 continuation
+
+### 结论
+- continuation 机制正确：finish=length 截断时自动续生成，拼接成完整文件
+- overflow_retry 与 continuation 分工明确：overflow 处理 reasoning 占满(content极短无```)，continuation 处理正常截断(有未闭合```)
+- 无回归（434 passed，唯一失败为外部 SearXNG 404）

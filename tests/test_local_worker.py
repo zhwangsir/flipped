@@ -257,3 +257,117 @@ def test_raw_css_fallback():
 
         assert result["worker_error"] is False
         assert os.path.exists(os.path.join(d, "style.css"))
+
+
+# ---------- M14.4: finish=length 输出截断自动续生成 ----------
+
+def test_needs_continuation_finish_length_unclosed_fence():
+    """finish=length 且有未闭合的代码块 → 需要续生成。"""
+    from driving.orchestrator import _needs_continuation
+    content = "```html:index.html\n<!DOCTYPE html>\n<html><body>"  # 1 个 ``` (奇数)
+    assert _needs_continuation(content, "length")
+
+
+def test_needs_continuation_finish_stop():
+    """finish=stop → 不需要续生成。"""
+    from driving.orchestrator import _needs_continuation
+    content = "```html:index.html\n<h1>hi</h1>\n```"  # 2 个 ``` (偶数)
+    assert not _needs_continuation(content, "stop")
+
+
+def test_needs_continuation_finish_length_closed():
+    """finish=length 但代码块已闭合 → 不需要续生成（可能是正常长输出）。"""
+    from driving.orchestrator import _needs_continuation
+    content = "```html:index.html\n<h1>hi</h1>\n```\n说明文字"  # 2 个 ``` (偶数)
+    assert not _needs_continuation(content, "length")
+
+
+def test_needs_continuation_empty_content():
+    """空 content → 不需要续生成（overflow retry 会处理）。"""
+    from driving.orchestrator import _needs_continuation
+    assert not _needs_continuation("", "length")
+
+
+def test_needs_continuation_no_fence():
+    """finish=length 但无代码块标记 → 不需要续生成（回退解析会处理）。"""
+    from driving.orchestrator import _needs_continuation
+    content = "这是纯文本说明，没有代码块"
+    assert not _needs_continuation(content, "length")
+
+
+def test_finish_length_triggers_continuation():
+    """finish=length + 未闭合代码块 → 自动续生成，拼接成完整文件。
+
+    E2E 真实场景：worker 生成 HTML 到 max_tokens 被截断（finish=length），
+    代码块没有闭合的 ```。continuation 机制把已生成内容作为上下文，
+    让模型继续输出剩余部分，拼接成完整文件。
+    """
+    with tempfile.TemporaryDirectory() as d:
+        # 第一次：未闭合的 HTML（被 max_tokens 截断）
+        first_content = "```html:index.html\n<!DOCTYPE html>\n<html><body>"
+        # 第二次（continuation）：补全剩余部分并闭合代码块
+        second_content = "<h1>completed</h1>\n</body>\n</html>\n```"
+
+        call_count = [0]
+
+        def fake_stream(*args, **kwargs):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                content = first_content
+                finish = "length"
+            else:
+                content = second_content
+                finish = "stop"
+            lines = _make_stream_lines(content, finish)
+            mock_resp = MagicMock()
+            mock_resp.raise_for_status = MagicMock()
+            mock_resp.iter_lines = MagicMock(side_effect=lambda: iter(lines))
+            cm = MagicMock()
+            cm.__enter__ = MagicMock(return_value=mock_resp)
+            cm.__exit__ = MagicMock(return_value=False)
+            return cm
+
+        with patch("httpx.stream", side_effect=fake_stream):
+            result = local_worker(_make_state(d))
+
+        assert result["worker_error"] is False
+        assert os.path.exists(os.path.join(d, "index.html"))
+        with open(os.path.join(d, "index.html")) as f:
+            file_content = f.read()
+            assert "<h1>completed</h1>" in file_content
+            assert "</html>" in file_content
+
+
+def test_finish_length_max_continuation_retries():
+    """continuation 最多重试 2 次，仍不闭合则用回退解析。"""
+    with tempfile.TemporaryDirectory() as d:
+        # 主调用：未闭合的 content（1 个 ```，奇数）
+        truncated = "```html:index.html\n<h1>still truncated"
+        # continuation 每次返回无 ``` 的片段（拼接后 ``` 数量不变仍奇数，
+        # 持续触发 _needs_continuation 直到 _max_continues 用完）
+        cont_fragment = " more truncated content"
+
+        call_count = [0]
+
+        def fake_stream(*args, **kwargs):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                content, finish = truncated, "length"
+            else:
+                content, finish = cont_fragment, "length"
+            lines = _make_stream_lines(content, finish)
+            mock_resp = MagicMock()
+            mock_resp.raise_for_status = MagicMock()
+            mock_resp.iter_lines = MagicMock(side_effect=lambda: iter(lines))
+            cm = MagicMock()
+            cm.__enter__ = MagicMock(return_value=mock_resp)
+            cm.__exit__ = MagicMock(return_value=False)
+            return cm
+
+        with patch("httpx.stream", side_effect=fake_stream):
+            result = local_worker(_make_state(d))
+
+        # 主调用 + 2 次 continuation = 3 次调用上限
+        assert call_count[0] == 3
+        # 回退解析仍能写出部分内容（不 worker_error）
+        assert result["worker_error"] is False

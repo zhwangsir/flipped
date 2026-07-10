@@ -531,6 +531,28 @@ openhands_worker = make_openhands_worker()
 
 # ---------- LocalWorker（绕过 Docker/OpenHands，直接用 Kimi 写文件） ----------
 
+def _needs_continuation(content: str, finish: str) -> bool:
+    """检测 worker 输出是否被 max_tokens 截断需要续生成。
+
+    E2E 暴露的问题（M14.4）：worker 生成 HTML 到 max_tokens 上限被截断
+    （finish=length），代码块没有闭合的 ```，导致文件不完整 → verify 失败。
+
+    需要续生成的条件：
+    1. finish == "length"（到达 max_tokens 上限）
+    2. 且 content 含未闭合的代码块（``` 数量为奇数）
+
+    不需要续生成的情况：
+    - finish != "length"（正常结束或 overflow retry 处理）
+    - finish=length 但代码块已闭合（偶数 ```，可能是正常长输出）
+    - content 为空（overflow retry 会处理）
+    - 无代码块标记（回退解析会处理）
+    """
+    if finish != "length" or not content:
+        return False
+    # 数 ``` 的数量，奇数说明有未闭合的代码块
+    return content.count("```") % 2 == 1
+
+
 def local_worker(state: OrchestratorState) -> dict:
     """本地 worker：直接调 Kimi 生成代码并写文件到 cwd，无需 Docker/沙箱。
 
@@ -623,7 +645,9 @@ def local_worker(state: OrchestratorState) -> dict:
         # M11.1：reasoning overflow 检测 + 最小 prompt 重试。
         # 累积上下文/delegate feedback 过长时，Kimi 仍会把 tokens 全用在 reasoning 上，
         # content_len < 50 说明几乎没产出内容。用最小 prompt（只含任务描述）重试一次。
-        if len(content) < 50:
+        # M14.4：finish=length 且有未闭合代码块时跳过 overflow_retry——那是正常截断，
+        # 应走 continuation 续生成；overflow_retry 会替换 content 丢失文件块开头。
+        if len(content) < 50 and not _needs_continuation(content, finish):
             _minimal_prompt = (
                 f"在 `{cwd}` 下完成以下任务，只输出代码块：\n{subtask[:300]}\n"
                 "用 ```html:index.html 格式输出完整 HTML，末尾 ```。"
@@ -668,6 +692,65 @@ def local_worker(state: OrchestratorState) -> dict:
                 print(f"[local_worker] overflow_retry content_len={len(content)} time={_time.monotonic()-_t1:.1f}s", file=_sys.stderr, flush=True)
             except Exception as e2:  # noqa: BLE001
                 print(f"[local_worker] overflow_retry failed: {type(e2).__name__}", file=_sys.stderr, flush=True)
+
+        # M14.4: finish=length 输出截断自动续生成。
+        # E2E 暴露：worker 生成 HTML 到 max_tokens 上限被截断（finish=length），
+        # 代码块没有闭合的 ```，导致文件不完整 → verify 失败。
+        # continuation 机制把已生成 content 的末尾作为上下文，让模型继续输出剩余部分。
+        _max_continues = int(os.environ.get("FLIPPED_MAX_CONTINUATIONS", "2"))
+        while _needs_continuation(content, finish) and _max_continues > 0:
+            _cont_prompt = (
+                f"以下是未完成的代码输出（被截断）。从中断处继续输出剩余部分，"
+                f"不要重复已生成内容，直接输出剩余代码并闭合 ```：\n"
+                f"...{content[-1500:]}"
+            )
+            _cont_parts: list[str] = []
+            _cont_finish = ""
+            try:
+                with httpx.stream(
+                    "POST",
+                    f"{str(base_url).rstrip('/')}/chat/completions",
+                    headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+                    json={
+                        "model": model,
+                        "messages": [{"role": "user", "content": _cont_prompt}],
+                        "max_tokens": 4096,
+                        "temperature": 0.1,
+                        "enable_thinking": False,
+                        "chat_template_kwargs": {"enable_thinking": False},
+                        "stream": True,
+                    },
+                    timeout=httpx.Timeout(_kimi_timeout, connect=10.0),
+                    trust_env=False,
+                ) as rc:
+                    rc.raise_for_status()
+                    for line_c in rc.iter_lines():
+                        if not line_c or not line_c.startswith("data:"):
+                            continue
+                        payload_c = line_c[5:].strip()
+                        if payload_c == "[DONE]":
+                            break
+                        try:
+                            dc = _json.loads(payload_c)
+                        except Exception:
+                            continue
+                        choices_c = dc.get("choices") or []
+                        if not choices_c:
+                            continue
+                        ch_c = choices_c[0]
+                        delta_c = ch_c.get("delta", {})
+                        if delta_c.get("content"):
+                            _cont_parts.append(delta_c["content"])
+                        if ch_c.get("finish_reason"):
+                            _cont_finish = ch_c["finish_reason"]
+                _cont_content = "".join(_cont_parts)
+                content = content + _cont_content
+                finish = _cont_finish or "stop"
+                _max_continues -= 1
+                print(f"[local_worker] continuation content_len={len(content)} finish={finish} continues_left={_max_continues}", file=_sys.stderr, flush=True)
+            except Exception as ec:  # noqa: BLE001
+                print(f"[local_worker] continuation failed: {type(ec).__name__}", file=_sys.stderr, flush=True)
+                break
     except Exception as e:  # noqa: BLE001
         import sys
         print(f"[local_worker] httpx failed: {type(e).__name__}: {str(e)[:200]}", file=sys.stderr, flush=True)

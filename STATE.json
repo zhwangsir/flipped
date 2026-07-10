@@ -2,7 +2,7 @@
   "project": "flipped",
   "description": "接入本地 MLX 双模型(GLM-5.2 编排者 / Kimi-K2.7-Code 执行者)的 agentic 代码编辑器平台。fork Roo Code + 自定义驾驭层(强制验证/循环检测/上下文压缩/人工审批/子Agent/可观测性) + MCP 联网与外部能力。",
   "updated": "2026-07-10",
-  "current_milestone": "M14.3 hex 值强制校验工程化 (427 passed)",
+  "current_milestone": "M14.4 finish=length 输出截断自动续生成 (434 passed)",
   "key_facts": {
     "dev_host": "Apple M5 Max, 128GB RAM, 1.1TB 可用磁盘 — 开发/控制节点，非模型宿主",
     "model_cluster": "exo 集群 @ http://100.64.201.37:52415 (内网, OpenAI 兼容)；公网 https://dgmt.top/exo (需 Bearer token)",
@@ -302,6 +302,11 @@
           "title": "hex 值强制校验工程化（required_hex_exact + 违规详情回传）",
           "status": "done",
           "note": "E2E 暴露 worker(Kimi) 把 #0D0D12 替换成 #000000。工程化修复(AGENTS.md §6 遇错即工程化)：(1) 新增 _critical_hexes() 取风格关键 hex(accent/bg/text)；(2) lint_dir 新增 required_hex_exact error 规则，缺失关键 hex → 验证阻断；(3) make_design_verifier 失败时返回违规详情(含 hex 值)，而非只返回 summary；(4) 错误消息 hex 值放最前确保 80 字符截断后仍可见；(5) RCA 模式更新匹配 required_hex_exact + hex.*缺失。E2E 实跑确认：worker 用 Tailwind 配色(#38bdf8/#0f172a)被 required_hex_exact 阻断，重试后用了正确 hex 值。7 新测试全过。427 passed。"
+        },
+        "M14.4": {
+          "title": "finish=length 输出截断自动续生成（continuation 机制）",
+          "status": "done",
+          "note": "E2E 暴露 worker(Kimi) 生成 HTML 到 max_tokens(4096) 上限被截断(finish=length)，代码块没有闭合的 ```，导致文件不完整 → verify 失败 → task 失败 3 次 → circuit_breaker。修复：(1) 新增 _needs_continuation() 纯函数检测 finish=length 且 ``` 数量为奇数(未闭合)；(2) 在 local_worker overflow_retry 之后、文件解析之前加 continuation while 循环，把已生成 content 末尾 1500 字符作为上下文续生成，max 2 次(FLIPPED_MAX_CONTINUATIONS 可配)；(3) overflow_retry 条件增加 not _needs_continuation 避免在有未闭合代码块时误替换 content 丢失文件块开头。7 新测试全过(5 纯函数+2 集成)。全量 434 passed。"
         }
       }
     }
