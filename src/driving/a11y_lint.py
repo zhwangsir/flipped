@@ -238,11 +238,23 @@ def make_a11y_verifier():
 
     返回的函数签名: (cmd_list, cwd) -> (ok, msg)
     a11y 违规只产生 warning（不阻断 verify），除非有 error 级违规。
+    失败时 msg 包含具体违规规则和元素，方便 worker 精确修复。
     """
 
     def _verify(cmd_list: list[str], cwd: str) -> tuple[bool, str]:
         r = scan_a11y(cwd)
-        return r.passed, r.summary()
+        if r.passed:
+            return True, r.summary()
+        # 包含具体违规细节，让 worker 知道修什么
+        details = "; ".join(
+            f"{v.rule}({v.element}): {v.detail[:80]}"
+            for v in r.violations
+            if v.severity == "error"
+        )
+        msg = r.summary()
+        if details:
+            msg += f" | 违规: {details}"
+        return False, msg
 
     return _verify
 

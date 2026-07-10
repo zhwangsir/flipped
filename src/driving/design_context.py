@@ -238,7 +238,8 @@ def build_design_brief_compact(style: str = "auto", product_type: str = "") -> s
     font = brief["font"].split(" /")[0]
 
     return (
-        f"设计约束: 颜色 accent={accent} bg={bg} text={text}; "
+        f"设计约束: CSS 变量必须用 --color-accent: {accent}; --color-bg: {bg}; --color-text: {text}; "
         f"字体 {font}; 用 CSS variables; 含 hover/focus 状态; "
-        f"响应式 768px; focus-visible; hex 值不用英文颜色名。"
+        f"响应式 768px; focus-visible; WCAG AA 对比度(文字≥4.5:1); "
+        f"按钮文字色须与背景对比度≥4.5:1。"
     )

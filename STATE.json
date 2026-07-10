@@ -2,7 +2,7 @@
   "project": "flipped",
   "description": "接入本地 MLX 双模型(GLM-5.2 编排者 / Kimi-K2.7-Code 执行者)的 agentic 代码编辑器平台。fork Roo Code + 自定义驾驭层(强制验证/循环检测/上下文压缩/人工审批/子Agent/可观测性) + MCP 联网与外部能力。",
   "updated": "2026-07-10",
-  "current_milestone": "M13 视觉回归快照对比 (390 passed)",
+  "current_milestone": "M14 双模型并行验证监督架构 (445 passed)",
   "key_facts": {
     "dev_host": "Apple M5 Max, 128GB RAM, 1.1TB 可用磁盘 — 开发/控制节点，非模型宿主",
     "model_cluster": "exo 集群 @ http://100.64.201.37:52415 (内网, OpenAI 兼容)；公网 https://dgmt.top/exo (需 Bearer token)",
@@ -282,6 +282,23 @@
           "note": "capture_screenshot + compare_images + visual_regression_check + make_visual_verifier。基线存储 data/visual_baselines/{hash}.png。"
         }
       }
+    },
+    "M14": {
+      "title": "双模型并行验证监督架构 (D19)",
+      "status": "done",
+      "note": "用户需求：'两个模型需要同时进行使用，一个用来跑代码的时候另外一个用来验证监督'。新增 src/driving/parallel_verifier.py：ThreadPoolExecutor 并行跑 确定性 verifier(verify_cmd+design-lint+a11y) + GLM 语义验证(读产物评判设计/结构/a11y/bug)。合并：det_ok AND glm_severity!=blocker。GLM 不可用/超时 fail-open。opt-in：FLIPPED_USE_PARALLEL_VERIFIER=1。E2E 修复链(safety复合命令解析/shlex绕过shell变量展开/compact brief指定CSS变量名/supervisor≤200字/a11y返回具体违规/RCA引用细节)让 E2E task_1 首次 verified=True。全量 420 passed(+25 新测试)。",
+      "tasks": {
+        "M14.1": {
+          "title": "E2E 修复链（safety/shlex/CSS变量/a11y细节/RCA）",
+          "status": "done",
+          "note": "6 个 E2E 阻塞问题修复：is_safe_command 复合命令解析、_safe_default_verifier shlex 绕过 shell 变量展开、compact brief 显式指定 CSS 变量名、supervisor prompt ≤200字、a11y verifier 返回具体违规 rule+element、RCA 引用实际违规细节。E2E task_1 首次 verified=True。395 passed。"
+        },
+        "M14.2": {
+          "title": "ParallelVerifier 双模型并行验证模块",
+          "status": "done",
+          "note": "src/driving/parallel_verifier.py：SemanticVerdict + _read_artifacts + _call_glm_semantic(enable_thinking=false, max_tokens=800) + make_glm_semantic_verifier + make_parallel_verifier(ThreadPoolExecutor 并行)。25 单测全过（含并行执行验证：两 0.5s 任务 <0.95s 完成）。factory_loop opt-in 接入(FLIPPED_USE_PARALLEL_VERIFIER=1)。"
+        }
+      }
     }
   },
   "architecture_decisions": [
@@ -393,6 +410,12 @@
       "decision": "重大转向: 产品=本地模型驱动的 AI 开发工厂(类 Claude Code/Codex), 基座=OpenHands(MIT,~79k★,V1 Agent Canvas+Software Agent SDK); 复用其 Docker 沙盒/browser-use 浏览器/MCP+工具/Web 控制台/LiteLLM 接 :4000; 我们的 LangGraph 多 Agent 监督(Supervisor/Overseer)作外层 orchestrator 经 SDK 把子任务派进 DockerWorkspace 并经 state.events 监督。取代 D10/D14/D17 的 VSCodium 编辑器/Windows 安装器方向(降级搁置)。先 Web 控制台后 Electron 桌面。风险: V1 仍 1.0.0-rc 未GA + 本地模型工具调用摩擦(GLM-5.2-fp8 已验证缓解) + macOS ARM 沙盒需实机验证",
       "date": "2026-07-01",
       "approved_by": "用户(纠偏+全权委托)"
+    },
+    {
+      "id": "D19",
+      "decision": "双模型并行验证监督: worker(Kimi)产出代码后, GLM 与确定性 verifier(verify_cmd+design-lint+a11y) 经 ThreadPoolExecutor 并行对产物做语义验证(设计/结构/a11y/bug)。合并 det_ok AND glm_severity!=blocker; GLM 不可用/超时 fail-open 不阻塞。opt-in: FLIPPED_USE_PARALLEL_VERIFIER=1。跨模型族验证避免自偏(呼应 D15)。用户原话:'两个模型需要同时进行使用,一个用来跑代码的时候另外一个用来验证监督'。",
+      "date": "2026-07-10",
+      "approved_by": "用户"
     }
   ],
   "known_issues": [

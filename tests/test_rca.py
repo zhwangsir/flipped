@@ -62,7 +62,7 @@ def test_a11y_violation():
     """axe-core violation → a11y_violation。"""
     r = analyze_failure(summary="a11y 未通过: image-alt violation")
     assert r.cause == RootCause.A11Y_VIOLATION
-    assert "alt" in r.fix_suggestion
+    assert "a11y" in r.fix_suggestion.lower()
 
 
 def test_timeout():

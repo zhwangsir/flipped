@@ -108,7 +108,7 @@ _RULES: list[tuple[re.Pattern, RootCause, str, float]] = [
     # a11y 失败
     (re.compile(r"a11y.*未通过|axe.*violation|image-alt|html-has-lang|color-contrast.*fail", re.I),
      RootCause.A11Y_VIOLATION,
-     "a11y 扫描失败。给 img 添加 alt 属性，给 html 添加 lang 属性，确保颜色对比度达标。",
+     "a11y 扫描失败。查看 feedback 中的具体违规规则和元素，精确修复。",
      0.85),
 
     # 超时

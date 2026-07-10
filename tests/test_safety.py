@@ -38,6 +38,34 @@ def test_is_safe_command_blocks_unknown_command():
     assert not is_safe_command("/usr/bin/unknown_tool arg")[0]
 
 
+def test_is_safe_command_compound_with_assignment():
+    """verify_cmd 形如 bash -c "f=...index.html; test -f "$f" && grep ..." 不应被误拦。"""
+    cmd = 'bash -c "f=/tmp/flipped_e2e_landing/index.html; test -f \\"$f\\" && grep -q \'#0A84FF\' \\"$f\\" && grep -q \'<section\' \\"$f\\""'
+    ok, reason = is_safe_command(cmd)
+    assert ok, f"should be safe: {reason}"
+
+
+def test_is_safe_command_compound_semicolon():
+    ok, _ = is_safe_command("cd /tmp && ls -la")
+    assert ok
+
+
+def test_is_safe_command_assignment_only():
+    ok, _ = is_safe_command("FOO=bar")
+    assert ok
+
+
+def test_is_safe_command_compound_blocks_unknown():
+    ok, reason = is_safe_command("cd /tmp && evil_cmd arg")
+    assert not ok
+    assert "evil_cmd" in reason
+
+
+def test_is_safe_command_pipe():
+    ok, _ = is_safe_command("cat file.txt | grep pattern")
+    assert ok
+
+
 def test_is_safe_command_respects_allow_unsafe_env(monkeypatch):
     monkeypatch.setenv("SAFETY_ALLOW_UNSAFE_COMMANDS", "1")
     assert is_safe_command("rm -rf /")[0]

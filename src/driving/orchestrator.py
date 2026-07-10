@@ -415,7 +415,9 @@ def _build_supervisor_prompt(state: OrchestratorState) -> str:
     return (f"目标：{state['goal']}\n工作目录：{state['cwd']}\n{repo_note}{rules_note}"
             f"{fb_prefix}{fb if fb else '这是首轮。'}{summary_note}\n"
             "你是架构调度者。给出执行者下一步要做的【一个】自包含子任务；"
-            "若相信目标已达成则 believe_done=true。")
+            "若相信目标已达成则 believe_done=true。"
+            "subtask 描述必须简洁（≤200字），只说做什么、不改什么文件，"
+            "不要重复设计约束（执行者已有 project_rules）。")
 
 
 def default_supervisor(state: OrchestratorState) -> dict:
@@ -819,7 +821,23 @@ def _safe_default_verifier(cmd: list, cwd: str) -> "tuple[bool, str]":
         return False, f"command blocked: {reason}"
     if classify_risk(command_str) == "high":
         return False, "high-risk command requires approval"
+    import shlex
     import subprocess
+    # M14 修复：bash -c "...$var..." 经 shell=True 执行时，外层 /bin/sh 会先展开 $var
+    # （此时 $var 为空），导致内层 bash 拿到空路径。用 shlex.split 提取内层命令，
+    # 直接传 ['bash', '-c', inner_cmd] 绕过外层 shell。
+    if len(cmd) == 1 and cmd[0].startswith(("bash -c ", "sh -c ")):
+        try:
+            tokens = shlex.split(cmd[0])
+            if len(tokens) >= 3 and tokens[0] in ("bash", "sh") and tokens[1] == "-c":
+                inner_cmd = tokens[2]
+                p = subprocess.run(
+                    [tokens[0], "-c", inner_cmd],
+                    cwd=cwd, capture_output=True, text=True, timeout=300,
+                )
+                return p.returncode == 0, (p.stdout + p.stderr)[-2000:]
+        except Exception:  # noqa: BLE001 — shlex 解析失败时回退到 shell=True
+            pass
     p = subprocess.run(command_str, shell=True, cwd=cwd, capture_output=True, text=True, timeout=300)
     return p.returncode == 0, (p.stdout + p.stderr)[-2000:]
 

@@ -41,8 +41,61 @@ def normalize_command(command: str) -> str:
     return cmd
 
 
+_ASSIGN_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=\S")
+
+# Shell control keywords that should be skipped when extracting command tokens.
+_SHELL_KEYWORDS = frozenset({
+    "if", "then", "else", "elif", "fi", "for", "do", "done", "while",
+    "until", "case", "esac", "in", "!", "{", "}", "[", "]",
+})
+
+
+def _extract_command_tokens(cmd: str) -> list[str]:
+    """Extract actual command names from a (possibly compound) shell command.
+
+    Handles:
+    - Variable assignments as prefixes (f=/path; actual_cmd ...)
+    - Compound commands joined by ; && || |
+    Returns list of base command tokens (basename, no path) to validate.
+    """
+    parts = re.split(r"\s*(?:;|&&|\|\||\|)\s*", cmd)
+    tokens: list[str] = []
+    for part in parts:
+        part = part.strip()
+        if not part:
+            continue
+        # Strip leading variable assignments: f=value, PATH=$PATH:...
+        # \s* (not \s+) so assignment-at-end-of-string (no trailing space) is consumed
+        while _ASSIGN_RE.match(part):
+            new_part = re.sub(r"^[A-Za-z_][A-Za-z0-9_]*=\S+\s*", "", part, count=1).strip()
+            if new_part == part:
+                # No progress made — avoid infinite loop
+                break
+            part = new_part
+        if not part:
+            continue
+        words = part.split()
+        if not words:
+            continue
+        base = words[0].split("/")[-1]
+        if base in _SHELL_KEYWORDS:
+            # Take next word if first is a keyword (e.g. "then grep ...")
+            for w in words[1:]:
+                bw = w.split("/")[-1]
+                if bw not in _SHELL_KEYWORDS:
+                    tokens.append(bw)
+                    break
+            continue
+        tokens.append(base)
+    return tokens
+
+
 def is_safe_command(command: str) -> tuple[bool, str]:
     """Return (ok, reason) for a shell command.
+
+    Handles compound commands (``f=/path; test -f "$f" && grep ...``) by
+    splitting on shell operators and checking each sub-command's actual
+    command name after stripping variable assignments.
 
     If `SAFETY_ALLOW_UNSAFE_COMMANDS=1`, every command is allowed (for tests only).
     """
@@ -54,10 +107,14 @@ def is_safe_command(command: str) -> tuple[bool, str]:
     for pat in DANGEROUS_PATTERNS:
         if pat.search(cmd):
             return False, f"blocked by pattern: {pat.pattern}"
-    base = cmd.split()[0].split("/")[-1]
-    if base in SAFE_BASE_COMMANDS:
+    tokens = _extract_command_tokens(cmd)
+    if not tokens:
+        # Only assignments / empty — safe
         return True, ""
-    return False, f"command not in whitelist: {base}"
+    for base in tokens:
+        if base not in SAFE_BASE_COMMANDS:
+            return False, f"command not in whitelist: {base}"
+    return True, ""
 
 
 def is_dangerous_command(command: str) -> tuple[bool, str]:

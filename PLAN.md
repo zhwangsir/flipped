@@ -1,171 +1,83 @@
-# M6 · 从骨架到可用产品：真实端到端 + Console 功能补全 + 产品化
+# M14 · 双模型并行验证监督架构（D19）
 
-> M0–M5 已完成(骨架 + 多 Agent 编排 + backend/WS + Console 外壳 + 硬化,92 单测绿),但**全是 mock 验证**,`ISSUE-6`(Codex 沙箱禁 TCP/网络)使真实端到端从未跑通,Console 多数面板仍是 mock,未产品化。
-> 本机(macOS 真机)无 ISSUE-6 限制,可做真实 E2E。M6 目标:**让它真正跑起来、Console 真正可用、能打包分发**。
+> 用户原话："两个模型需要同时进行使用，一个用来跑代码的时候另外一个用来验证监督"
+> 当前架构（serial）：supervisor(GLM) → worker(Kimi) → overseer(GLM) → verify(确定性)
+> 新架构：worker 跑代码的**同时**，GLM 并行对产物做语义验证监督（双模型并行使用）
 
-## 优先级与顺序
-自主可验的先做(Console 补全 + 后端端点 + 产品化脚手架),模型在线才可跑的真实 LLM E2E 靠后(需用户 LAUNCH exo 模型)。
+## 1. 设计目标
 
-## 阶段与任务(每个任务:TDD/构建 → verify → commit)
+- **并行使用两个模型**：Kimi 生成代码时，GLM 同时对产物做语义监督（不是事后 overseer 的方向判断，而是对**代码产物本身**的验证）
+- **跨模型族验证**：Kimi 产代码 → GLM 验证（避免同模型自偏，呼应 D15）
+- **与确定性 verify 并行**：GLM 语义验证 + 确定性 verify_cmd/design-lint/a11y 同时跑，合并结果
+- **不破坏现有架构**：作为可选 verifier 注入，默认行为不变
 
-### M6.0 UI 打磨落盘 ✅(本次)
-- Console 设计系统改造(去 AI 感 → Codex 简约):tokens.css + app.css。verify:构建绿 + 真实 mock 后端 WS 截图。
+## 2. 架构设计
 
-### Phase 1 · Console 功能补全(自主,mock 后端可验)
-- **M6.1 ContextPanel 接真实事件流** — editor/diff/终端/浏览器 Tab 从会话事件(file_change/terminal/browser)渲染,替换 `mock.ts` 静态数据;新增 store 派生的工作区文件/diff/终端/浏览器状态。verify:发任务后右侧面板显真实数据 + 构建 + headless 截图。
-- **M6.2 会话操作补全** — 停止/取消任务、删除会话、切换会话清空正确;后端补 `DELETE /sessions/{id}`、`POST /tasks/{id}/cancel`、`GET /sessions/{id}/events`(REST 历史)。verify:pytest + curl + 截图。
-- **M6.3 指标接入 UI** — `GET /api/v1/metrics` 真实值进状态栏/指标面板(token/延迟/调用数),替换硬编码占位。verify:pytest(指标端点)+ 截图。
-- **M6.4 资源管理器接真实工作区** — 侧栏文件树显示会话沙箱真实文件(经后端 `GET /sessions/{id}/workspace`)。verify:pytest + 截图。
+### 2.1 ParallelVerifier 模块（src/driving/parallel_verifier.py）
 
-### Phase 2 · 真实端到端(本机真机,部分需 exo 模型在线)
-- **M6.5 真实 backend + OpenHands 沙箱 E2E** — 非 mock:Console 派一个真实编码任务 → openhands_worker 在 Docker 沙箱执行 → 真生成文件 + 事件回流 Console。修复 E2E 暴露的问题。verify:沙箱内真文件 + Console 实时可见 + 验收通过(需 exo 模型 + Docker)。
-- **M6.6 模型路由落实** — 确认直连 exo(FLIPPED_MODEL_BASE_URL)或恢复 LiteLLM:4000 统一路由(ISSUE-5);Supervisor/Overseer/Worker 全部走通。verify:真实调用返回 + verify_m5.sh。
+```
+worker(Kimi 产代码)
+       ↓
+   ┌───────────────────────────┐
+   │  ThreadPoolExecutor 并行   │
+   ├───────────┬───────────────┤
+   │ GLM 语义  │ 确定性三重校验 │
+   │ 验证监督  │ (verify_cmd + │
+   │ (读产物)  │  design-lint  │
+   │          │  + a11y)       │
+   └───────────┴───────────────┘
+       ↓ 合并结果
+   ok = deterministic_ok AND glm_severity != "blocker"
+   msg = 合并两侧发现
+```
 
-### Phase 3 · 产品化
-- **M6.7 一键启动 + 编排** — `scripts/dev_up.sh` 一键起 backend + console(+ 探活 OpenHands);进程管理与健康检查。verify:脚本起全栈 + 截图。
-- **M6.8 Electron 桌面壳** — 壳内嵌 Console(生产构建)+ 主进程 spawn backend sidecar + 连 OpenHands;`npm run app`。verify:Electron 起窗截图。
-- **M6.9 CI** — GitHub Actions:pytest + console build(在非受限 runner)。verify:workflow 文件 + 本地 act/干跑说明。
+### 2.2 GLM 语义验证器职责
 
-## 验收标准(M6 DoD)
-- 全量 `pytest tests/ -q` 保持全绿(每个后端任务新增测试)。
-- `cd console && npm run build` 保持通过(每个前端任务后)。
-- Console 每个面板都由**真实后端数据**驱动(mock.ts 仅保留为离线兜底/演示)。
-- 至少一次**真实(非 mock)**任务在沙箱跑通并在 Console 全程可见(M6.5,模型在线时)。
-- 一键脚本可拉起全栈;Electron 可出窗;CI workflow 就绪。
+- 读取 cwd 下产物（index.html 等）
+- 让 GLM 评判：设计系统一致性、结构完整性、潜在 bug、a11y hints
+- 输出结构化 `SemanticVerdict`：severity(blocker/warning/ok) + issues + rationale
+- **blocker 级**才算失败（避免过度挑剔阻断流程）
 
-## 循环开发约定(AGENTS.md)
-- 每任务:先写测试/明确 verify → 实现 → 跑测试/构建/截图 → 通过即 `git commit` + 更新 STATE.json/TEST_LOG.md → 下一个。
-- 非 mock 需外部依赖(exo 模型 / Docker)时,若不可用则记录为"待模型在线复跑",不阻塞其余任务。
-- 诚实报告:mock 验证与真实验证分开陈述。
+### 2.3 接入点
 
-## 回滚
-- 分支 `codex/m6-product`;每任务独立 commit,可逐个回退。不破坏已绿的 M0–M5 代码与测试。
+`orchestrator.build_orchestrator` 的 `verifier` 参数可换成 `make_parallel_verifier(base_verifier)`。
+`factory_loop` 用 `combined_verifier_with_a11y` 时也可包一层 `make_parallel_verifier`。
 
----
+## 3. 实施步骤
 
-# M7 · UI 诚实化:全部接成真功能 ✅
+### M14.1 ParallelVerifier 模块
+- `src/driving/parallel_verifier.py`：`SemanticVerdict` + `make_glm_semantic_verifier()` + `make_parallel_verifier(base_verifier, glm_alias)`
+- 并行执行用 `concurrent.futures.ThreadPoolExecutor`
+- GLM 调用复用 `_direct_glm_tool_call` 风格（httpx + trust_env=False + enable_thinking=false）
+- 优雅降级：GLM 不可用时 fail-open（只返回确定性结果，不阻塞）
 
-> 背景:用户发现"很多功能都用不了"——大量 UI 控件是纯装饰(无 onClick / mock 数据 / 硬编码谎报)。
-> 用户明确选择"**全部接成真功能**"(而非删除),优先级:模型切换 / 真实编辑器 / MCP 真列表+开关 / 模式切换。
+### M14.2 orchestrator 接入
+- `build_orchestrator` 默认 verifier 改为 `make_parallel_verifier(_safe_default_verifier)`（可选，环境变量控制）
+- 状态字段新增 `parallel_verdict`（可选）
 
-- **M7.1 模型切换** ✅ — 输入区下拉真切执行模型;`model_router.resolve_worker_model_config(alias)` 按 coder=Kimi/architect=GLM 返回不同模型;`create_task` 透传 `context.model` → 沙盒用对应模型。真实验证:architect(GLM) 在沙盒执行建 g.py。
-- **M7.2 真实编辑器** ✅ — 编辑器 Tab 显示沙盒真实文件内容;worker 从 `file_editor` ActionEvent 抓 `file_text` 随 `file_change` 发出;store 合并保内容;多文件 chips + 行号 + 语法高亮。验证:calc.py 内容真实。
-- **M7.3 MCP 真列表 + 开关** ✅ — `api/mcp_registry.py` 配置文件持久化;flipped 5 工具内省自 `mcp_server.tools.TOOLS`;`GET /mcp/servers` + `POST /toggle`;启用项经 `enabled_mcp_config()` 注入 Agent `mcp_config`(默认全关不改变已验证路径)。
-- **M7.4 模式切换** ✅ — `create_task` 按 `context.mode` 路由;`_run_chat`+`_llm_chat`:对话=直连本地模型问答、规划=LLM 出【要做什么/如何验证】分步计划、智能体=沙盒执行不变。验证:Kimi 秒回 / GLM 出计划。
-- **M7.5 侧栏·顶栏·输入区控件全部接真** ✅ — 共享导航状态入 store(activeView/contextTab/sidebarTab/showContext/sessionQuery);ActivityBar 真导航;TopBar 修正硬编码谎报(随 selectedModel/sessionStatus/会话/变更数)+ 布局切换面板;会话搜索过滤;composer @插入/工具→MCP/沙盒→终端;移除无后端支撑的假按钮(运行/main/附件)。
+### M14.3 测试覆盖
+- `tests/test_parallel_verifier.py`：
+  - 注入 fake_llm + fake_base_verifier
+  - 测试并行执行（两侧都调用）
+  - 测试结果合并（blocker 失败 / warning 通过 / GLM fail-open）
+  - 测试超时降级
+  - 测试读产物文件
 
-**验收**:全量 **107 passed**;`console build` 绿;Puppeteer 浏览器实测 6 类控件全部生效(搜索过滤 m74→2 / 模型 pill→GLM-5.2 / rail 导航→浏览器·MCP tab / MCP 开关→持久化后端 / 布局→隐藏面板 / 模式→规划+placeholder 变)。
+### M14.4 STATE.json 更新 + git commit
+- 记录 M14 完成 + D19 决策
+- commit message 说明双模型并行架构
 
----
+## 4. 验收标准（DoD）
 
-# M8 · Tauri 桌面壳硬化
+1. `python -m pytest tests/test_parallel_verifier.py -v` 全过
+2. 全量 `python -m pytest tests/ -q` 不回归（390+ passed）
+3. ParallelVerifier 在 GLM 不可用时 fail-open（不阻塞）
+4. GLM 与确定性 verifier 真正并行（用 ThreadPoolExecutor）
+5. STATE.json + DECISIONS.md 记录 D19
+6. git commit
 
-> 背景：UI/功能已全面诚实化，下一步是把外壳从浏览器升级为 Tauri 桌面壳，以支持原生文件夹选择、嵌入式可交互浏览器、一等终端、自动打包/签名。
-> M8 先完成后端自启动，让 `flipped.app` 不依赖外部脚本即可运行。
+## 5. 风险与缓解
 
-## 任务
-
-1. **T1 · Tauri 自动拉起后端** ✅ 已完成
-   - 新增 `console/src-tauri/src/backend.rs`：项目根查找、HTTP 健康探测、子进程启动、应用退出时 kill 子进程。
-   - `console/src-tauri/src/lib.rs`：在 `setup` 中启动后台线程自动拉起后端（若未运行），`CloseRequested` 时清理子进程。
-   - 环境变量：`FLIPPED_BACKEND_PORT` / `FLIPPED_BACKEND_AUTO_START` / `FLIPPED_ROOT`。
-   - Rust 单元测试 2 个通过：`find_project_root_from_nested_dir`、`is_backend_healthy_false_when_nothing_listens`。
-   - Rust 模块 `backend.rs`：查找项目根、健康检查、启动 Python backend (`uvicorn api.main:app`)、应用退出时关闭。
-   - `lib.rs` 在 `setup` 中启动后台线程，监听 `CloseRequested` 清理子进程。
-   - 环境变量：`FLIPPED_BACKEND_PORT` / `FLIPPED_BACKEND_AUTO_START` / `FLIPPED_ROOT`。
-   - Rust 单元测试 + `cargo build` 通过。
-2. **T2 · 嵌入式可交互浏览器** ✅ 已完成
-   - 新增 `console/src-tauri/src/browser.rs`：子 webview create/update/close。
-   - `Cargo.toml` 启用 `tauri/unstable` feature 以使用 `Window::add_child`。
-   - `console/src/components/ContextPanel.tsx` 在 Tauri 模式使用 host div + ResizeObserver 同步位置。
-   - 验证：`cargo build` + `cargo test`（4 passed）+ `console npm run build` + Python 全量 221 passed。
-3. **T3 · 终端统一到面板** ✅ 已完成
-   - `Cargo.toml` 增加 `portable-pty` 依赖。
-   - 新增 `console/src-tauri/src/terminal.rs`：`TerminalManager` + `create_terminal` / `write_terminal` / `resize_terminal` / `close_terminal` 命令；后台线程从 pty 读取输出并通过 `terminal-data` 事件 emit 给前端。
-   - `console/src-tauri/src/lib.rs` 注册模块、state 与 invoke handler。
-   - `console/src/lib/native.ts` 新增 `createTerminal` / `writeTerminal` / `resizeTerminal` / `closeTerminal` / `listenTerminalData`。
-   - `console/src/components/PtyTerminal.tsx` 拆分 Tauri 与 Web 初始化路径；引入 `readyRef` 追踪会话就绪状态；隐藏时保留 shell 状态，取消时彻底清理，避免死终端。
-   - 新增 `scripts/verify_m8_t3.sh` 一键复跑。
-   - 验证：`bash scripts/verify_m8_t3.sh` 通过（Python 221 passed / console build / cargo build / cargo test 6 passed）。
-4. **T4 · 打包/签名/自动更新** ✅ 已完成
-   - 目标：让 `flipped.app` 可打包、可分发、退出时保留托盘、更新有入口。
-   - 子任务：
-     1. `console/src-tauri/src/lib.rs` 添加原生菜单（File / View / Window / Help）与托盘图标。
-     2. `console/src-tauri/Cargo.toml` 补全 Tauri 构建依赖（`tauri-plugin-shell` 等按需）。
-     3. `console/src-tauri/tauri.conf.json` 配置应用标识符、版本、图标、打包名称。
-     4. `console/src-tauri/icons/` 检查/补齐应用图标。
-     5. `scripts/verify_m8_t4.sh`：构建打包产物并检查签名配置（实际签名需 Apple 开发者证书，CI/本地预留接口）。
-     6. `.github/workflows/build.yml`：CI 矩阵打包 macOS 应用（未签名 artifact）。
-   - 验证：`cargo tauri build` 成功；生成 `.dmg` / `.app`；CI workflow 可干跑。
-  - 验证结果：`bash scripts/verify_m8_t4.sh` 全绿（pytest 221 passed / console build / cargo build/test 6 passed / cargo tauri build 出 flipped.app + .dmg）。
-
-## 验收
-
-- `cargo build` 通过；单元测试通过。
-- Tauri 应用启动时，若后端未运行则自动拉起；退出时关闭。
-- 不破坏现有 `predev.sh` 与 Python 测试。
-
----
-
-# M9 · 24h 自治 AI 代码工厂：外层 Master Loop
-
-> 目标：把 flipped 从“完成一次长任务”升级为“不间断地生产并迭代代码”。
-> Master Loop 接收高层产品目标 → 自动生成/维护 roadmap → 逐个派发子任务给 orchestrator → 验收后把成果汇入上下文 → 自动生成下一个改进任务 → 崩溃/断电后可从 checkpoint 续跑。
-
-## 设计原则
-
-1. **与现有 orchestrator 解耦**：Master Loop 不替代 Supervisor/Worker/Overseer，而是把它们当作一个可注入的“任务执行器”。
-2. **状态外置**：工厂状态（roadmap、已完成任务、失败任务、当前任务）全部落盘 SQLite，进程死掉不丢进度。
-3. **确定性单测**：任务生成与执行流程用注入的 stub 验证，不依赖真实 LLM/沙盒。
-4. **可观测**：每个工厂事件 emit 到 EventBus，Console 能实时看到“工厂阶段/任务/结果”。
-5. **熔断与安全**：连续失败同一任务 ≥N 次暂停；高风险动作仍走 orchestrator 的审批 gate。
-
-## 任务拆分
-
-### M9.1 工厂状态与持久化
-- 新增 `src/driving/factory_loop.py`。
-- 定义 `FactoryState`：
-  - `factory_id`, `product_goal`, `cwd`, `roadmap: list[FactoryTask]`
-  - `completed: list[TaskResult]`, `failed: list[TaskResult]`
-  - `current_task_index`, `status: running|paused|done|error`
-  - `context_summary`, `iteration_count`, `max_tasks`
-- `FactoryTask`：`id`, `description`, `verify_cmd`, `status: pending|running|done|failed`, `depends_on`, `artifacts`。
-- SQLite 持久化：`save_factory_state` / `load_factory_state` / `list_factories`。
-
-### M9.2 任务生成（Planner）
-- `planner(state) -> list[FactoryTask]`：用 GLM 把 `product_goal` 拆成可串行/并行的任务列表。
-- 输出结构化 `Roadmap`（Pydantic），含任务描述和验收命令。
-- 失败时 fail-open：把整个产品目标当成一个任务，不阻塞工厂启动。
-
-### M9.3 任务执行闭环
-- `run_factory_loop(...)`：
-  1. 加载/创建 `FactoryState`。
-  2. roadmap 为空 → 调用 planner 生成。
-  3. 取下一个 pending 任务，标记 running，保存。
-  4. 调用注入的 `orchestrator_fn(task)`（默认 `drive_orchestrated`）执行。
-  5. 结果：
-     - `verified=True` → 标记 done，把 artifacts/摘要加入 context_summary，可触发 reflection 追加改进任务。
-     - `verified=False` / abort / worker_error → 标记 failed；若同一任务失败 < max_retries，重新入队并附带失败反馈；否则暂停工厂。
-  6. 每完成一个任务保存状态。
-  7. 达到 `max_tasks` 或 roadmap 耗尽 → 标记 done。
-
-### M9.4 崩溃恢复
-- `resume_factory_loop(factory_id, db_path)`：
-  - 读取最后保存的状态。
-  - 若 `status=running` 且当前任务为 running → 重跑该任务（orchestrator 自身有 checkpoint，可续跑）。
-  - 若 `status=paused/error` → 仅恢复状态，等待外部决定。
-
-### M9.5 反射与持续优化（可选 MVP 后）
-- 每完成若干任务，调用 GLM reflection：根据已完成成果和原始目标，生成新的改进任务追加到 roadmap。
-- 本次先预留接口，不实现完整 reflection，避免过度设计。
-
-## 验收标准
-
-- `tests/test_factory_loop.py`：
-  - planner 注入 stub 生成 roadmap。
-  - 顺序执行 2 个任务并记录结果。
-  - 执行中崩溃（模拟）→ `resume_factory_loop` 续跑，不丢进度。
-  - 同一任务失败 3 次 → 工厂暂停。
-- 全量 `pytest tests/ -q` 仍绿。
-- `console npm run build` 不破坏。
-- 更新 `STATE.json` / `TEST_LOG.md`。
+- **GLM 调用慢（240s 超时）**：用 ThreadPoolExecutor，确定性 verifier 先完成不阻塞；GLM 超时 fail-open
+- **过度挑剔阻断流程**：只 blocker 级才失败，warning 只记录不阻断
+- **prompt 过长触发 reasoning**：复用 compact brief 风格，限制产物读取长度

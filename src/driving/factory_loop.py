@@ -401,6 +401,20 @@ def default_orchestrator_fn(task: FactoryTask, state: FactoryState) -> TaskResul
         except Exception:
             pass  # design-lint 不可用时退回 base verifier
 
+    # M14/D19：双模型并行验证——GLM 与确定性 verifier 并行对产物做语义监督。
+    # opt-in：FLIPPED_USE_PARALLEL_VERIFIER=1 启用。Kimi 跑代码时 GLM 同时验证监督。
+    # GLM 不可用/超时 fail-open，不阻塞流程。
+    if os.environ.get("FLIPPED_USE_PARALLEL_VERIFIER") == "1" and verifier is not None:
+        try:
+            from driving.parallel_verifier import make_parallel_verifier
+            verifier = make_parallel_verifier(
+                verifier,
+                glm_alias="architect",
+                glm_timeout=float(os.environ.get("FLIPPED_PARALLEL_GLM_TIMEOUT", "120")),
+            )
+        except Exception:
+            pass  # parallel_verifier 不可用时退回原 verifier
+
     # M10.5：用 compact 版设计约束，避免长 design_brief 导致 Kimi 陷入 reasoning
     from driving.design_context import build_design_brief_compact
     compact_design = ""
