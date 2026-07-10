@@ -1184,6 +1184,7 @@ def test_auto_fix_idempotent():
 body { padding: 16px; margin: 0; font-size: 16px; transition: opacity 0.3s ease; }
 h1 { font-size: 48px; }
 :focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+@media (max-width: 768px) { body { font-size: 14px; } }
 </style></head><body>
 <header><nav>Logo</nav></header>
 <main><section><h1>Title</h1></section></main>
@@ -1528,3 +1529,271 @@ def test_auto_fix_design_issues_includes_focus_visible():
             content = f.read()
 
     assert ":focus-visible" in content or ":focus" in content
+
+
+# ---------- M35: responsive_breakpoints + component_states lint ----------
+
+
+def test_lint_responsive_breakpoints_missing():
+    """缺少 @media 查询应报 warning（原则 7：响应式必须写断点）。"""
+    import tempfile
+    import os
+    from driving.design_context import lint_design_quality
+
+    html = """<html lang="en"><head>
+<meta name="viewport" content="width=device-width">
+<style>body { font-size: 16px; }</style>
+</head><body><header>H</header><main><section>S</section></main><footer>F</footer>
+</body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        violations = lint_design_quality(td)
+
+    bp_violations = [v for v in violations if v["rule"] == "responsive_breakpoints"]
+    assert len(bp_violations) == 1
+    assert bp_violations[0]["severity"] == "warning"
+
+
+def test_lint_responsive_breakpoints_present():
+    """有 @media 查询不应报违规。"""
+    import tempfile
+    import os
+    from driving.design_context import lint_design_quality
+
+    html = """<html lang="en"><head>
+<meta name="viewport" content="width=device-width">
+<style>
+body { font-size: 16px; }
+@media (max-width: 768px) { body { font-size: 14px; } }
+</style>
+</head><body><header>H</header><main><section>S</section></main><footer>F</footer>
+</body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        violations = lint_design_quality(td)
+
+    bp_violations = [v for v in violations if v["rule"] == "responsive_breakpoints"]
+    assert bp_violations == []
+
+
+def test_lint_component_states_missing():
+    """有交互元素但缺少 hover/active/focus/disabled 状态应报 warning（原则 6）。"""
+    import tempfile
+    import os
+    from driving.design_context import lint_design_quality
+
+    html = """<html lang="en"><head>
+<meta name="viewport" content="width=device-width">
+<style>button { background: blue; }</style>
+</head><body><header>H</header><main><section>
+<button>Click</button>
+</section></main><footer>F</footer>
+</body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        violations = lint_design_quality(td)
+
+    cs_violations = [v for v in violations if v["rule"] == "component_states"]
+    assert len(cs_violations) >= 1
+    assert cs_violations[0]["severity"] == "warning"
+
+
+def test_lint_component_states_present():
+    """有完整 hover/active/focus/disabled 状态不应报违规。"""
+    import tempfile
+    import os
+    from driving.design_context import lint_design_quality
+
+    html = """<html lang="en"><head>
+<meta name="viewport" content="width=device-width">
+<style>
+button { background: blue; }
+button:hover { background: darkblue; }
+button:active { background: navy; }
+button:focus { outline: 2px solid blue; }
+button:disabled { opacity: 0.5; }
+@media (max-width: 768px) { button { width: 100%; } }
+</style>
+</head><body><header>H</header><main><section>
+<button>Click</button>
+</section></main><footer>F</footer>
+</body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        violations = lint_design_quality(td)
+
+    cs_violations = [v for v in violations if v["rule"] == "component_states"]
+    assert cs_violations == []
+
+
+def test_lint_component_states_no_interactive_elements():
+    """无交互元素时不应报 component_states 违规。"""
+    import tempfile
+    import os
+    from driving.design_context import lint_design_quality
+
+    html = """<html lang="en"><head>
+<meta name="viewport" content="width=device-width">
+<style>body { font-size: 16px; }</style>
+</head><body><header>H</header><main><section><p>Text only</p></section></main><footer>F</footer>
+</body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        violations = lint_design_quality(td)
+
+    cs_violations = [v for v in violations if v["rule"] == "component_states"]
+    assert cs_violations == []
+
+
+def test_auto_fix_responsive_injects_media_query():
+    """缺少 @media 时应自动注入响应式断点。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_responsive
+
+    html = """<html><head><style>body { font-size: 16px; }</style></head>
+<body><p>Hello</p></body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        changed = auto_fix_responsive(td)
+        with open(os.path.join(td, "index.html")) as f:
+            content = f.read()
+
+    assert changed is True
+    assert "@media" in content
+    assert "768px" in content
+
+
+def test_auto_fix_responsive_present_no_change():
+    """已有 @media 时不修改。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_responsive
+
+    html = """<html><head><style>
+body { font-size: 16px; }
+@media (max-width: 768px) { body { font-size: 14px; } }
+</style></head><body><p>Hello</p></body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        changed = auto_fix_responsive(td)
+
+    assert changed is False
+
+
+def test_auto_fix_responsive_empty_dir():
+    """空目录应返回 False。"""
+    import tempfile
+    from driving.design_context import auto_fix_responsive
+
+    with tempfile.TemporaryDirectory() as td:
+        changed = auto_fix_responsive(td)
+
+    assert changed is False
+
+
+def test_auto_fix_component_states_injects_states():
+    """缺少状态样式时应自动注入 hover/active/focus/disabled。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_component_states
+
+    html = """<html><head><style>button { background: blue; }</style></head>
+<body><button>Click</button></body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        changed = auto_fix_component_states(td)
+        with open(os.path.join(td, "index.html")) as f:
+            content = f.read()
+
+    assert changed is True
+    assert ":hover" in content
+    assert ":active" in content
+    assert ":disabled" in content
+
+
+def test_auto_fix_component_states_present_no_change():
+    """已有完整状态样式时不修改。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_component_states
+
+    html = """<html><head><style>
+button { background: blue; }
+button:hover { background: darkblue; }
+button:active { background: navy; }
+button:focus { outline: 2px solid blue; }
+button:disabled { opacity: 0.5; }
+</style></head><body><button>Click</button></body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        changed = auto_fix_component_states(td)
+
+    assert changed is False
+
+
+def test_auto_fix_component_states_no_button():
+    """无交互元素时不修改。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_component_states
+
+    html = """<html><head><style>body { color: red; }</style></head>
+<body><p>Hello</p></body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        changed = auto_fix_component_states(td)
+
+    assert changed is False
+
+
+def test_auto_fix_component_states_empty_dir():
+    """空目录应返回 False。"""
+    import tempfile
+    from driving.design_context import auto_fix_component_states
+
+    with tempfile.TemporaryDirectory() as td:
+        changed = auto_fix_component_states(td)
+
+    assert changed is False
+
+
+def test_auto_fix_design_issues_includes_responsive_and_component_states():
+    """auto_fix_design_issues 组合函数应包含 responsive 和 component_states 修复。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_design_issues
+
+    html = """<html><head><style>button { background: blue; }</style></head>
+<body><button>Click</button></body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        auto_fix_design_issues(td)
+        with open(os.path.join(td, "index.html")) as f:
+            content = f.read()
+
+    assert "@media" in content
+    assert ":hover" in content
+    assert ":disabled" in content

@@ -942,6 +942,118 @@ def auto_fix_focus_visible(cwd: str) -> bool:
     return changed
 
 
+def auto_fix_responsive(cwd: str) -> bool:
+    """M35: 注入 @media 响应式断点（如果缺少）。
+
+    原则 7：响应式必须写断点。缺少 @media 时注入 mobile-first 断点。
+    """
+    import os as _os
+    import re as _re
+
+    _RESPONSIVE_CSS = (
+        "@media(max-width:768px){body{font-size:14px}}"
+        "@media(min-width:1024px){body{max-width:1200px;margin:0 auto}}"
+    )
+
+    changed = False
+    for fname in _os.listdir(cwd):
+        if not fname.endswith(".html"):
+            continue
+        fpath = _os.path.join(cwd, fname)
+        if not _os.path.isfile(fpath):
+            continue
+        try:
+            content = open(fpath, "r", encoding="utf-8").read()
+        except Exception:
+            continue
+
+        if "@media" in content.lower():
+            continue  # 已有响应式断点
+
+        if "<style>" in content.lower():
+            content = _re.sub(
+                r"(</style>)",
+                _RESPONSIVE_CSS + r"\1",
+                content, count=1, flags=_re.IGNORECASE,
+            )
+        elif "</head>" in content.lower():
+            style_block = f"<style>{_RESPONSIVE_CSS}</style>"
+            content = _re.sub(
+                r"(</head>)",
+                style_block + r"\1",
+                content, count=1, flags=_re.IGNORECASE,
+            )
+        else:
+            continue
+
+        with open(fpath, "w", encoding="utf-8") as f:
+            f.write(content)
+        changed = True
+
+    return changed
+
+
+def auto_fix_component_states(cwd: str) -> bool:
+    """M35: 注入交互组件状态样式（如果缺少）。
+
+    原则 6：组件必须有状态（hover/active/focus/disabled）。
+    检测到 button/a/input/select/textarea 但缺少状态样式时注入。
+    """
+    import os as _os
+    import re as _re
+
+    _STATES_CSS = (
+        "button:hover,a:hover,input:hover{opacity:0.85}"
+        "button:active,a:active,input:active{transform:scale(0.98)}"
+        "button:focus,a:focus,input:focus{outline:2px solid var(--color-accent,#0A84FF);outline-offset:2px}"
+        "button:disabled,input:disabled{opacity:0.5;cursor:not-allowed}"
+    )
+
+    changed = False
+    for fname in _os.listdir(cwd):
+        if not fname.endswith(".html"):
+            continue
+        fpath = _os.path.join(cwd, fname)
+        if not _os.path.isfile(fpath):
+            continue
+        try:
+            content = open(fpath, "r", encoding="utf-8").read()
+        except Exception:
+            continue
+
+        lower = content.lower()
+        # 无交互元素则跳过
+        if not _re.search(r"<(?:button|a|input|select|textarea)\b", content, _re.IGNORECASE):
+            continue
+
+        # 检查是否所有状态都已存在
+        all_present = all(s in lower for s in (":hover", ":active", ":focus", ":disabled"))
+        if all_present:
+            continue
+
+        if "<style>" in lower:
+            content = _re.sub(
+                r"(</style>)",
+                _STATES_CSS + r"\1",
+                content, count=1, flags=_re.IGNORECASE,
+            )
+        elif "</head>" in lower:
+            style_block = f"<style>{_STATES_CSS}</style>"
+            content = _re.sub(
+                r"(</head>)",
+                style_block + r"\1",
+                content, count=1, flags=_re.IGNORECASE,
+            )
+        else:
+            continue
+
+        with open(fpath, "w", encoding="utf-8") as f:
+            f.write(content)
+        changed = True
+
+    return changed
+
+
 def auto_fix_design_issues(cwd: str) -> bool:
     """组合调用所有 auto-fix 函数，返回是否做过任何修改。"""
     changed1 = auto_fix_spacing_grid(cwd)
@@ -951,7 +1063,9 @@ def auto_fix_design_issues(cwd: str) -> bool:
     changed5 = auto_fix_css_variables(cwd)
     changed6 = auto_fix_semantic_html(cwd)
     changed7 = auto_fix_focus_visible(cwd)
-    return changed1 or changed2 or changed3 or changed4 or changed5 or changed6 or changed7
+    changed8 = auto_fix_responsive(cwd)
+    changed9 = auto_fix_component_states(cwd)
+    return changed1 or changed2 or changed3 or changed4 or changed5 or changed6 or changed7 or changed8 or changed9
 
 
 # ---------- M19: 设计质量校验器 ----------
@@ -1092,6 +1206,30 @@ def lint_design_quality(cwd: str) -> list[dict]:
                 "file": fname,
                 "message": "缺少 :focus/:focus-visible 样式，键盘导航时焦点不可见",
             })
+
+        # 9. M35: 响应式断点检查（原则 7：响应式必须写断点）
+        if "@media" not in lower:
+            violations.append({
+                "rule": "responsive_breakpoints",
+                "severity": "warning",
+                "file": fname,
+                "message": "缺少 @media 响应式断点，应覆盖 mobile/tablet/desktop",
+            })
+
+        # 10. M35: 组件状态检查（原则 6：组件必须有状态）
+        has_interactive = _re.search(r"<(?:button|a|input|select|textarea)\b", content, _re.IGNORECASE)
+        if has_interactive:
+            missing_states = []
+            for state in (":hover", ":active", ":focus", ":disabled"):
+                if state not in lower:
+                    missing_states.append(state)
+            if missing_states:
+                violations.append({
+                    "rule": "component_states",
+                    "severity": "warning",
+                    "file": fname,
+                    "message": f"交互元素缺少状态样式: {', '.join(missing_states)}",
+                })
 
     # 7. M22: WCAG 颜色对比度
     try:

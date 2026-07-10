@@ -2,7 +2,7 @@
   "project": "flipped",
   "description": "接入本地 MLX 双模型(GLM-5.2 编排者 / Kimi-K2.7-Code 执行者)的 agentic 代码编辑器平台。fork Roo Code + 自定义驾驭层(强制验证/循环检测/上下文压缩/人工审批/子Agent/可观测性) + MCP 联网与外部能力。",
   "updated": "2026-07-11",
-  "current_milestone": "M34 调研网络设计参考项目优化底层 (559 passed, heading_hierarchy + focus_visible lint + auto_fix_focus_visible)",
+  "current_milestone": "M35 responsive_breakpoints + component_states lint (572 passed, 原则6+7 自动修复)",
   "key_facts": {
     "dev_host": "Apple M5 Max, 128GB RAM, 1.1TB 可用磁盘 — 开发/控制节点，非模型宿主",
     "model_cluster": "exo 集群 @ http://100.64.201.37:52415 (内网, OpenAI 兼容)；公网 https://dgmt.top/exo (需 Bearer token)",
@@ -552,6 +552,18 @@
           "title": "heading_hierarchy + focus_visible lint + auto_fix_focus_visible",
           "status": "done",
           "note": "新增 2 个 lint 维度 + 1 个 auto-fix 函数。9 测试通过。test_auto_fix_idempotent 修复（HTML 加入 :focus-visible 样式）。559 passed。"
+        }
+      }
+    },
+    "M35": {
+      "title": "responsive_breakpoints + component_states lint + auto_fix",
+      "status": "done",
+      "note": "基于 AI-Design-System-Prompt.md 原则 6（组件必须有状态）和原则 7（响应式必须写断点），新增两个 lint 维度：(1) responsive_breakpoints — 缺少 @media 查询报 warning；(2) component_states — 有交互元素（button/a/input/select/textarea）但缺少 hover/active/focus/disabled 状态样式报 warning。新增 auto_fix_responsive(cwd)：缺少 @media 时注入 mobile-first 断点（768px + 1024px）。新增 auto_fix_component_states(cwd)：缺少状态时注入 hover/active/focus/disabled 样式。auto_fix_design_issues 组合函数更新为 9 组修复。幂等性保证：已有 @media 或完整状态时跳过。test_auto_fix_idempotent 测试 HTML 已更新为包含 @media 样式。13 个 M35 新测试。全量 572 passed（+13，无回归）。",
+      "tasks": {
+        "M35.1": {
+          "title": "responsive_breakpoints + component_states lint + auto_fix",
+          "status": "done",
+          "note": "新增 2 个 lint 维度 + 2 个 auto-fix 函数。13 测试通过。test_auto_fix_idempotent 修复（HTML 加入 @media 样式）。572 passed。"
         }
       }
     }
