@@ -2,7 +2,7 @@
   "project": "flipped",
   "description": "接入本地 MLX 双模型(GLM-5.2 编排者 / Kimi-K2.7-Code 执行者)的 agentic 代码编辑器平台。fork Roo Code + 自定义驾驭层(强制验证/循环检测/上下文压缩/人工审批/子Agent/可观测性) + MCP 联网与外部能力。",
   "updated": "2026-07-11",
-  "current_milestone": "M35 responsive_breakpoints + component_states lint (572 passed, 原则6+7 自动修复)",
+  "current_milestone": "M36 design_score 评分系统升级 (577 passed, 含 M34/M35 新维度)",
   "key_facts": {
     "dev_host": "Apple M5 Max, 128GB RAM, 1.1TB 可用磁盘 — 开发/控制节点，非模型宿主",
     "model_cluster": "exo 集群 @ http://100.64.201.37:52415 (内网, OpenAI 兼容)；公网 https://dgmt.top/exo (需 Bearer token)",
@@ -564,6 +564,18 @@
           "title": "responsive_breakpoints + component_states lint + auto_fix",
           "status": "done",
           "note": "新增 2 个 lint 维度 + 2 个 auto-fix 函数。13 测试通过。test_auto_fix_idempotent 修复（HTML 加入 @media 样式）。572 passed。"
+        }
+      }
+    },
+    "M36": {
+      "title": "design_score 评分系统升级（含 M34/M35 新维度）",
+      "status": "done",
+      "note": "design_score 评分系统从 7 维升级为 9 维，纳入 M34/M35 新增的 lint 维度。新评分权重：语义化HTML(15) + meta(10) + CSS变量(10) + 响应式(15: viewport 5 + @media 10) + 无障碍(15: img alt + lang + 对比度 + :focus) + 标题层级(5) + 组件状态(10) + 动画性能(10) + 设计一致性(10) = 100。响应式维度现在区分 viewport meta(5分) 和 @media 断点(10分)，有 @media 的 HTML 比没有的分数高。无障碍维度现在包含 :focus 样式检查。新增 5 个 TDD 测试验证评分差异（有@media>无@media, 有:focus>无:focus, 有组件状态>无, 良好标题>跳级, 完美HTML≥90）。调整 bad_html 阈值（<50→<60, <60→<70）因新评分对空 HTML 更宽松。全量 577 passed（+5，无回归）。",
+      "tasks": {
+        "M36.1": {
+          "title": "design_score 9 维评分升级",
+          "status": "done",
+          "note": "评分从 7→9 维，纳入 heading_hierarchy + focus_visible + responsive @media + component_states。5 测试通过。577 passed。"
         }
       }
     }

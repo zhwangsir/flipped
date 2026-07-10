@@ -1250,12 +1250,14 @@ def lint_design_quality(cwd: str) -> list[dict]:
 def design_score(cwd: str) -> "tuple[int, list[str]]":
     """计算 HTML 文件的设计质量评分（0-100），返回 (分数, 评语列表)。
 
-    评分维度（每项权重不同）：
-    - 语义化HTML结构 (20分)：header/main/section/footer 齐全
-    - meta 标签 (15分)：viewport + charset + description
-    - CSS 变量系统 (15分)：:root 定义 --color-* 变量
-    - 响应式 (15分)：@media 查询或 viewport meta
-    - 无障碍基础 (15分)：img alt + html lang
+    M36 评分维度（每项权重不同，含 M34/M35 新维度）：
+    - 语义化HTML结构 (15分)：header/main/section/footer 齐全
+    - meta 标签 (10分)：viewport + charset
+    - CSS 变量系统 (10分)：:root 定义 --color-* 变量
+    - 响应式 (15分)：viewport meta (5分) + @media 断点 (10分) [M35]
+    - 无障碍 (15分)：img alt + html lang + 颜色对比度 + :focus 样式 [M34]
+    - 标题层级 (5分)：h1-h6 不跳级 [M34]
+    - 组件状态 (10分)：hover/active/focus/disabled [M35]
     - 动画性能 (10分)：transition 用 transform/opacity
     - 设计一致性 (10分)：配色不超过5种 hex 值
     """
@@ -1276,51 +1278,74 @@ def design_score(cwd: str) -> "tuple[int, list[str]]":
     error_rules = {v["rule"] for v in violations if v["severity"] == "error"}
     warning_rules = {v["rule"] for v in violations if v["severity"] == "warning"}
 
-    # 1. 语义化HTML (20分)
+    # 1. 语义化HTML (15分)
     if "semantic_html" not in warning_rules:
-        score += 20
+        score += 15
     else:
+        score += 8
+        notes.append("语义化HTML不完整(-7)")
+
+    # 2. meta 标签 (10分)
+    if "meta_viewport" not in error_rules:
         score += 10
-        notes.append("语义化HTML不完整(-10)")
-
-    # 2. meta 标签 (15分)
-    if "meta_viewport" not in error_rules:
-        score += 15
     else:
-        notes.append("缺少viewport meta(-15)")
+        notes.append("缺少viewport meta(-10)")
 
-    # 3. CSS 变量 (15分)
+    # 3. CSS 变量 (10分)
     if "css_variables" not in warning_rules:
-        score += 15
+        score += 10
     else:
-        score += 8
-        notes.append("CSS变量使用不充分(-7)")
+        score += 5
+        notes.append("CSS变量使用不充分(-5)")
 
-    # 4. 响应式 (15分) — viewport meta 存在即视为有响应式意识
+    # 4. 响应式 (15分) — M35: viewport meta (5分) + @media 断点 (10分)
     if "meta_viewport" not in error_rules:
-        score += 15
+        score += 5
     else:
-        notes.append("无响应式(-15)")
-
-    # 5. 无障碍 (15分) — M22: 含颜色对比度
-    if "img_alt_missing" not in error_rules and "html_lang" not in warning_rules and "color_contrast" not in error_rules:
-        score += 15
-    elif "img_alt_missing" not in error_rules and "color_contrast" not in error_rules:
-        score += 8
-        notes.append("缺少html lang(-7)")
-    elif "img_alt_missing" not in error_rules:
-        score += 3
-        notes.append("颜色对比度不足(-12)")
+        notes.append("缺少viewport meta(-5)")
+    if "responsive_breakpoints" not in warning_rules:
+        score += 10
     else:
-        notes.append("img缺少alt(-15)")
+        score += 0
+        notes.append("缺少@media响应式断点(-10)")
 
-    # 6. 动画性能 (10分)
+    # 5. 无障碍 (15分) — M34: 含 :focus 样式检查
+    a11y_score = 15
+    if "img_alt_missing" in error_rules:
+        a11y_score -= 5
+        notes.append("img缺少alt(-5)")
+    if "html_lang" in warning_rules:
+        a11y_score -= 3
+        notes.append("缺少html lang(-3)")
+    if "color_contrast" in error_rules:
+        a11y_score -= 4
+        notes.append("颜色对比度不足(-4)")
+    if "focus_visible" in warning_rules:
+        a11y_score -= 3
+        notes.append("缺少:focus样式(-3)")
+    score += max(0, a11y_score)
+
+    # 6. 标题层级 (5分) — M34
+    if "heading_hierarchy" not in warning_rules:
+        score += 5
+    else:
+        score += 0
+        notes.append("标题层级跳级或多个h1(-5)")
+
+    # 7. 组件状态 (10分) — M35
+    if "component_states" not in warning_rules:
+        score += 10
+    else:
+        score += 0
+        notes.append("交互组件缺少状态样式(-10)")
+
+    # 8. 动画性能 (10分)
     if "animation_performance" not in warning_rules:
         score += 10
     else:
         notes.append("动画性能待优化(-10)")
 
-    # 7. 设计一致性 (10分) — 检查 hex 颜色数量
+    # 9. 设计一致性 (10分) — 检查 hex 颜色数量
     for fname in _os.listdir(cwd):
         if not fname.endswith(".html"):
             continue
@@ -1332,7 +1357,6 @@ def design_score(cwd: str) -> "tuple[int, list[str]]":
         except Exception:
             continue
         hex_colors = set(_re.findall(r"#[0-9A-Fa-f]{6}\b", content))
-        # 统计非黑非白的颜色（排除 #000000/#FFFFFF 等基础色）
         design_colors = {
             c for c in hex_colors
             if c.upper() not in ("#000000", "#FFFFFF", "#FFF", "#000")
@@ -1342,7 +1366,7 @@ def design_score(cwd: str) -> "tuple[int, list[str]]":
         else:
             score += 5
             notes.append(f"配色过多({len(design_colors)}种，建议≤5)(-5)")
-        break  # 只检查第一个 HTML 文件
+        break
 
     if not notes:
         notes.append("设计质量良好")

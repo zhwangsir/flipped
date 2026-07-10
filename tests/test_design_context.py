@@ -284,7 +284,7 @@ def test_design_score_bad_html_low():
             f.write(bad_html)
         score, notes = design_score(td)
 
-    assert score < 50, f"差HTML应得<50分，实际{score}: {notes}"
+    assert score < 60, f"差HTML应得<60分，实际{score}: {notes}"
 
 
 def test_design_score_empty_dir():
@@ -1797,3 +1797,205 @@ def test_auto_fix_design_issues_includes_responsive_and_component_states():
     assert "@media" in content
     assert ":hover" in content
     assert ":disabled" in content
+
+
+# ---------- M36: design_score 评分系统升级（含 M34/M35 新维度） ----------
+
+
+def test_design_score_rewards_media_queries():
+    """有 @media 查询的 HTML 应比没有的分数高。"""
+    import tempfile
+    import os
+    from driving.design_context import design_score
+
+    base_html = """<!DOCTYPE html>
+<html lang="zh"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+:root { --color-bg: #0D0D12; --color-text: #F5F5F5; --color-accent: #0A84FF; }
+body { transition: opacity 0.3s ease; }
+:focus-visible { outline: 2px solid var(--color-accent); }
+</style></head><body>
+<header><nav>Logo</nav></header>
+<main><section><h1>Title</h1></section></main>
+<footer>Copyright</footer>
+</body></html>"""
+
+    html_with_media = base_html.replace(
+        "</style>",
+        "@media (max-width: 768px) { body { font-size: 14px; } }</style>",
+    )
+
+    with tempfile.TemporaryDirectory() as td1:
+        with open(os.path.join(td1, "index.html"), "w") as f:
+            f.write(base_html)
+        score_no_media, _ = design_score(td1)
+
+    with tempfile.TemporaryDirectory() as td2:
+        with open(os.path.join(td2, "index.html"), "w") as f:
+            f.write(html_with_media)
+        score_with_media, _ = design_score(td2)
+
+    assert score_with_media > score_no_media, (
+        f"有@media应比无@media分数高: {score_with_media} vs {score_no_media}"
+    )
+
+
+def test_design_score_rewards_focus_visible():
+    """有 :focus-visible 样式的 HTML 应比没有的分数高。"""
+    import tempfile
+    import os
+    from driving.design_context import design_score
+
+    base_html = """<!DOCTYPE html>
+<html lang="zh"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+:root { --color-bg: #0D0D12; --color-text: #F5F5F5; --color-accent: #0A84FF; }
+body { transition: opacity 0.3s ease; }
+@media (max-width: 768px) { body { font-size: 14px; } }
+</style></head><body>
+<header><nav>Logo</nav></header>
+<main><section><h1>Title</h1></section></main>
+<footer>Copyright</footer>
+</body></html>"""
+
+    html_with_focus = base_html.replace(
+        "</style>",
+        ":focus-visible { outline: 2px solid var(--color-accent); }</style>",
+    )
+
+    with tempfile.TemporaryDirectory() as td1:
+        with open(os.path.join(td1, "index.html"), "w") as f:
+            f.write(base_html)
+        score_no_focus, _ = design_score(td1)
+
+    with tempfile.TemporaryDirectory() as td2:
+        with open(os.path.join(td2, "index.html"), "w") as f:
+            f.write(html_with_focus)
+        score_with_focus, _ = design_score(td2)
+
+    assert score_with_focus > score_no_focus, (
+        f"有:focus应比无:focus分数高: {score_with_focus} vs {score_no_focus}"
+    )
+
+
+def test_design_score_rewards_component_states():
+    """有完整组件状态样式的 HTML 应比缺少的分数高。"""
+    import tempfile
+    import os
+    from driving.design_context import design_score
+
+    base_html = """<!DOCTYPE html>
+<html lang="zh"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+:root { --color-bg: #0D0D12; --color-text: #F5F5F5; --color-accent: #0A84FF; }
+body { transition: opacity 0.3s ease; }
+:focus-visible { outline: 2px solid var(--color-accent); }
+@media (max-width: 768px) { body { font-size: 14px; } }
+</style></head><body>
+<header><nav>Logo</nav></header>
+<main><section><h1>Title</h1><button>Click</button></section></main>
+<footer>Copyright</footer>
+</body></html>"""
+
+    html_with_states = base_html.replace(
+        "</style>",
+        "button:hover{opacity:0.85}button:active{transform:scale(0.98)}button:disabled{opacity:0.5}</style>",
+    )
+
+    with tempfile.TemporaryDirectory() as td1:
+        with open(os.path.join(td1, "index.html"), "w") as f:
+            f.write(base_html)
+        score_no_states, _ = design_score(td1)
+
+    with tempfile.TemporaryDirectory() as td2:
+        with open(os.path.join(td2, "index.html"), "w") as f:
+            f.write(html_with_states)
+        score_with_states, _ = design_score(td2)
+
+    assert score_with_states > score_no_states, (
+        f"有组件状态应比缺少分数高: {score_with_states} vs {score_no_states}"
+    )
+
+
+def test_design_score_penalizes_heading_skip():
+    """标题层级跳级应扣分。"""
+    import tempfile
+    import os
+    from driving.design_context import design_score
+
+    good_headings_html = """<!DOCTYPE html>
+<html lang="zh"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+:root { --color-bg: #0D0D12; --color-text: #F5F5F5; --color-accent: #0A84FF; }
+body { transition: opacity 0.3s ease; }
+:focus-visible { outline: 2px solid var(--color-accent); }
+@media (max-width: 768px) { body { font-size: 14px; } }
+</style></head><body>
+<header><nav>Logo</nav></header>
+<main><section><h1>Title</h1><h2>Sub</h2></section></main>
+<footer>Copyright</footer>
+</body></html>"""
+
+    skip_headings_html = """<!DOCTYPE html>
+<html lang="zh"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+:root { --color-bg: #0D0D12; --color-text: #F5F5F5; --color-accent: #0A84FF; }
+body { transition: opacity 0.3s ease; }
+:focus-visible { outline: 2px solid var(--color-accent); }
+@media (max-width: 768px) { body { font-size: 14px; } }
+</style></head><body>
+<header><nav>Logo</nav></header>
+<main><section><h1>Title</h1><h4>Skip</h4></section></main>
+<footer>Copyright</footer>
+</body></html>"""
+
+    with tempfile.TemporaryDirectory() as td1:
+        with open(os.path.join(td1, "index.html"), "w") as f:
+            f.write(good_headings_html)
+        score_good, _ = design_score(td1)
+
+    with tempfile.TemporaryDirectory() as td2:
+        with open(os.path.join(td2, "index.html"), "w") as f:
+            f.write(skip_headings_html)
+        score_skip, _ = design_score(td2)
+
+    assert score_good > score_skip, (
+        f"良好标题层级应比跳级分数高: {score_good} vs {score_skip}"
+    )
+
+
+def test_design_score_perfect_with_all_dimensions():
+    """包含所有 M34/M35 维度的完美 HTML 应得接近 100 分。"""
+    import tempfile
+    import os
+    from driving.design_context import design_score
+
+    perfect_html = """<!DOCTYPE html>
+<html lang="zh"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+:root { --color-bg: #0D0D12; --color-text: #F5F5F5; --color-accent: #0A84FF; }
+body { transition: opacity 0.3s ease; transform: translateY(0); }
+:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+button:hover { opacity: 0.85; }
+button:active { transform: scale(0.98); }
+button:focus { outline: 2px solid var(--color-accent); }
+button:disabled { opacity: 0.5; cursor: not-allowed; }
+@media (max-width: 768px) { body { font-size: 14px; } }
+</style></head><body>
+<header><nav>Logo</nav></header>
+<main><section><h1>Title</h1><h2>Sub</h2><button>Click</button></section></main>
+<footer>Copyright</footer>
+</body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(perfect_html)
+        score, notes = design_score(td)
+
+    assert score >= 90, f"完美HTML应得≥90分，实际{score}: {notes}"

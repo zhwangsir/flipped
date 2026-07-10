@@ -466,7 +466,7 @@ def test_collect_round_summary_design_score_low_for_bad_html():
         factory.cwd = td
         summary = _collect_round_summary(1, factory)
 
-    assert summary.design_score < 60, f"差HTML应得<60分，实际{summary.design_score}"
+    assert summary.design_score < 70, f"差HTML应得<70分，实际{summary.design_score}"
 
 
 def test_evolve_goal_includes_design_score_in_prompt():
