@@ -2,7 +2,7 @@
   "project": "flipped",
   "description": "接入本地 MLX 双模型(GLM-5.2 编排者 / Kimi-K2.7-Code 执行者)的 agentic 代码编辑器平台。fork Roo Code + 自定义驾驭层(强制验证/循环检测/上下文压缩/人工审批/子Agent/可观测性) + MCP 联网与外部能力。",
   "updated": "2026-07-10",
-  "current_milestone": "M28 auto-fix 有效性验证 (513 passed, auto-fix 前后 score 对比+幂等性+error消除)",
+  "current_milestone": "M29 语义化 HTML auto-fix (518 passed, 缺少 header/main/footer 时自动注入)",
   "key_facts": {
     "dev_host": "Apple M5 Max, 128GB RAM, 1.1TB 可用磁盘 — 开发/控制节点，非模型宿主",
     "model_cluster": "exo 集群 @ http://100.64.201.37:52415 (内网, OpenAI 兼容)；公网 https://dgmt.top/exo (需 Bearer token)",
@@ -480,6 +480,18 @@
           "title": "auto-fix 前后 score 对比 + 幂等性 + error 消除",
           "status": "done",
           "note": "3 个端到端验证测试。513 passed。"
+        }
+      }
+    },
+    "M29": {
+      "title": "语义化 HTML auto-fix（缺少 header/main/footer 时自动注入）",
+      "status": "done",
+      "note": "最后一个 lint 维度的 auto-fix。新增 auto_fix_semantic_html()：(1) 缺少 <main> 时把 <body> 的内容包裹在 <main>...</main> 中；(2) 缺少 <header> 时在 <body> 后注入 <header></header>；(3) 缺少 <footer> 时在 </body> 前注入 <footer></footer>。auto_fix_design_issues 组合函数更新为调用六组修复：spacing+typography+html_structure+animation+css_variables+semantic_html。5 TDD 测试全过。全量 518 passed。设计质量 auto-fix 系统现在覆盖所有 9 个 lint 维度，完整闭环：lint 检测 → auto-fix 修复 → design_score 评分。",
+      "tasks": {
+        "M29.1": {
+          "title": "auto_fix_semantic_html + auto_fix_design_issues 更新",
+          "status": "done",
+          "note": "header/main/footer 自动注入 + 组合函数更新。5 TDD 测试。518 passed。"
         }
       }
     }

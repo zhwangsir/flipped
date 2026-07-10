@@ -1236,3 +1236,110 @@ body { padding: 16px; font-size: 16px; }
     assert len(errors_before) > 0
     # auto-fix 后不应有 error 级违规（viewport + img alt 都被修复）
     assert errors_after == [], f"auto-fix 后不应有 error 违规: {errors_after}"
+
+
+# ---------- M29: 语义化 HTML auto-fix（缺少 header/main/footer 时自动注入） ----------
+
+
+def test_auto_fix_semantic_missing_main():
+    """缺少 <main> 时应把 body 内容包裹在 <main> 中。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_semantic_html
+
+    html = """<html lang="zh"><head>
+<meta name="viewport" content="width=device-width">
+</head><body>
+<h1>Title</h1>
+<p>Content</p>
+</body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        fixed = auto_fix_semantic_html(td)
+        with open(os.path.join(td, "index.html"), "r") as f:
+            content = f.read()
+
+    assert fixed is True
+    assert "<main" in content
+    assert "</main>" in content
+
+
+def test_auto_fix_semantic_missing_header():
+    """缺少 <header> 时应在 body 开头注入。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_semantic_html
+
+    html = """<html lang="zh"><head>
+<meta name="viewport" content="width=device-width">
+</head><body>
+<main><p>Content</p></main>
+</body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        fixed = auto_fix_semantic_html(td)
+        with open(os.path.join(td, "index.html"), "r") as f:
+            content = f.read()
+
+    assert fixed is True
+    assert "<header" in content
+
+
+def test_auto_fix_semantic_missing_footer():
+    """缺少 <footer> 时应在 body 末尾注入。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_semantic_html
+
+    html = """<html lang="zh"><head>
+<meta name="viewport" content="width=device-width">
+</head><body>
+<header>Logo</header>
+<main><p>Content</p></main>
+</body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        fixed = auto_fix_semantic_html(td)
+        with open(os.path.join(td, "index.html"), "r") as f:
+            content = f.read()
+
+    assert fixed is True
+    assert "<footer" in content
+
+
+def test_auto_fix_semantic_all_present():
+    """已有 header/main/footer 不应修改。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_semantic_html
+
+    html = """<html lang="zh"><head>
+<meta name="viewport" content="width=device-width">
+</head><body>
+<header>Logo</header>
+<main><p>Content</p></main>
+<footer>Copyright</footer>
+</body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        fixed = auto_fix_semantic_html(td)
+
+    assert fixed is False
+
+
+def test_auto_fix_semantic_empty_dir():
+    """空目录不应报错。"""
+    import tempfile
+    from driving.design_context import auto_fix_semantic_html
+
+    with tempfile.TemporaryDirectory() as td:
+        fixed = auto_fix_semantic_html(td)
+    assert fixed is False

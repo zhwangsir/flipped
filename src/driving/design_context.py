@@ -814,6 +814,80 @@ def auto_fix_css_variables(cwd: str) -> bool:
     return changed
 
 
+def auto_fix_semantic_html(cwd: str) -> bool:
+    """自动注入语义化 HTML 标签：header/main/footer。
+
+    - 缺少 <main> → 把 <body> 的直接内容包裹在 <main>...</main> 中
+    - 缺少 <header> → 在 <body> 后注入 <header></header>
+    - 缺少 <footer> → 在 </body> 前注入 <footer></footer>
+    返回是否做过修改。
+    """
+    import os as _os
+    import re as _re
+
+    changed = False
+    for fname in _os.listdir(cwd) if _os.path.exists(cwd) else []:
+        if not fname.endswith(".html"):
+            continue
+        fpath = _os.path.join(cwd, fname)
+        if not _os.path.isfile(fpath):
+            continue
+        try:
+            content = open(fpath, "r", encoding="utf-8").read()
+        except Exception:
+            continue
+
+        original = content
+        lower = content.lower()
+
+        # 1. 缺少 <main> → 包裹 body 内容
+        if "<main" not in lower and "<body" in lower:
+            # 在 <body...> 后插入 <main>，在 </body> 前插入 </main>
+            content = _re.sub(
+                r"(<body[^>]*>)",
+                r"\1<main>",
+                content,
+                count=1,
+                flags=_re.IGNORECASE,
+            )
+            content = _re.sub(
+                r"(</body>)",
+                r"</main>\1",
+                content,
+                count=1,
+                flags=_re.IGNORECASE,
+            )
+
+        # 2. 缺少 <header> → 在 <body> 后注入
+        if "<header" not in content.lower() and "<body" in content.lower():
+            content = _re.sub(
+                r"(<body[^>]*>)",
+                r"\1<header></header>",
+                content,
+                count=1,
+                flags=_re.IGNORECASE,
+            )
+
+        # 3. 缺少 <footer> → 在 </body> 前注入
+        if "<footer" not in content.lower() and "</body>" in content.lower():
+            content = _re.sub(
+                r"(</body>)",
+                r"<footer></footer>\1",
+                content,
+                count=1,
+                flags=_re.IGNORECASE,
+            )
+
+        if content != original:
+            changed = True
+            try:
+                open(fpath, "w", encoding="utf-8").write(content)
+            except Exception:
+                pass
+
+    return changed
+
+
 def auto_fix_design_issues(cwd: str) -> bool:
     """组合调用所有 auto-fix 函数，返回是否做过任何修改。"""
     changed1 = auto_fix_spacing_grid(cwd)
@@ -821,7 +895,8 @@ def auto_fix_design_issues(cwd: str) -> bool:
     changed3 = auto_fix_html_structure(cwd)
     changed4 = auto_fix_animation_performance(cwd)
     changed5 = auto_fix_css_variables(cwd)
-    return changed1 or changed2 or changed3 or changed4 or changed5
+    changed6 = auto_fix_semantic_html(cwd)
+    return changed1 or changed2 or changed3 or changed4 or changed5 or changed6
 
 
 # ---------- M19: 设计质量校验器 ----------
