@@ -1051,3 +1051,38 @@
 - continuation 机制正确：finish=length 截断自动续生成
 - hex auto-fix 机制正确：worker 不遵守 hex 约束时自动修正
 - 无回归（440 passed，唯一失败为外部 SearXNG 404）
+
+## [2026-07-10] M15.2 per-task 超时提升 + E2E 验证
+
+### 修复
+- per-task 超时从 300s → 600s，适配 M14.4 continuation 机制
+- worker 单次 154s + continuation 154s = 308s，原 300s 不足 → task_timeout
+
+### E2E 验证（M15.1 + M15.2 综合效果）
+```
+第1轮: 完成=2 失败=3（之前 M14.4 时 完成=1 失败=5）
+第2轮: 完成=0 失败=3（exo 集群 ConnectTimeout，外部基础设施问题）
+[设计系统] index.html 包含 #0A84FF ✅
+[设计系统] index.html 包含 #0D0D12 ✅（M15.1 hex auto-fix 修复）
+[设计系统] index.html 包含 #F5F5F5 ✅（M15.1 hex auto-fix 修复）
+```
+
+### continuation 触发统计
+- 6+ 次 continuation 成功触发
+- 2 次 max_continues=2 用完（2 次续生成后仍截断 → 回退解析）
+- 4+ 次单次 continuation 成功（1 次续生成后闭合代码块）
+
+### 第1轮改善
+- M14.4 修复前：完成=1 失败=5（task_2 截断 → circuit_breaker）
+- M15.2 修复后：完成=2 失败=3（无 task_timeout，continuation 有效）
+
+### 第2轮失败原因
+- exo 集群 ConnectTimeout（curl 测试确认集群不可用）
+- planner fail-open + worker 全部 ConnectTimeout
+- 外部基础设施问题，非代码缺陷
+
+### 结论
+- M14.4 continuation 机制：✅ 有效（finish=length 截断自动续生成）
+- M15.1 hex auto-fix：✅ 有效（#0D0D12/#F5F5F5 全部命中）
+- M15.2 task_timeout 提升：✅ 有效（第1轮无 task_timeout）
+- E2E 未通过原因：exo 集群第2轮 ConnectTimeout（外部问题），非代码缺陷
