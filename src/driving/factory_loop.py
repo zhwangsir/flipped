@@ -72,6 +72,9 @@ class FactoryState(BaseModel):
     context_summary: str = ""
     iteration_count: int = 0
     max_tasks: int = 10
+    # M31: 自主任务生成——roadmap 用完后，task_proposer 自主生成下一轮任务
+    max_rounds: int = 5
+    rounds_used: int = 0
     # M10.1 设计系统注入：worker 执行任务时把 design_context 注入 project_rules，
     # 让生成的 UI 代码遵循设计系统（具体 hex 值、字体、动效、组件状态、响应式、无障碍）
     design_style: str = "auto"
@@ -576,15 +579,20 @@ def run_factory_loop(
     db_path: str = "data/factory.db",
     checkpoint_db_path: str = "data/factory_checkpoints.db",
     max_tasks: int = 10,
+    max_rounds: int = 5,
     design_style: str = "auto",
     planner: PlannerFn | None = None,
     orchestrator_fn: OrchestratorFn | None = None,
+    task_proposer: "Callable[[FactoryState], FactoryTask | None] | None" = None,
     event_bus=None,
 ) -> FactoryState:
     """启动/继续一个工厂循环；状态持久化到 db_path，支持崩溃恢复。
 
     design_style: UI/UX 设计风格（auto/minimalism/dark/glassmorphism/bento/...
     auto 时根据 product_goal 自动推断。生成的 UI 代码会遵循设计系统。
+
+    M31: task_proposer——roadmap 全部执行完后，调用 task_proposer 自主生成下一轮任务。
+    返回 None 表示停止迭代。max_rounds 限制自主生成的轮次，防止空转。
     """
     planner = planner or default_planner
     orchestrator_fn = orchestrator_fn or default_orchestrator_fn
@@ -600,6 +608,7 @@ def run_factory_loop(
             status=FactoryStatus.running,
             roadmap=[],
             max_tasks=max_tasks,
+            max_rounds=max_rounds,
             design_style=design_style,
             design_context=build_design_brief(design_style, product_type=product_goal),
         )
@@ -629,6 +638,23 @@ def run_factory_loop(
         ):
             task = _next_task(state)
             if task is None:
+                # M31: roadmap 全部执行完，尝试用 task_proposer 自主生成下一轮任务
+                if task_proposer is not None and state.rounds_used < state.max_rounds:
+                    try:
+                        proposed = task_proposer(state)
+                    except Exception:
+                        proposed = None
+                    if proposed is not None:
+                        state.roadmap.append(proposed)
+                        state.rounds_used += 1
+                        save_factory_state(state, db_path)
+                        _emit(bus, "task_proposed", {
+                            "factory_id": state.factory_id,
+                            "task_id": proposed.id,
+                            "description": proposed.description,
+                            "round": state.rounds_used,
+                        })
+                        continue  # 回到 while 顶部，_next_task 会返回新任务
                 state.status = FactoryStatus.done
                 break
 

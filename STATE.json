@@ -2,7 +2,7 @@
   "project": "flipped",
   "description": "接入本地 MLX 双模型(GLM-5.2 编排者 / Kimi-K2.7-Code 执行者)的 agentic 代码编辑器平台。fork Roo Code + 自定义驾驭层(强制验证/循环检测/上下文压缩/人工审批/子Agent/可观测性) + MCP 联网与外部能力。",
   "updated": "2026-07-11",
-  "current_milestone": "M30 local_worker auto-fix 集成测试 (519 passed, 验证 worker 写文件后调用 auto_fix_design_issues)",
+  "current_milestone": "M31 自主任务生成器 (535 passed, roadmap 用完后 task_proposer 自主生成下一轮任务)",
   "key_facts": {
     "dev_host": "Apple M5 Max, 128GB RAM, 1.1TB 可用磁盘 — 开发/控制节点，非模型宿主",
     "model_cluster": "exo 集群 @ http://100.64.201.37:52415 (内网, OpenAI 兼容)；公网 https://dgmt.top/exo (需 Bearer token)",
@@ -504,6 +504,18 @@
           "title": "test_auto_fix_design_issues_integration_with_local_worker",
           "status": "done",
           "note": "E2E 集成测试：mock Kimi 流式响应返回带违规的 HTML，local_worker 写入后断言磁盘文件全部合规。519 passed。"
+        }
+      }
+    },
+    "M31": {
+      "title": "自主任务生成器（task_proposer）",
+      "status": "done",
+      "note": "实现"无限迭代"核心缺口：factory_loop roadmap 全部执行完后，task_proposer 基于当前项目状态（已完成任务 + cwd 文件扫描 + design_score）自主生成下一个有意义的开发任务。新增 src/driving/task_proposer.py：propose_next_task(state) 扫描 cwd 文件、汇总已完成任务、获取 design_score，用 GLM 生成 TaskProposal（description + verify_cmd + reasoning + should_continue）。should_continue=False 或 GLM 不可用时返回 None 停止迭代。factory_loop 集成：run_factory_loop 新增 task_proposer 和 max_rounds 参数，_next_task 返回 None 时调用 proposer，返回新任务则追加到 roadmap 继续 while 循环。max_rounds（默认 5）限制自主生成轮次防止空转。16 TDD 测试（含 3 个集成测试验证 factory_loop 与 proposer 的端到端交互）。全量 535 passed（+16，无回归）。",
+      "tasks": {
+        "M31.1": {
+          "title": "task_proposer.py + factory_loop 集成",
+          "status": "done",
+          "note": "新增 task_proposer.py（propose_next_task + _scan_cwd_files + TaskProposal schema）。factory_loop 添加 task_proposer 参数和 max_rounds 限制。16 测试通过。535 passed。"
         }
       }
     }
