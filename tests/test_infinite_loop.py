@@ -587,4 +587,174 @@ def test_loop_state_persists_design_score():
         loaded = load_loop_state("score-persist", db)
         assert loaded is not None
         assert loaded.rounds[0].design_score == 72
-        assert "缺少 viewport" in loaded.rounds[0].design_notes
+    assert "缺少 viewport" in loaded.rounds[0].design_notes
+
+
+# ---------- M46: infinite_loop 透传 task_proposer/design_fix_fallback + RoundSummary 追踪 ----------
+
+
+def test_run_infinite_loop_passes_task_proposer_to_factory_loop():
+    """run_infinite_loop 应把 task_proposer 透传给 factory_loop。
+
+    M46：外层循环应能注入 task_proposer 控制自主任务生成，
+    而不是只能靠环境变量自动接线。
+    """
+    received_kwargs = {}
+
+    def mock_evolve(direction, rounds):
+        if not rounds:
+            return direction, False, "首轮"
+        return "达成", True, "完成"
+
+    def mock_factory_loop(goal, cwd, **kwargs):
+        received_kwargs.update(kwargs)
+        return _make_factory_state(goal, completed=1)
+
+    def my_task_proposer(state):
+        return None
+
+    with tempfile.TemporaryDirectory() as td:
+        db = os.path.join(td, "loop.db")
+        run_infinite_loop(
+            "方向",
+            td,
+            max_rounds=5,
+            db_path=db,
+            evolve_fn=mock_evolve,
+            factory_loop_fn=mock_factory_loop,
+            task_proposer=my_task_proposer,
+        )
+
+    assert "task_proposer" in received_kwargs
+    assert received_kwargs["task_proposer"] is my_task_proposer
+
+
+def test_run_infinite_loop_passes_design_fix_fallback_to_factory_loop():
+    """run_infinite_loop 应把 design_fix_fallback 透传给 factory_loop。"""
+    received_kwargs = {}
+
+    def mock_evolve(direction, rounds):
+        if not rounds:
+            return direction, False, "首轮"
+        return "达成", True, "完成"
+
+    def mock_factory_loop(goal, cwd, **kwargs):
+        received_kwargs.update(kwargs)
+        return _make_factory_state(goal, completed=1)
+
+    def my_design_fix_fallback(state):
+        return None
+
+    with tempfile.TemporaryDirectory() as td:
+        db = os.path.join(td, "loop.db")
+        run_infinite_loop(
+            "方向",
+            td,
+            max_rounds=5,
+            db_path=db,
+            evolve_fn=mock_evolve,
+            factory_loop_fn=mock_factory_loop,
+            design_fix_fallback=my_design_fix_fallback,
+        )
+
+    assert "design_fix_fallback" in received_kwargs
+    assert received_kwargs["design_fix_fallback"] is my_design_fix_fallback
+
+
+def test_round_summary_has_proposer_fields():
+    """RoundSummary 应有 proposer_triggered 和 design_fix_count 字段。"""
+    rs = RoundSummary(
+        round_num=1, factory_id="f1", product_goal="测试",
+        tasks_completed=2, tasks_failed=0,
+        proposer_triggered=True,
+        design_fix_count=1,
+    )
+    assert rs.proposer_triggered is True
+    assert rs.design_fix_count == 1
+
+
+def test_round_summary_proposer_fields_default():
+    """RoundSummary 的 proposer 字段默认值。"""
+    rs = RoundSummary(
+        round_num=1, factory_id="f1", product_goal="测试",
+        tasks_completed=1, tasks_failed=0,
+    )
+    assert rs.proposer_triggered is False
+    assert rs.design_fix_count == 0
+
+
+def test_collect_round_summary_detects_design_fix_tasks():
+    """_collect_round_summary 应从 completed 中检测 design-fix 任务。
+
+    M46：proposer 触发的 design-fix 任务（feedback 含 'design_score' 或 'auto_fix'）
+    应被识别并记入 RoundSummary，让演进者知道本轮已自动修复过设计问题。
+    """
+    from driving.factory_loop import FactoryTask, TaskResult
+
+    normal_task = FactoryTask(id="t1", description="创建页面", verify_cmd=["true"])
+    design_fix_task = FactoryTask(
+        id="t2", description="修复设计质量问题",
+        verify_cmd=["true"],
+        feedback="(design_fix_fallback) design_score=55/70 未达标",
+    )
+    factory = FactoryState(
+        factory_id="f1",
+        product_goal="测试",
+        cwd="/tmp/test_m46",
+        status=FactoryStatus.done,
+        roadmap=[normal_task, design_fix_task],
+        completed=[
+            TaskResult(task=normal_task, verified=True, stop_reason="verified", iteration=1),
+            TaskResult(task=design_fix_task, verified=True, stop_reason="verified", iteration=1),
+        ],
+    )
+    summary = _collect_round_summary(1, factory)
+
+    assert summary.proposer_triggered is True
+    assert summary.design_fix_count == 1
+
+
+def test_collect_round_summary_no_design_fix_tasks():
+    """没有 design-fix 任务时，proposer_triggered=False。"""
+    from driving.factory_loop import FactoryTask, TaskResult
+
+    normal_task = FactoryTask(id="t1", description="创建页面", verify_cmd=["true"])
+    factory = FactoryState(
+        factory_id="f1",
+        product_goal="测试",
+        cwd="/tmp/test_m46_none",
+        status=FactoryStatus.done,
+        roadmap=[normal_task],
+        completed=[
+            TaskResult(task=normal_task, verified=True, stop_reason="verified", iteration=1),
+        ],
+    )
+    summary = _collect_round_summary(1, factory)
+
+    assert summary.proposer_triggered is False
+    assert summary.design_fix_count == 0
+
+
+def test_loop_state_persists_proposer_fields():
+    """proposer_triggered 和 design_fix_count 应能持久化到 SQLite 并恢复。"""
+    with tempfile.TemporaryDirectory() as td:
+        db = os.path.join(td, "loop.db")
+        state = InfiniteLoopState(
+            loop_id="proposer-persist",
+            direction="测试",
+            cwd=td,
+            design_style="dark",
+            max_rounds=5,
+        )
+        state.rounds.append(RoundSummary(
+            round_num=1, factory_id="f1", product_goal="第一轮",
+            tasks_completed=3, tasks_failed=0, summary="完成",
+            proposer_triggered=True,
+            design_fix_count=2,
+        ))
+        save_loop_state(state, db)
+
+        loaded = load_loop_state("proposer-persist", db)
+        assert loaded is not None
+        assert loaded.rounds[0].proposer_triggered is True
+        assert loaded.rounds[0].design_fix_count == 2

@@ -2,7 +2,7 @@
   "project": "flipped",
   "description": "接入本地 MLX 双模型(GLM-5.2 编排者 / Kimi-K2.7-Code 执行者)的 agentic 代码编辑器平台。fork Roo Code + 自定义驾驭层(强制验证/循环检测/上下文压缩/人工审批/子Agent/可观测性) + MCP 联网与外部能力。",
   "updated": "2026-07-11",
-  "current_milestone": "M45 强化 default_planner 确定性 fallback + E2E 方向→迭代 (614 passed)",
+  "current_milestone": "M46 infinite_loop 透传 task_proposer/design_fix_fallback + RoundSummary 追踪 (621 passed)",
   "key_facts": {
     "dev_host": "Apple M5 Max, 128GB RAM, 1.1TB 可用磁盘 — 开发/控制节点，非模型宿主",
     "model_cluster": "exo 集群 @ http://100.64.201.37:52415 (内网, OpenAI 兼容)；公网 https://dgmt.top/exo (需 Bearer token)",
@@ -684,6 +684,18 @@
           "title": "_deterministic_roadmap + default_planner except 分支更新 + 7 测试",
           "status": "done",
           "note": "确定性 roadmap 函数 + fail-open 改用确定性 roadmap + 1 旧测试适配 + 6 新测试（含 E2E）。614 passed。"
+        }
+      }
+    },
+    "M46": {
+      "title": "infinite_loop 透传 task_proposer/design_fix_fallback + RoundSummary 追踪",
+      "status": "done",
+      "note": "run_infinite_loop 新增 task_proposer/design_fix_fallback 参数并透传给 factory_loop，外层循环可显式注入/控制自主任务生成（不再只靠环境变量自动接线）。RoundSummary 新增 proposer_triggered + design_fix_count 字段，_collect_round_summary 从 completed 任务的 feedback 检测 design-fix 标记（design_score/auto_fix/确定性 fallback）和 proposer 标记（自主生成），让演进者区分'已自动修复过但仍低分'与'从未尝试修复'。8 个 TDD 测试。全量 621 passed（+7，无回归）。",
+      "tasks": {
+        "M46.1": {
+          "title": "透传参数 + RoundSummary 追踪字段 + 8 测试",
+          "status": "done",
+          "note": "run_infinite_loop 签名补 task_proposer/design_fix_fallback + 透传 factory_loop + RoundSummary 新增 proposer_triggered/design_fix_count + _collect_round_summary 检测标记。621 passed。"
         }
       }
     }

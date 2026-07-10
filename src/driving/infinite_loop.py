@@ -49,6 +49,10 @@ class RoundSummary(BaseModel):
     # M21：设计质量评分（0-100），让演进者看到设计质量趋势
     design_score: int = 0
     design_notes: list[str] = Field(default_factory=list)
+    # M46：追踪本轮是否触发了自主任务生成（task_proposer / design_fix_fallback）
+    # 让演进者区分"已自动修复过但仍低分"与"从未尝试修复"
+    proposer_triggered: bool = False
+    design_fix_count: int = 0
 
 
 class InfiniteLoopState(BaseModel):
@@ -184,6 +188,20 @@ def _collect_round_summary(
     except Exception:
         pass
 
+    # M46：检测本轮是否触发了自主任务生成（task_proposer / design_fix_fallback）
+    # design-fix 任务的 feedback 含 "design_score"/"auto_fix"/"确定性 fallback"；
+    # task_proposer 生成的任务 feedback 含 "自主生成"。
+    _DESIGN_FIX_MARKERS = ("design_score", "auto_fix", "确定性 fallback")
+    _PROPOSER_MARKERS = ("自主生成",) + _DESIGN_FIX_MARKERS
+    design_fix_count_val = 0
+    proposer_triggered_val = False
+    for tr in factory_state.completed:
+        fb = tr.task.feedback or ""
+        if any(m in fb for m in _DESIGN_FIX_MARKERS):
+            design_fix_count_val += 1
+        if any(m in fb for m in _PROPOSER_MARKERS):
+            proposer_triggered_val = True
+
     return RoundSummary(
         round_num=round_num,
         factory_id=factory_state.factory_id,
@@ -194,6 +212,8 @@ def _collect_round_summary(
         artifacts=artifacts,
         design_score=design_score_val,
         design_notes=design_notes_val,
+        proposer_triggered=proposer_triggered_val,
+        design_fix_count=design_fix_count_val,
     )
 
 
@@ -311,6 +331,8 @@ def run_infinite_loop(
     planner=None,
     orchestrator_fn=None,
     event_bus=None,
+    task_proposer: "Callable[[FactoryState], FactoryTask | None] | None" = None,
+    design_fix_fallback: "Callable[[FactoryState], FactoryTask | None] | None" = None,
 ) -> InfiniteLoopState:
     """无限迭代循环：基于方向自主演进产品，每轮完成后生成下一轮 roadmap。
 
@@ -321,6 +343,9 @@ def run_infinite_loop(
         max_rounds: 最大轮次（预算上限，防无限空转）
         evolve_fn: 可注入的目标演进函数（测试用）
         factory_loop_fn: 可注入的工厂循环函数（测试用）
+        task_proposer: M46 自主任务生成器，透传给 factory_loop（None 时由
+            factory_loop 内部按 FLIPPED_AUTO_PROPOSER 自动接线）
+        design_fix_fallback: M46 确定性 design fix fallback，透传给 factory_loop
 
     停止条件：
     - 用户停止（FLIPPED_STOP_LOOP 环境变量或 stop 文件）
@@ -393,6 +418,8 @@ def run_infinite_loop(
             planner=planner,
             orchestrator_fn=orchestrator_fn,
             event_bus=event_bus,
+            task_proposer=task_proposer,
+            design_fix_fallback=design_fix_fallback,
         )
 
         # 收集本轮成果
