@@ -2,7 +2,7 @@
   "project": "flipped",
   "description": "接入本地 MLX 双模型(GLM-5.2 编排者 / Kimi-K2.7-Code 执行者)的 agentic 代码编辑器平台。fork Roo Code + 自定义驾驭层(强制验证/循环检测/上下文压缩/人工审批/子Agent/可观测性) + MCP 联网与外部能力。",
   "updated": "2026-07-11",
-  "current_milestone": "M44 auto_fix 前置运行 (608 passed, auto_fix后达标则不生成修复任务)",
+  "current_milestone": "M45 强化 default_planner 确定性 fallback + E2E 方向→迭代 (614 passed)",
   "key_facts": {
     "dev_host": "Apple M5 Max, 128GB RAM, 1.1TB 可用磁盘 — 开发/控制节点，非模型宿主",
     "model_cluster": "exo 集群 @ http://100.64.201.37:52415 (内网, OpenAI 兼容)；公网 https://dgmt.top/exo (需 Bearer token)",
@@ -672,6 +672,18 @@
           "title": "auto_fix 前置 + 3 测试适配 + 1 新测试",
           "status": "done",
           "note": "propose_design_fix_task 中 auto_fix_design_issues 前置运行。3 个已有测试 mock auto_fix 隔离逻辑测试。1 个新测试验证 auto_fix 后达标返回 None。608 passed。"
+        }
+      }
+    },
+    "M45": {
+      "title": "强化 default_planner 确定性 fallback + E2E 方向→迭代",
+      "status": "done",
+      "note": "用户目标：'只需要给出方向就可以自行无限迭代'。旧 default_planner 的 fail-open 返回单个 verify_cmd=['true'] 的无意义任务——GLM 不可用时工厂无法真正运作。新增 _deterministic_roadmap(product_goal, cwd) 函数：生成 3 个有意义的 HTML 开发任务（创建基础结构、添加 CSS 样式系统、添加交互元素），每个任务有真实文件内容检查的 verify_cmd（非 true）。default_planner 的 except 分支改用 _deterministic_roadmap 替代旧的 'true' 任务。更新 1 个旧测试适配新行为 + 6 个新 TDD 测试（含 E2E: 方向→确定性 planner→执行→proposer→停止）。全量 614 passed（+6，无回归）。核心价值：GLM 完全不可用时，工厂仍能基于确定性逻辑产出有价值的 HTML 产物，真正实现'给方向就跑'。",
+      "tasks": {
+        "M45.1": {
+          "title": "_deterministic_roadmap + default_planner except 分支更新 + 7 测试",
+          "status": "done",
+          "note": "确定性 roadmap 函数 + fail-open 改用确定性 roadmap + 1 旧测试适配 + 6 新测试（含 E2E）。614 passed。"
         }
       }
     }

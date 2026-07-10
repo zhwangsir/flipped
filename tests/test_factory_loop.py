@@ -18,6 +18,7 @@ from driving.factory_loop import (  # noqa: E402
     FactoryTask,
     TaskResult,
     TaskStatus,
+    _deterministic_roadmap,
     _next_task,
     _wrap_with_design_quality,
     default_planner,
@@ -327,7 +328,7 @@ def test_resume_factory_loop_continues_after_crash(tmp_db, tmp_cwd):
 
 
 def test_default_planner_returns_fallback_on_llm_error():
-    # mock _make_llm 快速抛异常，验证 fail-open 兜底
+    # mock _make_llm 快速抛异常，验证 fail-open 兜底（M45: 改用确定性 roadmap）
     state = FactoryState(
         factory_id="f",
         product_goal="build a calculator",
@@ -337,10 +338,10 @@ def test_default_planner_returns_fallback_on_llm_error():
     )
     with patch("driving.factory_loop._make_llm", side_effect=RuntimeError("no model")):
         tasks = default_planner(state)
-    assert len(tasks) == 1
-    assert tasks[0].description == "build a calculator"
-    assert tasks[0].verify_cmd == ["true"]
-    assert "planner fail-open" in tasks[0].feedback
+    # M45: 不再返回单个 true 任务，而是确定性 roadmap（≥2 个有意义的任务）
+    assert len(tasks) >= 2
+    assert all("planner fail-open" in (t.feedback or "") for t in tasks)
+    assert all(t.verify_cmd[0] != "true" for t in tasks)
 
 
 # ---------- schema 迁移兼容 ----------
@@ -452,3 +453,110 @@ def test_wrap_with_design_quality_warnings_dont_block(tmp_cwd):
     wrapped = _wrap_with_design_quality(base_verifier)
     ok, msg = wrapped([], tmp_cwd)
     assert ok is True  # warning 不阻断
+
+
+# ---------- M45: deterministic planner fallback ----------
+
+
+def test_deterministic_roadmap_generates_meaningful_tasks():
+    """GLM 不可用时，确定性 roadmap 生成有意义的任务列表（非单个 true 任务）。"""
+    with tempfile.TemporaryDirectory() as d:
+        tasks = _deterministic_roadmap("做一个落地页", d)
+    assert len(tasks) >= 2, f"应生成至少 2 个任务，实际 {len(tasks)}"
+    for t in tasks:
+        assert t.description, "任务必须有描述"
+        assert t.verify_cmd, "任务必须有验收命令"
+        assert t.verify_cmd[0] != "true", "验收命令不应是 true"
+
+
+def test_deterministic_roadmap_verify_cmd_checks_html():
+    """确定性 roadmap 的验收命令应检查 HTML 文件。"""
+    with tempfile.TemporaryDirectory() as d:
+        tasks = _deterministic_roadmap("做一个网页", d)
+    has_file_check = any("index.html" in cmd for t in tasks for cmd in t.verify_cmd)
+    assert has_file_check, "至少一个任务应检查 index.html"
+
+
+def test_deterministic_roadmap_tasks_have_distinct_ids():
+    """确定性 roadmap 的任务 id 不重复。"""
+    with tempfile.TemporaryDirectory() as d:
+        tasks = _deterministic_roadmap("做一个计算器", d)
+    ids = [t.id for t in tasks]
+    assert len(ids) == len(set(ids)), "任务 id 不重复"
+
+
+def test_default_planner_fallback_uses_deterministic_roadmap():
+    """GLM 失败时，default_planner 使用确定性 roadmap 而非单个 true 任务。"""
+    state = FactoryState(
+        factory_id="f",
+        product_goal="做一个计算器",
+        cwd="/tmp",
+        status=FactoryStatus.pending,
+        roadmap=[],
+    )
+    with patch("driving.factory_loop._make_llm", side_effect=RuntimeError("no model")):
+        tasks = default_planner(state)
+    assert len(tasks) >= 2, "确定性 fallback 应生成多个任务"
+    for t in tasks:
+        assert t.verify_cmd[0] != "true", "不应使用 true 作为验收命令"
+
+
+def test_default_planner_fallback_feedback_mentions_deterministic():
+    """GLM 失败时，task feedback 应提及确定性 fallback。"""
+    state = FactoryState(
+        factory_id="f",
+        product_goal="做一个网页",
+        cwd="/tmp",
+        status=FactoryStatus.pending,
+        roadmap=[],
+    )
+    with patch("driving.factory_loop._make_llm", side_effect=RuntimeError("no model")):
+        tasks = default_planner(state)
+    has_feedback = any("deterministic" in (t.feedback or "").lower() or "确定性" in (t.feedback or "") for t in tasks)
+    assert has_feedback, "feedback 应提及确定性 fallback"
+
+
+def test_e2e_direction_to_iteration_with_deterministic_planner(monkeypatch):
+    """E2E: 方向 → 确定性 planner → 执行 → proposer → 停止。
+
+    模拟 GLM 完全不可用：
+    - planner fail-open 用确定性 roadmap
+    - task_proposer fail-open 返回 None
+    - 工厂执行完确定性 roadmap 后自然停止
+    """
+    # 启用 auto-proposer（conftest 默认禁用）
+    monkeypatch.setenv("FLIPPED_AUTO_PROPOSER", "1")
+    # mock GLM 不可用
+    monkeypatch.setattr("driving.factory_loop._make_llm", lambda *a, **kw: (_ for _ in ()).throw(RuntimeError("no GLM")))
+    monkeypatch.setattr("driving.task_proposer._make_llm", lambda *a, **kw: (_ for _ in ()).throw(RuntimeError("no GLM")))
+    # mock auto_fix 为 no-op（确保 design_fix_fallback 不干扰 E2E 测试）
+    monkeypatch.setattr("driving.design_context.auto_fix_design_issues", lambda cwd: None)
+
+    def fake_orchestrator(task, state):
+        # 模拟 worker：在 cwd 创建包含 CSS 变量和交互元素的 HTML
+        html_path = os.path.join(state.cwd, "index.html")
+        good_html = """<!DOCTYPE html>
+<html lang="zh"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<style>:root { --color-bg: #0D0D12; --color-text: #F5F5F5; --color-accent: #0A84FF; }
+body { margin: 0; padding: 16px; }</style>
+</head><body><header></header><main><h1>Test</h1><button>Click</button></main><footer></footer>
+</body></html>"""
+        with open(html_path, "w") as f:
+            f.write(good_html)
+        return TaskResult(task=task, verified=True, stop_reason="verified", iteration=1)
+
+    with tempfile.TemporaryDirectory() as d:
+        state = run_factory_loop(
+            product_goal="做一个落地页",
+            cwd=d,
+            db_path=os.path.join(d, "test_factory.db"),
+            checkpoint_db_path=os.path.join(d, "test_ckpt.db"),
+            max_tasks=10,
+            max_rounds=2,
+            orchestrator_fn=fake_orchestrator,
+        )
+
+    # 应该执行了确定性 roadmap 的任务（至少 2 个）
+    assert len(state.completed) >= 2, f"应执行至少 2 个任务，实际 {len(state.completed)}"
+    assert state.status.value == "done"

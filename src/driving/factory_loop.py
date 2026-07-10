@@ -300,8 +300,46 @@ PlannerFn = Callable[[FactoryState], list[FactoryTask]]
 OrchestratorFn = Callable[[FactoryTask, FactoryState], TaskResult]
 
 
+def _deterministic_roadmap(product_goal: str, cwd: str) -> list[FactoryTask]:
+    """确定性 roadmap fallback：GLM 不可用时基于 product_goal 生成有意义的任务列表。
+
+    核心思路：无论产品目标是什么，都需要先创建基础 HTML 页面，
+    然后添加样式系统和交互元素。这确保工厂即使没有 GLM 也能产出有价值的产物。
+    每个任务有真实验收命令（文件内容检查），不是无意义的 'true'。
+    """
+    goal_short = product_goal[:30] if product_goal else "产品"
+    safe_cwd = cwd.replace("'", "\\'")
+
+    return [
+        FactoryTask(
+            id="det-task-1",
+            description=f"创建 index.html 基础结构（{goal_short}）",
+            verify_cmd=[
+                f"python -c \"import os; assert os.path.isfile('{safe_cwd}/index.html'), 'index.html not found'\""
+            ],
+            feedback="(确定性 fallback: 创建基础 HTML 结构)",
+        ),
+        FactoryTask(
+            id="det-task-2",
+            description="添加 CSS 样式系统（CSS 变量、响应式布局）",
+            verify_cmd=[
+                f"python -c \"f=open('{safe_cwd}/index.html'); c=f.read(); assert ':root' in c or '--color' in c, 'no CSS variables'; f.close()\""
+            ],
+            feedback="(确定性 fallback: 添加 CSS 样式系统)",
+        ),
+        FactoryTask(
+            id="det-task-3",
+            description="添加交互元素和组件状态（button/a + hover/focus）",
+            verify_cmd=[
+                f"python -c \"f=open('{safe_cwd}/index.html'); c=f.read(); assert '<button' in c or '<a ' in c, 'no interactive elements'; f.close()\""
+            ],
+            feedback="(确定性 fallback: 添加交互元素)",
+        ),
+    ]
+
+
 def default_planner(state: FactoryState) -> list[FactoryTask]:
-    """用 GLM 把产品目标拆成可执行的任务列表；失败时 fail-open 为单个任务。
+    """用 GLM 把产品目标拆成可执行的任务列表；失败时用确定性 roadmap 兜底。
 
     verify_cmd 硬约束为单行 shell 命令——T3 熔断的根因是 GLM 生成多行 Python
     用 `&&` 连接，`python -c` 无法执行。这里在 prompt 和后处理两道防线卡死。
@@ -352,19 +390,15 @@ def default_planner(state: FactoryState) -> list[FactoryTask]:
         for t in rm.tasks:
             t.verify_cmd = _sanitize_verify_cmd(t.verify_cmd)
         return rm.tasks
-    except Exception as e:  # noqa: BLE001 失败兜底：当成一个任务
+    except Exception as e:  # noqa: BLE001 失败兜底：用确定性 roadmap
         import sys
         import traceback
         print(f"[planner] fail-open: {type(e).__name__}: {e}", file=sys.stderr)
         traceback.print_exc(file=sys.stderr)
-        return [
-            FactoryTask(
-                id="task-fallback",
-                description=state.product_goal,
-                verify_cmd=["true"],
-                feedback=f"(planner fail-open: {e})",
-            )
-        ]
+        tasks = _deterministic_roadmap(state.product_goal, state.cwd)
+        for t in tasks:
+            t.feedback = f"(planner fail-open: {e}) {t.feedback}"
+        return tasks
 
 
 def _sanitize_verify_cmd(cmd: list[str]) -> list[str]:
