@@ -191,6 +191,85 @@ def test_run_factory_loop_retries_then_pauses(tmp_db, tmp_cwd):
     assert result.iteration_count == 3
 
 
+# ---------- M16: infra_failure 优雅暂停（不烧光重试次数） ----------
+
+
+def test_infra_failure_pauses_without_consuming_retries(tmp_db, tmp_cwd):
+    """集群不可用(ConnectTimeout)时立即暂停，不消耗 max_attempts。
+
+    E2E 暴露：exo 集群 ConnectTimeout 时 worker_error=True → stop_reason="worker_error"，
+    factory_loop 把它当普通失败重试 3 次 → 烧光重试次数 → paused。
+    修复：检测 infra_failure 模式（ConnectTimeout/ReadTimeout/worker_error 含 timeout），
+    立即暂停并标记 infra_failure，不消耗重试次数。
+    """
+    call_count = [0]
+
+    def stub_planner(state: FactoryState) -> list[FactoryTask]:
+        return [make_task("any task", verify_cmd=["true"])]
+
+    def stub_orchestrator(task: FactoryTask, state: FactoryState) -> TaskResult:
+        call_count[0] += 1
+        return TaskResult(
+            task=task,
+            verified=False,
+            stop_reason="worker_error",
+            iteration=0,
+            summary="ConnectTimeout: timed out",
+        )
+
+    result = run_factory_loop(
+        product_goal="build something",
+        cwd=tmp_cwd,
+        db_path=str(tmp_db),
+        planner=stub_planner,
+        orchestrator_fn=stub_orchestrator,
+        max_tasks=10,
+    )
+
+    # 只调 1 次（而非 3 次），因为 infra_failure → 立即暂停
+    assert call_count[0] == 1
+    assert result.status == FactoryStatus.paused
+    # failed 只有 1 条（不消耗重试次数）
+    assert len(result.failed) == 1
+    # stop_reason 标记为 infra_failure
+    assert "infra" in result.failed[0].stop_reason or "infra" in result.failed[0].summary.lower()
+
+
+def test_non_infra_failure_still_retries(tmp_db, tmp_cwd):
+    """普通失败（verify_failed）仍正常重试 3 次。
+
+    确认 M16 修复不影响普通失败的正常重试逻辑。
+    """
+    calls = []
+
+    def stub_planner(state: FactoryState) -> list[FactoryTask]:
+        return [make_task("verify fail", verify_cmd=["false"])]
+
+    def stub_orchestrator(task: FactoryTask, state: FactoryState) -> TaskResult:
+        calls.append(task.attempts)
+        return TaskResult(
+            task=task,
+            verified=False,
+            stop_reason="verify_failed",
+            iteration=1,
+            summary="assertion failed",
+        )
+
+    result = run_factory_loop(
+        product_goal="build something",
+        cwd=tmp_cwd,
+        db_path=str(tmp_db),
+        planner=stub_planner,
+        orchestrator_fn=stub_orchestrator,
+        max_tasks=10,
+    )
+
+    # 普通失败仍重试 3 次
+    assert calls == [1, 2, 3]
+    assert result.status == FactoryStatus.paused
+    assert len(result.failed) == 3
+
+
 def test_resume_factory_loop_continues_after_crash(tmp_db, tmp_cwd):
     """模拟进程崩溃：直接写入一个 current_task 为 running 的状态，再 resume。"""
     calls = []

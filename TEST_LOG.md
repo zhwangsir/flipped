@@ -1086,3 +1086,16 @@
 - M15.1 hex auto-fix：✅ 有效（#0D0D12/#F5F5F5 全部命中）
 - M15.2 task_timeout 提升：✅ 有效（第1轮无 task_timeout）
 - E2E 未通过原因：exo 集群第2轮 ConnectTimeout（外部问题），非代码缺陷
+
+## M16 infra_failure 优雅暂停 (2026-07-10)
+
+**命令**: `.venv/bin/python -m pytest tests/test_factory_loop.py -x -q`
+**输出**: 11 passed (9 原有 + 2 新 M16 测试)
+**新增测试**:
+- test_infra_failure_pauses_without_consuming_retries: infra_failure(ConnectTimeout) 只调 1 次立即暂停，不消耗 max_attempts
+- test_non_infra_failure_still_retries: 普通失败(verify_failed) 仍正常重试 3 次
+
+**命令**: `.venv/bin/python -m pytest tests/ -x -q`
+**输出**: 442 passed, 1 skipped
+**结论**: M16 infra_failure 优雅暂停机制实现完成，无回归。集群故障(ConnectTimeout/worker_error)时立即暂停不烧光重试次数。
+

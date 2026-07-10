@@ -2,7 +2,7 @@
   "project": "flipped",
   "description": "接入本地 MLX 双模型(GLM-5.2 编排者 / Kimi-K2.7-Code 执行者)的 agentic 代码编辑器平台。fork Roo Code + 自定义驾驭层(强制验证/循环检测/上下文压缩/人工审批/子Agent/可观测性) + MCP 联网与外部能力。",
   "updated": "2026-07-10",
-  "current_milestone": "M15.2 per-task 超时提升 (440 passed, E2E hex auto-fix 验证通过)",
+  "current_milestone": "M16 infra_failure 优雅暂停 (442 passed, 集群故障不烧光重试次数)",
   "key_facts": {
     "dev_host": "Apple M5 Max, 128GB RAM, 1.1TB 可用磁盘 — 开发/控制节点，非模型宿主",
     "model_cluster": "exo 集群 @ http://100.64.201.37:52415 (内网, OpenAI 兼容)；公网 https://dgmt.top/exo (需 Bearer token)",
@@ -324,6 +324,18 @@
           "title": "per-task 超时从 300s 提升到 600s，适配 continuation 机制",
           "status": "done",
           "note": "E2E 暴露：worker 单次 154s + continuation 154s = 308s，原 300s 超时不足以容纳 finish=length 截断后的续生成 → task_timeout。M14.4 continuation 机制最多追加 2 次调用，600s 足以容纳。E2E 验证：第1轮无 task_timeout（之前 M14.4 修复前 task_timeout × 2 + circuit_breaker）。"
+        }
+      }
+    },
+    "M16": {
+      "title": "infra_failure 优雅暂停（集群故障不烧光重试次数）",
+      "status": "done",
+      "note": "E2E 暴露：exo 集群 ConnectTimeout 时 worker_error=True → stop_reason='worker_error'，factory_loop 把它当普通失败重试 3 次 → 烧光重试次数 → paused。修复(AGENTS.md §6 遇错即工程化)：(1) 新增 _is_infra_failure(stop_reason, summary) 纯函数检测 infra_failure 模式(ConnectTimeout/ReadTimeout/ConnectionRefused/ConnectionError/worker_error 等)；(2) 在 run_factory_loop 失败处理 else: 分支开头检测 infra_failure，若是则立即暂停并标记 stop_reason='infra_failure'，不消耗 attempts 不重试（重试集群故障毫无意义）；(3) 2 新测试全过(infra_failure 只调1次立即暂停 vs 普通失败仍重试3次)。全量 442 passed。",
+      "tasks": {
+        "M16.1": {
+          "title": "infra_failure 检测 + 优雅暂停（不消耗重试次数）",
+          "status": "done",
+          "note": "_is_infra_failure() + run_factory_loop else: 分支 infra_failure 检测 + 2 TDD 测试。442 passed。"
         }
       }
     }

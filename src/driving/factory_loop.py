@@ -80,6 +80,35 @@ class FactoryState(BaseModel):
     updated_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
 
+# ---------- M16: infra_failure 检测 ----------
+
+# 集群不可用时的特征模式（stop_reason + summary）
+_INFRA_FAILURE_PATTERNS = [
+    "connecttimeout",
+    "readtimeout",
+    "connectionrefused",
+    "connectionerror",
+    "connecterror",
+    "unreachable",
+    "worker_error",  # orchestrator 的 worker_error 节点（模型不可用）
+]
+
+
+def _is_infra_failure(stop_reason: str, summary: str) -> bool:
+    """检测是否为基础设施故障（集群不可用），而非代码缺陷。
+
+    M16：E2E 暴露 exo 集群 ConnectTimeout 时 worker_error=True，
+    factory_loop 把它当普通失败重试 3 次 → 烧光重试次数 → paused。
+    修复：检测 infra_failure 模式，立即暂停不消耗重试次数。
+
+    判定条件（任一匹配即视为 infra_failure）：
+    - stop_reason == "worker_error"（orchestrator 的 worker_error 节点）
+    - summary 含 ConnectTimeout/ReadTimeout/ConnectionRefused 等网络错误
+    """
+    combined = f"{stop_reason} {summary}".lower()
+    return any(pat in combined for pat in _INFRA_FAILURE_PATTERNS)
+
+
 # ---------- 事件总线（可观测，可选） ----------
 
 class NullEventBus:
@@ -625,6 +654,19 @@ def run_factory_loop(
                 except Exception:
                     pass
             else:
+                # M16: infra_failure 优雅暂停——集群不可用(ConnectTimeout/worker_error)
+                # 时立即暂停，不消耗重试次数。重试集群故障毫无意义，只会烧光 attempts → paused。
+                if _is_infra_failure(result.stop_reason, result.summary):
+                    result.stop_reason = "infra_failure"
+                    task.status = TaskStatus.failed
+                    state.failed.append(result)
+                    _emit(bus, "infra_failure_detected", {
+                        "factory_id": state.factory_id,
+                        "task_id": task.id,
+                        "summary": result.summary[:200],
+                    })
+                    state.status = FactoryStatus.paused
+                    break
                 task.status = TaskStatus.failed
                 state.failed.append(result)
                 # M10.4-B：失败也记录（演进者能看到哪些功能反复失败）
