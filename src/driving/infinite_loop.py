@@ -314,8 +314,11 @@ def run_infinite_loop(
         except Exception:
             pass
     else:
-        if state.status != "running":
-            return state  # 已完成
+        if state.status == "infra_failure":
+            # M18: infra_failure 恢复——集群恢复后续跑
+            state.status = "running"
+        elif state.status != "running":
+            return state  # 已完成（goal_achieved/stopped/budget_exhausted）
 
     while state.status == "running":
         round_num = len(state.rounds) + 1

@@ -345,3 +345,60 @@ def test_mixed_round_continues_loop():
 
     assert state.status == "goal_achieved"
     assert len(state.rounds) == 2  # 跑了 2 轮（第1轮有完成不是全 infra_failure）
+
+
+# ---------- M18: infra_failure 恢复（集群恢复后续跑） ----------
+
+
+def test_resume_from_infra_failure():
+    """infra_failure 状态的循环可以恢复——集群恢复后续跑。
+
+    E2E 场景：集群 ConnectTimeout → infra_failure 停止。
+    集群恢复后用相同 loop_id 再调 run_infinite_loop，应从 infra_failure 恢复继续。
+    """
+    from driving.factory_loop import FactoryTask, TaskResult
+
+    with tempfile.TemporaryDirectory() as td:
+        db = os.path.join(td, "loop.db")
+        # 先创建一个 infra_failure 状态的循环（已跑 1 轮全失败）
+        existing = InfiniteLoopState(
+            loop_id="infra-resume-test",
+            direction="恢复测试",
+            cwd=td,
+            design_style="dark",
+            max_rounds=5,
+        )
+        fail_task = FactoryTask(id="t1", description="task", verify_cmd=["true"])
+        existing.rounds.append(RoundSummary(
+            round_num=1, factory_id="f1", product_goal="第一轮",
+            tasks_completed=0, tasks_failed=1,
+            summary="infra_failure: ConnectTimeout",
+        ))
+        existing.status = "infra_failure"
+        save_loop_state(existing, db)
+
+        factory_calls = {"n": 0}
+
+        def mock_evolve(direction, rounds):
+            if len(rounds) >= 2:
+                return "达成", True, "完成"
+            return "第二轮目标", False, "继续"
+
+        def mock_factory_loop(goal, cwd, **kwargs):
+            factory_calls["n"] += 1
+            # 集群已恢复，正常完成
+            return _make_factory_state(goal, completed=2)
+
+        # 用相同 loop_id 恢复——应从 infra_failure 状态继续
+        state = run_infinite_loop(
+            "恢复测试",
+            td,
+            loop_id="infra-resume-test",
+            db_path=db,
+            evolve_fn=mock_evolve,
+            factory_loop_fn=mock_factory_loop,
+        )
+
+    assert state.status == "goal_achieved"
+    assert len(state.rounds) == 2  # 原有 1 轮 + 新 1 轮
+    assert factory_calls["n"] == 1  # 只跑了 1 轮新 factory_loop

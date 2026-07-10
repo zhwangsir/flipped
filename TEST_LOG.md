@@ -1112,3 +1112,12 @@
 **输出**: 444 passed, 1 skipped
 **结论**: M17 infra_failure 早停完成。集群故障时无限迭代循环不浪费预算跑下一轮。
 
+
+## M18 infra_failure 恢复 (2026-07-10)
+
+**命令**: `.venv/bin/python -m pytest tests/test_infinite_loop.py -x -q`
+**输出**: 10 passed (+1 M18)
+**新增测试**: test_resume_from_infra_failure — infra_failure 状态恢复后继续跑
+
+**全量**: 445 passed, 1 skipped
+
