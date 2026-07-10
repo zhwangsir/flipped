@@ -1099,3 +1099,16 @@
 **输出**: 442 passed, 1 skipped
 **结论**: M16 infra_failure 优雅暂停机制实现完成，无回归。集群故障(ConnectTimeout/worker_error)时立即暂停不烧光重试次数。
 
+
+## M17 无限迭代 infra_failure 早停 (2026-07-10)
+
+**命令**: `.venv/bin/python -m pytest tests/test_infinite_loop.py -x -q`
+**输出**: 9 passed (7 原有 + 2 新 M17 测试)
+**新增测试**:
+- test_infra_failure_round_stops_loop: 整轮全 infra_failure 时只跑 1 轮立即停止
+- test_mixed_round_continues_loop: 混合结果（有完成有 infra_failure）时仍跑 2 轮
+
+**命令**: `.venv/bin/python -m pytest tests/ -x -q`
+**输出**: 444 passed, 1 skipped
+**结论**: M17 infra_failure 早停完成。集群故障时无限迭代循环不浪费预算跑下一轮。
+

@@ -2,7 +2,7 @@
   "project": "flipped",
   "description": "接入本地 MLX 双模型(GLM-5.2 编排者 / Kimi-K2.7-Code 执行者)的 agentic 代码编辑器平台。fork Roo Code + 自定义驾驭层(强制验证/循环检测/上下文压缩/人工审批/子Agent/可观测性) + MCP 联网与外部能力。",
   "updated": "2026-07-10",
-  "current_milestone": "M16 infra_failure 优雅暂停 (442 passed, 集群故障不烧光重试次数)",
+  "current_milestone": "M17 无限迭代 infra_failure 早停 (444 passed, 集群故障不浪费预算跑下一轮)",
   "key_facts": {
     "dev_host": "Apple M5 Max, 128GB RAM, 1.1TB 可用磁盘 — 开发/控制节点，非模型宿主",
     "model_cluster": "exo 集群 @ http://100.64.201.37:52415 (内网, OpenAI 兼容)；公网 https://dgmt.top/exo (需 Bearer token)",
@@ -336,6 +336,18 @@
           "title": "infra_failure 检测 + 优雅暂停（不消耗重试次数）",
           "status": "done",
           "note": "_is_infra_failure() + run_factory_loop else: 分支 infra_failure 检测 + 2 TDD 测试。442 passed。"
+        }
+      }
+    },
+    "M17": {
+      "title": "无限迭代 infra_failure 早停（不浪费预算跑下一轮）",
+      "status": "done",
+      "note": "E2E 暴露：exo 集群 ConnectTimeout 时 factory_loop 返回 paused + failed 全是 infra_failure，但 infinite_loop 仍继续跑第 2 轮（又全 ConnectTimeout）浪费预算。修复：在 run_infinite_loop 每轮结束后检测整轮是否全是 infra_failure（tasks_completed==0 AND failed 全是 infra_failure），若是则立即设置 status='infra_failure' 并 break。新增 'infra_failure' 到 InfiniteLoopState.status Literal。2 TDD 测试全过（整轮 infra_failure 只跑1轮 vs 混合结果仍跑2轮）。全量 444 passed。",
+      "tasks": {
+        "M17.1": {
+          "title": "infinite_loop infra_failure 早停检测",
+          "status": "done",
+          "note": "run_infinite_loop 每轮结束后检测整轮全 infra_failure → 立即停止。444 passed。"
         }
       }
     }

@@ -56,7 +56,7 @@ class InfiniteLoopState(BaseModel):
     design_style: str = "auto"
     rounds: list[RoundSummary] = Field(default_factory=list)
     max_rounds: int = 10
-    status: Literal["running", "stopped", "goal_achieved", "budget_exhausted"] = "running"
+    status: Literal["running", "stopped", "goal_achieved", "budget_exhausted", "infra_failure"] = "running"
     created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     updated_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
@@ -362,6 +362,20 @@ def run_infinite_loop(
         round_summary = _collect_round_summary(round_num, factory_state)
         state.rounds.append(round_summary)
         save_loop_state(state, db_path)
+
+        # M17: infra_failure 早停——整轮全是 infra_failure（集群不可用）时立即停止，
+        # 不浪费预算跑下一轮。重试集群故障毫无意义，等集群恢复后 resume 即可。
+        if (
+            round_summary.tasks_completed == 0
+            and round_summary.tasks_failed > 0
+            and all(
+                r.stop_reason == "infra_failure"
+                for r in factory_state.failed
+            )
+        ):
+            state.status = "infra_failure"
+            save_loop_state(state, db_path)
+            break
 
         # M10.4-B：每轮结束追加 PROGRESS.md 章节 + 更新 checklist rounds_completed
         try:

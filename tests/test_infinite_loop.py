@@ -244,3 +244,104 @@ def test_run_infinite_loop_resume():
     assert state.status == "goal_achieved"
     assert len(state.rounds) == 2  # 原有 1 轮 + 新 1 轮
     assert call_count["evolve"] == 2
+
+
+# ---------- M17: infra_failure 早停（不浪费预算跑下一轮） ----------
+
+
+def test_infra_failure_round_stops_loop():
+    """整轮全部 infra_failure 时，无限迭代循环立即停止，不浪费预算跑下一轮。
+
+    E2E 暴露：exo 集群 ConnectTimeout 时 factory_loop 返回 paused + failed 全是
+    infra_failure，但 infinite_loop 仍继续跑第 2 轮（又全 ConnectTimeout）。
+    修复：检测到整轮全是 infra_failure 时，立即停止循环。
+    """
+    from driving.factory_loop import FactoryTask, TaskResult
+
+    def mock_evolve(direction, rounds):
+        return f"第 {len(rounds) + 1} 轮目标", False, "继续"
+
+    def mock_factory_loop(goal, cwd, **kwargs):
+        # 返回一个整轮全 infra_failure 的 FactoryState
+        fail_task = FactoryTask(id="t1", description="task", verify_cmd=["true"])
+        return FactoryState(
+            factory_id="infra-factory",
+            product_goal=goal,
+            cwd=cwd,
+            status=FactoryStatus.paused,
+            roadmap=[fail_task],
+            completed=[],
+            failed=[
+                TaskResult(
+                    task=fail_task, verified=False,
+                    stop_reason="infra_failure", iteration=0,
+                    summary="ConnectTimeout: timed out",
+                )
+            ],
+        )
+
+    with tempfile.TemporaryDirectory() as td:
+        db = os.path.join(td, "loop.db")
+        state = run_infinite_loop(
+            "方向",
+            td,
+            max_rounds=5,
+            db_path=db,
+            evolve_fn=mock_evolve,
+            factory_loop_fn=mock_factory_loop,
+        )
+
+    assert state.status == "infra_failure"
+    assert len(state.rounds) == 1  # 只跑了 1 轮（不浪费预算跑第 2 轮）
+
+
+def test_mixed_round_continues_loop():
+    """一轮有完成也有 infra_failure 时，循环应继续（不是整轮 infra_failure）。"""
+    from driving.factory_loop import FactoryTask, TaskResult
+
+    call_count = {"factory": 0}
+
+    def mock_evolve(direction, rounds):
+        if len(rounds) >= 2:
+            return "达成", True, "完成"
+        return f"第 {len(rounds) + 1} 轮目标", False, "继续"
+
+    def mock_factory_loop(goal, cwd, **kwargs):
+        call_count["factory"] += 1
+        if call_count["factory"] == 1:
+            # 第 1 轮：1 完成 + 1 infra_failure
+            ok_task = FactoryTask(id="ok", description="ok", verify_cmd=["true"])
+            fail_task = FactoryTask(id="fail", description="fail", verify_cmd=["true"])
+            return FactoryState(
+                factory_id="mixed-factory",
+                product_goal=goal,
+                cwd=cwd,
+                status=FactoryStatus.done,
+                roadmap=[ok_task, fail_task],
+                completed=[
+                    TaskResult(task=ok_task, verified=True, stop_reason="verified", iteration=1)
+                ],
+                failed=[
+                    TaskResult(
+                        task=fail_task, verified=False,
+                        stop_reason="infra_failure", iteration=0,
+                        summary="ConnectTimeout",
+                    )
+                ],
+            )
+        # 第 2 轮：全部完成
+        return _make_factory_state(goal, completed=2)
+
+    with tempfile.TemporaryDirectory() as td:
+        db = os.path.join(td, "loop.db")
+        state = run_infinite_loop(
+            "方向",
+            td,
+            max_rounds=5,
+            db_path=db,
+            evolve_fn=mock_evolve,
+            factory_loop_fn=mock_factory_loop,
+        )
+
+    assert state.status == "goal_achieved"
+    assert len(state.rounds) == 2  # 跑了 2 轮（第1轮有完成不是全 infra_failure）
