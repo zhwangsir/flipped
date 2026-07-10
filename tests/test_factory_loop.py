@@ -19,6 +19,7 @@ from driving.factory_loop import (  # noqa: E402
     TaskResult,
     TaskStatus,
     _next_task,
+    _wrap_with_design_quality,
     default_planner,
     list_factories,
     load_factory_state,
@@ -375,3 +376,79 @@ def test_sqlite_schema_has_expected_columns(tmp_db):
         "updated_at",
     }
     assert expected.issubset(cols)
+
+
+# ---------- M20: _wrap_with_design_quality ----------
+
+
+def test_wrap_with_design_quality_passes_good_html(tmp_cwd):
+    """良好 HTML 通过 base verifier 后 design_quality 也无 error 违规。"""
+    good_html = """<!DOCTYPE html>
+<html lang="zh"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<style>:root { --color-accent: #0A84FF; }</style>
+</head><body><header><nav>Logo</nav></header>
+<main><section><h1>Title</h1></section></main><footer>Footer</footer>
+</body></html>"""
+    import os
+    with open(os.path.join(tmp_cwd, "index.html"), "w") as f:
+        f.write(good_html)
+
+    def base_verifier(history, cwd):
+        return True, "base ok"
+
+    wrapped = _wrap_with_design_quality(base_verifier)
+    ok, msg = wrapped([], tmp_cwd)
+    assert ok is True
+    assert "base ok" in msg
+
+
+def test_wrap_with_design_quality_blocks_missing_viewport(tmp_cwd):
+    """缺少 viewport 的 HTML 应被 design_quality 阻断。"""
+    bad_html = """<html><head></head><body>
+<header>H</header><main><section>S</section></main><footer>F</footer>
+</body></html>"""
+    import os
+    with open(os.path.join(tmp_cwd, "index.html"), "w") as f:
+        f.write(bad_html)
+
+    def base_verifier(history, cwd):
+        return True, "base ok"
+
+    wrapped = _wrap_with_design_quality(base_verifier)
+    ok, msg = wrapped([], tmp_cwd)
+    assert ok is False
+    assert "design_quality" in msg
+    assert "viewport" in msg.lower()
+
+
+def test_wrap_with_design_quality_base_fail_skips_quality(tmp_cwd):
+    """base verifier 失败时跳过 design_quality 检查。"""
+    def base_verifier(history, cwd):
+        return False, "base failed"
+
+    wrapped = _wrap_with_design_quality(base_verifier)
+    ok, msg = wrapped([], tmp_cwd)
+    assert ok is False
+    assert "base failed" in msg
+    assert "design_quality" not in msg
+
+
+def test_wrap_with_design_quality_warnings_dont_block(tmp_cwd):
+    """warning 级违规不阻断验证，只追加提示。"""
+    # 有 header/main/section/footer 和 viewport 但没有 footer 的 HTML
+    # 实际上这个测试验证：只有 warning 时仍通过
+    html_with_warnings = """<html lang="zh"><head>
+<meta name="viewport" content="width=device-width">
+</head><body><header>H</header><main><section>S</section></main><footer>F</footer>
+</body></html>"""
+    import os
+    with open(os.path.join(tmp_cwd, "index.html"), "w") as f:
+        f.write(html_with_warnings)
+
+    def base_verifier(history, cwd):
+        return True, "base ok"
+
+    wrapped = _wrap_with_design_quality(base_verifier)
+    ok, msg = wrapped([], tmp_cwd)
+    assert ok is True  # warning 不阻断

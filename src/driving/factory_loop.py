@@ -116,6 +116,41 @@ class NullEventBus:
         pass
 
 
+# ---------- M19: 设计质量校验包装器 ----------
+
+def _wrap_with_design_quality(base_verifier):
+    """在 base verifier 之后追加 lint_design_quality 检查。
+
+    error 级违规（meta viewport 缺失/img alt 缺失）阻断验证；
+    warning 级违规（语义HTML/CSS变量/动画性能/lang）只记录不阻断。
+    """
+    from driving.design_context import lint_design_quality
+
+    def wrapped(history: list, cwd: str) -> "tuple[bool, str]":
+        ok, msg = base_verifier(history, cwd)
+        if not ok:
+            return ok, msg  # base verifier 已失败，不需要再检查
+        try:
+            violations = lint_design_quality(cwd)
+            errors = [v for v in violations if v["severity"] == "error"]
+            warnings = [v for v in violations if v["severity"] == "warning"]
+            if errors:
+                error_msgs = "; ".join(
+                    f"{v['rule']}: {v['message']}" for v in errors[:3]
+                )
+                return False, f"design_quality errors: {error_msgs}"
+            if warnings:
+                # warnings 不阻断，但追加到 msg 让 supervisor 知道
+                warn_count = len(warnings)
+                msg += f" (design_quality: {warn_count} warnings)"
+            return True, msg
+        except Exception:
+            # lint_design_quality 异常时 fail-open（不阻断）
+            return True, msg
+
+    return wrapped
+
+
 # ---------- SQLite 持久化 ----------
 
 _TABLE_SQL = """
@@ -416,6 +451,7 @@ def default_orchestrator_fn(task: FactoryTask, state: FactoryState) -> TaskResul
 
     # M10.4-A：UI 任务用组合 verifier（base + design-lint），让设计系统成为程序化硬约束
     # M11.3：升级为三重校验 base + design-lint + a11y（axe-core 真实渲染扫描）
+    # M19：追加 lint_design_quality 第四重校验（语义HTML/meta viewport/img alt/动画性能）
     # M10.3：LocalWorker 模式下 verifier=None（跳过沙箱），但 UI 任务仍需 design-lint，
     # 所以用 _safe_default_verifier 作为 base + design-lint 组合
     if _looks_like_ui_task(task, state):
@@ -429,6 +465,8 @@ def default_orchestrator_fn(task: FactoryTask, state: FactoryState) -> TaskResul
             except Exception:
                 # a11y 不可用时退回 design-lint 组合
                 verifier = combined_verifier(_base, state.design_style or "auto")
+            # M19: 追加设计质量校验（error 级违规阻断，warning 级通过）
+            verifier = _wrap_with_design_quality(verifier)
         except Exception:
             pass  # design-lint 不可用时退回 base verifier
 
