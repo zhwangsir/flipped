@@ -46,6 +46,9 @@ class RoundSummary(BaseModel):
     tasks_failed: int
     summary: str = ""
     artifacts: list[str] = Field(default_factory=list)
+    # M21：设计质量评分（0-100），让演进者看到设计质量趋势
+    design_score: int = 0
+    design_notes: list[str] = Field(default_factory=list)
 
 
 class InfiniteLoopState(BaseModel):
@@ -89,6 +92,9 @@ def _evolve_goal(direction: str, rounds: list[RoundSummary], cwd: str = "") -> t
         f"  第 {r.round_num} 轮：目标={r.product_goal}\n"
         f"    完成 {r.tasks_completed} 个任务，失败 {r.tasks_failed} 个\n"
         f"    成果：{r.summary}\n"
+        f"    设计质量评分：{r.design_score}/100"
+        + (f"（问题：{', '.join(r.design_notes[:3])}）" if r.design_notes else "")
+        + f"\n"
         f"    产出文件：{', '.join(r.artifacts[:10]) if r.artifacts else '无'}"
         for r in rounds
     )
@@ -105,6 +111,22 @@ def _evolve_goal(direction: str, rounds: list[RoundSummary], cwd: str = "") -> t
         except Exception:
             pass
 
+    # M21：检测上一轮设计质量评分，低分时提示演进者优先提升设计质量
+    last_score = rounds[-1].design_score if rounds else 0
+    design_hint = ""
+    if last_score > 0 and last_score < 70:
+        design_hint = (
+            f"\n5. ⚠️ 上一轮设计质量评分仅 {last_score}/100（低于 70 分阈值），"
+            "下一轮目标必须包含「提升设计质量」的明确指令。"
+            "常见问题：缺少 meta viewport、缺少 CSS 变量系统、无语义化 HTML 结构、"
+            "动画性能差（transition 未用 transform/opacity）、配色超过 5 种。\n"
+        )
+    elif last_score > 0 and last_score < 85:
+        design_hint = (
+            f"\n5. 上一轮设计质量评分 {last_score}/100，仍有提升空间，"
+            "下一轮可适度优化设计细节。\n"
+        )
+
     msg = (
         f"产品方向：{direction}\n\n"
         f"已完成的轮次：\n{rounds_text}\n\n"
@@ -116,6 +138,7 @@ def _evolve_goal(direction: str, rounds: list[RoundSummary], cwd: str = "") -> t
         "2. 如果产品方向已完全达成（所有核心功能都已实现并验证），设 goal_achieved=true。\n"
         "3. next_goal 要具体、可执行，能被拆成 3-7 个开发任务。\n"
         "4. 优先修复失败的功能（FEATURE_CHECKLIST 里 status=failed 的项）。\n"
+        f"{design_hint}"
     )
 
     try:
@@ -152,6 +175,15 @@ def _collect_round_summary(
         + f"：{'; '.join(completed_descs[:5])}"
     )
 
+    # M21：计算设计质量评分，让演进者看到设计质量趋势
+    design_score_val = 0
+    design_notes_val: list[str] = []
+    try:
+        from driving.design_context import design_score
+        design_score_val, design_notes_val = design_score(factory_state.cwd)
+    except Exception:
+        pass
+
     return RoundSummary(
         round_num=round_num,
         factory_id=factory_state.factory_id,
@@ -160,6 +192,8 @@ def _collect_round_summary(
         tasks_failed=len(factory_state.failed),
         summary=summary,
         artifacts=artifacts,
+        design_score=design_score_val,
+        design_notes=design_notes_val,
     )
 
 

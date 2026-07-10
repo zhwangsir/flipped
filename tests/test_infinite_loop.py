@@ -402,3 +402,189 @@ def test_resume_from_infra_failure():
     assert state.status == "goal_achieved"
     assert len(state.rounds) == 2  # 原有 1 轮 + 新 1 轮
     assert factory_calls["n"] == 1  # 只跑了 1 轮新 factory_loop
+
+
+# ---------- M21: design_score 集成到无限迭代演进循环 ----------
+
+
+def test_collect_round_summary_includes_design_score():
+    """_collect_round_summary 应计算 design_score 并存入 RoundSummary。
+
+    M21：每轮摘要应包含设计质量评分，让演进者看到设计质量趋势。
+    """
+    import os
+
+    good_html = """<!DOCTYPE html>
+<html lang="zh"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="test">
+<style>
+:root { --color-accent: #0A84FF; --color-bg: #0D0D12; --color-text: #F5F5F5; }
+body { transition: opacity 0.3s ease; transform: translateY(0); }
+@media (max-width: 768px) { body { font-size: 14px; } }
+</style>
+</head><body>
+<header><nav>Logo</nav></header>
+<main><section><h1>Title</h1></section></main>
+<footer>Footer</footer>
+</body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(good_html)
+        factory = _make_factory_state("测试目标", completed=3)
+        factory.cwd = td
+        summary = _collect_round_summary(1, factory)
+
+    assert summary.design_score >= 80, f"良好HTML应得≥80分，实际{summary.design_score}"
+    assert isinstance(summary.design_notes, list)
+    assert len(summary.design_notes) > 0
+
+
+def test_collect_round_summary_design_score_zero_for_no_html():
+    """无 HTML 文件时 design_score=0。"""
+    with tempfile.TemporaryDirectory() as td:
+        factory = _make_factory_state("测试目标", completed=2)
+        factory.cwd = td
+        summary = _collect_round_summary(1, factory)
+
+    assert summary.design_score == 0
+
+
+def test_collect_round_summary_design_score_low_for_bad_html():
+    """差的 HTML 应得低分。"""
+    import os
+
+    bad_html = """<html><head></head><body>
+<div>Content</div>
+</body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(bad_html)
+        factory = _make_factory_state("测试目标", completed=2)
+        factory.cwd = td
+        summary = _collect_round_summary(1, factory)
+
+    assert summary.design_score < 60, f"差HTML应得<60分，实际{summary.design_score}"
+
+
+def test_evolve_goal_includes_design_score_in_prompt():
+    """_evolve_goal 的 prompt 应包含上一轮的 design_score。
+
+    M21：演进者应知道上一轮设计质量评分，决定是否需要优化设计。
+    低分时应提示"提升设计质量"。
+    """
+    from driving.infinite_loop import _evolve_goal
+
+    rounds = [RoundSummary(
+        round_num=1, factory_id="f1", product_goal="第一轮",
+        tasks_completed=3, tasks_failed=0, summary="完成基础功能",
+        design_score=45,  # 低分
+        design_notes=["缺少 meta viewport", "缺少 CSS 变量"],
+    )]
+
+    captured_msg = {"text": ""}
+
+    class FakeLLM:
+        def with_structured_output(self, schema, **kwargs):
+            class FakeResult:
+                next_goal = "提升设计质量"
+                goal_achieved = False
+                reasoning = "设计评分低"
+            return FakeResult()
+
+    import driving.orchestrator as orch
+    original_invoke = orch._invoke_structured
+    original_make = orch._make_llm
+
+    def capture_invoke(llm, schema, msg, **kwargs):
+        captured_msg["text"] = msg
+        return type("R", (), {"next_goal": "提升设计质量", "goal_achieved": False, "reasoning": "设计评分低"})()
+
+    orch._invoke_structured = capture_invoke
+    orch._make_llm = lambda *a, **kw: FakeLLM()
+    try:
+        _evolve_goal("方向", rounds, cwd="/tmp")
+    finally:
+        orch._invoke_structured = original_invoke
+        orch._make_llm = original_make
+
+    assert "45" in captured_msg["text"], "prompt 应包含 design_score 数值"
+    assert "设计质量" in captured_msg["text"] or "design_score" in captured_msg["text"]
+
+
+def test_evolve_goal_low_score_suggests_design_improvement():
+    """design_score 低于阈值时，prompt 应明确提示需要提升设计质量。"""
+    from driving.infinite_loop import _evolve_goal
+
+    rounds = [RoundSummary(
+        round_num=1, factory_id="f1", product_goal="第一轮",
+        tasks_completed=3, tasks_failed=0, summary="完成",
+        design_score=30,
+        design_notes=["缺少 viewport", "缺少 CSS 变量", "无语义化 HTML"],
+    )]
+
+    captured_msg = {"text": ""}
+
+    class FakeLLM:
+        def with_structured_output(self, schema, **kwargs):
+            class FakeResult:
+                pass
+            return FakeResult()
+
+    import driving.orchestrator as orch
+    original_invoke = orch._invoke_structured
+    original_make = orch._make_llm
+
+    def capture_invoke(llm, schema, msg, **kwargs):
+        captured_msg["text"] = msg
+        return type("R", (), {"next_goal": "优化设计", "goal_achieved": False, "reasoning": "设计评分低"})()
+
+    orch._invoke_structured = capture_invoke
+    orch._make_llm = lambda *a, **kw: FakeLLM()
+    try:
+        _evolve_goal("方向", rounds, cwd="/tmp")
+    finally:
+        orch._invoke_structured = original_invoke
+        orch._make_llm = original_make
+
+    # 低分时 prompt 应包含"提升设计质量"或"优化设计"的指令
+    assert "设计质量" in captured_msg["text"] or "优化设计" in captured_msg["text"] or "提升设计" in captured_msg["text"]
+
+
+def test_round_summary_has_design_score_field():
+    """RoundSummary 应有 design_score 和 design_notes 字段。"""
+    rs = RoundSummary(
+        round_num=1, factory_id="f1", product_goal="测试",
+        tasks_completed=1, tasks_failed=0,
+        design_score=85,
+        design_notes=["良好"],
+    )
+    assert rs.design_score == 85
+    assert rs.design_notes == ["良好"]
+
+
+def test_loop_state_persists_design_score():
+    """design_score 应能持久化到 SQLite 并恢复。"""
+    with tempfile.TemporaryDirectory() as td:
+        db = os.path.join(td, "loop.db")
+        state = InfiniteLoopState(
+            loop_id="score-persist",
+            direction="测试",
+            cwd=td,
+            design_style="dark",
+            max_rounds=5,
+        )
+        state.rounds.append(RoundSummary(
+            round_num=1, factory_id="f1", product_goal="第一轮",
+            tasks_completed=3, tasks_failed=0, summary="完成",
+            design_score=72,
+            design_notes=["缺少 viewport", "CSS 变量完整"],
+        ))
+        save_loop_state(state, db)
+
+        loaded = load_loop_state("score-persist", db)
+        assert loaded is not None
+        assert loaded.rounds[0].design_score == 72
+        assert "缺少 viewport" in loaded.rounds[0].design_notes

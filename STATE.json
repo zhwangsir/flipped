@@ -2,7 +2,7 @@
   "project": "flipped",
   "description": "接入本地 MLX 双模型(GLM-5.2 编排者 / Kimi-K2.7-Code 执行者)的 agentic 代码编辑器平台。fork Roo Code + 自定义驾驭层(强制验证/循环检测/上下文压缩/人工审批/子Agent/可观测性) + MCP 联网与外部能力。",
   "updated": "2026-07-10",
-  "current_milestone": "M19 Film Atelier 风格 + 设计质量校验器 (453 passed, UI/UX 设计质量优化)",
+  "current_milestone": "M21 design_score 集成到无限迭代演进循环 (467 passed, 演进者感知设计质量趋势)",
   "key_facts": {
     "dev_host": "Apple M5 Max, 128GB RAM, 1.1TB 可用磁盘 — 开发/控制节点，非模型宿主",
     "model_cluster": "exo 集群 @ http://100.64.201.37:52415 (内网, OpenAI 兼容)；公网 https://dgmt.top/exo (需 Bearer token)",
@@ -372,6 +372,30 @@
           "title": "Film Atelier 风格 + lint_design_quality 校验器",
           "status": "done",
           "note": "film_atelier 风格(11种风格) + lint_design_quality(6项检查) + 8 TDD 测试。453 passed。"
+        }
+      }
+    },
+    "M20": {
+      "title": "design_score 评分系统 + lint 集成验证流水线",
+      "status": "done",
+      "note": "新增 design_score() 7维度评分（0-100）：语义化HTML(20)、meta标签(15)、CSS变量(15)、响应式(15)、无障碍(15)、动画性能(10)、设计一致性(10)。_wrap_with_design_quality() 包装器集成到 factory_loop UI 任务验证流水线第四重校验（error级违规阻断，warning级通过）。修复空目录返回90的bug。全量 460 passed。",
+      "tasks": {
+        "M20.1": {
+          "title": "design_score 评分 + _wrap_with_design_quality 集成",
+          "status": "done",
+          "note": "7维度评分 + 四重验证流水线 + 6 TDD 测试。460 passed。"
+        }
+      }
+    },
+    "M21": {
+      "title": "design_score 集成到无限迭代演进循环",
+      "status": "done",
+      "note": "将 design_score 集成到无限迭代演进循环，让产品演进者(GLM)感知设计质量趋势。三处修改：(1) RoundSummary 新增 design_score + design_notes 字段；(2) _collect_round_summary 调用 design_score(cwd) 计算每轮设计质量评分；(3) _evolve_goal prompt 包含每轮 design_score 趋势，低于70分阈值时强制提示下一轮必须包含「提升设计质量」指令。7 TDD 测试全过。全量 467 passed。",
+      "tasks": {
+        "M21.1": {
+          "title": "design_score 集成 RoundSummary + _collect_round_summary + _evolve_goal",
+          "status": "done",
+          "note": "演进者感知设计质量趋势，低分自动提示优化设计。7 TDD 测试。467 passed。"
         }
       }
     }
