@@ -296,3 +296,145 @@ def test_design_score_empty_dir():
         score, notes = design_score(td)
 
     assert score == 0
+
+
+# ---------- M22: WCAG 颜色对比度校验 ----------
+
+
+def test_hex_to_rgb():
+    """hex_to_rgb 应正确解析 6 位 hex 颜色。"""
+    from driving.design_context import hex_to_rgb
+    assert hex_to_rgb("#0A84FF") == (10, 132, 255)
+    assert hex_to_rgb("#FFFFFF") == (255, 255, 255)
+    assert hex_to_rgb("#000000") == (0, 0, 0)
+    assert hex_to_rgb("#0a84ff") == (10, 132, 255)  # 大小写不敏感
+
+
+def test_relative_luminance():
+    """relative_luminance 应符合 WCAG 2.1 公式。"""
+    from driving.design_context import relative_luminance
+    # 纯白亮度=1
+    assert abs(relative_luminance((255, 255, 255)) - 1.0) < 0.001
+    # 纯黑亮度=0
+    assert abs(relative_luminance((0, 0, 0)) - 0.0) < 0.001
+
+
+def test_contrast_ratio_black_on_white():
+    """黑底白字对比度应为 21:1（WCAG 最大值）。"""
+    from driving.design_context import contrast_ratio
+    ratio = contrast_ratio("#000000", "#FFFFFF")
+    assert abs(ratio - 21.0) < 0.5
+
+
+def test_contrast_ratio_low_contrast():
+    """低对比度颜色对应小于 4.5。"""
+    from driving.design_context import contrast_ratio
+    # #777777 on #999999 = 低对比度
+    ratio = contrast_ratio("#777777", "#999999")
+    assert ratio < 4.5
+
+
+def test_contrast_ratio_good_contrast():
+    """高对比度颜色对应大于 4.5。"""
+    from driving.design_context import contrast_ratio
+    # #F5F5F5 on #0D0D12 = Film Atelier 风格的 text on bg
+    ratio = contrast_ratio("#F5F5F5", "#0D0D12")
+    assert ratio >= 4.5
+
+
+def test_check_color_contrast_good():
+    """良好对比度的 HTML 应无违规。"""
+    import tempfile
+    import os
+    from driving.design_context import check_color_contrast
+
+    good_html = """<!DOCTYPE html>
+<html lang="zh"><head><meta name="viewport" content="width=device-width">
+<style>
+:root { --color-bg: #0D0D12; --color-text: #F5F5F5; }
+body { background-color: #0D0D12; color: #F5F5F5; }
+</style></head><body><p>Hello</p></body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(good_html)
+        violations = check_color_contrast(td)
+
+    contrast_violations = [v for v in violations if v["rule"] == "color_contrast"]
+    assert contrast_violations == [], f"良好对比度不应有违规: {contrast_violations}"
+
+
+def test_check_color_contrast_bad():
+    """低对比度 HTML 应报违规。"""
+    import tempfile
+    import os
+    from driving.design_context import check_color_contrast
+
+    bad_html = """<!DOCTYPE html>
+<html lang="zh"><head><meta name="viewport" content="width=device-width">
+<style>
+body { background-color: #999999; color: #777777; }
+</style></head><body><p>Low contrast text</p></body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(bad_html)
+        violations = check_color_contrast(td)
+
+    contrast_violations = [v for v in violations if v["rule"] == "color_contrast"]
+    assert len(contrast_violations) >= 1
+    assert contrast_violations[0]["severity"] == "error"
+    assert "4.5" in contrast_violations[0]["message"] or "contrast" in contrast_violations[0]["message"].lower()
+
+
+def test_check_color_contrast_empty_dir():
+    """空目录应返回空列表。"""
+    import tempfile
+    from driving.design_context import check_color_contrast
+
+    with tempfile.TemporaryDirectory() as td:
+        violations = check_color_contrast(td)
+    assert violations == []
+
+
+def test_lint_design_quality_includes_contrast():
+    """lint_design_quality 应包含颜色对比度检查。"""
+    import tempfile
+    import os
+    from driving.design_context import lint_design_quality
+
+    bad_contrast_html = """<html lang="zh"><head>
+<meta name="viewport" content="width=device-width">
+<style>body { background: #AAAAAA; color: #999999; }</style>
+</head><body><header>H</header><main><section>S</section></main><footer>F</footer>
+</body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(bad_contrast_html)
+        violations = lint_design_quality(td)
+
+    contrast_violations = [v for v in violations if v["rule"] == "color_contrast"]
+    assert len(contrast_violations) >= 1
+
+
+def test_design_score_includes_contrast():
+    """design_score 应包含颜色对比度维度。"""
+    import tempfile
+    import os
+    from driving.design_context import design_score
+
+    bad_contrast_html = """<!DOCTYPE html>
+<html lang="zh"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width">
+<style>body { background: #AAAAAA; color: #999999; }</style>
+</head><body><header><nav>N</nav></header><main><section><h1>T</h1></section></main><footer>F</footer>
+</body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(bad_contrast_html)
+        score, notes = design_score(td)
+
+    # 低对比度应影响分数（notes 应提及对比度问题）
+    assert any("对比" in n or "contrast" in n.lower() for n in notes), f"应提及对比度问题: {notes}"

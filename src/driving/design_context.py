@@ -258,6 +258,128 @@ def build_design_brief_compact(style: str = "auto", product_type: str = "") -> s
     )
 
 
+# ---------- M22: WCAG 颜色对比度校验 ----------
+
+
+def hex_to_rgb(hex_str: str) -> "tuple[int, int, int]":
+    """把 #RRGGBB hex 字符串转为 (r, g, b) 元组。"""
+    h = hex_str.lstrip("#")
+    if len(h) == 3:
+        h = "".join(c * 2 for c in h)
+    return (int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16))
+
+
+def relative_luminance(rgb: "tuple[int, int, int]") -> float:
+    """计算 WCAG 2.1 相对亮度（0-1）。
+
+    公式：https://www.w3.org/TR/WCAG21/#dfn-relative-luminance
+    """
+    def _channel(c: int) -> float:
+        s = c / 255.0
+        return s / 12.92 if s <= 0.03928 else ((s + 0.055) / 1.055) ** 2.4
+
+    r, g, b = rgb
+    return 0.2126 * _channel(r) + 0.7152 * _channel(g) + 0.0722 * _channel(b)
+
+
+def contrast_ratio(hex1: str, hex2: str) -> float:
+    """计算两个颜色之间的 WCAG 对比度比率。
+
+    返回值范围 1.0（同色）到 21.0（黑白）。
+    WCAG AA 要求：正常文本 ≥ 4.5:1，大文本(≥18pt 或 ≥14pt bold) ≥ 3:1。
+    """
+    l1 = relative_luminance(hex_to_rgb(hex1))
+    l2 = relative_luminance(hex_to_rgb(hex2))
+    lighter, darker = max(l1, l2), min(l1, l2)
+    return (lighter + 0.05) / (darker + 0.05)
+
+
+def check_color_contrast(cwd: str) -> list[dict]:
+    """扫描 HTML 文件的 CSS 颜色对比度，返回违规列表。
+
+    提取 CSS 中的 background-color/background 和 color 属性对，
+    计算 WCAG 对比度比率，低于 4.5:1 报 error。
+    """
+    import os as _os
+    import re as _re
+
+    violations: list[dict] = []
+
+    for fname in _os.listdir(cwd) if _os.path.exists(cwd) else []:
+        if not fname.endswith(".html"):
+            continue
+        fpath = _os.path.join(cwd, fname)
+        if not _os.path.isfile(fpath):
+            continue
+        try:
+            content = open(fpath, "r", encoding="utf-8").read()
+        except Exception:
+            continue
+
+        # 从 CSS 规则中提取 background + color 配对
+        # 匹配 { background(-color)?: #hex; color: #hex; } 模式
+        # 也匹配 inline style 中的 background+color
+        css_blocks = _re.findall(r"\{[^{}]*\}", content)
+        for block in css_blocks:
+            bg_match = _re.search(
+                r"(?:background-color|background)\s*:\s*(#[0-9A-Fa-f]{6})",
+                block, _re.IGNORECASE,
+            )
+            color_match = _re.search(
+                r"(?<!background-)color\s*:\s*(#[0-9A-Fa-f]{6})",
+                block, _re.IGNORECASE,
+            )
+            if bg_match and color_match:
+                bg_hex = bg_match.group(1)
+                text_hex = color_match.group(1)
+                try:
+                    ratio = contrast_ratio(text_hex, bg_hex)
+                except Exception:
+                    continue
+                if ratio < 4.5:
+                    violations.append({
+                        "rule": "color_contrast",
+                        "severity": "error",
+                        "file": fname,
+                        "message": (
+                            f"颜色对比度 {ratio:.2f}:1 低于 WCAG AA 标准 4.5:1 "
+                            f"(text={text_hex} bg={bg_hex})"
+                        ),
+                    })
+
+        # 也检查 CSS 变量中的 --color-text 和 --color-bg 配对
+        root_match = _re.search(r":root\s*\{([^{}]*)\}", content, _re.IGNORECASE)
+        if root_match:
+            root_css = root_match.group(1)
+            var_text = _re.search(r"--color-text\s*:\s*(#[0-9A-Fa-f]{6})", root_css, _re.IGNORECASE)
+            var_bg = _re.search(r"--color-bg\s*:\s*(#[0-9A-Fa-f]{6})", root_css, _re.IGNORECASE)
+            if var_text and var_bg:
+                text_hex = var_text.group(1)
+                bg_hex = var_bg.group(1)
+                try:
+                    ratio = contrast_ratio(text_hex, bg_hex)
+                except Exception:
+                    continue
+                if ratio < 4.5:
+                    # 避免重复报告（CSS 规则已检查过的）
+                    already = any(
+                        v["file"] == fname and text_hex in v["message"]
+                        for v in violations if v["rule"] == "color_contrast"
+                    )
+                    if not already:
+                        violations.append({
+                            "rule": "color_contrast",
+                            "severity": "error",
+                            "file": fname,
+                            "message": (
+                                f"CSS变量对比度 {ratio:.2f}:1 低于 WCAG AA 标准 4.5:1 "
+                                f"(--color-text={text_hex} --color-bg={bg_hex})"
+                            ),
+                        })
+
+    return violations
+
+
 # ---------- M19: 设计质量校验器 ----------
 
 def lint_design_quality(cwd: str) -> list[dict]:
@@ -363,6 +485,12 @@ def lint_design_quality(cwd: str) -> list[dict]:
                 "message": "<html> 缺少 lang 属性",
             })
 
+    # 7. M22: WCAG 颜色对比度
+    try:
+        violations.extend(check_color_contrast(cwd))
+    except Exception:
+        pass
+
     return violations
 
 
@@ -421,12 +549,15 @@ def design_score(cwd: str) -> "tuple[int, list[str]]":
     else:
         notes.append("无响应式(-15)")
 
-    # 5. 无障碍 (15分)
-    if "img_alt_missing" not in error_rules and "html_lang" not in warning_rules:
+    # 5. 无障碍 (15分) — M22: 含颜色对比度
+    if "img_alt_missing" not in error_rules and "html_lang" not in warning_rules and "color_contrast" not in error_rules:
         score += 15
-    elif "img_alt_missing" not in error_rules:
+    elif "img_alt_missing" not in error_rules and "color_contrast" not in error_rules:
         score += 8
         notes.append("缺少html lang(-7)")
+    elif "img_alt_missing" not in error_rules:
+        score += 3
+        notes.append("颜色对比度不足(-12)")
     else:
         notes.append("img缺少alt(-15)")
 

@@ -2,7 +2,7 @@
   "project": "flipped",
   "description": "接入本地 MLX 双模型(GLM-5.2 编排者 / Kimi-K2.7-Code 执行者)的 agentic 代码编辑器平台。fork Roo Code + 自定义驾驭层(强制验证/循环检测/上下文压缩/人工审批/子Agent/可观测性) + MCP 联网与外部能力。",
   "updated": "2026-07-10",
-  "current_milestone": "M21 design_score 集成到无限迭代演进循环 (467 passed, 演进者感知设计质量趋势)",
+  "current_milestone": "M22 WCAG 颜色对比度校验 + lint/score 集成 (477 passed, 设计质量系统确定性 a11y 增强)",
   "key_facts": {
     "dev_host": "Apple M5 Max, 128GB RAM, 1.1TB 可用磁盘 — 开发/控制节点，非模型宿主",
     "model_cluster": "exo 集群 @ http://100.64.201.37:52415 (内网, OpenAI 兼容)；公网 https://dgmt.top/exo (需 Bearer token)",
@@ -396,6 +396,18 @@
           "title": "design_score 集成 RoundSummary + _collect_round_summary + _evolve_goal",
           "status": "done",
           "note": "演进者感知设计质量趋势，低分自动提示优化设计。7 TDD 测试。467 passed。"
+        }
+      }
+    },
+    "M22": {
+      "title": "WCAG 颜色对比度校验（调研网络优化设计系统）",
+      "status": "done",
+      "note": "调研 WCAG 2.1 色彩无障碍最佳实践，实现确定性颜色对比度校验器。新增 hex_to_rgb / relative_luminance / contrast_ratio / check_color_contrast 四个函数。check_color_contrast 从 CSS 规则和 :root 变量中提取 background+color 配对，计算 WCAG 对比度比率，低于 4.5:1 报 error。集成到 lint_design_quality（第7项检查）和 design_score（无障碍维度纳入对比度判定）。11 TDD 测试全过（含 WCAG 公式验证：黑白=21:1、低对比度<4.5、Film Atelier 配色≥4.5）。全量 477 passed。",
+      "tasks": {
+        "M22.1": {
+          "title": "WCAG 颜色对比度校验器 + lint/score 集成",
+          "status": "done",
+          "note": "hex_to_rgb + relative_luminance + contrast_ratio + check_color_contrast + lint/score 集成。11 TDD 测试。477 passed。"
         }
       }
     }
