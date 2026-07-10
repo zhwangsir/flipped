@@ -196,6 +196,22 @@ def propose_design_fix_task(state: FactoryState) -> FactoryTask | None:
     if score >= threshold:
         return None  # 已达标，无需修复
 
+    # M43: 循环检测 — 从最近 2 个 design-fix 任务的 feedback 解析 score，
+    # 如果 score 连续无提升，说明 auto-fix + worker 无法修复剩余问题，停止
+    import re as _re
+    recent_fixes = [
+        r for r in state.completed
+        if "design-fix" in r.task.id
+    ][-2:]
+    if len(recent_fixes) >= 2:
+        prev_scores = []
+        for r in recent_fixes:
+            m = _re.search(r"design_score=(\d+)/", r.task.feedback or "")
+            if m:
+                prev_scores.append(int(m.group(1)))
+        if len(prev_scores) >= 2 and prev_scores[-1] == prev_scores[-2]:
+            return None  # score 停滞，循环熔断
+
     # 获取具体违规项
     try:
         violations = lint_design_quality(cwd)

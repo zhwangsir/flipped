@@ -607,3 +607,84 @@ def test_factory_loop_auto_proposer_enabled_by_env(monkeypatch):
     # 至少有一个 design-fix 任务
     fix_tasks = [r for r in state.completed if "design-fix" in r.task.id]
     assert len(fix_tasks) >= 1
+
+
+# ---------- M43: design_fix_fallback 循环检测 ----------
+
+
+def test_propose_design_fix_stops_on_score_stagnation():
+    """design_score 连续 2 轮无提升时，design_fix_fallback 停止（循环熔断）。"""
+    import tempfile
+    import os
+    from driving.task_proposer import propose_design_fix_task
+    from driving.factory_loop import TaskResult
+
+    bad_html = "<html><head></head><body><img src='x.jpg'></body></html>"
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(bad_html)
+
+        state = _make_state(td)
+        # 模拟已有 2 个 design-fix 任务，score 都是 50（无提升）
+        for i in range(2):
+            state.completed.append(TaskResult(
+                task=FactoryTask(
+                    id=f"design-fix-{i+1}",
+                    description="修复设计质量",
+                    verify_cmd=["true"],
+                    feedback=f"(确定性 fallback: design_score=50/70, auto_fix 已修复, 剩余: meta_viewport)",
+                ),
+                verified=False,
+                stop_reason="verify_failed",
+                iteration=i+1,
+            ))
+
+        result = propose_design_fix_task(state)
+
+    # score 停滞，应返回 None（循环熔断）
+    assert result is None
+
+
+def test_propose_design_fix_continues_when_score_improving():
+    """design_score 有提升时，design_fix_fallback 继续（不熔断）。"""
+    import tempfile
+    import os
+    from driving.task_proposer import propose_design_fix_task
+    from driving.factory_loop import TaskResult
+
+    bad_html = "<html><head></head><body><img src='x.jpg'></body></html>"
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(bad_html)
+
+        state = _make_state(td)
+        # 模拟已有 2 个 design-fix 任务，score 从 40 提升到 50
+        state.completed.append(TaskResult(
+            task=FactoryTask(
+                id="design-fix-1",
+                description="修复设计质量",
+                verify_cmd=["true"],
+                feedback="(确定性 fallback: design_score=40/70, auto_fix 已修复, 剩余: meta_viewport)",
+            ),
+            verified=False,
+            stop_reason="verify_failed",
+            iteration=1,
+        ))
+        state.completed.append(TaskResult(
+            task=FactoryTask(
+                id="design-fix-2",
+                description="修复设计质量",
+                verify_cmd=["true"],
+                feedback="(确定性 fallback: design_score=50/70, auto_fix 已修复, 剩余: meta_viewport)",
+            ),
+            verified=False,
+            stop_reason="verify_failed",
+            iteration=2,
+        ))
+
+        result = propose_design_fix_task(state)
+
+    # score 有提升（40→50），应继续生成修复任务
+    assert result is not None

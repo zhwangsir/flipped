@@ -2,7 +2,7 @@
   "project": "flipped",
   "description": "接入本地 MLX 双模型(GLM-5.2 编排者 / Kimi-K2.7-Code 执行者)的 agentic 代码编辑器平台。fork Roo Code + 自定义驾驭层(强制验证/循环检测/上下文压缩/人工审批/子Agent/可观测性) + MCP 联网与外部能力。",
   "updated": "2026-07-11",
-  "current_milestone": "M42 factory_loop 默认自动接入 proposer + design_fix_fallback (605 passed)",
+  "current_milestone": "M43 design_fix_fallback 循环检测 (607 passed, score停滞时熔断)",
   "key_facts": {
     "dev_host": "Apple M5 Max, 128GB RAM, 1.1TB 可用磁盘 — 开发/控制节点，非模型宿主",
     "model_cluster": "exo 集群 @ http://100.64.201.37:52415 (内网, OpenAI 兼容)；公网 https://dgmt.top/exo (需 Bearer token)",
@@ -648,6 +648,18 @@
           "title": "默认接入 + 环境变量控制 + conftest + 1 测试",
           "status": "done",
           "note": "FLIPPED_AUTO_PROPOSER 环境变量 + conftest 禁用 + 自动接入集成测试。605 passed。"
+        }
+      }
+    },
+    "M43": {
+      "title": "design_fix_fallback 循环检测",
+      "status": "done",
+      "note": "在 propose_design_fix_task 中新增 score 停滞检测：从最近 2 个 design-fix 任务的 feedback 中解析 design_score，如果连续 2 轮 score 相同（无提升），返回 None 触发循环熔断。防止 auto-fix + worker 无法修复的问题反复消耗迭代次数。score 有提升时继续生成修复任务。2 个 TDD 测试。全量 607 passed（+2，无回归）。",
+      "tasks": {
+        "M43.1": {
+          "title": "score 停滞检测 + 熔断 + 2 测试",
+          "status": "done",
+          "note": "从 feedback 解析 score，连续 2 轮无提升时熔断。2 测试通过。607 passed。"
         }
       }
     }
