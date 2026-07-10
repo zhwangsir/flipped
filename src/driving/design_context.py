@@ -888,6 +888,60 @@ def auto_fix_semantic_html(cwd: str) -> bool:
     return changed
 
 
+def auto_fix_focus_visible(cwd: str) -> bool:
+    """M34: 注入 :focus-visible 样式（如果缺少）。
+
+    键盘导航需要可见的焦点。生成的 HTML 常常忘记加焦点样式，
+    这里在 <style> 中注入默认的 :focus-visible 样式。
+    """
+    import os as _os
+    import re as _re
+
+    _FOCUS_CSS = (
+        ":focus-visible{outline:2px solid var(--color-accent,#0A84FF);outline-offset:2px}"
+    )
+
+    changed = False
+    for fname in _os.listdir(cwd):
+        if not fname.endswith(".html"):
+            continue
+        fpath = _os.path.join(cwd, fname)
+        if not _os.path.isfile(fpath):
+            continue
+        try:
+            content = open(fpath, "r", encoding="utf-8").read()
+        except Exception:
+            continue
+
+        lower = content.lower()
+        if ":focus" in lower:
+            continue  # 已有焦点样式
+
+        # 在 <style> 标签后注入
+        if "<style>" in lower:
+            content = _re.sub(
+                r"(<style[^>]*>)",
+                r"\1" + _FOCUS_CSS,
+                content, count=1, flags=_re.IGNORECASE,
+            )
+        elif "</head>" in lower:
+            # 在 </head> 前注入 <style>
+            style_block = f"<style>{_FOCUS_CSS}</style>"
+            content = _re.sub(
+                r"(</head>)",
+                style_block + r"\1",
+                content, count=1, flags=_re.IGNORECASE,
+            )
+        else:
+            continue  # 无 head 也无 style，跳过
+
+        with open(fpath, "w", encoding="utf-8") as f:
+            f.write(content)
+        changed = True
+
+    return changed
+
+
 def auto_fix_design_issues(cwd: str) -> bool:
     """组合调用所有 auto-fix 函数，返回是否做过任何修改。"""
     changed1 = auto_fix_spacing_grid(cwd)
@@ -896,7 +950,8 @@ def auto_fix_design_issues(cwd: str) -> bool:
     changed4 = auto_fix_animation_performance(cwd)
     changed5 = auto_fix_css_variables(cwd)
     changed6 = auto_fix_semantic_html(cwd)
-    return changed1 or changed2 or changed3 or changed4 or changed5 or changed6
+    changed7 = auto_fix_focus_visible(cwd)
+    return changed1 or changed2 or changed3 or changed4 or changed5 or changed6 or changed7
 
 
 # ---------- M19: 设计质量校验器 ----------
@@ -1002,6 +1057,40 @@ def lint_design_quality(cwd: str) -> list[dict]:
                 "severity": "warning",
                 "file": fname,
                 "message": "<html> 缺少 lang 属性",
+            })
+
+        # 7. M34: 标题层级检查（h1-h6 不跳级）
+        headings = _re.findall(r"<(h[1-6])\b", content, _re.IGNORECASE)
+        levels = [int(h[1]) for h in headings]
+        if levels:
+            # 多个 h1
+            if levels.count(1) > 1:
+                violations.append({
+                    "rule": "heading_hierarchy",
+                    "severity": "warning",
+                    "file": fname,
+                    "message": f"页面有 {levels.count(1)} 个 <h1>，应只有一个主标题",
+                })
+            # 跳级检查
+            prev_level = 0
+            for level in levels:
+                if prev_level > 0 and level > prev_level + 1:
+                    violations.append({
+                        "rule": "heading_hierarchy",
+                        "severity": "warning",
+                        "file": fname,
+                        "message": f"标题层级跳级：h{prev_level} → h{level}（应按 h{prev_level} → h{prev_level+1}）",
+                    })
+                    break  # 只报第一个跳级
+                prev_level = level
+
+        # 8. M34: 键盘焦点可见性检查
+        if ":focus" not in lower and ":focus-visible" not in lower:
+            violations.append({
+                "rule": "focus_visible",
+                "severity": "warning",
+                "file": fname,
+                "message": "缺少 :focus/:focus-visible 样式，键盘导航时焦点不可见",
             })
 
     # 7. M22: WCAG 颜色对比度

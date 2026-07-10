@@ -2,7 +2,7 @@
   "project": "flipped",
   "description": "接入本地 MLX 双模型(GLM-5.2 编排者 / Kimi-K2.7-Code 执行者)的 agentic 代码编辑器平台。fork Roo Code + 自定义驾驭层(强制验证/循环检测/上下文压缩/人工审批/子Agent/可观测性) + MCP 联网与外部能力。",
   "updated": "2026-07-11",
-  "current_milestone": "M33 自主迭代闭环集成测试 (550 passed, task_proposer + design_score 门槛 + factory_loop 重试全链路验证)",
+  "current_milestone": "M34 调研网络设计参考项目优化底层 (559 passed, heading_hierarchy + focus_visible lint + auto_fix_focus_visible)",
   "key_facts": {
     "dev_host": "Apple M5 Max, 128GB RAM, 1.1TB 可用磁盘 — 开发/控制节点，非模型宿主",
     "model_cluster": "exo 集群 @ http://100.64.201.37:52415 (内网, OpenAI 兼容)；公网 https://dgmt.top/exo (需 Bearer token)",
@@ -540,6 +540,18 @@
           "title": "test_iteration_loop.py 集成测试",
           "status": "done",
           "note": "6 个集成测试验证 task_proposer + design_score 门槛 + factory_loop 全链路。550 passed。"
+        }
+      }
+    },
+    "M34": {
+      "title": "调研网络设计参考项目优化底层（AI-Design-System-Prompt.md）",
+      "status": "done",
+      "note": "基于 AI-Design-System-Prompt.md 的 8 项核心原则和 11 种风格模板，新增两个 lint 维度：(1) heading_hierarchy — 标题层级检查（h1-h6 不跳级，不多个 h1）；(2) focus_visible — 键盘焦点可见性检查（缺少 :focus/:focus-visible 样式报 warning）。新增 auto_fix_focus_visible(cwd) 函数：缺少 :focus 样式时自动注入 :focus-visible{outline:2px solid var(--color-accent,#0A84FF);outline-offset:2px}。auto_fix_design_issues 组合函数更新为调用 7 组修复（原 6 组 + focus_visible）。幂等性：第一次调用注入 :focus-visible，第二次检测到 :focus 子串跳过（test_auto_fix_idempotent 测试 HTML 已更新为包含 :focus-visible 样式以符合新的合规定义）。9 个 M34 新测试。全量 559 passed（+9，无回归）。",
+      "tasks": {
+        "M34.1": {
+          "title": "heading_hierarchy + focus_visible lint + auto_fix_focus_visible",
+          "status": "done",
+          "note": "新增 2 个 lint 维度 + 1 个 auto-fix 函数。9 测试通过。test_auto_fix_idempotent 修复（HTML 加入 :focus-visible 样式）。559 passed。"
         }
       }
     }

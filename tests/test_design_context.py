@@ -1183,6 +1183,7 @@ def test_auto_fix_idempotent():
 :root { --color-bg: #0D0D12; --color-text: #F5F5F5; --color-accent: #0A84FF; }
 body { padding: 16px; margin: 0; font-size: 16px; transition: opacity 0.3s ease; }
 h1 { font-size: 48px; }
+:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
 </style></head><body>
 <header><nav>Logo</nav></header>
 <main><section><h1>Title</h1></section></main>
@@ -1343,3 +1344,187 @@ def test_auto_fix_semantic_empty_dir():
     with tempfile.TemporaryDirectory() as td:
         fixed = auto_fix_semantic_html(td)
     assert fixed is False
+
+
+# ---------- M34: heading_hierarchy + focus_visible ----------
+
+
+def test_lint_heading_hierarchy_skip():
+    """标题跳级（h1 → h3）应报 warning。"""
+    import tempfile
+    import os
+    from driving.design_context import lint_design_quality
+
+    html = """<html lang="zh"><head><meta name="viewport" content="width=device-width">
+<style>:root{--color-bg:#0D0D12;--color-text:#F5F5F5}body{transition:opacity 0.3s}</style>
+</head><body><header>H</header><main><section>
+<h1>Title</h1><h3>Skip</h3>
+</section></main><footer>F</footer></body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        violations = lint_design_quality(td)
+
+    h_violations = [v for v in violations if v["rule"] == "heading_hierarchy"]
+    assert len(h_violations) >= 1
+    assert "跳级" in h_violations[0]["message"] or "h1" in h_violations[0]["message"]
+
+
+def test_lint_heading_hierarchy_multiple_h1():
+    """多个 h1 应报 warning。"""
+    import tempfile
+    import os
+    from driving.design_context import lint_design_quality
+
+    html = """<html lang="zh"><head><meta name="viewport" content="width=device-width">
+<style>:root{--color-bg:#0D0D12}</style>
+</head><body><header>H</header><main><section>
+<h1>First</h1><h2>Sub</h2><h1>Second</h1>
+</section></main><footer>F</footer></body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        violations = lint_design_quality(td)
+
+    h_violations = [v for v in violations if v["rule"] == "heading_hierarchy"]
+    assert len(h_violations) >= 1
+    assert "h1" in h_violations[0]["message"]
+
+
+def test_lint_heading_hierarchy_correct_no_violation():
+    """正确层级（h1 → h2 → h3）不应报违规。"""
+    import tempfile
+    import os
+    from driving.design_context import lint_design_quality
+
+    html = """<html lang="zh"><head><meta name="viewport" content="width=device-width">
+<style>:root{--color-bg:#0D0D12}</style>
+</head><body><header>H</header><main><section>
+<h1>Title</h1><h2>Section</h2><h3>Subsection</h3>
+</section></main><footer>F</footer></body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        violations = lint_design_quality(td)
+
+    h_violations = [v for v in violations if v["rule"] == "heading_hierarchy"]
+    assert h_violations == [], f"正确层级不应有违规: {h_violations}"
+
+
+def test_lint_focus_visible_missing():
+    """缺少 :focus 样式应报 warning。"""
+    import tempfile
+    import os
+    from driving.design_context import lint_design_quality
+
+    html = """<html lang="zh"><head><meta name="viewport" content="width=device-width">
+<style>:root{--color-bg:#0D0D12}body{transition:opacity 0.3s}</style>
+</head><body><header>H</header><main><section><h1>T</h1></section></main>
+<footer>F</footer></body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        violations = lint_design_quality(td)
+
+    focus_violations = [v for v in violations if v["rule"] == "focus_visible"]
+    assert len(focus_violations) == 1
+    assert focus_violations[0]["severity"] == "warning"
+
+
+def test_lint_focus_visible_present():
+    """有 :focus 样式不应报违规。"""
+    import tempfile
+    import os
+    from driving.design_context import lint_design_quality
+
+    html = """<html lang="zh"><head><meta name="viewport" content="width=device-width">
+<style>:root{--color-bg:#0D0D12}
+button:focus { outline: 2px solid #0A84FF; }
+body{transition:opacity 0.3s}</style>
+</head><body><header>H</header><main><section><h1>T</h1></section></main>
+<footer>F</footer></body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        violations = lint_design_quality(td)
+
+    focus_violations = [v for v in violations if v["rule"] == "focus_visible"]
+    assert focus_violations == [], f"有 :focus 不应报违规: {focus_violations}"
+
+
+def test_auto_fix_focus_visible_injects():
+    """缺少 :focus 时自动注入 :focus-visible 样式。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_focus_visible
+
+    html = """<html><head><style>body { color: red; }</style></head>
+<body><button>Click</button></body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        changed = auto_fix_focus_visible(td)
+        with open(os.path.join(td, "index.html")) as f:
+            content = f.read()
+
+    assert changed is True
+    assert ":focus-visible" in content or ":focus" in content
+    assert "outline" in content
+
+
+def test_auto_fix_focus_visible_present_no_change():
+    """已有 :focus 样式时不修改。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_focus_visible
+
+    html = """<html><head><style>
+button:focus { outline: 2px solid blue; }
+</style></head><body><button>Click</button></body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        changed = auto_fix_focus_visible(td)
+        with open(os.path.join(td, "index.html")) as f:
+            content = f.read()
+
+    assert changed is False
+    # 内容不变
+    assert "button:focus" in content
+
+
+def test_auto_fix_focus_visible_empty_dir():
+    """空目录不应报错。"""
+    import tempfile
+    from driving.design_context import auto_fix_focus_visible
+
+    with tempfile.TemporaryDirectory() as td:
+        changed = auto_fix_focus_visible(td)
+    assert changed is False
+
+
+def test_auto_fix_design_issues_includes_focus_visible():
+    """auto_fix_design_issues 组合函数应包含 focus_visible 修复。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_design_issues
+
+    # HTML 缺 :focus 样式
+    html = """<html><head><style>body { color: red; }</style></head>
+<body><button>Click</button></body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        auto_fix_design_issues(td)
+        with open(os.path.join(td, "index.html")) as f:
+            content = f.read()
+
+    assert ":focus-visible" in content or ":focus" in content
