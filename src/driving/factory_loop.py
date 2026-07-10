@@ -124,10 +124,12 @@ class NullEventBus:
 def _wrap_with_design_quality(base_verifier):
     """在 base verifier 之后追加 lint_design_quality 检查。
 
-    error 级违规（meta viewport 缺失/img alt 缺失）阻断验证；
-    warning 级违规（语义HTML/CSS变量/动画性能/lang）只记录不阻断。
+    M19: error 级违规阻断验证；warning 级违规只记录不阻断。
+    M32: design_score 门槛——即使无 error 级违规，score < 阈值也阻断，
+         并把具体违规项 + 分数作为 feedback 让 worker 知道该修什么。
+         阈值通过 FLIPPED_DESIGN_SCORE_THRESHOLD 环境变量配置（默认 70）。
     """
-    from driving.design_context import lint_design_quality
+    from driving.design_context import lint_design_quality, design_score
 
     def wrapped(history: list, cwd: str) -> "tuple[bool, str]":
         ok, msg = base_verifier(history, cwd)
@@ -137,15 +139,31 @@ def _wrap_with_design_quality(base_verifier):
             violations = lint_design_quality(cwd)
             errors = [v for v in violations if v["severity"] == "error"]
             warnings = [v for v in violations if v["severity"] == "warning"]
+
             if errors:
                 error_msgs = "; ".join(
-                    f"{v['rule']}: {v['message']}" for v in errors[:3]
+                    f"{v['rule']}: {v['message']}" for v in errors[:5]
                 )
-                return False, f"design_quality errors: {error_msgs}"
+                return False, f"design_quality errors ({len(errors)}): {error_msgs}"
+
+            # M32: design_score 门槛
+            threshold = int(os.environ.get("FLIPPED_DESIGN_SCORE_THRESHOLD", "70"))
+            try:
+                score, notes = design_score(cwd)
+                if score > 0 and score < threshold:
+                    notes_str = "; ".join(notes[:5]) if isinstance(notes, list) else str(notes)
+                    return False, (
+                        f"design_score={score}/{threshold} 未达标。"
+                        f"问题：{notes_str[:200]}。"
+                        f"请修复上述设计质量问题后重新提交。"
+                    )
+            except Exception:
+                pass  # design_score 不可用时 fail-open
+
             if warnings:
                 # warnings 不阻断，但追加到 msg 让 supervisor 知道
                 warn_count = len(warnings)
-                msg += f" (design_quality: {warn_count} warnings)"
+                msg += f" (design_quality: {warn_count} warnings, score ok)"
             return True, msg
         except Exception:
             # lint_design_quality 异常时 fail-open（不阻断）

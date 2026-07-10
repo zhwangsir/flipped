@@ -84,7 +84,8 @@ def _get_design_score(cwd: str) -> str:
         from driving.design_context import design_score
         score, notes = design_score(cwd)
         if score > 0:
-            return f"design_score={score}/100 ({notes[:80]})"
+            notes_str = "; ".join(notes[:5]) if isinstance(notes, list) else str(notes)
+            return f"design_score={score}/100 ({notes_str[:120]})"
     except Exception:
         pass
     return "无 HTML 产物或评分失败"
