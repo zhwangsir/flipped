@@ -2,7 +2,7 @@
   "project": "flipped",
   "description": "接入本地 MLX 双模型(GLM-5.2 编排者 / Kimi-K2.7-Code 执行者)的 agentic 代码编辑器平台。fork Roo Code + 自定义驾驭层(强制验证/循环检测/上下文压缩/人工审批/子Agent/可观测性) + MCP 联网与外部能力。",
   "updated": "2026-07-11",
-  "current_milestone": "M32 design_score 门槛 + 自动反馈循环 (544 passed, 低分时阻断验证并反馈具体问题给 worker 重做)",
+  "current_milestone": "M33 自主迭代闭环集成测试 (550 passed, task_proposer + design_score 门槛 + factory_loop 重试全链路验证)",
   "key_facts": {
     "dev_host": "Apple M5 Max, 128GB RAM, 1.1TB 可用磁盘 — 开发/控制节点，非模型宿主",
     "model_cluster": "exo 集群 @ http://100.64.201.37:52415 (内网, OpenAI 兼容)；公网 https://dgmt.top/exo (需 Bearer token)",
@@ -528,6 +528,18 @@
           "title": "_wrap_with_design_quality 添加 score 门槛",
           "status": "done",
           "note": "低分阻断 + 结构化 feedback（分数+问题）。阈值可配置。9 测试通过。544 passed。"
+        }
+      }
+    },
+    "M33": {
+      "title": "自主迭代闭环集成测试",
+      "status": "done",
+      "note": "端到端验证 M31（task_proposer）+ M32（design_score 门槛）+ factory_loop 重试机制的完整交互。6 个集成测试：(1) design_score 低→失败→重试→修复通过→proposer 生成新任务；(2) proposer 连续生成多任务→max_rounds 限制；(3) 所有任务失败→paused；(4) 失败 feedback 包含 design_score 信息；(5) proposer 收到 context_summary；(6) iteration_count 追踪总执行次数。全量 550 passed（+6，无回归）。「无限迭代」闭环验证完成。",
+      "tasks": {
+        "M33.1": {
+          "title": "test_iteration_loop.py 集成测试",
+          "status": "done",
+          "note": "6 个集成测试验证 task_proposer + design_score 门槛 + factory_loop 全链路。550 passed。"
         }
       }
     }
