@@ -2,7 +2,7 @@
   "project": "flipped",
   "description": "接入本地 MLX 双模型(GLM-5.2 编排者 / Kimi-K2.7-Code 执行者)的 agentic 代码编辑器平台。fork Roo Code + 自定义驾驭层(强制验证/循环检测/上下文压缩/人工审批/子Agent/可观测性) + MCP 联网与外部能力。",
   "updated": "2026-07-11",
-  "current_milestone": "M39 design_brief 集成新 lint 维度到 worker 提示 (597 passed, 15维lint+11组auto-fix+brief全覆盖)",
+  "current_milestone": "M40 task_proposer design_score 反馈循环增强 (600 passed, 低分时附带具体违规rule名)",
   "key_facts": {
     "dev_host": "Apple M5 Max, 128GB RAM, 1.1TB 可用磁盘 — 开发/控制节点，非模型宿主",
     "model_cluster": "exo 集群 @ http://100.64.201.37:52415 (内网, OpenAI 兼容)；公网 https://dgmt.top/exo (需 Bearer token)",
@@ -612,6 +612,18 @@
           "title": "build_design_brief + compact 更新 + 4 测试",
           "status": "done",
           "note": "完整版和精简版 brief 均纳入 aria-label/form-label/heading-hierarchy/responsive/component-states 规则。4 测试通过。597 passed。"
+        }
+      }
+    },
+    "M40": {
+      "title": "task_proposer design_score 反馈循环增强",
+      "status": "done",
+      "note": "增强 _get_design_score：当 design_score < FLIPPED_DESIGN_SCORE_THRESHOLD(默认70)时，调用 lint_design_quality 获取具体违规，在返回字符串中附带 '违规项: rule_name(severity), ...'。propose_next_task 的 prompt 中检测到违规项时插入设计质量警告，指示 GLM 优先生成针对具体违规的修复任务。3 个 TDD 测试。全量 600 passed（+3，无回归）。",
+      "tasks": {
+        "M40.1": {
+          "title": "_get_design_score 增强 + prompt 警告 + 3 测试",
+          "status": "done",
+          "note": "低分时附带具体违规 rule 名 + prompt 插入设计质量警告。3 测试通过。600 passed。"
         }
       }
     }

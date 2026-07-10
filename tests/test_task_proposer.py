@@ -378,3 +378,79 @@ def test_factory_loop_proposer_none_stops_immediately():
     # 只有初始任务，proposer 立即返回 None
     assert len(state.completed) == 1
     assert state.status.value == "done"
+
+
+# ---------- M40: design_score 反馈循环增强 ----------
+
+
+def test_get_design_score_includes_violation_rules_when_low():
+    """差 HTML 时 _get_design_score 应包含具体违规 rule 名。"""
+    import tempfile
+    import os
+    from driving.task_proposer import _get_design_score
+
+    bad_html = """<html><head></head><body>
+    <img src="x.jpg">
+    </body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(bad_html)
+        result = _get_design_score(td)
+
+    # 应包含 design_score=
+    assert "design_score=" in result
+    # 应包含具体违规 rule 名
+    assert "meta_viewport" in result or "img_alt" in result
+
+
+def test_get_design_score_good_html_no_violations():
+    """良好 HTML 时 _get_design_score 应返回高分且不含违规 rule 名。"""
+    import tempfile
+    import os
+    from driving.task_proposer import _get_design_score
+
+    good_html = """<!DOCTYPE html>
+<html lang="zh"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+:root { --color-bg: #0D0D12; --color-text: #F5F5F5; --color-accent: #0A84FF; }
+body { padding: 16px; margin: 0; font-size: 16px; transition: opacity 0.3s ease; }
+h1 { font-size: 48px; }
+:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+@media (max-width: 768px) { body { font-size: 14px; } }
+button:hover { opacity: 0.85; }
+button:active { transform: scale(0.98); }
+button:disabled { opacity: 0.5; cursor: not-allowed; }
+</style></head><body>
+<header><nav>Logo</nav></header>
+<main><section><h1>Title</h1>
+<button>Click</button>
+</section></main>
+<footer>Copyright</footer>
+</body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(good_html)
+        result = _get_design_score(td)
+
+    # 应包含 design_score=
+    assert "design_score=" in result
+    # 分数应较高
+    import re
+    score_match = re.search(r"design_score=(\d+)/100", result)
+    assert score_match is not None
+    score = int(score_match.group(1))
+    assert score >= 80, f"良好 HTML 应 ≥80 分，实际 {score}: {result}"
+
+
+def test_get_design_score_no_html_returns_message():
+    """无 HTML 文件时返回提示信息。"""
+    import tempfile
+    from driving.task_proposer import _get_design_score
+
+    with tempfile.TemporaryDirectory() as td:
+        result = _get_design_score(td)
+
+    assert "HTML" in result or "无" in result

@@ -79,13 +79,28 @@ def _summarize_completed(state: FactoryState, max_items: int = 8) -> str:
 
 
 def _get_design_score(cwd: str) -> str:
-    """如果有 HTML 文件，计算 design_score 让 GLM 知道当前质量。"""
+    """如果有 HTML 文件，计算 design_score 让 GLM 知道当前质量。
+
+    M40 增强：当 design_score < 阈值时，附带具体 lint 违规 rule 名，
+    让 GLM 能生成精准的修复任务而非泛泛的"改进设计"。
+    """
     try:
-        from driving.design_context import design_score
+        from driving.design_context import design_score, lint_design_quality
         score, notes = design_score(cwd)
         if score > 0:
             notes_str = "; ".join(notes[:5]) if isinstance(notes, list) else str(notes)
-            return f"design_score={score}/100 ({notes_str[:120]})"
+            base = f"design_score={score}/100 ({notes_str[:120]})"
+            # M40: 低分时附带具体违规 rule 名
+            threshold = int(os.environ.get("FLIPPED_DESIGN_SCORE_THRESHOLD", "70"))
+            if score < threshold:
+                violations = lint_design_quality(cwd)
+                if violations:
+                    rule_names = sorted({
+                        f"{v['rule']}({v['severity']})"
+                        for v in violations[:10]
+                    })
+                    base += f" | 违规项: {', '.join(rule_names)}"
+            return base
     except Exception:
         pass
     return "无 HTML 产物或评分失败"
@@ -104,13 +119,22 @@ def propose_next_task(state: FactoryState) -> FactoryTask | None:
     completed_summary = _summarize_completed(state)
     score_info = _get_design_score(state.cwd)
 
+    # M40: 设计质量不达标时，明确指示 GLM 生成修复任务
+    design_warning = ""
+    if "违规项:" in score_info:
+        design_warning = (
+            "\n⚠️ 设计质量不达标，请优先生成针对上述违规项的修复任务"
+            "（如补充 meta viewport、img alt、aria-label、响应式断点等）。\n"
+        )
+
     msg = (
         f"产品目标：{state.product_goal}\n"
         f"工作目录：{state.cwd}\n"
         f"当前产物文件：{files if files else '空'}\n"
         f"已完成任务：\n{completed_summary}\n"
         f"设计质量：{score_info}\n"
-        f"设计风格：{state.design_style}\n\n"
+        f"设计风格：{state.design_style}\n"
+        f"{design_warning}\n"
         "你是产品架构师。基于当前项目状态，判断下一步最有价值的开发任务。\n"
         "任务必须自包含、可被一条验收命令验证。\n"
         "如果项目已经完善（功能完整、设计质量高、无明显改进空间），设 should_continue=False。\n"
