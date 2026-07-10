@@ -346,10 +346,12 @@ def default_orchestrator_fn(task: FactoryTask, state: FactoryState) -> TaskResul
 
     M10.4-A：对 UI 任务自动追加 design-lint 校验，作为 verify_cmd 之外的程序化硬约束。
     M10.4-C：第 2 次失败后用 delegate orchestrator（独立 thread_id + 干净上下文）。
-    M10.5：per-task 硬超时（默认 300s），防止 GLM 挂起阻塞整个循环。
+    M10.5：per-task 硬超时（默认 600s），防止 GLM 挂起阻塞整个循环。
+    M14.4：continuation 机制会追加 worker 调用（最多 2 次），每次 150s+，
+           原 300s 超时不足以容纳 finish=length 截断后的续生成 → task_timeout。
     """
     # M10.5：per-task 硬超时保护——GLM 挂起时不能阻塞整个循环
-    task_timeout = int(os.environ.get("FLIPPED_TASK_TIMEOUT", "300"))
+    task_timeout = int(os.environ.get("FLIPPED_TASK_TIMEOUT", "600"))
 
     # M10.4-C：连续失败 ≥ 2 次时，触发 delegate 子 Agent（避免主上下文被卡死污染）
     from driving.stuck_detector import delegate_orchestrator
