@@ -1999,3 +1999,191 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
         score, notes = design_score(td)
 
     assert score >= 90, f"完美HTML应得≥90分，实际{score}: {notes}"
+
+
+# ---------- M37: aria_label + form_label lint（axe-core 启发） ----------
+
+
+def test_lint_aria_label_button_missing_text():
+    """button 无文本内容且无 aria-label 应报 warning。"""
+    import tempfile
+    import os
+    from driving.design_context import lint_design_quality
+
+    html = """<html lang="en"><head>
+<meta name="viewport" content="width=device-width">
+<style>button:hover{}button:active{}button:focus{}button:disabled{}
+@media(max-width:768px){}</style>
+</head><body><header>H</header><main><section>
+<button></button>
+</section></main><footer>F</footer></body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        violations = lint_design_quality(td)
+
+    aria_violations = [v for v in violations if v["rule"] == "aria_label"]
+    assert len(aria_violations) >= 1
+    assert aria_violations[0]["severity"] == "warning"
+
+
+def test_lint_aria_label_button_with_text():
+    """button 有文本内容不应报违规。"""
+    import tempfile
+    import os
+    from driving.design_context import lint_design_quality
+
+    html = """<html lang="en"><head>
+<meta name="viewport" content="width=device-width">
+<style>button:hover{}button:active{}button:focus{}button:disabled{}
+@media(max-width:768px){}</style>
+</head><body><header>H</header><main><section>
+<button>Submit</button>
+</section></main><footer>F</footer></body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        violations = lint_design_quality(td)
+
+    aria_violations = [v for v in violations if v["rule"] == "aria_label"]
+    assert aria_violations == []
+
+
+def test_lint_aria_label_button_with_aria_label():
+    """button 有 aria-label 不应报违规。"""
+    import tempfile
+    import os
+    from driving.design_context import lint_design_quality
+
+    html = """<html lang="en"><head>
+<meta name="viewport" content="width=device-width">
+<style>button:hover{}button:active{}button:focus{}button:disabled{}
+@media(max-width:768px){}</style>
+</head><body><header>H</header><main><section>
+<button aria-label="Close"><svg></svg></button>
+</section></main><footer>F</footer></body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        violations = lint_design_quality(td)
+
+    aria_violations = [v for v in violations if v["rule"] == "aria_label"]
+    assert aria_violations == []
+
+
+def test_lint_aria_label_link_missing_text():
+    """a 标签无文本且无 aria-label 应报 warning。"""
+    import tempfile
+    import os
+    from driving.design_context import lint_design_quality
+
+    html = """<html lang="en"><head>
+<meta name="viewport" content="width=device-width">
+<style>a:hover{}a:active{}a:focus{}a:disabled{}
+@media(max-width:768px){}</style>
+</head><body><header>H</header><main><section>
+<a href="#"></a>
+</section></main><footer>F</footer></body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        violations = lint_design_quality(td)
+
+    aria_violations = [v for v in violations if v["rule"] == "aria_label"]
+    assert len(aria_violations) >= 1
+
+
+def test_lint_form_label_missing():
+    """input 无关联 label 应报 warning。"""
+    import tempfile
+    import os
+    from driving.design_context import lint_design_quality
+
+    html = """<html lang="en"><head>
+<meta name="viewport" content="width=device-width">
+<style>input:hover{}input:active{}input:focus{}input:disabled{}
+@media(max-width:768px){}</style>
+</head><body><header>H</header><main><section>
+<input type="text" name="email">
+</section></main><footer>F</footer></body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        violations = lint_design_quality(td)
+
+    label_violations = [v for v in violations if v["rule"] == "form_label"]
+    assert len(label_violations) >= 1
+    assert label_violations[0]["severity"] == "warning"
+
+
+def test_lint_form_label_with_label_tag():
+    """input 有关联 label 不应报违规。"""
+    import tempfile
+    import os
+    from driving.design_context import lint_design_quality
+
+    html = """<html lang="en"><head>
+<meta name="viewport" content="width=device-width">
+<style>input:hover{}input:active{}input:focus{}input:disabled{}
+@media(max-width:768px){}</style>
+</head><body><header>H</header><main><section>
+<label for="email">Email</label>
+<input type="text" id="email" name="email">
+</section></main><footer>F</footer></body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        violations = lint_design_quality(td)
+
+    label_violations = [v for v in violations if v["rule"] == "form_label"]
+    assert label_violations == []
+
+
+def test_lint_form_label_with_aria_label():
+    """input 有 aria-label 不应报违规。"""
+    import tempfile
+    import os
+    from driving.design_context import lint_design_quality
+
+    html = """<html lang="en"><head>
+<meta name="viewport" content="width=device-width">
+<style>input:hover{}input:active{}input:focus{}input:disabled{}
+@media(max-width:768px){}</style>
+</head><body><header>H</header><main><section>
+<input type="text" aria-label="Search" name="q">
+</section></main><footer>F</footer></body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        violations = lint_design_quality(td)
+
+    label_violations = [v for v in violations if v["rule"] == "form_label"]
+    assert label_violations == []
+
+
+def test_lint_form_label_no_inputs():
+    """无 input 元素时不应报 form_label 违规。"""
+    import tempfile
+    import os
+    from driving.design_context import lint_design_quality
+
+    html = """<html lang="en"><head>
+<meta name="viewport" content="width=device-width">
+<style>body{font-size:16px}@media(max-width:768px){}</style>
+</head><body><header>H</header><main><section><p>Text</p></section></main><footer>F</footer>
+</body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        violations = lint_design_quality(td)
+
+    label_violations = [v for v in violations if v["rule"] == "form_label"]
+    assert label_violations == []

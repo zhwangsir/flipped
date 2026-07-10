@@ -2,7 +2,7 @@
   "project": "flipped",
   "description": "接入本地 MLX 双模型(GLM-5.2 编排者 / Kimi-K2.7-Code 执行者)的 agentic 代码编辑器平台。fork Roo Code + 自定义驾驭层(强制验证/循环检测/上下文压缩/人工审批/子Agent/可观测性) + MCP 联网与外部能力。",
   "updated": "2026-07-11",
-  "current_milestone": "M36 design_score 评分系统升级 (577 passed, 含 M34/M35 新维度)",
+  "current_milestone": "M37 aria_label + form_label lint (585 passed, axe-core 启发)",
   "key_facts": {
     "dev_host": "Apple M5 Max, 128GB RAM, 1.1TB 可用磁盘 — 开发/控制节点，非模型宿主",
     "model_cluster": "exo 集群 @ http://100.64.201.37:52415 (内网, OpenAI 兼容)；公网 https://dgmt.top/exo (需 Bearer token)",
@@ -576,6 +576,18 @@
           "title": "design_score 9 维评分升级",
           "status": "done",
           "note": "评分从 7→9 维，纳入 heading_hierarchy + focus_visible + responsive @media + component_states。5 测试通过。577 passed。"
+        }
+      }
+    },
+    "M37": {
+      "title": "aria_label + form_label lint（axe-core 启发）",
+      "status": "done",
+      "note": "调研 axe-core 无障碍检查工具，新增两个 lint 维度：(1) aria_label — button/a 元素缺少文本内容且无 aria-label 时报 warning；(2) form_label — input 元素缺少关联的 label for 或 aria-label 时报 warning（type=hidden 跳过）。8 个 TDD 测试覆盖：button 缺文本/有文本/有 aria-label，a 缺文本，input 缺 label/有 label for/有 aria-label，无 input 不报。全量 585 passed（+8，无回归）。Lint 维度总计：meta_viewport + img_alt + animation_perf + css_vars + semantic_html + spacing + typography + html_lang + heading_hierarchy + focus_visible + responsive + component_states + color_contrast + aria_label + form_label = 15 维。",
+      "tasks": {
+        "M37.1": {
+          "title": "aria_label + form_label lint",
+          "status": "done",
+          "note": "新增 2 个 axe-core 启发的无障碍 lint 维度。8 测试通过。585 passed。Lint 总计 15 维。"
         }
       }
     }

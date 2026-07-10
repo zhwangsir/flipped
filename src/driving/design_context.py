@@ -1231,6 +1231,60 @@ def lint_design_quality(cwd: str) -> list[dict]:
                     "message": f"交互元素缺少状态样式: {', '.join(missing_states)}",
                 })
 
+        # 11. M37: 可访问名称检查（axe-core 启发）
+        # button/a 元素应有文本内容或 aria-label
+        for tag in ("button", "a"):
+            for match in _re.finditer(
+                rf"<{tag}\b([^>]*)>(.*?)</{tag}>",
+                content, _re.IGNORECASE | _re.DOTALL,
+            ):
+                attrs = match.group(1) or ""
+                inner = match.group(2) or ""
+                # 有 aria-label 则合规
+                if "aria-label" in attrs.lower():
+                    continue
+                # 有文本内容（去除 HTML 标签后非空）则合规
+                text_content = _re.sub(r"<[^>]+>", "", inner).strip()
+                if text_content:
+                    continue
+                violations.append({
+                    "rule": "aria_label",
+                    "severity": "warning",
+                    "file": fname,
+                    "message": f"<{tag}> 缺少可访问名称（文本内容或 aria-label）",
+                })
+
+        # 12. M37: 表单标签检查（axe-core 启发）
+        # input 元素应有关联的 <label for="..."> 或 aria-label
+        input_matches = _re.findall(
+            r"<input\b([^>]*)>",
+            content, _re.IGNORECASE,
+        )
+        if input_matches:
+            # 提取所有 label for 的 id
+            label_for_ids = set(
+                _re.findall(r'<label\b[^>]*for\s*=\s*["\']([^"\']+)["\']', content, _re.IGNORECASE)
+            )
+            # 提取所有 input 的 id
+            for input_attrs in input_matches:
+                attrs_lower = input_attrs.lower()
+                # 有 aria-label 则合规
+                if "aria-label" in attrs_lower:
+                    continue
+                # 有 type=hidden 则跳过
+                if 'type="hidden"' in attrs_lower or "type='hidden'" in attrs_lower:
+                    continue
+                # 检查是否有 label for 关联
+                id_match = _re.search(r'\bid\s*=\s*["\']([^"\']+)["\']', input_attrs, _re.IGNORECASE)
+                if id_match and id_match.group(1) in label_for_ids:
+                    continue  # 有 label for 关联
+                violations.append({
+                    "rule": "form_label",
+                    "severity": "warning",
+                    "file": fname,
+                    "message": "<input> 缺少关联的 <label> 或 aria-label",
+                })
+
     # 7. M22: WCAG 颜色对比度
     try:
         violations.extend(check_color_contrast(cwd))
