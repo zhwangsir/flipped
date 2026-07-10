@@ -2,7 +2,7 @@
   "project": "flipped",
   "description": "接入本地 MLX 双模型(GLM-5.2 编排者 / Kimi-K2.7-Code 执行者)的 agentic 代码编辑器平台。fork Roo Code + 自定义驾驭层(强制验证/循环检测/上下文压缩/人工审批/子Agent/可观测性) + MCP 联网与外部能力。",
   "updated": "2026-07-11",
-  "current_milestone": "M38 aria_label + form_label auto_fix + score 集成 (593 passed, 15维lint+11组auto-fix)",
+  "current_milestone": "M39 design_brief 集成新 lint 维度到 worker 提示 (597 passed, 15维lint+11组auto-fix+brief全覆盖)",
   "key_facts": {
     "dev_host": "Apple M5 Max, 128GB RAM, 1.1TB 可用磁盘 — 开发/控制节点，非模型宿主",
     "model_cluster": "exo 集群 @ http://100.64.201.37:52415 (内网, OpenAI 兼容)；公网 https://dgmt.top/exo (需 Bearer token)",
@@ -600,6 +600,18 @@
           "title": "auto_fix_aria_label + auto_fix_form_label + score 集成",
           "status": "done",
           "note": "新增 2 个 auto-fix 函数 + design_score 集成。8 测试通过。593 passed。Auto-fix 11 组。"
+        }
+      }
+    },
+    "M39": {
+      "title": "design_brief 集成新 lint 维度到 worker 提示",
+      "status": "done",
+      "note": "更新 build_design_brief 完整版无障碍部分，新增 3 条规则：button/a 必须有文本或 aria-label；input 必须有 label 或 aria-label；标题层级 h1→h2→h3 不跳级。更新 build_design_brief_compact 精简版，从 hover/focus 状态扩展为 hover/active/focus/disabled，新增 @media 响应式断点、aria-label、input label、标题层级要求。4 个 TDD 测试全绿。全量 597 passed（+4，无回归）。至此 lint 15 维、auto-fix 11 组、design_score 9 维、design_brief 完整版+精简版均覆盖所有 M34-M38 新增维度，设计质量系统闭环。",
+      "tasks": {
+        "M39.1": {
+          "title": "build_design_brief + compact 更新 + 4 测试",
+          "status": "done",
+          "note": "完整版和精简版 brief 均纳入 aria-label/form-label/heading-hierarchy/responsive/component-states 规则。4 测试通过。597 passed。"
         }
       }
     }

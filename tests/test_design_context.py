@@ -2350,3 +2350,46 @@ def test_lint_form_label_no_inputs():
 
     label_violations = [v for v in violations if v["rule"] == "form_label"]
     assert label_violations == []
+
+
+# ---------- M39: design_brief 集成新 lint 维度到 worker 提示 ----------
+
+
+def test_build_design_brief_includes_aria_label_requirement():
+    """完整版 brief 应包含 aria-label 要求。"""
+    from driving.design_context import build_design_brief
+    brief = build_design_brief("dark")
+    assert "aria-label" in brief
+    assert "可访问名称" in brief or "aria-label" in brief
+
+
+def test_build_design_brief_includes_heading_hierarchy_requirement():
+    """完整版 brief 应包含标题层级要求。"""
+    from driving.design_context import build_design_brief
+    brief = build_design_brief("dark")
+    assert "h1→h2" in brief or "不跳级" in brief
+
+
+def test_build_design_brief_includes_form_label_requirement():
+    """完整版 brief 应包含 input label 要求。"""
+    from driving.design_context import build_design_brief
+    brief = build_design_brief("dark")
+    assert "label" in brief.lower()
+    assert "input" in brief.lower()
+
+
+def test_build_design_brief_compact_includes_all_new_rules():
+    """精简版 brief 应包含所有 M34-M38 新规则。"""
+    from driving.design_context import build_design_brief_compact
+    brief = build_design_brief_compact("dark")
+    # M35: 组件状态
+    assert "active" in brief
+    assert "disabled" in brief
+    # M35: @media 响应式
+    assert "@media" in brief
+    # M34: focus-visible
+    assert "focus-visible" in brief
+    # M37: aria-label
+    assert "aria-label" in brief
+    # M34: 标题层级
+    assert "h1" in brief or "跳级" in brief

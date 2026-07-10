@@ -220,6 +220,9 @@ def build_design_brief(
 无障碍:
 - WCAG AA: 正文对比度 >= 4.5:1, 大文本 >= 3:1
 - 所有交互元素必须有 focus-visible 样式
+- button/a 必须有文本内容或 aria-label（可访问名称）
+- input 必须有关联的 <label for> 或 aria-label
+- 标题层级 h1→h2→h3 不跳级，每页只有一个 h1
 
 技术约束:
 - 使用 CSS variables 定义主题色 (如 --color-accent: #0A84FF)
@@ -252,9 +255,10 @@ def build_design_brief_compact(style: str = "auto", product_type: str = "") -> s
     return (
         f"【强制】必须用这些精确 hex 值，禁止替换: "
         f"--color-accent: {accent}; --color-bg: {bg}; --color-text: {text}; "
-        f"字体 {font}; 用 CSS variables; 含 hover/focus 状态; "
-        f"响应式 768px; focus-visible; WCAG AA 对比度(文字≥4.5:1); "
-        f"按钮文字色须与背景对比度≥4.5:1。"
+        f"字体 {font}; 用 CSS variables; 含 hover/active/focus/disabled 状态; "
+        f"@media(max-width:768px) 响应式断点; focus-visible 样式; "
+        f"WCAG AA 对比度(文字≥4.5:1); button/a 有文本或 aria-label; "
+        f"input 有 label 或 aria-label; 标题 h1→h2 不跳级。"
     )
 
 
