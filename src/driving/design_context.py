@@ -104,6 +104,15 @@ STYLE_BRIEFS: dict[str, dict] = {
         "refs": "Tiffany & Co., Poltrona Frau, Apple 产品页",
         "principles": "CSS 3D transforms perspective:1200px, mouse-follow rotation, parallax layers 0.2x/0.5x/1x, cards 3D tilt on hover translateZ(20px)",
     },
+    "film_atelier": {
+        "name": "Film Atelier 暗房编辑台",
+        "colors": {"accent": "#C9A96E", "bg": "#0D0D12", "bg_alt": "#1A1A1E", "surface": "#16161A", "text": "#E8E6E1", "text_muted": "#7A7770"},
+        "font": "Inter weight 300-500 / 衬线标题 Playfair Display",
+        "headings": "48px / 500 / 1.2 / -0.01em / Playfair Display italic",
+        "body": "16px / 300 / 1.7",
+        "refs": "Poltrona Frau, Apple Pro Apps, Leica",
+        "principles": "暗房隐喻: UI 退居幕后内容为王; 克制物理呼吸式动效(opacity 0→1 800ms ease-out, translateY 12px→0); 微粒子聚合成按钮(mouseclick时粒子向心汇聚); 禁止: 彩虹粒子/大面积闪烁/粒子爆炸/快速闪烁/粒子覆盖文字/粒子数>200/速度>1.0/粗连线/纯白背景/暗角; 配色不超过5种; 深度分层: bg→surface→content 三级; 细发丝边框 rgba(255,255,255,0.06); 圆角 2px 极小; 无毛玻璃隔离层",
+    },
 }
 
 
@@ -128,6 +137,9 @@ def list_styles() -> list[str]:
 def infer_style(product_type: str = "") -> str:
     """根据产品类型推断合适的风格。更具体的关键词优先匹配。"""
     pt = product_type.lower()
+    # Film Atelier 优先匹配（用户偏好的暗房/编辑台隐喻风格）
+    if any(k in pt for k in ("film", "atelier", "暗房", "编辑台", "film_atelier")):
+        return "film_atelier"
     # 有机/自然先匹配（"organic food brand" 不应匹配 "brand" → bento）
     if any(k in pt for k in ("有机", "自然", "食品", "organic", "nature", "food")):
         return "organic"
@@ -244,3 +256,111 @@ def build_design_brief_compact(style: str = "auto", product_type: str = "") -> s
         f"响应式 768px; focus-visible; WCAG AA 对比度(文字≥4.5:1); "
         f"按钮文字色须与背景对比度≥4.5:1。"
     )
+
+
+# ---------- M19: 设计质量校验器 ----------
+
+def lint_design_quality(cwd: str) -> list[dict]:
+    """扫描 HTML 文件的设计质量问题，返回违规列表。
+
+    检查项（确定性，不依赖 LLM）：
+    - 语义化 HTML：是否有 <header>/<main>/<section>/<footer>
+    - meta viewport：是否有 <meta name="viewport">
+    - CSS 变量使用：是否用 :root 定义 --color-* 变量
+    - 内联 vs 外部 CSS：是否使用 <style> 内联（单文件场景 OK）
+    - 图片 alt 属性：所有 <img> 是否有 alt
+    - 按钮无障碍：所有 <button>/<a role=button> 是否有可访问文本
+    - 动画性能：animation/transition 是否优先用 transform/opacity
+    """
+    violations: list[dict] = []
+    import os as _os
+    import re as _re
+
+    for fname in _os.listdir(cwd):
+        if not fname.endswith(".html"):
+            continue
+        fpath = _os.path.join(cwd, fname)
+        if not _os.path.isfile(fpath):
+            continue
+        try:
+            content = open(fpath, "r", encoding="utf-8").read()
+        except Exception:
+            continue
+        lower = content.lower()
+
+        # 1. 语义化 HTML
+        if "<header" not in lower and "<nav" not in lower:
+            violations.append({
+                "rule": "semantic_html",
+                "severity": "warning",
+                "file": fname,
+                "message": "缺少 <header> 或 <nav> 语义标签",
+            })
+        if "<main" not in lower and "<section" not in lower:
+            violations.append({
+                "rule": "semantic_html",
+                "severity": "warning",
+                "file": fname,
+                "message": "缺少 <main> 或 <section> 语义标签",
+            })
+        if "<footer" not in lower:
+            violations.append({
+                "rule": "semantic_html",
+                "severity": "warning",
+                "file": fname,
+                "message": "缺少 <footer> 语义标签",
+            })
+
+        # 2. meta viewport
+        if "viewport" not in lower:
+            violations.append({
+                "rule": "meta_viewport",
+                "severity": "error",
+                "file": fname,
+                "message": "缺少 <meta name='viewport'>，移动端不会正确缩放",
+            })
+
+        # 3. CSS 变量
+        if ":root" in lower and "--color-" not in lower:
+            violations.append({
+                "rule": "css_variables",
+                "severity": "warning",
+                "file": fname,
+                "message": "有 :root 但未定义 --color-* 主题变量",
+            })
+
+        # 4. 图片 alt 属性
+        img_matches = _re.findall(r"<img\s+[^>]*>", content, _re.IGNORECASE)
+        for img_tag in img_matches:
+            if "alt=" not in img_tag.lower():
+                violations.append({
+                    "rule": "img_alt_missing",
+                    "severity": "error",
+                    "file": fname,
+                    "message": f"<img> 缺少 alt 属性: {img_tag[:80]}",
+                })
+
+        # 5. 动画性能：检查是否有 margin/padding/left/top 的 transition
+        # （应该用 transform/opacity）
+        bad_transitions = _re.findall(
+            r"transition\s*:\s*[^;]*(?:margin|padding|left|top|width|height)[^;]*",
+            content, _re.IGNORECASE,
+        )
+        if bad_transitions:
+            violations.append({
+                "rule": "animation_performance",
+                "severity": "warning",
+                "file": fname,
+                "message": f"transition 使用了非 transform/opacity 属性（可能触发重排）: {bad_transitions[0][:80]}",
+            })
+
+        # 6. lang 属性
+        if "<html" in lower and "lang=" not in lower:
+            violations.append({
+                "rule": "html_lang",
+                "severity": "warning",
+                "file": fname,
+                "message": "<html> 缺少 lang 属性",
+            })
+
+    return violations

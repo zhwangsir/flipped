@@ -2,7 +2,7 @@
   "project": "flipped",
   "description": "接入本地 MLX 双模型(GLM-5.2 编排者 / Kimi-K2.7-Code 执行者)的 agentic 代码编辑器平台。fork Roo Code + 自定义驾驭层(强制验证/循环检测/上下文压缩/人工审批/子Agent/可观测性) + MCP 联网与外部能力。",
   "updated": "2026-07-10",
-  "current_milestone": "M17 无限迭代 infra_failure 早停 (444 passed, 集群故障不浪费预算跑下一轮)",
+  "current_milestone": "M19 Film Atelier 风格 + 设计质量校验器 (453 passed, UI/UX 设计质量优化)",
   "key_facts": {
     "dev_host": "Apple M5 Max, 128GB RAM, 1.1TB 可用磁盘 — 开发/控制节点，非模型宿主",
     "model_cluster": "exo 集群 @ http://100.64.201.37:52415 (内网, OpenAI 兼容)；公网 https://dgmt.top/exo (需 Bearer token)",
@@ -348,6 +348,30 @@
           "title": "infinite_loop infra_failure 早停检测",
           "status": "done",
           "note": "run_infinite_loop 每轮结束后检测整轮全 infra_failure → 立即停止。444 passed。"
+        }
+      }
+    },
+    "M18": {
+      "title": "infra_failure 恢复机制（集群恢复后续跑）",
+      "status": "done",
+      "note": "infra_failure 状态的无限迭代循环可以恢复——用相同 loop_id 再调 run_infinite_loop 时，status 从 infra_failure 重置为 running 继续跑。这让'集群故障 → 恢复 → 续跑'成为完整闭环。1 TDD 测试。445 passed。",
+      "tasks": {
+        "M18.1": {
+          "title": "infinite_loop infra_failure 恢复",
+          "status": "done",
+          "note": "status='infra_failure' 时重置为 running 继续跑。445 passed。"
+        }
+      }
+    },
+    "M19": {
+      "title": "Film Atelier 风格 + 设计质量校验器（UI/UX 设计质量优化）",
+      "status": "done",
+      "note": "用户偏好'Film Atelier 暗房编辑台'设计方向。新增 film_atelier 风格到 STYLE_BRIEFS（暗房隐喻: UI 退居幕后内容为王; 克制物理呼吸式动效; 微粒子聚合成按钮; 禁止彩虹粒子/大面积闪烁/粒子爆炸等; 配色不超过5种; 深度分层三级; 细发丝边框; 圆角2px）。新增 lint_design_quality() 确定性设计质量校验器：检查语义化HTML(header/main/section/footer)、meta viewport、CSS变量、img alt属性、动画性能(transition用transform/opacity)、html lang属性。8 新测试全过。全量 453 passed。",
+      "tasks": {
+        "M19.1": {
+          "title": "Film Atelier 风格 + lint_design_quality 校验器",
+          "status": "done",
+          "note": "film_atelier 风格(11种风格) + lint_design_quality(6项检查) + 8 TDD 测试。453 passed。"
         }
       }
     }
