@@ -1,8 +1,8 @@
 {
   "project": "flipped",
   "description": "接入本地 MLX 双模型(GLM-5.2 编排者 / Kimi-K2.7-Code 执行者)的 agentic 代码编辑器平台。fork Roo Code + 自定义驾驭层(强制验证/循环检测/上下文压缩/人工审批/子Agent/可观测性) + MCP 联网与外部能力。",
-  "updated": "2026-07-10",
-  "current_milestone": "M29 语义化 HTML auto-fix (518 passed, 缺少 header/main/footer 时自动注入)",
+  "updated": "2026-07-11",
+  "current_milestone": "M30 local_worker auto-fix 集成测试 (519 passed, 验证 worker 写文件后调用 auto_fix_design_issues)",
   "key_facts": {
     "dev_host": "Apple M5 Max, 128GB RAM, 1.1TB 可用磁盘 — 开发/控制节点，非模型宿主",
     "model_cluster": "exo 集群 @ http://100.64.201.37:52415 (内网, OpenAI 兼容)；公网 https://dgmt.top/exo (需 Bearer token)",
@@ -492,6 +492,18 @@
           "title": "auto_fix_semantic_html + auto_fix_design_issues 更新",
           "status": "done",
           "note": "header/main/footer 自动注入 + 组合函数更新。5 TDD 测试。518 passed。"
+        }
+      }
+    },
+    "M30": {
+      "title": "local_worker auto-fix 集成测试",
+      "status": "done",
+      "note": "集成测试验证：local_worker 写文件后自动调用 auto_fix_design_issues，一次性修复所有 6 组设计问题（间距/字体/HTML结构/动画性能/CSS变量/语义化HTML）。测试构造一个故意带违规的 HTML（padding 13px / margin 7px / font-size 16px+37px / transition margin / 无 viewport/lang/alt / 无 :root / 无 header/main/footer），交给 local_worker 处理，断言写入磁盘的 index.html 全部合规。1 TDD 测试通过，全量 519 passed（+1，无回归）。设计质量 auto-fix 系统：lint 检测 → worker 写入后 auto-fix → verifier 复检 → score 评分，全链路打通。",
+      "tasks": {
+        "M30.1": {
+          "title": "test_auto_fix_design_issues_integration_with_local_worker",
+          "status": "done",
+          "note": "E2E 集成测试：mock Kimi 流式响应返回带违规的 HTML，local_worker 写入后断言磁盘文件全部合规。519 passed。"
         }
       }
     }

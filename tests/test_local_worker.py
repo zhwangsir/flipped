@@ -524,3 +524,65 @@ def test_auto_fix_hex_integration_with_local_worker():
             assert "#F5F5F5" in content
             assert "#0b0f19" not in content
             assert "#f8fafc" not in content
+
+
+def test_auto_fix_design_issues_integration_with_local_worker():
+    """集成：local_worker 写文件后自动修复间距/字体/HTML结构/CSS变量/动画性能/语义化。
+
+    M24-M29：auto_fix_design_issues 在 local_worker 文件写入后自动调用，
+    不依赖模型遵守设计约束。
+    """
+    with tempfile.TemporaryDirectory() as d:
+        # worker 生成有各种设计问题的 HTML
+        bad_html = (
+            "```html:index.html\n"
+            "<html><head><style>\n"
+            "body { padding: 13px; margin: 7px; font-size: 16px; }\n"
+            "h1 { font-size: 37px; }\n"
+            ".card { transition: margin 0.3s; }\n"
+            "</style></head><body>\n"
+            "<img src=\"photo.jpg\">\n"
+            "<div class=\"card\">Card</div>\n"
+            "</body></html>\n"
+            "```"
+        )
+        state = {
+            "cwd": d,
+            "current_subtask": "写 landing page",
+            "goal": "写 landing page",
+            "project_rules": "",
+            "feedback": "",
+            "signatures": [],
+            "history": [],
+        }
+        with _mock_stream(bad_html):
+            result = local_worker(state)
+
+        assert result["worker_error"] is False
+        html_path = os.path.join(d, "index.html")
+        assert os.path.exists(html_path)
+        with open(html_path) as f:
+            content = f.read()
+
+        # M24: 间距网格修复
+        assert "13px" not in content, f"间距应被修正: 13px 仍在"
+        assert "7px" not in content, f"间距应被修正: 7px 仍在"
+
+        # M24: 字体比例修复
+        assert "37px" not in content, f"字号应被修正: 37px 仍在"
+
+        # M25: HTML 结构修复
+        assert "viewport" in content.lower(), "应注入 meta viewport"
+        assert 'lang=' in content, "应注入 html lang"
+        assert 'alt=' in content.lower(), "应注入 img alt"
+
+        # M26: 动画性能修复
+        assert "margin 0.3s" not in content, "transition 应移除非 transform/opacity 属性"
+
+        # M27: CSS 变量注入
+        assert "--color-bg" in content, "应注入 CSS 变量系统"
+
+        # M29: 语义化 HTML
+        assert "<main" in content.lower(), "应注入 <main> 标签"
+        assert "<header" in content.lower(), "应注入 <header> 标签"
+        assert "<footer" in content.lower(), "应注入 <footer> 标签"
