@@ -284,7 +284,7 @@ def test_design_score_bad_html_low():
             f.write(bad_html)
         score, notes = design_score(td)
 
-    assert score < 60, f"差HTML应得<60分，实际{score}: {notes}"
+    assert score < 65, f"差HTML应得<65分，实际{score}: {notes}"
 
 
 def test_design_score_empty_dir():
@@ -2166,6 +2166,169 @@ def test_lint_form_label_with_aria_label():
 
     label_violations = [v for v in violations if v["rule"] == "form_label"]
     assert label_violations == []
+
+
+# ---------- M38: aria_label + form_label auto_fix + score 集成 ----------
+
+
+def test_auto_fix_aria_label_injects_for_button():
+    """button 无文本无 aria-label 时应自动注入 aria-label。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_aria_label
+
+    html = """<html><head><style>button:hover{}button:active{}button:focus{}button:disabled{}
+@media(max-width:768px){}</style></head>
+<body><button></button></body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        changed = auto_fix_aria_label(td)
+        with open(os.path.join(td, "index.html")) as f:
+            content = f.read()
+
+    assert changed is True
+    assert "aria-label" in content
+
+
+def test_auto_fix_aria_label_present_no_change():
+    """button 已有 aria-label 或文本时不修改。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_aria_label
+
+    html = """<html><head><style>button:hover{}button:active{}button:focus{}button:disabled{}
+@media(max-width:768px){}</style></head>
+<body><button>Click</button></body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        changed = auto_fix_aria_label(td)
+
+    assert changed is False
+
+
+def test_auto_fix_aria_label_empty_dir():
+    """空目录应返回 False。"""
+    import tempfile
+    from driving.design_context import auto_fix_aria_label
+
+    with tempfile.TemporaryDirectory() as td:
+        changed = auto_fix_aria_label(td)
+
+    assert changed is False
+
+
+def test_auto_fix_form_label_injects_aria_label():
+    """input 无 label 时应自动注入 aria-label。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_form_label
+
+    html = """<html><head><style>input:hover{}input:active{}input:focus{}input:disabled{}
+@media(max-width:768px){}</style></head>
+<body><input type="text" name="email"></body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        changed = auto_fix_form_label(td)
+        with open(os.path.join(td, "index.html")) as f:
+            content = f.read()
+
+    assert changed is True
+    assert "aria-label" in content
+
+
+def test_auto_fix_form_label_present_no_change():
+    """input 已有 label 时不修改。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_form_label
+
+    html = """<html><head><style>input:hover{}input:active{}input:focus{}input:disabled{}
+@media(max-width:768px){}</style></head>
+<body><label for="email">Email</label><input type="text" id="email" name="email"></body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        changed = auto_fix_form_label(td)
+
+    assert changed is False
+
+
+def test_auto_fix_form_label_empty_dir():
+    """空目录应返回 False。"""
+    import tempfile
+    from driving.design_context import auto_fix_form_label
+
+    with tempfile.TemporaryDirectory() as td:
+        changed = auto_fix_form_label(td)
+
+    assert changed is False
+
+
+def test_auto_fix_design_issues_includes_aria_and_form_label():
+    """auto_fix_design_issues 组合函数应包含 aria_label 和 form_label 修复。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_design_issues
+
+    html = """<html><head><style>button:hover{}button:active{}button:focus{}button:disabled{}
+input:hover{}input:active{}input:focus{}input:disabled{}
+@media(max-width:768px){}</style></head>
+<body><button></button><input type="text" name="q"></body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        auto_fix_design_issues(td)
+        with open(os.path.join(td, "index.html")) as f:
+            content = f.read()
+
+    # button 应得到 aria-label
+    assert "aria-label" in content
+
+
+def test_design_score_penalizes_aria_label_missing():
+    """缺少 aria-label 的 HTML 应比有的分数低。"""
+    import tempfile
+    import os
+    from driving.design_context import design_score
+
+    base_html = """<!DOCTYPE html>
+<html lang="zh"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+:root { --color-bg: #0D0D12; --color-text: #F5F5F5; --color-accent: #0A84FF; }
+body { transition: opacity 0.3s ease; }
+:focus-visible { outline: 2px solid var(--color-accent); }
+button:hover{opacity:0.85}button:active{transform:scale(0.98)}button:focus{outline:2px solid blue}button:disabled{opacity:0.5}
+@media (max-width: 768px) { body { font-size: 14px; } }
+</style></head><body>
+<header><nav>Logo</nav></header>
+<main><section><h1>Title</h1><button></button></section></main>
+<footer>Copyright</footer>
+</body></html>"""
+
+    good_html = base_html.replace("<button></button>", '<button>Submit</button>')
+
+    with tempfile.TemporaryDirectory() as td1:
+        with open(os.path.join(td1, "index.html"), "w") as f:
+            f.write(base_html)
+        score_bad, _ = design_score(td1)
+
+    with tempfile.TemporaryDirectory() as td2:
+        with open(os.path.join(td2, "index.html"), "w") as f:
+            f.write(good_html)
+        score_good, _ = design_score(td2)
+
+    assert score_good > score_bad, (
+        f"有aria-label的应比无的分数高: {score_good} vs {score_bad}"
+    )
 
 
 def test_lint_form_label_no_inputs():

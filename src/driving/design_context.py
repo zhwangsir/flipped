@@ -1054,6 +1054,117 @@ def auto_fix_component_states(cwd: str) -> bool:
     return changed
 
 
+def auto_fix_aria_label(cwd: str) -> bool:
+    """M38: 为缺少可访问名称的 button/a 注入 aria-label。
+
+    axe-core 启发：交互元素无文本内容且无 aria-label 时，
+    自动注入 aria-label="button" / aria-label="link"。
+    """
+    import os as _os
+    import re as _re
+
+    changed = False
+    for fname in _os.listdir(cwd):
+        if not fname.endswith(".html"):
+            continue
+        fpath = _os.path.join(cwd, fname)
+        if not _os.path.isfile(fpath):
+            continue
+        try:
+            content = open(fpath, "r", encoding="utf-8").read()
+        except Exception:
+            continue
+
+        new_content = content
+        for tag in ("button", "a"):
+            # 匹配 <button ...>内容</button> 或 <a ...>内容</a>
+            def _inject(m):
+                attrs = m.group(1) or ""
+                inner = m.group(2) or ""
+                if "aria-label" in attrs.lower():
+                    return m.group(0)  # 已有 aria-label
+                text_content = _re.sub(r"<[^>]+>", "", inner).strip()
+                if text_content:
+                    return m.group(0)  # 有文本内容
+                # 注入 aria-label
+                label_val = "button" if tag == "button" else "link"
+                return f"<{tag}{attrs} aria-label=\"{label_val}\">{inner}</{tag}>"
+
+            new_content = _re.sub(
+                rf"<{tag}\b([^>]*)>(.*?)</{tag}>",
+                _inject,
+                new_content,
+                flags=_re.IGNORECASE | _re.DOTALL,
+            )
+
+        if new_content != content:
+            with open(fpath, "w", encoding="utf-8") as f:
+                f.write(new_content)
+            changed = True
+
+    return changed
+
+
+def auto_fix_form_label(cwd: str) -> bool:
+    """M38: 为缺少 label 的 input 注入 aria-label。
+
+    axe-core 启发：input 无关联 label 且无 aria-label 时，
+    自动注入 aria-label（基于 name 属性或通用值）。
+    """
+    import os as _os
+    import re as _re
+
+    changed = False
+    for fname in _os.listdir(cwd):
+        if not fname.endswith(".html"):
+            continue
+        fpath = _os.path.join(cwd, fname)
+        if not _os.path.isfile(fpath):
+            continue
+        try:
+            content = open(fpath, "r", encoding="utf-8").read()
+        except Exception:
+            continue
+
+        # 提取所有 label for 的 id
+        label_for_ids = set(
+            _re.findall(r'<label\b[^>]*for\s*=\s*["\']([^"\']+)["\']', content, _re.IGNORECASE)
+        )
+
+        def _inject_input(m):
+            full_match = m.group(0)
+            attrs = m.group(1) or ""
+            attrs_lower = attrs.lower()
+            # 已有 aria-label
+            if "aria-label" in attrs_lower:
+                return full_match
+            # hidden 类型跳过
+            if 'type="hidden"' in attrs_lower or "type='hidden'" in attrs_lower:
+                return full_match
+            # 有 label for 关联
+            id_match = _re.search(r'\bid\s*=\s*["\']([^"\']+)["\']', attrs, _re.IGNORECASE)
+            if id_match and id_match.group(1) in label_for_ids:
+                return full_match
+            # 注入 aria-label（基于 name 属性）
+            name_match = _re.search(r'\bname\s*=\s*["\']([^"\']+)["\']', attrs, _re.IGNORECASE)
+            label_val = name_match.group(1) if name_match else "input"
+            return f"<input{attrs} aria-label=\"{label_val}\">"
+
+        new_content = _re.sub(
+            r"<input\b([^>]*)>",
+            _inject_input,
+            content,
+            flags=_re.IGNORECASE,
+        )
+
+        if new_content != content:
+            with open(fpath, "w", encoding="utf-8") as f:
+                f.write(new_content)
+            changed = True
+
+    return changed
+
+
 def auto_fix_design_issues(cwd: str) -> bool:
     """组合调用所有 auto-fix 函数，返回是否做过任何修改。"""
     changed1 = auto_fix_spacing_grid(cwd)
@@ -1065,7 +1176,12 @@ def auto_fix_design_issues(cwd: str) -> bool:
     changed7 = auto_fix_focus_visible(cwd)
     changed8 = auto_fix_responsive(cwd)
     changed9 = auto_fix_component_states(cwd)
-    return changed1 or changed2 or changed3 or changed4 or changed5 or changed6 or changed7 or changed8 or changed9
+    changed10 = auto_fix_aria_label(cwd)
+    changed11 = auto_fix_form_label(cwd)
+    return (
+        changed1 or changed2 or changed3 or changed4 or changed5
+        or changed6 or changed7 or changed8 or changed9 or changed10 or changed11
+    )
 
 
 # ---------- M19: 设计质量校验器 ----------
@@ -1363,20 +1479,26 @@ def design_score(cwd: str) -> "tuple[int, list[str]]":
         score += 0
         notes.append("缺少@media响应式断点(-10)")
 
-    # 5. 无障碍 (15分) — M34: 含 :focus 样式检查
+    # 5. 无障碍 (15分) — M34: 含 :focus 样式检查; M38: 含 aria_label + form_label
     a11y_score = 15
     if "img_alt_missing" in error_rules:
-        a11y_score -= 5
-        notes.append("img缺少alt(-5)")
-    if "html_lang" in warning_rules:
-        a11y_score -= 3
-        notes.append("缺少html lang(-3)")
-    if "color_contrast" in error_rules:
         a11y_score -= 4
-        notes.append("颜色对比度不足(-4)")
-    if "focus_visible" in warning_rules:
+        notes.append("img缺少alt(-4)")
+    if "html_lang" in warning_rules:
+        a11y_score -= 2
+        notes.append("缺少html lang(-2)")
+    if "color_contrast" in error_rules:
         a11y_score -= 3
-        notes.append("缺少:focus样式(-3)")
+        notes.append("颜色对比度不足(-3)")
+    if "focus_visible" in warning_rules:
+        a11y_score -= 2
+        notes.append("缺少:focus样式(-2)")
+    if "aria_label" in warning_rules:
+        a11y_score -= 2
+        notes.append("交互元素缺少aria-label(-2)")
+    if "form_label" in warning_rules:
+        a11y_score -= 2
+        notes.append("input缺少label(-2)")
     score += max(0, a11y_score)
 
     # 6. 标题层级 (5分) — M34
