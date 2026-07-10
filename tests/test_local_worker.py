@@ -371,3 +371,156 @@ def test_finish_length_max_continuation_retries():
         assert call_count[0] == 3
         # 回退解析仍能写出部分内容（不 worker_error）
         assert result["worker_error"] is False
+
+
+# ---------- M15.1: post-generation hex auto-fix ----------
+
+def test_extract_hex_map_from_project_rules():
+    """从 project_rules（compact design brief）提取 CSS 变量→hex 映射。"""
+    from driving.orchestrator import _extract_hex_map
+    project_rules = (
+        "任务 task_1。已完成：无\n"
+        "反馈：无\n"
+        "【强制】必须用这些精确 hex 值，禁止替换: "
+        "--color-accent: #0A84FF; --color-bg: #0D0D12; --color-text: #F5F5F5; "
+        "字体 Inter; 用 CSS variables; 含 hover/focus 状态; "
+    )
+    hex_map = _extract_hex_map(project_rules)
+    assert hex_map["--color-accent"] == "#0A84FF"
+    assert hex_map["--color-bg"] == "#0D0D12"
+    assert hex_map["--color-text"] == "#F5F5F5"
+
+
+def test_extract_hex_map_empty_when_no_design_brief():
+    """project_rules 中无设计约束 → 空映射。"""
+    from driving.orchestrator import _extract_hex_map
+    hex_map = _extract_hex_map("任务 task_1。已完成：无\n反馈：无")
+    assert hex_map == {}
+
+
+def test_auto_fix_hex_replaces_wrong_values():
+    """worker 用了错误 hex 值 → 写文件后自动替换为正确值。"""
+    with tempfile.TemporaryDirectory() as d:
+        # worker 生成的 HTML（用了错误 hex：#0b0f19 而非 #0D0D12）
+        wrong_html = (
+            "```html:index.html\n"
+            "<!DOCTYPE html>\n<html><head><style>\n"
+            ":root {\n"
+            "  --color-accent: #0a84ff;\n"
+            "  --color-bg: #0b0f19;\n"
+            "  --color-text: #f8fafc;\n"
+            "}\n"
+            "</style></head><body><h1>test</h1></body></html>\n"
+            "```"
+        )
+        project_rules = (
+            "【强制】必须用这些精确 hex 值，禁止替换: "
+            "--color-accent: #0A84FF; --color-bg: #0D0D12; --color-text: #F5F5F5; "
+            "字体 Inter; 用 CSS variables;"
+        )
+        with _mock_stream(wrong_html):
+            result = local_worker(_make_state(d, subtask="test", feedback=""))
+        # 覆盖 project_rules（_make_state 默认用 #0A84FF，需要完整 compact brief）
+        # 实际上 local_worker 从 state["project_rules"] 读取，_make_state 设了 "暗黑模式，主色 #0A84FF"
+        # 所以这里直接测试 _auto_fix_hex_in_dir
+
+    # 直接测试 _auto_fix_hex_in_dir
+    from driving.orchestrator import _auto_fix_hex_in_dir
+    with tempfile.TemporaryDirectory() as d2:
+        html_path = os.path.join(d2, "index.html")
+        with open(html_path, "w") as f:
+            f.write(
+                "<!DOCTYPE html>\n<html><head><style>\n"
+                ":root {\n"
+                "  --color-accent: #0a84ff;\n"
+                "  --color-bg: #0b0f19;\n"
+                "  --color-text: #f8fafc;\n"
+                "}\n"
+                "</style></head><body></body></html>"
+            )
+        hex_map = {"--color-accent": "#0A84FF", "--color-bg": "#0D0D12", "--color-text": "#F5F5F5"}
+        fixed = _auto_fix_hex_in_dir(d2, hex_map)
+        assert fixed is True
+        with open(html_path) as f:
+            content = f.read()
+            assert "#0D0D12" in content
+            assert "#F5F5F5" in content
+            assert "#0b0f19" not in content
+            assert "#f8fafc" not in content
+
+
+def test_auto_fix_hex_skips_correct_values():
+    """hex 值已经正确 → 不替换。"""
+    from driving.orchestrator import _auto_fix_hex_in_dir
+    with tempfile.TemporaryDirectory() as d:
+        html_path = os.path.join(d, "index.html")
+        with open(html_path, "w") as f:
+            f.write(
+                ":root {\n"
+                "  --color-accent: #0A84FF;\n"
+                "  --color-bg: #0D0D12;\n"
+                "  --color-text: #F5F5F5;\n"
+                "}"
+            )
+        hex_map = {"--color-accent": "#0A84FF", "--color-bg": "#0D0D12", "--color-text": "#F5F5F5"}
+        fixed = _auto_fix_hex_in_dir(d, hex_map)
+        assert fixed is False  # 没有需要修正的
+
+
+def test_auto_fix_hex_skips_non_html_files():
+    """非 HTML/CSS 文件不修正。"""
+    from driving.orchestrator import _auto_fix_hex_in_dir
+    with tempfile.TemporaryDirectory() as d:
+        with open(os.path.join(d, "app.js"), "w") as f:
+            f.write("const color = '#0b0f19'; // 不应该被修正")
+        hex_map = {"--color-bg": "#0D0D12"}
+        fixed = _auto_fix_hex_in_dir(d, hex_map)
+        assert fixed is False
+
+
+def test_auto_fix_hex_integration_with_local_worker():
+    """集成：local_worker 写文件后自动修正 hex 值。
+
+    E2E 暴露：worker(Kimi) 把 #0D0D12 替换成 #0b0f19，#F5F5F5 替换成 #f8fafc。
+    compact brief 已说"禁止替换"但模型不遵守。
+    修复：local_worker 写文件后自动扫描 CSS 变量定义，替换为正确 hex 值。
+    """
+    with tempfile.TemporaryDirectory() as d:
+        # worker 生成错误 hex 值的 HTML
+        wrong_html = (
+            "```html:index.html\n"
+            "<!DOCTYPE html>\n<html><head><style>\n"
+            ":root {\n"
+            "  --color-accent: #0a84ff;\n"
+            "  --color-bg: #0b0f19;\n"
+            "  --color-text: #f8fafc;\n"
+            "}\n"
+            "</style></head><body><h1>test</h1></body></html>\n"
+            "```"
+        )
+        state = {
+            "cwd": d,
+            "current_subtask": "写 landing page",
+            "goal": "写 landing page",
+            "project_rules": (
+                "【强制】必须用这些精确 hex 值，禁止替换: "
+                "--color-accent: #0A84FF; --color-bg: #0D0D12; --color-text: #F5F5F5; "
+                "字体 Inter; 用 CSS variables;"
+            ),
+            "feedback": "",
+            "signatures": [],
+            "history": [],
+        }
+        with _mock_stream(wrong_html):
+            result = local_worker(state)
+
+        assert result["worker_error"] is False
+        html_path = os.path.join(d, "index.html")
+        assert os.path.exists(html_path)
+        with open(html_path) as f:
+            content = f.read()
+            # 错误的 hex 值应被自动修正
+            assert "#0D0D12" in content
+            assert "#F5F5F5" in content
+            assert "#0b0f19" not in content
+            assert "#f8fafc" not in content

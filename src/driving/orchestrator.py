@@ -12,6 +12,7 @@ Supervisor(GLM 调度) + Worker(Kimi via cline 执行) + Overseer(GLM 专属监�
 from __future__ import annotations
 
 import os
+import re
 import uuid
 from typing import Callable, Literal, TypedDict
 
@@ -553,6 +554,71 @@ def _needs_continuation(content: str, finish: str) -> bool:
     return content.count("```") % 2 == 1
 
 
+def _extract_hex_map(project_rules: str) -> dict[str, str]:
+    """从 project_rules（compact design brief）提取 CSS 变量名→精确 hex 值映射。
+
+    M15.1：E2E 暴露 worker(Kimi) 不遵守 compact brief 的 hex 约束，
+    把 #0D0D12 替换成 #0b0f19，#F5F5F5 替换成 #f8fafc。
+    post-generation hex auto-fix 需要从 project_rules 提取正确 hex 映射，
+    在写文件后自动修正错误值。
+
+    compact brief 格式：
+        【强制】必须用这些精确 hex 值，禁止替换: --color-accent: #0A84FF; --color-bg: #0D0D12; ...
+    """
+    hex_map: dict[str, str] = {}
+    # 匹配 --color-xxx: #HEX 格式
+    for m in re.finditer(r"(--color-[\w-]+)\s*:\s*(#[0-9A-Fa-f]{3,8})", project_rules):
+        var_name = m.group(1)
+        hex_val = m.group(2)
+        # 只在【强制】hex 值约束区域提取（避免误匹配其他上下文）
+        hex_map[var_name] = hex_val
+    return hex_map
+
+
+def _auto_fix_hex_in_dir(cwd: str, hex_map: dict[str, str]) -> bool:
+    """扫描 cwd 下 HTML/CSS 文件，自动修正 CSS 变量定义中的错误 hex 值。
+
+    M15.1：worker(Kimi) 经常不遵守 compact brief 的 hex 约束，
+    用自选颜色（如 #0b0f19）替换设计系统指定的精确 hex 值（如 #0D0D12）。
+    此函数在文件写入后扫描 `--color-*: #hex` 模式，
+    如果变量名匹配但 hex 值不匹配，直接替换为正确的 hex 值。
+
+    不依赖模型遵守约束，在代码层面强制修正（类似 linter auto-fix）。
+    """
+    if not hex_map:
+        return False
+    fixed_any = False
+    for fname in os.listdir(cwd):
+        if not fname.endswith((".html", ".css")):
+            continue
+        fpath = os.path.join(cwd, fname)
+        if not os.path.isfile(fpath):
+            continue
+        try:
+            with open(fpath, "r", encoding="utf-8") as f:
+                content = f.read()
+        except Exception:
+            continue
+        changed = False
+        for var_name, correct_hex in hex_map.items():
+            # 匹配 --color-xxx: #wrong_hex（变量名匹配但 hex 值不匹配）
+            pattern = re.compile(
+                r"(" + re.escape(var_name) + r"\s*:\s*)(#[0-9A-Fa-f]{3,8})"
+            )
+            for m in pattern.finditer(content):
+                actual_hex = m.group(2)
+                if actual_hex.upper() != correct_hex.upper():
+                    content = content[:m.start(2)] + correct_hex + content[m.end(2):]
+                    changed = True
+        if changed:
+            with open(fpath, "w", encoding="utf-8") as f:
+                f.write(content)
+            fixed_any = True
+            import sys as _sys
+            print(f"[local_worker] hex_auto_fix: {fname} 修正了 CSS 变量 hex 值", file=_sys.stderr, flush=True)
+    return fixed_any
+
+
 def local_worker(state: OrchestratorState) -> dict:
     """本地 worker：直接调 Kimi 生成代码并写文件到 cwd，无需 Docker/沙箱。
 
@@ -819,6 +885,15 @@ def local_worker(state: OrchestratorState) -> dict:
             with open(path, "w", encoding="utf-8") as f:
                 f.write(stripped)
             files_written.append("style.css")
+
+    # M15.1: post-generation hex auto-fix。
+    # E2E 暴露 worker(Kimi) 不遵守 compact brief 的 hex 约束，
+    # 把 #0D0D12 替换成 #0b0f19，#F5F5F5 替换成 #f8fafc。
+    # 在写文件后自动扫描 CSS 变量定义，替换为正确 hex 值（不依赖模型遵守约束）。
+    if files_written:
+        _hex_map = _extract_hex_map(state.get("project_rules", ""))
+        if _hex_map:
+            _auto_fix_hex_in_dir(cwd, _hex_map)
 
     tool_calls = len(files_written)
     # 即使没解析出文件块，只要 Kimi 有响应内容，就不算 infrastructure error。

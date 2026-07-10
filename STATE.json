@@ -2,7 +2,7 @@
   "project": "flipped",
   "description": "接入本地 MLX 双模型(GLM-5.2 编排者 / Kimi-K2.7-Code 执行者)的 agentic 代码编辑器平台。fork Roo Code + 自定义驾驭层(强制验证/循环检测/上下文压缩/人工审批/子Agent/可观测性) + MCP 联网与外部能力。",
   "updated": "2026-07-10",
-  "current_milestone": "M14.4 finish=length 输出截断自动续生成 (434 passed)",
+  "current_milestone": "M15.1 post-generation hex auto-fix (440 passed)",
   "key_facts": {
     "dev_host": "Apple M5 Max, 128GB RAM, 1.1TB 可用磁盘 — 开发/控制节点，非模型宿主",
     "model_cluster": "exo 集群 @ http://100.64.201.37:52415 (内网, OpenAI 兼容)；公网 https://dgmt.top/exo (需 Bearer token)",
@@ -306,7 +306,19 @@
         "M14.4": {
           "title": "finish=length 输出截断自动续生成（continuation 机制）",
           "status": "done",
-          "note": "E2E 暴露 worker(Kimi) 生成 HTML 到 max_tokens(4096) 上限被截断(finish=length)，代码块没有闭合的 ```，导致文件不完整 → verify 失败 → task 失败 3 次 → circuit_breaker。修复：(1) 新增 _needs_continuation() 纯函数检测 finish=length 且 ``` 数量为奇数(未闭合)；(2) 在 local_worker overflow_retry 之后、文件解析之前加 continuation while 循环，把已生成 content 末尾 1500 字符作为上下文续生成，max 2 次(FLIPPED_MAX_CONTINUATIONS 可配)；(3) overflow_retry 条件增加 not _needs_continuation 避免在有未闭合代码块时误替换 content 丢失文件块开头。7 新测试全过(5 纯函数+2 集成)。全量 434 passed。"
+          "note": "E2E 暴露 worker(Kimi) 生成 HTML 到 max_tokens(4096) 上限被截断(finish=length)，代码块没有闭合的 ```，导致文件不完整 → verify 失败 → task 失败 3 次 → circuit_breaker。修复：(1) 新增 _needs_continuation() 纯函数检测 finish=length 且 ``` 数量为奇数(未闭合)；(2) 在 local_worker overflow_retry 之后、文件解析之前加 continuation while 循环，把已生成 content 末尾 1500 字符作为上下文续生成，max 2 次(FLIPPED_MAX_CONTINUATIONS 可配)；(3) overflow_retry 条件增加 not _needs_continuation 避免在有未闭合代码块时误替换 content 丢失文件块开头。7 新测试全过(5 纯函数+2 集成)。全量 434 passed。E2E 验证：continuation 多次成功触发(3+次)，E2E 从只跑1轮卡死→跑完2轮。"
+        }
+      }
+    },
+    "M15": {
+      "title": "post-generation hex auto-fix（worker 不遵守设计约束的工程化兜底）",
+      "status": "done",
+      "note": "E2E 暴露 worker(Kimi) 不遵守 compact brief 的 hex 约束，把 #0D0D12 替换成 #0b0f19，#F5F5F5 替换成 #f8fafc。compact brief 已说'禁止替换'但模型不遵守。工程化修复(AGENTS.md §6 遇错即工程化)：(1) _extract_hex_map() 从 project_rules(compact brief)提取 CSS 变量名→精确 hex 值映射；(2) _auto_fix_hex_in_dir() 在 local_worker 写文件后扫描 HTML/CSS 文件的 --color-*: #hex 定义，变量名匹配但 hex 值不匹配时直接替换为正确值（类似 linter auto-fix，不依赖模型遵守约束）；(3) 在 local_worker 文件写入后自动调用。6 新测试全过(2 纯函数+4 集成)。全量 440 passed。",
+      "tasks": {
+        "M15.1": {
+          "title": "post-generation hex auto-fix（_extract_hex_map + _auto_fix_hex_in_dir）",
+          "status": "done",
+          "note": "新增 _extract_hex_map(project_rules) 提取 --color-*: #HEX 映射；_auto_fix_hex_in_dir(cwd, hex_map) 扫描 HTML/CSS 文件自动修正错误 hex 值。local_worker 写文件后自动调用。6 新测试全过。"
         }
       }
     }

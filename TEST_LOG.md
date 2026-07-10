@@ -1005,3 +1005,49 @@
 - continuation 机制正确：finish=length 截断时自动续生成，拼接成完整文件
 - overflow_retry 与 continuation 分工明确：overflow 处理 reasoning 占满(content极短无```)，continuation 处理正常截断(有未闭合```)
 - 无回归（434 passed，唯一失败为外部 SearXNG 404）
+
+## [2026-07-10] M15.1 post-generation hex auto-fix
+
+### 测试命令
+```bash
+.venv/bin/python -m pytest tests/test_local_worker.py -x -q
+.venv/bin/python -m pytest -q
+```
+
+### 输出摘要
+**tests/test_local_worker.py**（M15.1 新增 6 测试）:
+```
+25 passed, 1 warning in 2.98s
+```
+新增测试:
+- test_extract_hex_map_from_project_rules ✓
+- test_extract_hex_map_empty_when_no_design_brief ✓
+- test_auto_fix_hex_replaces_wrong_values ✓
+- test_auto_fix_hex_skips_correct_values ✓
+- test_auto_fix_hex_skips_non_html_files ✓
+- test_auto_fix_hex_integration_with_local_worker ✓
+
+**全量回归**:
+```
+1 failed, 440 passed, 2 warnings in 30.04s
+```
+- 440 passed（M14.4 时 434 → +6 新测试）
+- 1 failed = test_web_search.py::test_returns_results（SearXNG 404，外部服务）
+
+### E2E 验证（M14.4 continuation 机制）
+```
+[local_worker] finish=length content_len=6731 time=154.2s
+[local_worker] continuation content_len=8312 finish=stop continues_left=1
+...
+[local_worker] finish=length content_len=4509 time=156.6s
+[local_worker] continuation content_len=4512 finish=length continues_left=1
+[local_worker] continuation content_len=7706 finish=stop continues_left=0
+```
+- continuation 多次成功触发（3+次）
+- E2E 从 M14.4 修复前只跑1轮就 circuit_breaker → 修复后跑完2轮
+- 第2轮 index.html 缺少 #0D0D12/#F5F5F5（worker 用了 #0b0f19/#f8fafc 替换）→ M15.1 修复
+
+### 结论
+- continuation 机制正确：finish=length 截断自动续生成
+- hex auto-fix 机制正确：worker 不遵守 hex 约束时自动修正
+- 无回归（440 passed，唯一失败为外部 SearXNG 404）
