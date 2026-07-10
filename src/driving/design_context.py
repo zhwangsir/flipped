@@ -380,6 +380,103 @@ def check_color_contrast(cwd: str) -> list[dict]:
     return violations
 
 
+# ---------- M23: 间距网格 + 字体比例校验 ----------
+
+
+# 8px 网格允许的间距值（含半步 4px）
+_GRID_VALUES = {0, 2, 4, 8, 12, 16, 20, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160, 192, 224, 256, 320, 384, 480, 640}
+
+
+def check_spacing_grid(cwd: str) -> list[dict]:
+    """检查 CSS 间距值是否遵循 8px 网格系统。
+
+    检查 padding/margin/gap 的 px 值是否在允许的网格值集合中。
+    非网格值报 warning（不阻断，但提示设计不一致）。
+    """
+    import os as _os
+    import re as _re
+
+    violations: list[dict] = []
+
+    for fname in _os.listdir(cwd) if _os.path.exists(cwd) else []:
+        if not fname.endswith(".html"):
+            continue
+        fpath = _os.path.join(cwd, fname)
+        if not _os.path.isfile(fpath):
+            continue
+        try:
+            content = open(fpath, "r", encoding="utf-8").read()
+        except Exception:
+            continue
+
+        # 匹配 padding/margin/gap: Npx
+        spacing_matches = _re.finditer(
+            r"(padding|margin|gap)[\w-]*\s*:\s*(\d+)px",
+            content, _re.IGNORECASE,
+        )
+        seen_values: set[int] = set()
+        for m in spacing_matches:
+            val = int(m.group(2))
+            if val not in _GRID_VALUES and val not in seen_values:
+                seen_values.add(val)
+                violations.append({
+                    "rule": "spacing_grid",
+                    "severity": "warning",
+                    "file": fname,
+                    "message": f"{m.group(1)}: {val}px 不在 8px 网格系统中（建议用 4/8/12/16/24/32/48/64...）",
+                })
+
+    return violations
+
+
+# 模块化字体比例——Major Third (1.250) 常见值
+# 基准 16px: 12, 15, 16, 20, 24, 30, 38, 48, 60, 75
+# 允许 ±1px 容差
+_TYPE_SCALE = {12, 13, 14, 15, 16, 17, 18, 20, 24, 30, 32, 36, 38, 40, 48, 56, 60, 64, 72, 75, 80, 96}
+
+
+def check_typography_scale(cwd: str) -> list[dict]:
+    """检查 CSS font-size 是否遵循模块化比例。
+
+    常见模块化比例（Major Third 1.250, Perfect Fourth 1.333 等）的
+    标准字号集合。非标准字号报 warning。
+    """
+    import os as _os
+    import re as _re
+
+    violations: list[dict] = []
+
+    for fname in _os.listdir(cwd) if _os.path.exists(cwd) else []:
+        if not fname.endswith(".html"):
+            continue
+        fpath = _os.path.join(cwd, fname)
+        if not _os.path.isfile(fpath):
+            continue
+        try:
+            content = open(fpath, "r", encoding="utf-8").read()
+        except Exception:
+            continue
+
+        # 匹配 font-size: Npx
+        font_matches = _re.finditer(
+            r"font-size\s*:\s*(\d+)px",
+            content, _re.IGNORECASE,
+        )
+        seen_values: set[int] = set()
+        for m in font_matches:
+            val = int(m.group(1))
+            if val not in _TYPE_SCALE and val not in seen_values:
+                seen_values.add(val)
+                violations.append({
+                    "rule": "typography_scale",
+                    "severity": "warning",
+                    "file": fname,
+                    "message": f"font-size: {val}px 不在标准模块化比例中（建议用 12/14/16/18/20/24/30/38/48/60...）",
+                })
+
+    return violations
+
+
 # ---------- M19: 设计质量校验器 ----------
 
 def lint_design_quality(cwd: str) -> list[dict]:
@@ -488,6 +585,13 @@ def lint_design_quality(cwd: str) -> list[dict]:
     # 7. M22: WCAG 颜色对比度
     try:
         violations.extend(check_color_contrast(cwd))
+    except Exception:
+        pass
+
+    # 8. M23: 间距网格 + 字体比例
+    try:
+        violations.extend(check_spacing_grid(cwd))
+        violations.extend(check_typography_scale(cwd))
     except Exception:
         pass
 

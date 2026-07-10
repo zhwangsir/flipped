@@ -2,7 +2,7 @@
   "project": "flipped",
   "description": "接入本地 MLX 双模型(GLM-5.2 编排者 / Kimi-K2.7-Code 执行者)的 agentic 代码编辑器平台。fork Roo Code + 自定义驾驭层(强制验证/循环检测/上下文压缩/人工审批/子Agent/可观测性) + MCP 联网与外部能力。",
   "updated": "2026-07-10",
-  "current_milestone": "M22 WCAG 颜色对比度校验 + lint/score 集成 (477 passed, 设计质量系统确定性 a11y 增强)",
+  "current_milestone": "M23 间距网格 + 字体比例校验 (486 passed, 设计质量系统 9 项确定性检查)",
   "key_facts": {
     "dev_host": "Apple M5 Max, 128GB RAM, 1.1TB 可用磁盘 — 开发/控制节点，非模型宿主",
     "model_cluster": "exo 集群 @ http://100.64.201.37:52415 (内网, OpenAI 兼容)；公网 https://dgmt.top/exo (需 Bearer token)",
@@ -408,6 +408,18 @@
           "title": "WCAG 颜色对比度校验器 + lint/score 集成",
           "status": "done",
           "note": "hex_to_rgb + relative_luminance + contrast_ratio + check_color_contrast + lint/score 集成。11 TDD 测试。477 passed。"
+        }
+      }
+    },
+    "M23": {
+      "title": "间距网格 + 字体比例校验",
+      "status": "done",
+      "note": "新增 check_spacing_grid（8px 网格系统校验：padding/margin/gap 值须在网格值集合中，含半步 4px）和 check_typography_scale（模块化字体比例校验：font-size 须在标准字号集合中，Major Third 1.250 比例）。集成到 lint_design_quality 第8项检查。9 TDD 测试全过。全量 486 passed。设计质量系统现在有 9 项确定性检查：语义化HTML、meta viewport、CSS变量、img alt、动画性能、html lang、颜色对比度、间距网格、字体比例。",
+      "tasks": {
+        "M23.1": {
+          "title": "check_spacing_grid + check_typography_scale + lint 集成",
+          "status": "done",
+          "note": "8px网格校验 + 模块化字体比例校验 + lint 集成。9 TDD 测试。486 passed。"
         }
       }
     }

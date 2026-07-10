@@ -438,3 +438,183 @@ def test_design_score_includes_contrast():
 
     # 低对比度应影响分数（notes 应提及对比度问题）
     assert any("对比" in n or "contrast" in n.lower() for n in notes), f"应提及对比度问题: {notes}"
+
+
+# ---------- M23: 间距网格 + 字体比例校验 ----------
+
+
+def test_check_spacing_grid_good():
+    """遵循 8px 网格的间距应无违规。"""
+    import tempfile
+    import os
+    from driving.design_context import check_spacing_grid
+
+    good_html = """<html lang="zh"><head>
+<meta name="viewport" content="width=device-width">
+<style>
+body { padding: 16px; margin: 0; }
+.card { padding: 24px; margin-bottom: 32px; gap: 8px; }
+</style></head><body><p>OK</p></body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(good_html)
+        violations = check_spacing_grid(td)
+
+    spacing_violations = [v for v in violations if v["rule"] == "spacing_grid"]
+    assert spacing_violations == [], f"8px网格间距不应有违规: {spacing_violations}"
+
+
+def test_check_spacing_grid_bad():
+    """非 8px 网格的间距应报 warning。"""
+    import tempfile
+    import os
+    from driving.design_context import check_spacing_grid
+
+    bad_html = """<html lang="zh"><head>
+<meta name="viewport" content="width=device-width">
+<style>
+body { padding: 13px; margin: 7px; }
+.card { padding: 25px; gap: 10px; }
+</style></head><body><p>Bad spacing</p></body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(bad_html)
+        violations = check_spacing_grid(td)
+
+    spacing_violations = [v for v in violations if v["rule"] == "spacing_grid"]
+    assert len(spacing_violations) >= 1
+    assert spacing_violations[0]["severity"] == "warning"
+
+
+def test_check_spacing_grid_allows_4px():
+    """4px 是 8px 网格的半步，应允许。"""
+    import tempfile
+    import os
+    from driving.design_context import check_spacing_grid
+
+    html_4px = """<html lang="zh"><head>
+<meta name="viewport" content="width=device-width">
+<style>body { padding: 4px; margin: 12px; }</style>
+</head><body><p>4px ok</p></body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html_4px)
+        violations = check_spacing_grid(td)
+
+    spacing_violations = [v for v in violations if v["rule"] == "spacing_grid"]
+    assert spacing_violations == [], f"4px应允许: {spacing_violations}"
+
+
+def test_check_spacing_grid_empty_dir():
+    """空目录应返回空列表。"""
+    import tempfile
+    from driving.design_context import check_spacing_grid
+
+    with tempfile.TemporaryDirectory() as td:
+        violations = check_spacing_grid(td)
+    assert violations == []
+
+
+def test_check_typography_scale_good():
+    """遵循模块化字体比例的 HTML 应无违规。"""
+    import tempfile
+    import os
+    from driving.design_context import check_typography_scale
+
+    good_html = """<html lang="zh"><head>
+<meta name="viewport" content="width=device-width">
+<style>
+body { font-size: 16px; }
+h1 { font-size: 48px; }
+h2 { font-size: 32px; }
+h3 { font-size: 24px; }
+small { font-size: 12px; }
+</style></head><body><h1>T</h1><p>Body</p></body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(good_html)
+        violations = check_typography_scale(td)
+
+    typo_violations = [v for v in violations if v["rule"] == "typography_scale"]
+    assert typo_violations == [], f"良好字体比例不应有违规: {typo_violations}"
+
+
+def test_check_typography_scale_bad():
+    """随机字体大小应报 warning。"""
+    import tempfile
+    import os
+    from driving.design_context import check_typography_scale
+
+    bad_html = """<html lang="zh"><head>
+<meta name="viewport" content="width=device-width">
+<style>
+body { font-size: 16px; }
+h1 { font-size: 37px; }
+h2 { font-size: 23px; }
+p { font-size: 14px; }
+</style></head><body><h1>T</h1></body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(bad_html)
+        violations = check_typography_scale(td)
+
+    typo_violations = [v for v in violations if v["rule"] == "typography_scale"]
+    assert len(typo_violations) >= 1
+    assert typo_violations[0]["severity"] == "warning"
+
+
+def test_check_typography_scale_empty_dir():
+    """空目录应返回空列表。"""
+    import tempfile
+    from driving.design_context import check_typography_scale
+
+    with tempfile.TemporaryDirectory() as td:
+        violations = check_typography_scale(td)
+    assert violations == []
+
+
+def test_lint_design_quality_includes_spacing():
+    """lint_design_quality 应包含间距网格检查。"""
+    import tempfile
+    import os
+    from driving.design_context import lint_design_quality
+
+    bad_spacing_html = """<html lang="zh"><head>
+<meta name="viewport" content="width=device-width">
+<style>body { padding: 13px; }</style>
+</head><body><header>H</header><main><section>S</section></main><footer>F</footer>
+</body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(bad_spacing_html)
+        violations = lint_design_quality(td)
+
+    spacing_violations = [v for v in violations if v["rule"] == "spacing_grid"]
+    assert len(spacing_violations) >= 1
+
+
+def test_lint_design_quality_includes_typography():
+    """lint_design_quality 应包含字体比例检查。"""
+    import tempfile
+    import os
+    from driving.design_context import lint_design_quality
+
+    bad_typo_html = """<html lang="zh"><head>
+<meta name="viewport" content="width=device-width">
+<style>h1 { font-size: 37px; }</style>
+</head><body><header>H</header><main><section><h1>T</h1></section></main><footer>F</footer>
+</body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(bad_typo_html)
+        violations = lint_design_quality(td)
+
+    typo_violations = [v for v in violations if v["rule"] == "typography_scale"]
+    assert len(typo_violations) >= 1
