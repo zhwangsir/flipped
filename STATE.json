@@ -2,7 +2,7 @@
   "project": "flipped",
   "description": "接入本地 MLX 双模型(GLM-5.2 编排者 / Kimi-K2.7-Code 执行者)的 agentic 代码编辑器平台。fork Roo Code + 自定义驾驭层(强制验证/循环检测/上下文压缩/人工审批/子Agent/可观测性) + MCP 联网与外部能力。",
   "updated": "2026-07-10",
-  "current_milestone": "M27 CSS 变量注入 auto-fix (510 passed, 缺少 --color-* 时注入默认变量系统)",
+  "current_milestone": "M28 auto-fix 有效性验证 (513 passed, auto-fix 前后 score 对比+幂等性+error消除)",
   "key_facts": {
     "dev_host": "Apple M5 Max, 128GB RAM, 1.1TB 可用磁盘 — 开发/控制节点，非模型宿主",
     "model_cluster": "exo 集群 @ http://100.64.201.37:52415 (内网, OpenAI 兼容)；公网 https://dgmt.top/exo (需 Bearer token)",
@@ -468,6 +468,18 @@
           "title": "auto_fix_css_variables + auto_fix_design_issues 更新",
           "status": "done",
           "note": "CSS 变量注入 + 组合函数更新。5 TDD 测试。510 passed。"
+        }
+      }
+    },
+    "M28": {
+      "title": "auto-fix 有效性验证（auto-fix 前后 design_score 对比）",
+      "status": "done",
+      "note": "端到端验证 auto-fix 系统效果。3 个验证测试：(1) test_auto_fix_improves_design_score — 极差 HTML auto-fix 后 design_score 显著提升且≥60分；(2) test_auto_fix_idempotent — 已合规 HTML 两次 auto-fix 内容完全一致（幂等性）；(3) test_auto_fix_eliminates_all_error_violations — auto-fix 后 lint_design_quality 无 error 级违规。无需新实现，纯验证测试。全量 513 passed。设计质量 auto-fix 系统端到端验证通过：8 个维度的 auto-fix 能显著提升 design_score 且消除所有 error 违规，对已合规 HTML 幂等不破坏。",
+      "tasks": {
+        "M28.1": {
+          "title": "auto-fix 前后 score 对比 + 幂等性 + error 消除",
+          "status": "done",
+          "note": "3 个端到端验证测试。513 passed。"
         }
       }
     }

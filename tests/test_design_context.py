@@ -1131,3 +1131,108 @@ body { padding: 13px; }
     assert fixed is True
     assert "--color-bg" in content
     assert "13px" not in content
+
+
+# ---------- M28: auto-fix 有效性验证（auto-fix 前后 design_score 对比） ----------
+
+
+def test_auto_fix_improves_design_score():
+    """auto_fix_design_issues 应显著提升 design_score。"""
+    import tempfile
+    import os
+    from driving.design_context import design_score, auto_fix_design_issues
+
+    # 极差 HTML：缺 viewport/lang/CSS变量/img alt/动画性能差/间距差
+    bad_html = """<html><head><style>
+body { padding: 13px; margin: 7px; font-size: 16px; }
+h1 { font-size: 37px; }
+.card { transition: margin 0.3s, width 0.5s; }
+:root { --gap: 16px; }
+</style></head><body>
+<img src="photo.jpg" width="100">
+<div class="card">Card</div>
+</body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(bad_html)
+        score_before, notes_before = design_score(td)
+
+        auto_fix_design_issues(td)
+
+        score_after, notes_after = design_score(td)
+
+    # auto-fix 后分数应显著提升
+    assert score_after > score_before, (
+        f"auto-fix 后分数应提升：before={score_before}, after={score_after}"
+    )
+    # auto-fix 后应至少达到 60 分
+    assert score_after >= 60, f"auto-fix 后应≥60分：{score_after}, notes={notes_after}"
+
+
+def test_auto_fix_idempotent():
+    """对已修复的 HTML 再次 auto-fix 不应改变（幂等性）。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_design_issues
+
+    good_html = """<!DOCTYPE html>
+<html lang="zh"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+:root { --color-bg: #0D0D12; --color-text: #F5F5F5; --color-accent: #0A84FF; }
+body { padding: 16px; margin: 0; font-size: 16px; transition: opacity 0.3s ease; }
+h1 { font-size: 48px; }
+</style></head><body>
+<header><nav>Logo</nav></header>
+<main><section><h1>Title</h1></section></main>
+<footer>Copyright</footer>
+<img src="logo.png" alt="Logo">
+</body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(good_html)
+        fixed1 = auto_fix_design_issues(td)
+        with open(os.path.join(td, "index.html"), "r") as f:
+            content_after_first = f.read()
+        fixed2 = auto_fix_design_issues(td)
+        with open(os.path.join(td, "index.html"), "r") as f:
+            content_after_second = f.read()
+
+    # 第一次不应改变（已合规）
+    assert fixed1 is False
+    # 第二次也不应改变
+    assert fixed2 is False
+    # 内容应完全一致
+    assert content_after_first == content_after_second
+
+
+def test_auto_fix_eliminates_all_error_violations():
+    """auto-fix 后 lint_design_quality 不应有 error 级违规。"""
+    import tempfile
+    import os
+    from driving.design_context import lint_design_quality, auto_fix_design_issues
+
+    bad_html = """<html><head><style>
+body { padding: 16px; font-size: 16px; }
+</style></head><body>
+<img src="x.jpg">
+</body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(bad_html)
+
+        violations_before = lint_design_quality(td)
+        errors_before = [v for v in violations_before if v["severity"] == "error"]
+
+        auto_fix_design_issues(td)
+
+        violations_after = lint_design_quality(td)
+        errors_after = [v for v in violations_after if v["severity"] == "error"]
+
+    # auto-fix 前应有 error 违规
+    assert len(errors_before) > 0
+    # auto-fix 后不应有 error 级违规（viewport + img alt 都被修复）
+    assert errors_after == [], f"auto-fix 后不应有 error 违规: {errors_after}"
