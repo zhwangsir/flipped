@@ -19,6 +19,7 @@ from driving.design_lint import (
     make_design_verifier,
     combined_verifier,
     _normalize_hex,
+    _critical_hexes,
 )
 
 
@@ -59,13 +60,15 @@ def test_named_colors_triggers_warning():
         _write(Path(d), "index.html", """
             <html><body style="color:blue;background:#0D0D12">
             <style>
+              body { color: #F5F5F5; }
+              .btn { background: #0A84FF; }
               .btn:hover { color: red; }
               @media (max-width: 768px) { body {} }
             </style>
             </body></html>
         """)
         r = lint_dir(d, "dark")
-        # 命名色是 warning 级，passed 仍 True（找到 #0D0D12 满足必含颜色）
+        # 命名色是 warning 级，passed 仍 True（找到全部关键 hex 满足强制规则）
         assert r.passed
         warnings = [v for v in r.violations if v.rule == "no_named_colors"]
         assert len(warnings) >= 1
@@ -84,7 +87,7 @@ def test_missing_responsive_triggers_warning():
     """无 @media 和 Tailwind 断点 → warning。"""
     with tempfile.TemporaryDirectory() as d:
         _write(Path(d), "index.html", """
-            <html><body style="background:#0D0D12">
+            <html><body style="background:#0D0D12;color:#F5F5F5">
               <button style="background:#0A84FF" class="hover:bg-blue-500">OK</button>
             </body></html>
         """)
@@ -162,7 +165,7 @@ def test_make_design_verifier():
     """make_design_verifier 返回的回调符合 verifier 接口。"""
     with tempfile.TemporaryDirectory() as d:
         _write(Path(d), "index.html", """
-            <html><body style="background:#0D0D12">
+            <html><body style="background:#0D0D12;color:#F5F5F5">
               <style>button:hover { color: #0A84FF; } @media (max-width:768px){body{}}</style>
             </body></html>
         """)
@@ -170,6 +173,24 @@ def test_make_design_verifier():
         ok, msg = v(["true"], d)
         assert ok
         assert "design-lint" in msg
+
+
+def test_make_design_verifier_includes_violation_details():
+    """失败时 msg 包含违规详情（hex 值缺失等），让 worker 能看到具体问题。"""
+    with tempfile.TemporaryDirectory() as d:
+        # 故意缺失 #0D0D12 和 #F5F5F5
+        _write(Path(d), "index.html", """
+            <html><body style="background:#000000;color:#ffffff">
+              <style>button:hover { color: #0A84FF; } @media (max-width:768px){body{}}</style>
+            </body></html>
+        """)
+        v = make_design_verifier("dark")
+        ok, msg = v(["true"], d)
+        assert not ok
+        # msg 应包含违规详情，不只是 summary
+        assert "required_hex_exact" in msg
+        assert "#0d0d12" in msg
+        assert "#f5f5f5" in msg
 
 
 def test_combined_verifier_both_pass():
@@ -239,3 +260,65 @@ def test_brutalism_style():
         """)
         r = lint_dir(d, "brutalism")
         assert r.passed
+
+
+# ---------- 规则 2b: required_hex_exact 强制 hex 精确匹配 ----------
+
+def test_critical_hexes_dark():
+    """dark 风格的关键 hex = accent #0A84FF + bg #0D0D12 + text #F5F5F5。"""
+    hexes = _critical_hexes("dark")
+    assert hexes == {"#0a84ff", "#0d0d12", "#f5f5f5"}
+
+
+def test_critical_hexes_glassmorphism_skips_non_hex():
+    """glassmorphism 的 bg='gradient' 不是 hex → 只返回 text #FFFFFF。"""
+    hexes = _critical_hexes("glassmorphism")
+    assert hexes == {"#ffffff"}
+
+
+def test_critical_hexes_brutalism():
+    """brutalism 无 accent，bg #FFFFFF + text #000000。"""
+    hexes = _critical_hexes("brutalism")
+    assert hexes == {"#ffffff", "#000000"}
+
+
+def test_missing_critical_hex_triggers_error():
+    """worker 把 #0D0D12 替换成 #000000 → required_hex_exact error，验证阻断。"""
+    with tempfile.TemporaryDirectory() as d:
+        # 故意用 #000000 替代 #0D0D12，#ffffff 替代 #F5F5F5
+        _write(Path(d), "index.html", """
+            <html><body style="background:#000000;color:#ffffff">
+              <style>
+                .btn { background: #0A84FF; }
+                .btn:hover { opacity: 0.8; }
+                @media (max-width:768px){body{}}
+              </style>
+            </body></html>
+        """)
+        r = lint_dir(d, "dark")
+        assert not r.passed
+        hex_errors = [v for v in r.violations if v.rule == "required_hex_exact"]
+        assert len(hex_errors) == 1
+        detail = hex_errors[0].detail
+        # 缺失的 hex 值在错误信息中（消息格式：hex缺失:#0d0d12,#f5f5f5。...）
+        assert "#0d0d12" in detail
+        assert "#f5f5f5" in detail
+        # #0a84ff 存在，不应出现在缺失列表中
+        assert "#0a84ff" not in detail
+
+
+def test_all_critical_hexes_present_passes():
+    """全部关键 hex 值都存在 → 无 required_hex_exact 违规。"""
+    with tempfile.TemporaryDirectory() as d:
+        _write(Path(d), "index.html", """
+            <html><body style="background:#0D0D12;color:#F5F5F5">
+              <style>
+                .btn { background: #0A84FF; }
+                .btn:hover { opacity: 0.8; }
+                @media (max-width:768px){body{}}
+              </style>
+            </body></html>
+        """)
+        r = lint_dir(d, "dark")
+        assert r.passed, [v.detail for v in r.violations]
+        assert not any(v.rule == "required_hex_exact" for v in r.violations)

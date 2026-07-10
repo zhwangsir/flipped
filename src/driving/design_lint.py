@@ -151,6 +151,25 @@ def _design_hexes(style: str) -> set[str]:
     return out
 
 
+def _critical_hexes(style: str) -> set[str]:
+    """取该风格的关键 hex 值（accent/bg/text），与 compact brief 一致。
+
+    compact brief 明确要求 worker 使用这些精确 hex 值：
+        --color-accent: {accent}; --color-bg: {bg}; --color-text: {text};
+
+    只返回 colors dict 中实际存在且为 hex 的值，跳过 gradient/rgba 等。
+    """
+    brief = STYLE_BRIEFS.get(style) or STYLE_BRIEFS["dark"]
+    c = brief["colors"]
+    out: set[str] = set()
+    for key in ("accent", "bg", "text"):
+        val = c.get(key)
+        if val:
+            for m in _HEX_COLOR.finditer(val):
+                out.add(_normalize_hex(m.group()))
+    return out
+
+
 def lint_dir(cwd: str | Path, style: str = "auto", product_type: str = "") -> DesignLintResult:
     """校验目录里的 UI 代码是否遵循设计系统。
 
@@ -213,12 +232,10 @@ def lint_dir(cwd: str | Path, style: str = "auto", product_type: str = "") -> De
         if _INTERACT_STATES.search(text) or _TAILWIND_STATES.search(text):
             found_states = True
 
-    # 规则 2：必含设计系统 hex 值
+    # 规则 2a：必含设计系统 hex 值（宽松——至少一个）
     if files and required_hexes:
-        # 至少要有一个设计系统要求的 hex 出现（宽松：accent 或 bg 任一即可）
         matched = found_hexes & required_hexes
         if not matched:
-            # 警告：生成的代码未使用任何设计系统颜色
             result.violations.append(Violation(
                 rule="design_colors",
                 severity="warning",
@@ -226,6 +243,23 @@ def lint_dir(cwd: str | Path, style: str = "auto", product_type: str = "") -> De
                     f"未在生成的 UI 代码中检测到设计系统要求的任何颜色值。"
                     f"风格={style} 期望含 {'/'.join(sorted(required_hexes)[:3])} 等，"
                     f"实际找到 {len(found_hexes)} 个 hex：{'/'.join(sorted(found_hexes)[:5])}"
+                ),
+            ))
+
+    # 规则 2b：关键 hex 值精确匹配（强制——accent/bg/text 必须全部出现）
+    # compact brief 明确要求 worker 使用这些精确 hex 值，禁止替换。
+    # 如果 worker 把 #0D0D12 替换成 #000000，这里会报 error 阻断验证。
+    # 错误消息把 hex 值放最前面，确保截断到 80 字符时仍包含关键信息。
+    critical = _critical_hexes(style)
+    if files and critical:
+        missing_critical = critical - found_hexes
+        if missing_critical:
+            result.violations.append(Violation(
+                rule="required_hex_exact",
+                severity="error",
+                detail=(
+                    f"hex缺失:{','.join(sorted(missing_critical))}。"
+                    f"必须用这些精确值，禁止替换(#000000≠#0D0D12)。"
                 ),
             ))
 
@@ -257,12 +291,17 @@ def make_design_verifier(style: str = "auto"):
     orchestrator 的 verifier 签名是 (cmd_list, cwd) -> tuple[bool, str]。
     我们把 design-lint 作为补充校验：在用户 verify_cmd 之外，
     自动追加一次设计系统校验。
+
+    失败时返回的 msg 包含违规详情（hex 值缺失等），让 worker 能看到
+    具体需要修复什么，而不只是"未通过"。
     """
     def _verify(cmd_list: list[str], cwd: str) -> tuple[bool, str]:
         lint = lint_dir(cwd, style)
         if lint.passed:
             return True, lint.summary()
-        return False, lint.summary()
+        # 把违规详情拼进 msg，让 worker 在 feedback 中能看到具体问题
+        details = "; ".join(f"[{v.severity}]{v.rule}:{v.detail[:120]}" for v in lint.violations)
+        return False, f"{lint.summary()} | {details}"
 
     return _verify
 

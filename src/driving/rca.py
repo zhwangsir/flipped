@@ -99,10 +99,10 @@ _RULES: list[tuple[re.Pattern, RootCause, str, float]] = [
      "verify_cmd 失败。先看 verify_cmd 测的是什么，再针对性修复，不要推倒重来。",
      0.7),
 
-    # design-lint 失败
-    (re.compile(r"design.?lint.*fail|design.*未通过|design_colors|no_named_colors|entry_file.*error", re.I),
+    # design-lint 失败（含 required_hex_exact 强制 hex 值缺失）
+    (re.compile(r"design.?lint.*fail|design.*未通过|required_hex_exact|design_colors|no_named_colors|entry_file.*error|hex.*缺失", re.I),
      RootCause.DESIGN_VIOLATION,
-     "design-lint 失败。使用设计系统要求的 hex 颜色值，添加响应式断点和 hover/focus 状态。",
+     "design-lint 失败。检查 feedback 中的缺失 hex 值，必须用设计系统指定的精确 hex 值，禁止用近似值替换。",
      0.85),
 
     # a11y 失败

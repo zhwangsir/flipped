@@ -58,6 +58,15 @@ def test_design_violation():
     assert "hex" in r.fix_suggestion.lower() or "设计系统" in r.fix_suggestion
 
 
+def test_design_violation_required_hex_exact():
+    """required_hex_exact 违规 → design_violation，fix_suggestion 含 hex 提示。"""
+    r = analyze_failure(
+        summary="design-lint: ❌ 未通过 | [error]required_hex_exact:hex缺失:#0d0d12,#f5f5f5。必须用这些精确值",
+    )
+    assert r.cause == RootCause.DESIGN_VIOLATION
+    assert "hex" in r.fix_suggestion.lower()
+
+
 def test_a11y_violation():
     """axe-core violation → a11y_violation。"""
     r = analyze_failure(summary="a11y 未通过: image-alt violation")
