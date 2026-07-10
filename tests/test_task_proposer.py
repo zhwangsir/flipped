@@ -454,3 +454,120 @@ def test_get_design_score_no_html_returns_message():
         result = _get_design_score(td)
 
     assert "HTML" in result or "无" in result
+
+
+# ---------- M41: 确定性 design fix fallback ----------
+
+
+def test_propose_design_fix_task_low_score():
+    """design_score 低时，确定性 fallback 生成修复任务。"""
+    import tempfile
+    import os
+    from driving.task_proposer import propose_design_fix_task
+
+    bad_html = """<html><head></head><body>
+    <img src="x.jpg">
+    </body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(bad_html)
+        state = _make_state(td)
+        result = propose_design_fix_task(state)
+
+    assert result is not None
+    assert "设计" in result.description or "design" in result.description.lower()
+    assert result.verify_cmd  # 应有验收命令
+    assert "auto_fix" in result.feedback or "design_score" in result.feedback
+
+
+def test_propose_design_fix_task_good_score():
+    """design_score 高时，确定性 fallback 返回 None（无需修复）。"""
+    import tempfile
+    import os
+    from driving.task_proposer import propose_design_fix_task
+
+    good_html = """<!DOCTYPE html>
+<html lang="zh"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+:root { --color-bg: #0D0D12; --color-text: #F5F5F5; --color-accent: #0A84FF; }
+body { padding: 16px; margin: 0; font-size: 16px; transition: opacity 0.3s ease; }
+h1 { font-size: 48px; }
+:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+@media (max-width: 768px) { body { font-size: 14px; } }
+button:hover { opacity: 0.85; }
+button:active { transform: scale(0.98); }
+button:disabled { opacity: 0.5; cursor: not-allowed; }
+</style></head><body>
+<header><nav>Logo</nav></header>
+<main><section><h1>Title</h1>
+<button>Click</button>
+</section></main>
+<footer>Copyright</footer>
+</body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(good_html)
+        state = _make_state(td)
+        result = propose_design_fix_task(state)
+
+    assert result is None  # 高分时无需修复
+
+
+def test_propose_design_fix_task_no_html():
+    """无 HTML 文件时，确定性 fallback 返回 None。"""
+    import tempfile
+    from driving.task_proposer import propose_design_fix_task
+
+    with tempfile.TemporaryDirectory() as td:
+        state = _make_state(td)
+        result = propose_design_fix_task(state)
+
+    assert result is None
+
+
+def test_factory_loop_uses_design_fix_fallback():
+    """factory_loop：GLM 不可用时，design fix fallback 接管。
+
+    M41 核心场景：GLM 调用失败（propose_next_task 返回 None），
+    但 HTML 的 design_score 低，factory_loop 用确定性 fallback 生成修复任务。
+    """
+    from driving.factory_loop import run_factory_loop, FactoryTask, TaskResult
+
+    def fake_proposer(state):
+        return None  # GLM 不可用
+
+    fix_task = FactoryTask(
+        id="design-fix-1",
+        description="修复设计质量问题",
+        verify_cmd=["true"],
+    )
+
+    def fake_design_fix(state):
+        return fix_task  # 确定性 fallback
+
+    def fake_orchestrator(task, state):
+        return TaskResult(task=task, verified=True, stop_reason="verified", iteration=1)
+
+    bad_html = "<html><head></head><body><img src='x.jpg'></body></html>"
+
+    with tempfile.TemporaryDirectory() as d:
+        with open(os.path.join(d, "index.html"), "w") as f:
+            f.write(bad_html)
+        state = run_factory_loop(
+            product_goal="test",
+            cwd=d,
+            db_path=os.path.join(d, "test_factory.db"),
+            checkpoint_db_path=os.path.join(d, "test_ckpt.db"),
+            max_tasks=10,
+            planner=lambda s: [FactoryTask(id="t0", description="init", verify_cmd=["true"])],
+            orchestrator_fn=fake_orchestrator,
+            task_proposer=fake_proposer,
+            design_fix_fallback=fake_design_fix,
+        )
+
+    # 初始 1 + fallback 1 = 2 个任务
+    assert len(state.completed) == 2
+    assert state.completed[1].task.id == "design-fix-1"

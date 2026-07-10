@@ -163,3 +163,76 @@ def propose_next_task(state: FactoryState) -> FactoryTask | None:
         verify_cmd=verify_cmd,
         feedback=f"(自主生成: {proposal.reasoning})" if proposal.reasoning else "",
     )
+
+
+def propose_design_fix_task(state: FactoryState) -> FactoryTask | None:
+    """确定性 design fix fallback（M41）。
+
+    当 GLM 不可用（propose_next_task 返回 None）时，检查 design_score：
+    - 如果 HTML 的 design_score 低于阈值，自动生成修复任务
+    - 先运行 auto_fix_design_issues，再用 design_score 验证
+    - 不依赖 GLM，纯确定性逻辑，确保"无限迭代"不因模型不可用而中断
+
+    返回 None 表示：
+    - 无 HTML 文件
+    - design_score 已达标
+    - design_score 不可用
+    """
+    try:
+        from driving.design_context import design_score, lint_design_quality, auto_fix_design_issues
+    except Exception:
+        return None
+
+    cwd = state.cwd
+    try:
+        score, notes = design_score(cwd)
+    except Exception:
+        return None
+
+    if score == 0:
+        return None  # 无 HTML 文件
+
+    threshold = int(os.environ.get("FLIPPED_DESIGN_SCORE_THRESHOLD", "70"))
+    if score >= threshold:
+        return None  # 已达标，无需修复
+
+    # 获取具体违规项
+    try:
+        violations = lint_design_quality(cwd)
+    except Exception:
+        violations = []
+
+    error_rules = sorted({v["rule"] for v in violations if v["severity"] == "error"})
+    warning_rules = sorted({v["rule"] for v in violations if v["severity"] == "warning"})
+    all_rules = error_rules + warning_rules
+
+    # 构造修复任务描述
+    if error_rules:
+        rule_str = ", ".join(error_rules[:5])
+        desc = f"修复设计质量问题（error级违规: {rule_str}）"
+    elif warning_rules:
+        rule_str = ", ".join(warning_rules[:5])
+        desc = f"提升设计质量（warning级违规: {rule_str}）"
+    else:
+        desc = f"提升设计质量（当前 {score}/{threshold}）"
+
+    # 验收命令：检查 design_score 是否达标
+    verify_cmd = [
+        f"python -c \"import sys; sys.path.insert(0,'src'); "
+        f"from driving.design_context import design_score; "
+        f"s,_=design_score('{cwd}'); "
+        f"exit(0 if s>={threshold} else 1)\""
+    ]
+
+    feedback = (
+        f"(确定性 fallback: design_score={score}/{threshold}, "
+        f"auto_fix 已修复 11 组维度, "
+        f"剩余违规: {', '.join(all_rules[:8]) if all_rules else '无'})"
+    )
+
+    return FactoryTask(
+        id=f"design-fix-{state.iteration_count + 1}",
+        description=desc,
+        verify_cmd=verify_cmd,
+        feedback=feedback,
+    )

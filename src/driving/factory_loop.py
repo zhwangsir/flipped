@@ -603,6 +603,7 @@ def run_factory_loop(
     orchestrator_fn: OrchestratorFn | None = None,
     task_proposer: "Callable[[FactoryState], FactoryTask | None] | None" = None,
     event_bus=None,
+    design_fix_fallback: "Callable[[FactoryState], FactoryTask | None] | None" = None,
 ) -> FactoryState:
     """启动/继续一个工厂循环；状态持久化到 db_path，支持崩溃恢复。
 
@@ -611,6 +612,8 @@ def run_factory_loop(
 
     M31: task_proposer——roadmap 全部执行完后，调用 task_proposer 自主生成下一轮任务。
     返回 None 表示停止迭代。max_rounds 限制自主生成的轮次，防止空转。
+    M41: design_fix_fallback——task_proposer 返回 None 时（如 GLM 不可用），
+    调用 design_fix_fallback 检查 design_score，低分时确定性生成修复任务。
     """
     planner = planner or default_planner
     orchestrator_fn = orchestrator_fn or default_orchestrator_fn
@@ -662,6 +665,12 @@ def run_factory_loop(
                         proposed = task_proposer(state)
                     except Exception:
                         proposed = None
+                    # M41: GLM 不可用时，design_fix_fallback 确定性接管
+                    if proposed is None and design_fix_fallback is not None:
+                        try:
+                            proposed = design_fix_fallback(state)
+                        except Exception:
+                            proposed = None
                     if proposed is not None:
                         state.roadmap.append(proposed)
                         state.rounds_used += 1

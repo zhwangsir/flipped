@@ -2,7 +2,7 @@
   "project": "flipped",
   "description": "接入本地 MLX 双模型(GLM-5.2 编排者 / Kimi-K2.7-Code 执行者)的 agentic 代码编辑器平台。fork Roo Code + 自定义驾驭层(强制验证/循环检测/上下文压缩/人工审批/子Agent/可观测性) + MCP 联网与外部能力。",
   "updated": "2026-07-11",
-  "current_milestone": "M40 task_proposer design_score 反馈循环增强 (600 passed, 低分时附带具体违规rule名)",
+  "current_milestone": "M41 确定性 design fix fallback (604 passed, GLM不可用时确定性接管迭代)",
   "key_facts": {
     "dev_host": "Apple M5 Max, 128GB RAM, 1.1TB 可用磁盘 — 开发/控制节点，非模型宿主",
     "model_cluster": "exo 集群 @ http://100.64.201.37:52415 (内网, OpenAI 兼容)；公网 https://dgmt.top/exo (需 Bearer token)",
@@ -624,6 +624,18 @@
           "title": "_get_design_score 增强 + prompt 警告 + 3 测试",
           "status": "done",
           "note": "低分时附带具体违规 rule 名 + prompt 插入设计质量警告。3 测试通过。600 passed。"
+        }
+      }
+    },
+    "M41": {
+      "title": "确定性 design fix fallback",
+      "status": "done",
+      "note": "新增 propose_design_fix_task(state) 确定性函数：当 GLM 不可用时（propose_next_task 返回 None），检查 design_score，低分时基于 lint 违规项自动生成修复任务（不依赖 GLM）。factory_loop 新增 design_fix_fallback 参数，在 task_proposer 返回 None 后调用。验收命令用 python -c 检查 design_score 是否达标。4 个 TDD 测试。全量 604 passed（+4，无回归）。核心价值：即使 GLM 宕机，系统仍能基于确定性逻辑继续迭代修复设计问题，真正实现'无限迭代'不因模型不可用而中断。",
+      "tasks": {
+        "M41.1": {
+          "title": "propose_design_fix_task + factory_loop 集成 + 4 测试",
+          "status": "done",
+          "note": "确定性 fallback 函数 + factory_loop design_fix_fallback 参数 + 4 测试。604 passed。"
         }
       }
     }
