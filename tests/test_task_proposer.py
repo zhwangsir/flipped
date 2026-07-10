@@ -456,11 +456,18 @@ def test_get_design_score_no_html_returns_message():
 # ---------- M41: 确定性 design fix fallback ----------
 
 
-def test_propose_design_fix_task_low_score():
-    """design_score 低时，确定性 fallback 生成修复任务。"""
+def test_propose_design_fix_task_low_score(monkeypatch):
+    """design_score 低时，确定性 fallback 生成修复任务。
+
+    M44: auto_fix 前置会修复大部分问题，mock auto_fix 为 no-op
+    来隔离测试 propose_design_fix_task 自身的分数检查逻辑。
+    """
     import tempfile
     import os
     from driving.task_proposer import propose_design_fix_task
+
+    # mock auto_fix 为 no-op，隔离测试 propose_design_fix_task 逻辑
+    monkeypatch.setattr("driving.design_context.auto_fix_design_issues", lambda cwd: None)
 
     bad_html = """<html><head></head><body>
     <img src="x.jpg">
@@ -579,6 +586,8 @@ def test_factory_loop_auto_proposer_enabled_by_env(monkeypatch):
     from driving.factory_loop import run_factory_loop, FactoryTask, TaskResult
 
     monkeypatch.setenv("FLIPPED_AUTO_PROPOSER", "1")
+    # M44: mock auto_fix 为 no-op，确保 HTML 分数保持低分触发 fallback
+    monkeypatch.setattr("driving.design_context.auto_fix_design_issues", lambda cwd: None)
 
     # mock GLM 不可用（propose_next_task 会 fail-open 返回 None）
     def fake_orchestrator(task, state):
@@ -646,12 +655,18 @@ def test_propose_design_fix_stops_on_score_stagnation():
     assert result is None
 
 
-def test_propose_design_fix_continues_when_score_improving():
-    """design_score 有提升时，design_fix_fallback 继续（不熔断）。"""
+def test_propose_design_fix_continues_when_score_improving(monkeypatch):
+    """design_score 有提升时，design_fix_fallback 继续（不熔断）。
+
+    M44: mock auto_fix 为 no-op，隔离测试停滞检测逻辑。
+    """
     import tempfile
     import os
     from driving.task_proposer import propose_design_fix_task
     from driving.factory_loop import TaskResult
+
+    # mock auto_fix 为 no-op，隔离测试停滞检测逻辑
+    monkeypatch.setattr("driving.design_context.auto_fix_design_issues", lambda cwd: None)
 
     bad_html = "<html><head></head><body><img src='x.jpg'></body></html>"
 
@@ -688,3 +703,41 @@ def test_propose_design_fix_continues_when_score_improving():
 
     # score 有提升（40→50），应继续生成修复任务
     assert result is not None
+
+
+def test_propose_design_fix_auto_fix_can_reach_threshold():
+    """M44: auto_fix 后 score 达标时，不生成修复任务（返回 None）。
+
+    构造一个只缺 viewport/spacing/CSS vars 等 auto-fix 可修复问题的 HTML，
+    auto_fix 后 score 应达标，design_fix_fallback 返回 None。
+    """
+    import tempfile
+    import os
+    from driving.task_proposer import propose_design_fix_task
+
+    # 这个 HTML 缺少很多 auto-fix 可修复的维度：
+    # - 无 spacing（auto_fix_spacing_grid 可修）
+    # - 无 typography scale（auto_fix_typography_scale 可修）
+    # - 无 CSS variables（auto_fix_css_variables 可修）
+    # - 无 :focus（auto_fix_focus_visible 可修）
+    # - 无 @media（auto_fix_responsive 可修）
+    # - 无 component states（auto_fix_component_states 可修）
+    # 但有 viewport meta + img alt + semantic html + html lang
+    fixable_html = """<!DOCTYPE html>
+<html lang="zh"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+</head><body>
+<header><nav>Logo</nav></header>
+<main><section><h1>Title</h1><p>Content</p></section></main>
+<footer>Copyright</footer>
+<img src="logo.png" alt="Logo">
+</body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(fixable_html)
+        state = _make_state(td)
+        result = propose_design_fix_task(state)
+
+    # auto_fix 后 score 应达标（≥70），返回 None
+    assert result is None, f"auto_fix 后应达标，但仍生成修复任务: {result}"

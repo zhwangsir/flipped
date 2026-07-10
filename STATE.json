@@ -2,7 +2,7 @@
   "project": "flipped",
   "description": "接入本地 MLX 双模型(GLM-5.2 编排者 / Kimi-K2.7-Code 执行者)的 agentic 代码编辑器平台。fork Roo Code + 自定义驾驭层(强制验证/循环检测/上下文压缩/人工审批/子Agent/可观测性) + MCP 联网与外部能力。",
   "updated": "2026-07-11",
-  "current_milestone": "M43 design_fix_fallback 循环检测 (607 passed, score停滞时熔断)",
+  "current_milestone": "M44 auto_fix 前置运行 (608 passed, auto_fix后达标则不生成修复任务)",
   "key_facts": {
     "dev_host": "Apple M5 Max, 128GB RAM, 1.1TB 可用磁盘 — 开发/控制节点，非模型宿主",
     "model_cluster": "exo 集群 @ http://100.64.201.37:52415 (内网, OpenAI 兼容)；公网 https://dgmt.top/exo (需 Bearer token)",
@@ -660,6 +660,18 @@
           "title": "score 停滞检测 + 熔断 + 2 测试",
           "status": "done",
           "note": "从 feedback 解析 score，连续 2 轮无提升时熔断。2 测试通过。607 passed。"
+        }
+      }
+    },
+    "M44": {
+      "title": "auto_fix 前置运行（propose_design_fix_task 中先 auto_fix 再评分）",
+      "status": "done",
+      "note": "在 propose_design_fix_task 计算 design_score 之前先运行 auto_fix_design_issues。如果 auto-fix 后 score 已达标（≥阈值），直接返回 None，不生成不必要的修复任务。这避免了 auto-fix 已能修复的问题被包装成任务发给 worker，浪费迭代轮次。3 个已有测试因 auto_fix 前置导致分数升到 100 而失败，修复方案：mock auto_fix_design_issues 为 no-op 来隔离测试 propose_design_fix_task 自身的逻辑（分数检查、停滞检测），而非测试 auto_fix 效果（auto_fix 有自己的测试）。1 个新 TDD 测试（auto_fix 后达标返回 None）。全量 608 passed（+1，无回归）。",
+      "tasks": {
+        "M44.1": {
+          "title": "auto_fix 前置 + 3 测试适配 + 1 新测试",
+          "status": "done",
+          "note": "propose_design_fix_task 中 auto_fix_design_issues 前置运行。3 个已有测试 mock auto_fix 隔离逻辑测试。1 个新测试验证 auto_fix 后达标返回 None。608 passed。"
         }
       }
     }

@@ -173,10 +173,14 @@ def propose_design_fix_task(state: FactoryState) -> FactoryTask | None:
     - 先运行 auto_fix_design_issues，再用 design_score 验证
     - 不依赖 GLM，纯确定性逻辑，确保"无限迭代"不因模型不可用而中断
 
+    M44 增强：在计算 score 前先运行 auto_fix_design_issues，
+    如果 auto-fix 后 score 已达标，不需要生成修复任务。
+
     返回 None 表示：
     - 无 HTML 文件
-    - design_score 已达标
+    - design_score 已达标（含 auto-fix 后达标）
     - design_score 不可用
+    - score 停滞（循环熔断，M43）
     """
     try:
         from driving.design_context import design_score, lint_design_quality, auto_fix_design_issues
@@ -184,6 +188,13 @@ def propose_design_fix_task(state: FactoryState) -> FactoryTask | None:
         return None
 
     cwd = state.cwd
+
+    # M44: 先运行 auto_fix，看看能否直接修复到达标
+    try:
+        auto_fix_design_issues(cwd)
+    except Exception:
+        pass  # auto_fix 失败时不阻塞，继续检查 score
+
     try:
         score, notes = design_score(cwd)
     except Exception:
@@ -194,7 +205,7 @@ def propose_design_fix_task(state: FactoryState) -> FactoryTask | None:
 
     threshold = int(os.environ.get("FLIPPED_DESIGN_SCORE_THRESHOLD", "70"))
     if score >= threshold:
-        return None  # 已达标，无需修复
+        return None  # auto-fix 后已达标，无需生成修复任务
 
     # M43: 循环检测 — 从最近 2 个 design-fix 任务的 feedback 解析 score，
     # 如果 score 连续无提升，说明 auto-fix + worker 无法修复剩余问题，停止
