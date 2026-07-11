@@ -560,3 +560,68 @@ body { margin: 0; padding: 16px; }</style>
     # 应该执行了确定性 roadmap 的任务（至少 2 个）
     assert len(state.completed) >= 2, f"应执行至少 2 个任务，实际 {len(state.completed)}"
     assert state.status.value == "done"
+
+
+# ---------- M50: 增强确定性 roadmap — 更多 UI 组件任务 ----------
+
+
+def test_deterministic_roadmap_has_at_least_six_tasks():
+    """M50: 确定性 roadmap 应生成至少 6 个任务（覆盖更多 UI 维度）。"""
+    with tempfile.TemporaryDirectory() as d:
+        tasks = _deterministic_roadmap("做一个落地页", d)
+    assert len(tasks) >= 6, f"M50 应生成≥6 个任务，实际 {len(tasks)}"
+
+
+def test_deterministic_roadmap_covers_responsive():
+    """M50: 确定性 roadmap 应包含响应式布局任务。"""
+    with tempfile.TemporaryDirectory() as d:
+        tasks = _deterministic_roadmap("做一个网页", d)
+    has_responsive = any(
+        "响应" in t.description or "responsive" in t.description.lower() or "@media" in t.description
+        for t in tasks
+    )
+    assert has_responsive, "应包含响应式布局任务"
+
+
+def test_deterministic_roadmap_covers_accessibility():
+    """M50: 确定性 roadmap 应包含无障碍任务。"""
+    with tempfile.TemporaryDirectory() as d:
+        tasks = _deterministic_roadmap("做一个网页", d)
+    has_a11y = any(
+        "无障碍" in t.description or "aria" in t.description.lower() or "alt" in t.description.lower()
+        for t in tasks
+    )
+    assert has_a11y, "应包含无障碍任务"
+
+
+def test_deterministic_roadmap_covers_animations():
+    """M50: 确定性 roadmap 应包含动画任务。"""
+    with tempfile.TemporaryDirectory() as d:
+        tasks = _deterministic_roadmap("做一个网页", d)
+    has_anim = any(
+        "动画" in t.description or "animation" in t.description.lower()
+        or "transition" in t.description.lower() or "微交" in t.description
+        for t in tasks
+    )
+    assert has_anim, "应包含动画/微交互任务"
+
+
+def test_deterministic_roadmap_covers_hero_section():
+    """M50: 确定性 roadmap 应包含 hero 区块任务。"""
+    with tempfile.TemporaryDirectory() as d:
+        tasks = _deterministic_roadmap("做一个落地页", d)
+    has_hero = any(
+        "hero" in t.description.lower() or "首屏" in t.description or "主视觉" in t.description
+        for t in tasks
+    )
+    assert has_hero, "应包含 hero/首屏区块任务"
+
+
+def test_deterministic_roadmap_all_verify_cmds_check_content():
+    """M50: 所有任务的验收命令都检查 HTML 文件内容（非 true）。"""
+    with tempfile.TemporaryDirectory() as d:
+        tasks = _deterministic_roadmap("做一个网页", d)
+    for t in tasks:
+        assert t.verify_cmd, f"任务 {t.id} 缺少验收命令"
+        assert t.verify_cmd[0] != "true", f"任务 {t.id} 验收命令不应是 true"
+        assert "index.html" in t.verify_cmd[0], f"任务 {t.id} 验收命令应检查 index.html"

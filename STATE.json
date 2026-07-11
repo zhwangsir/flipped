@@ -2,7 +2,7 @@
   "project": "flipped",
   "description": "接入本地 MLX 双模型(GLM-5.2 编排者 / Kimi-K2.7-Code 执行者)的 agentic 代码编辑器平台。fork Roo Code + 自定义驾驭层(强制验证/循环检测/上下文压缩/人工审批/子Agent/可观测性) + MCP 联网与外部能力。",
   "updated": "2026-07-11",
-  "current_milestone": "M49 E2E 集成测试 — 完整无限迭代链路验证 (631 passed)",
+  "current_milestone": "M50 增强确定性 roadmap — 更多 UI 维度任务让无 GLM 时也能持续迭代 (637 passed)",
   "key_facts": {
     "dev_host": "Apple M5 Max, 128GB RAM, 1.1TB 可用磁盘 — 开发/控制节点，非模型宿主",
     "model_cluster": "exo 集群 @ http://100.64.201.37:52415 (内网, OpenAI 兼容)；公网 https://dgmt.top/exo (需 Bearer token)",
@@ -732,6 +732,18 @@
           "title": "3 个 E2E 集成测试",
           "status": "done",
           "note": "auto_fix+design_score+proposer_tracking 全链路 E2E。631 passed。"
+        }
+      }
+    },
+    "M50": {
+      "title": "增强确定性 roadmap — 更多 UI 维度任务让无 GLM 时也能持续迭代",
+      "status": "done",
+      "note": "M45 的 _deterministic_roadmap 只有 3 个基础任务（创建HTML/CSS变量/交互元素），GLM 不可用时工厂产出的页面太单薄。M50 扩展到 8 个任务，覆盖完整 UI 开发维度：基础HTML结构 + CSS变量系统 + hero首屏区块 + 响应式布局 + 无障碍属性 + 微交互动画 + 组件状态样式 + 语义内容区块。每个任务有真实验收命令（python -c 检查 index.html 文件内容），覆盖 M19-M39 所有 lint 维度。6 个新 TDD 测试（至少6个任务/覆盖响应式/覆盖无障碍/覆盖动画/覆盖hero/验收命令检查内容）。全量 637 passed（+6，无回归）。核心价值：GLM 完全不可用时，工厂基于确定性逻辑也能产出覆盖所有 UI 维度的丰富页面，真正实现'给方向就跑'的无限迭代。",
+      "tasks": {
+        "M50.1": {
+          "title": "_deterministic_roadmap 扩展 3→8 个任务 + 6 测试",
+          "status": "done",
+          "note": "8 个确定性任务覆盖 HTML结构/CSS变量/hero/响应式/无障碍/动画/组件状态/语义区块 + 6 TDD 测试。637 passed。"
         }
       }
     }

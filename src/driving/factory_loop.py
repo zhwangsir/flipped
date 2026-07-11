@@ -303,8 +303,8 @@ OrchestratorFn = Callable[[FactoryTask, FactoryState], TaskResult]
 def _deterministic_roadmap(product_goal: str, cwd: str) -> list[FactoryTask]:
     """确定性 roadmap fallback：GLM 不可用时基于 product_goal 生成有意义的任务列表。
 
-    核心思路：无论产品目标是什么，都需要先创建基础 HTML 页面，
-    然后添加样式系统和交互元素。这确保工厂即使没有 GLM 也能产出有价值的产物。
+    M50 增强：从 3 个基础任务扩展到 8 个，覆盖更多 UI 维度，
+    让 GLM 不可用时工厂也能持续迭代产出丰富的页面。
     每个任务有真实验收命令（文件内容检查），不是无意义的 'true'。
     """
     goal_short = product_goal[:30] if product_goal else "产品"
@@ -313,7 +313,7 @@ def _deterministic_roadmap(product_goal: str, cwd: str) -> list[FactoryTask]:
     return [
         FactoryTask(
             id="det-task-1",
-            description=f"创建 index.html 基础结构（{goal_short}）",
+            description=f"创建 index.html 基础结构（{goal_short}）：lang/meta viewport/header/main/footer",
             verify_cmd=[
                 f"python -c \"import os; assert os.path.isfile('{safe_cwd}/index.html'), 'index.html not found'\""
             ],
@@ -321,7 +321,7 @@ def _deterministic_roadmap(product_goal: str, cwd: str) -> list[FactoryTask]:
         ),
         FactoryTask(
             id="det-task-2",
-            description="添加 CSS 样式系统（CSS 变量、响应式布局）",
+            description="添加 CSS 变量系统（:root --color-* 变量、配色不超过 5 种）",
             verify_cmd=[
                 f"python -c \"f=open('{safe_cwd}/index.html'); c=f.read(); assert ':root' in c or '--color' in c, 'no CSS variables'; f.close()\""
             ],
@@ -329,11 +329,51 @@ def _deterministic_roadmap(product_goal: str, cwd: str) -> list[FactoryTask]:
         ),
         FactoryTask(
             id="det-task-3",
-            description="添加交互元素和组件状态（button/a + hover/focus）",
+            description="添加 hero 首屏区块（主视觉标题 + CTA 按钮 + 副标题）",
             verify_cmd=[
                 f"python -c \"f=open('{safe_cwd}/index.html'); c=f.read(); assert '<button' in c or '<a ' in c, 'no interactive elements'; f.close()\""
             ],
-            feedback="(确定性 fallback: 添加交互元素)",
+            feedback="(确定性 fallback: 添加 hero 首屏区块)",
+        ),
+        FactoryTask(
+            id="det-task-4",
+            description="添加响应式布局（@media 断点、移动端适配）",
+            verify_cmd=[
+                f"python -c \"f=open('{safe_cwd}/index.html'); c=f.read(); assert '@media' in c, 'no responsive breakpoints'; f.close()\""
+            ],
+            feedback="(确定性 fallback: 添加响应式布局)",
+        ),
+        FactoryTask(
+            id="det-task-5",
+            description="添加无障碍属性（aria-label、img alt、html lang、focus-visible）",
+            verify_cmd=[
+                f"python -c \"f=open('{safe_cwd}/index.html'); c=f.read(); assert 'aria-' in c or 'alt=' in c, 'no a11y attributes'; f.close()\""
+            ],
+            feedback="(确定性 fallback: 添加无障碍属性)",
+        ),
+        FactoryTask(
+            id="det-task-6",
+            description="添加微交互动画（transition/transform/opacity，呼吸式动效）",
+            verify_cmd=[
+                f"python -c \"f=open('{safe_cwd}/index.html'); c=f.read(); assert 'transition' in c or 'animation' in c, 'no animations'; f.close()\""
+            ],
+            feedback="(确定性 fallback: 添加微交互动画)",
+        ),
+        FactoryTask(
+            id="det-task-7",
+            description="添加交互组件状态（hover/focus/disabled/active 样式）",
+            verify_cmd=[
+                f"python -c \"f=open('{safe_cwd}/index.html'); c=f.read(); assert ':hover' in c or ':focus' in c, 'no component states'; f.close()\""
+            ],
+            feedback="(确定性 fallback: 添加组件状态样式)",
+        ),
+        FactoryTask(
+            id="det-task-8",
+            description="添加语义内容区块（article/nav/section + h1-h3 标题层级）",
+            verify_cmd=[
+                f"python -c \"f=open('{safe_cwd}/index.html'); c=f.read(); assert '<h1' in c or '<h2' in c, 'no heading hierarchy'; f.close()\""
+            ],
+            feedback="(确定性 fallback: 添加语义内容区块)",
         ),
     ]
 
