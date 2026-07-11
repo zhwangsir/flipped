@@ -3021,6 +3021,151 @@ def auto_fix_font_size(cwd: str) -> bool:
     return changed
 
 
+# ---------- M75: line-height 一致性 ----------
+
+_STANDARD_LINE_HEIGHTS = (1.0, 1.25, 1.5, 1.75, 2.0)
+
+
+def check_line_height_chaos(cwd: str) -> list[dict]:
+    """M75: 检测 line-height 一致性问题。
+
+    AI 生成 CSS 常见破绽：随机行高（1.3/1.45/1.67/1.85）无系统性。
+    标准集合（无单位）：{1, 1.25, 1.5, 1.75, 2}（WCAG 推荐正文 ≥1.5）。
+
+    规则1: 非标准值报 warning。
+    规则2: 超过 5 个不同值报 warning。
+    """
+    import os as _os
+    import re as _re
+
+    violations: list[dict] = []
+
+    if not _os.path.exists(cwd):
+        return violations
+
+    for fname in _os.listdir(cwd):
+        if not fname.endswith(".html"):
+            continue
+        fpath = _os.path.join(cwd, fname)
+        if not _os.path.isfile(fpath):
+            continue
+        try:
+            content = open(fpath, "r", encoding="utf-8").read()
+        except Exception:
+            continue
+
+        # 提取无单位 line-height 值（排除 px 值和 normal 关键字）
+        lh_matches = _re.findall(
+            r"line-height\s*:\s*(\d+(?:\.\d+)?)(?!\s*px)",
+            content, _re.IGNORECASE,
+        )
+        if not lh_matches:
+            continue
+
+        values = [float(m) for m in lh_matches]
+        distinct = sorted(set(values))
+
+        # 规则1: 非标准值
+        non_standard = [
+            v for v in distinct
+            if not any(abs(v - s) < 1e-6 for s in _STANDARD_LINE_HEIGHTS)
+        ]
+        if non_standard:
+            violations.append({
+                "rule": "line_height_chaos",
+                "severity": "warning",
+                "file": fname,
+                "message": (
+                    f"非标准 line-height 值：{non_standard}，"
+                    f"应使用 1/1.25/1.5/1.75/2 系统化行高"
+                ),
+            })
+
+        # 规则2: 超过 5 个不同值
+        if len(distinct) > 5:
+            violations.append({
+                "rule": "line_height_chaos",
+                "severity": "warning",
+                "file": fname,
+                "message": (
+                    f"line-height 有 {len(distinct)} 个不同值：{distinct}，"
+                    f"应精简到 ≤5 个系统化行高"
+                ),
+            })
+
+    return violations
+
+
+def auto_fix_line_height(cwd: str) -> bool:
+    """M75: 规范化 line-height 值到标准集合 {1, 1.25, 1.5, 1.75, 2}。"""
+    import os as _os
+    import re as _re
+
+    def _nearest_line_height(val: float) -> float:
+        """返回标准集合中最近的值（距离相等时取较大值）。"""
+        best = _STANDARD_LINE_HEIGHTS[0]
+        best_dist = abs(best - val)
+        for s in _STANDARD_LINE_HEIGHTS[1:]:
+            d = abs(s - val)
+            if d < best_dist or (d == best_dist and s > best):
+                best, best_dist = s, d
+        return best
+
+    def _is_standard(val: float) -> bool:
+        return any(abs(val - s) < 1e-6 for s in _STANDARD_LINE_HEIGHTS)
+
+    if not _os.path.exists(cwd):
+        return False
+
+    changed = False
+    for fname in _os.listdir(cwd):
+        if not fname.endswith(".html"):
+            continue
+        fpath = _os.path.join(cwd, fname)
+        if not _os.path.isfile(fpath):
+            continue
+        try:
+            content = open(fpath, "r", encoding="utf-8").read()
+        except Exception:
+            continue
+
+        # 先检查是否有违规
+        violations = check_line_height_chaos(_os.path.dirname(fpath))
+        has_violation = any(
+            v["file"] == fname and v["rule"] == "line_height_chaos"
+            for v in violations
+        )
+        if not has_violation:
+            continue
+
+        # 替换非标准 line-height 值（无单位，排除 px 值）
+        def _replace_line_height(m):
+            val = float(m.group(1))
+            if _is_standard(val):
+                return m.group(0)  # 已标准
+            std = _nearest_line_height(val)
+            # 格式化：整数不带小数点，非整数保留2位去尾零
+            if std == int(std):
+                std_str = str(int(std))
+            else:
+                std_str = f"{std:g}"
+            return f"line-height: {std_str}"
+
+        new_content = _re.sub(
+            r"line-height\s*:\s*(\d+(?:\.\d+)?)(?!\s*px)",
+            _replace_line_height,
+            content,
+            flags=_re.IGNORECASE,
+        )
+
+        if new_content != content:
+            with open(fpath, "w", encoding="utf-8") as f:
+                f.write(new_content)
+            changed = True
+
+    return changed
+
+
 def auto_fix_design_issues(cwd: str) -> bool:
     """组合调用所有 auto-fix 函数，返回是否做过任何修改。"""
     changed1 = auto_fix_spacing_grid(cwd)
@@ -3047,12 +3192,13 @@ def auto_fix_design_issues(cwd: str) -> bool:
     changed22 = auto_fix_transition(cwd)
     changed23 = auto_fix_opacity(cwd)
     changed24 = auto_fix_font_size(cwd)
+    changed25 = auto_fix_line_height(cwd)
     return (
         changed1 or changed2 or changed3 or changed4 or changed5
         or changed6 or changed7 or changed8 or changed9 or changed10 or changed11
         or changed12 or changed13 or changed14 or changed15 or changed16 or changed17
         or changed18 or changed19 or changed20 or changed21 or changed22 or changed23
-        or changed24
+        or changed24 or changed25
     )
 
 
@@ -3352,6 +3498,12 @@ def lint_design_quality(cwd: str) -> list[dict]:
     except Exception:
         pass
 
+    # 20. M75: line-height 一致性检测
+    try:
+        violations.extend(check_line_height_chaos(cwd))
+    except Exception:
+        pass
+
     return violations
 
 
@@ -3535,6 +3687,11 @@ def design_score(cwd: str) -> "tuple[int, list[str]]":
     if "font_size_chaos" in warning_rules:
         score -= 5
         notes.append("检测到font-size不一致(-5)")
+
+    # 20. M75: line-height 一致性扣分（warning 级别，-5）
+    if "line_height_chaos" in warning_rules:
+        score -= 5
+        notes.append("检测到line-height不一致(-5)")
 
     score = max(0, score)
     if not notes:

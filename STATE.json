@@ -2,7 +2,7 @@
   "project": "flipped",
   "description": "接入本地 MLX 双模型(GLM-5.2 编排者 / Kimi-K2.7-Code 执行者)的 agentic 代码编辑器平台。fork Roo Code + 自定义驾驭层(强制验证/循环检测/上下文压缩/人工审批/子Agent/可观测性) + MCP 联网与外部能力。",
   "updated": "2026-07-11",
-  "current_milestone": "M74 font-size一致性检测+auto-fix (821 passed)",
+  "current_milestone": "M75 line-height一致性检测+auto-fix (832 passed)",
   "key_facts": {
     "dev_host": "Apple M5 Max, 128GB RAM, 1.1TB 可用磁盘 — 开发/控制节点，非模型宿主",
     "model_cluster": "exo 集群 @ http://100.64.201.37:52415 (内网, OpenAI 兼容)；公网 https://dgmt.top/exo (需 Bearer token)",
@@ -1032,6 +1032,18 @@
           "title": "check_font_size_chaos + auto_fix_font_size + lint/score 集成",
           "status": "done",
           "note": "新增 check_font_size_chaos（非标准font-size或>8个不同值→warning）+ auto_fix_font_size（映射到最近标准type scale值）+ lint/score/auto_fix_design_issues 集成。11 TDD 测试。821 passed。"
+        }
+      }
+    },
+    "M75": {
+      "title": "line-height 一致性检测 + auto-fix",
+      "status": "done",
+      "note": "AI 生成 CSS 常见破绽：随机行高（1.3/1.45/1.67/1.85）无系统性。新增 check_line_height_chaos(cwd)：标准集合（无单位）{1, 1.25, 1.5, 1.75, 2}（WCAG 推荐正文≥1.5），非标准值或>5个不同值报 warning。用负向前瞻 (?![\\s]*px) 排除 px 值。新增 auto_fix_line_height(cwd)：非标准值映射到最近标准值（距离相等取较大值），整数不带小数点。幂等。集成到 lint_design_quality（第27维）+ auto_fix_design_issues（第25组）+ design_score（-5）。11 TDD 测试全过。全量 832 passed（+11，无回归）。设计质量系统：Lint 27 维、Auto-fix 25 组。",
+      "tasks": {
+        "M75.1": {
+          "title": "check_line_height_chaos + auto_fix_line_height + lint/score 集成",
+          "status": "done",
+          "note": "新增 check_line_height_chaos（非标准line-height或>5个不同值→warning）+ auto_fix_line_height（映射到最近标准行高）+ lint/score/auto_fix_design_issues 集成。11 TDD 测试。832 passed。"
         }
       }
     }

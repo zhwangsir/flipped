@@ -5553,3 +5553,193 @@ def test_auto_fix_design_issues_includes_font_size():
         violations = check_font_size_chaos(td)
     fs_v = [v for v in violations if v["rule"] == "font_size_chaos"]
     assert fs_v == [], f"组合修复后不应有违规: {fs_v}"
+
+
+# ---------- M75: line-height 一致性检测 + auto-fix ----------
+
+
+def test_check_line_height_chaos_no_html():
+    """没有 HTML 文件时应返回空列表。"""
+    import tempfile
+    from driving.design_context import check_line_height_chaos
+    with tempfile.TemporaryDirectory() as td:
+        result = check_line_height_chaos(td)
+    assert result == []
+
+
+def test_check_line_height_chaos_non_standard():
+    """非标准 line-height 值应报 warning。"""
+    import tempfile
+    import os
+    from driving.design_context import check_line_height_chaos
+    html = """<html><head><style>
+    .a { line-height: 1.3; }
+    .b { line-height: 1.45; }
+    .c { line-height: 1.67; }
+    </style></head><body>text</body></html>"""
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        violations = check_line_height_chaos(td)
+    lh_v = [v for v in violations if v["rule"] == "line_height_chaos"]
+    assert len(lh_v) > 0
+    assert lh_v[0]["severity"] == "warning"
+
+
+def test_check_line_height_chaos_clean():
+    """标准 line-height 值不应报违规。"""
+    import tempfile
+    import os
+    from driving.design_context import check_line_height_chaos
+    html = """<html><head><style>
+    .a { line-height: 1; }
+    .b { line-height: 1.25; }
+    .c { line-height: 1.5; }
+    .d { line-height: 1.75; }
+    .e { line-height: 2; }
+    </style></head><body>text</body></html>"""
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        violations = check_line_height_chaos(td)
+    lh_v = [v for v in violations if v["rule"] == "line_height_chaos"]
+    assert lh_v == []
+
+
+def test_check_line_height_chaos_too_many_distinct():
+    """超过 5 个不同 line-height 值应报 warning。"""
+    import tempfile
+    import os
+    from driving.design_context import check_line_height_chaos
+    html = """<html><head><style>
+    .a { line-height: 1; }
+    .b { line-height: 1.25; }
+    .c { line-height: 1.5; }
+    .d { line-height: 1.75; }
+    .e { line-height: 2; }
+    .f { line-height: 2.5; }
+    </style></head><body>text</body></html>"""
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        violations = check_line_height_chaos(td)
+    lh_v = [v for v in violations if v["rule"] == "line_height_chaos"]
+    assert len(lh_v) > 0
+    assert "6" in lh_v[-1]["message"] or "不同" in lh_v[-1]["message"]
+
+
+def test_check_line_height_chaos_empty_dir():
+    """空目录应返回空列表。"""
+    import tempfile
+    from driving.design_context import check_line_height_chaos
+    with tempfile.TemporaryDirectory() as td:
+        result = check_line_height_chaos(td)
+    assert result == []
+
+
+def test_lint_design_quality_includes_line_height():
+    """lint_design_quality 应包含 line_height_chaos 检测。"""
+    import tempfile
+    import os
+    from driving.design_context import lint_design_quality
+    html = """<html><head><style>
+    .a { line-height: 1.3; }
+    </style></head><body>text</body></html>"""
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        violations = lint_design_quality(td)
+    lh_v = [v for v in violations if v["rule"] == "line_height_chaos"]
+    assert len(lh_v) > 0
+
+
+def test_auto_fix_line_height_normalizes():
+    """auto_fix_line_height 应将非标准值映射到最近标准值。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_line_height
+    html = """<html><head><style>
+    .a { line-height: 1.3; }
+    .b { line-height: 1.45; }
+    .c { line-height: 1.67; }
+    </style></head><body>text</body></html>"""
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        changed = auto_fix_line_height(td)
+        assert changed is True
+        with open(os.path.join(td, "index.html"), "r") as f:
+            content = f.read()
+    # 1.3 -> 1.25 (距离 0.05, 1.25 和 1.5 等距 0.2, 取较小值 1.25? 不对)
+    # 1.3: |1.3-1|=0.3, |1.3-1.25|=0.05, |1.3-1.5|=0.2 -> 1.25
+    assert "1.25" in content
+    # 1.45: |1.45-1.25|=0.2, |1.45-1.5|=0.05, |1.45-1.75|=0.3 -> 1.5
+    assert "1.5" in content
+    # 1.67: |1.67-1.5|=0.17, |1.67-1.75|=0.08, |1.67-2|=0.33 -> 1.75
+    assert "1.75" in content
+    # 原始值不应残留
+    assert "1.3;" not in content
+    assert "1.45" not in content
+    assert "1.67" not in content
+
+
+def test_auto_fix_line_height_no_change_if_clean():
+    """已经是标准值时不应修改文件。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_line_height
+    html = """<html><head><style>
+    .a { line-height: 1.5; }
+    .b { line-height: 2; }
+    </style></head><body>text</body></html>"""
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        changed = auto_fix_line_height(td)
+        assert changed is False
+
+
+def test_auto_fix_line_height_empty_dir():
+    """空目录应返回 False。"""
+    import tempfile
+    from driving.design_context import auto_fix_line_height
+    with tempfile.TemporaryDirectory() as td:
+        changed = auto_fix_line_height(td)
+    assert changed is False
+
+
+def test_auto_fix_line_height_idempotent():
+    """多次调用 auto_fix_line_height 应幂等。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_line_height
+    html = """<html><head><style>
+    .a { line-height: 1.3; }
+    .b { line-height: 1.9; }
+    </style></head><body>text</body></html>"""
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        auto_fix_line_height(td)
+        changed2 = auto_fix_line_height(td)
+        assert changed2 is False
+
+
+def test_auto_fix_design_issues_includes_line_height():
+    """auto_fix_design_issues 组合函数应包含 line-height 修复。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_design_issues, check_line_height_chaos
+    html = """<html><head><meta name="viewport" content="width=device-width">
+    <style>
+    .a { line-height: 1.3; }
+    .b { line-height: 1.67; }
+    </style></head>
+    <body><main><section>content</section></main></body></html>"""
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        auto_fix_design_issues(td)
+        violations = check_line_height_chaos(td)
+    lh_v = [v for v in violations if v["rule"] == "line_height_chaos"]
+    assert lh_v == [], f"组合修复后不应有违规: {lh_v}"
