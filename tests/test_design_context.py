@@ -4619,3 +4619,235 @@ def test_auto_fix_design_issues_includes_zindex():
 
     zindex_violations = [v for v in violations if v["rule"] == "zindex_chaos"]
     assert zindex_violations == [], f"组合修复后不应有 z-index 违规: {zindex_violations}"
+
+
+# ---------- M70: border-radius 一致性检测 + auto-fix ----------
+
+
+def test_check_border_radius_chaos_no_html():
+    """无 HTML 文件时应返回空列表。"""
+    import tempfile
+    from driving.design_context import check_border_radius_chaos
+
+    with tempfile.TemporaryDirectory() as td:
+        violations = check_border_radius_chaos(td)
+
+    assert violations == []
+
+
+def test_check_border_radius_chaos_non_standard():
+    """非标准 border-radius 值（如 7px/13px）应报 warning。"""
+    import tempfile
+    import os
+    from driving.design_context import check_border_radius_chaos
+
+    html = """<html><head><meta name="viewport" content="width=device-width">
+    <style>
+    .a { border-radius: 7px; }
+    .b { border-radius: 13px; }
+    </style></head>
+    <body><main><section>content</section></main></body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        violations = check_border_radius_chaos(td)
+
+    radius_violations = [v for v in violations if v["rule"] == "border_radius_chaos"]
+    assert len(radius_violations) >= 1, f"非标准值应报违规: {violations}"
+
+
+def test_check_border_radius_chaos_clean():
+    """标准 border-radius 值（0/4/8/12/16px）不应报违规。"""
+    import tempfile
+    import os
+    from driving.design_context import check_border_radius_chaos
+
+    html = """<html><head><meta name="viewport" content="width=device-width">
+    <style>
+    .a { border-radius: 0; }
+    .b { border-radius: 4px; }
+    .c { border-radius: 8px; }
+    .d { border-radius: 12px; }
+    .e { border-radius: 16px; }
+    </style></head>
+    <body><main><section>content</section></main></body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        violations = check_border_radius_chaos(td)
+
+    radius_violations = [v for v in violations if v["rule"] == "border_radius_chaos"]
+    assert radius_violations == [], f"标准值不应报违规: {radius_violations}"
+
+
+def test_check_border_radius_chaos_too_many():
+    """超过 6 个不同 border-radius 值应报 warning。"""
+    import tempfile
+    import os
+    from driving.design_context import check_border_radius_chaos
+
+    html = """<html><head><meta name="viewport" content="width=device-width">
+    <style>
+    .a { border-radius: 2px; }
+    .b { border-radius: 4px; }
+    .c { border-radius: 6px; }
+    .d { border-radius: 8px; }
+    .e { border-radius: 12px; }
+    .f { border-radius: 16px; }
+    .g { border-radius: 24px; }
+    </style></head>
+    <body><main><section>content</section></main></body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        violations = check_border_radius_chaos(td)
+
+    radius_violations = [v for v in violations if v["rule"] == "border_radius_chaos"]
+    assert len(radius_violations) >= 1, f"7 个不同值应报违规: {violations}"
+
+
+def test_check_border_radius_chaos_empty_dir():
+    """空目录应返回空列表。"""
+    import tempfile
+    from driving.design_context import check_border_radius_chaos
+
+    with tempfile.TemporaryDirectory() as td:
+        violations = check_border_radius_chaos(td)
+
+    assert violations == []
+
+
+def test_lint_design_quality_includes_border_radius():
+    """lint_design_quality 应包含 border_radius_chaos 规则。"""
+    import tempfile
+    import os
+    from driving.design_context import lint_design_quality
+
+    html = """<html><head><meta name="viewport" content="width=device-width">
+    <style>
+    .a { border-radius: 7px; }
+    </style></head>
+    <body><main><section>content</section></main></body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        violations = lint_design_quality(td)
+
+    radius_violations = [v for v in violations if v["rule"] == "border_radius_chaos"]
+    assert len(radius_violations) >= 1, f"lint 应包含 border_radius_chaos: {violations}"
+
+
+def test_auto_fix_border_radius_normalizes():
+    """非标准 border-radius 值应被规范化为最近标准值。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_border_radius, check_border_radius_chaos
+
+    html = """<html><head><meta name="viewport" content="width=device-width">
+    <style>
+    .a { border-radius: 7px; }
+    .b { border-radius: 13px; }
+    .c { border-radius: 25px; }
+    </style></head>
+    <body><main><section>content</section></main></body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        changed = auto_fix_border_radius(td)
+        content = open(os.path.join(td, "index.html"), "r").read()
+        violations = check_border_radius_chaos(td)
+
+    assert changed is True, "应报告已修改"
+    radius_violations = [v for v in violations if v["rule"] == "border_radius_chaos"]
+    assert radius_violations == [], f"修复后不应有违规: {radius_violations}"
+    # 7→8, 13→12, 25→24
+    assert "8px" in content, f"7应规范化为8: {content}"
+    assert "12px" in content, f"13应规范化为12: {content}"
+    assert "24px" in content, f"25应规范化为24: {content}"
+
+
+def test_auto_fix_border_radius_no_change_if_clean():
+    """标准的 border-radius 不应被修改。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_border_radius
+
+    html = """<html><head><meta name="viewport" content="width=device-width">
+    <style>
+    .a { border-radius: 4px; }
+    .b { border-radius: 8px; }
+    </style></head>
+    <body><main><section>content</section></main></body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        original = open(os.path.join(td, "index.html"), "r").read()
+        changed = auto_fix_border_radius(td)
+        after = open(os.path.join(td, "index.html"), "r").read()
+
+    assert changed is False, "标准值不应报告修改"
+    assert original == after, "内容不应改变"
+
+
+def test_auto_fix_border_radius_empty_dir():
+    """空目录应返回 False。"""
+    import tempfile
+    from driving.design_context import auto_fix_border_radius
+
+    with tempfile.TemporaryDirectory() as td:
+        changed = auto_fix_border_radius(td)
+
+    assert changed is False
+
+
+def test_auto_fix_border_radius_idempotent():
+    """两次 auto_fix 结果应一致（幂等性）。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_border_radius
+
+    html = """<html><head><meta name="viewport" content="width=device-width">
+    <style>
+    .a { border-radius: 7px; }
+    .b { border-radius: 13px; }
+    </style></head>
+    <body><main><section>content</section></main></body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        auto_fix_border_radius(td)
+        first_run = open(os.path.join(td, "index.html"), "r").read()
+        auto_fix_border_radius(td)
+        second_run = open(os.path.join(td, "index.html"), "r").read()
+
+    assert first_run == second_run, f"幂等性失败:\n第一次:\n{first_run}\n第二次:\n{second_run}"
+
+
+def test_auto_fix_design_issues_includes_border_radius():
+    """auto_fix_design_issues 组合函数应包含 border-radius 修复。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_design_issues, check_border_radius_chaos
+
+    html = """<html><head><meta name="viewport" content="width=device-width">
+    <style>
+    .a { border-radius: 7px; }
+    .b { border-radius: 13px; }
+    </style></head>
+    <body><main><section>content</section></main></body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        auto_fix_design_issues(td)
+        violations = check_border_radius_chaos(td)
+
+    radius_violations = [v for v in violations if v["rule"] == "border_radius_chaos"]
+    assert radius_violations == [], f"组合修复后不应有违规: {radius_violations}"

@@ -2,7 +2,7 @@
   "project": "flipped",
   "description": "接入本地 MLX 双模型(GLM-5.2 编排者 / Kimi-K2.7-Code 执行者)的 agentic 代码编辑器平台。fork Roo Code + 自定义驾驭层(强制验证/循环检测/上下文压缩/人工审批/子Agent/可观测性) + MCP 联网与外部能力。",
   "updated": "2026-07-11",
-  "current_milestone": "M69 z-index堆叠混乱检测+auto-fix (767 passed)",
+  "current_milestone": "M70 border-radius一致性检测+auto-fix (778 passed)",
   "key_facts": {
     "dev_host": "Apple M5 Max, 128GB RAM, 1.1TB 可用磁盘 — 开发/控制节点，非模型宿主",
     "model_cluster": "exo 集群 @ http://100.64.201.37:52415 (内网, OpenAI 兼容)；公网 https://dgmt.top/exo (需 Bearer token)",
@@ -972,6 +972,18 @@
           "title": "check_zindex_chaos + auto_fix_zindex + lint/score 集成",
           "status": "done",
           "note": "新增 check_zindex_chaos（>100或>5个不同值→warning）+ auto_fix_zindex（排序映射到rank*10）+ lint/score/auto_fix_design_issues 集成。11 TDD 测试。767 passed。"
+        }
+      }
+    },
+    "M70": {
+      "title": "border-radius 一致性检测 + auto-fix",
+      "status": "done",
+      "note": "AI 生成 CSS 常见破绽：随机 border-radius 值（7px/13px/25px）无系统性。新增 check_border_radius_chaos(cwd)：标准值集合 {0,2,4,6,8,12,16,24,32}，任意 px 值不在集合中或超过6个不同值，报 warning。新增 auto_fix_border_radius(cwd)：非标准值映射到最近标准值（距离相等取较大值，符合四舍五入惯例，7→8, 13→12, 25→24）。幂等性：标准值再次运行不修改。集成到 lint_design_quality（第22维 lint 规则）+ auto_fix_design_issues（第20个 auto-fix）+ design_score（-5扣分）。11 TDD 测试全过。全量 778 passed（+11，无回归）。设计质量系统：Lint 22 维、Auto-fix 20 组、design_score 含 border_radius_chaos 扣分。",
+      "tasks": {
+        "M70.1": {
+          "title": "check_border_radius_chaos + auto_fix_border_radius + lint/score 集成",
+          "status": "done",
+          "note": "新增 check_border_radius_chaos（非标准值或>6个不同值→warning）+ auto_fix_border_radius（映射到最近标准值）+ lint/score/auto_fix_design_issues 集成。11 TDD 测试。778 passed。"
         }
       }
     }

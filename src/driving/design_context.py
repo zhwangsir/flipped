@@ -1849,6 +1849,63 @@ def check_zindex_chaos(cwd: str) -> list[dict]:
     return violations
 
 
+def check_border_radius_chaos(cwd: str) -> list[dict]:
+    """M70: 检测 border-radius 一致性问题。
+
+    AI 生成 CSS 常见破绽：随机 border-radius 值（7px/13px/25px）无系统性。
+    标准值集合：{0, 2, 4, 6, 8, 12, 16, 24, 32}（px）。
+    报 warning 当：
+    - 任意 px 值不在标准集合中
+    - 或超过 6 个不同 border-radius 值
+    """
+    import os as _os
+    import re as _re
+
+    STANDARD_RADII = {0, 2, 4, 6, 8, 12, 16, 24, 32}
+    violations: list[dict] = []
+
+    for fname in _os.listdir(cwd) if _os.path.exists(cwd) else []:
+        if not fname.endswith(".html"):
+            continue
+        fpath = _os.path.join(cwd, fname)
+        if not _os.path.isfile(fpath):
+            continue
+        try:
+            content = open(fpath, "r", encoding="utf-8").read()
+        except Exception:
+            continue
+
+        # 提取所有 border-radius: <number>px 声明
+        matches = _re.findall(r"border-radius\s*:\s*(\d+)px", content, _re.IGNORECASE)
+        if not matches:
+            continue
+
+        values = [int(m) for m in matches]
+        distinct = sorted(set(values))
+
+        # 规则1: 非标准值
+        non_standard = [v for v in distinct if v not in STANDARD_RADII and v <= 100]
+        if non_standard:
+            violations.append({
+                "rule": "border_radius_chaos",
+                "severity": "warning",
+                "file": fname,
+                "message": f"非标准 border-radius 值：{non_standard}，应使用 0/2/4/6/8/12/16/24/32 系统化圆角",
+            })
+            continue
+
+        # 规则2: 超过 6 个不同值
+        if len(distinct) > 6:
+            violations.append({
+                "rule": "border_radius_chaos",
+                "severity": "warning",
+                "file": fname,
+                "message": f"border-radius 有 {len(distinct)} 个不同值：{distinct}，应精简到 ≤6 个系统化圆角",
+            })
+
+    return violations
+
+
 def auto_fix_console_log(cwd: str) -> bool:
     """M59: 移除 <script> 块中的 console.log 调试残留。
 
@@ -2324,6 +2381,73 @@ def auto_fix_zindex(cwd: str) -> bool:
     return changed
 
 
+def auto_fix_border_radius(cwd: str) -> bool:
+    """M70: 规范化 border-radius 值到标准集合 {0,2,4,6,8,12,16,24,32}。
+
+    非标准值映射到最近的标准值（7→8, 13→12, 25→24）。
+    消除 AI 生成的随机圆角值，建立系统化圆角层级。
+    幂等：标准值再次运行不修改（已是标准集合内的值）。
+    """
+    import os as _os
+    import re as _re
+
+    STANDARD_RADII = (0, 2, 4, 6, 8, 12, 16, 24, 32)
+
+    def _nearest_standard(val: int) -> int:
+        """返回标准集合中最近的值（距离相等时取较大值，符合四舍五入惯例）。"""
+        best = STANDARD_RADII[0]
+        best_dist = abs(best - val)
+        for s in STANDARD_RADII[1:]:
+            d = abs(s - val)
+            if d < best_dist or (d == best_dist and s > best):
+                best, best_dist = s, d
+        return best
+
+    changed = False
+    if not _os.path.exists(cwd):
+        return False
+
+    for fname in _os.listdir(cwd):
+        if not fname.endswith(".html"):
+            continue
+        fpath = _os.path.join(cwd, fname)
+        if not _os.path.isfile(fpath):
+            continue
+        try:
+            content = open(fpath, "r", encoding="utf-8").read()
+        except Exception:
+            continue
+
+        # 先检查是否有违规
+        violations = check_border_radius_chaos(_os.path.dirname(fpath))
+        has_violation = any(
+            v["file"] == fname and v["rule"] == "border_radius_chaos"
+            for v in violations
+        )
+        if not has_violation:
+            continue
+
+        # 替换每个非标准 border-radius px 值为最近标准值
+        def _replace_radius(m):
+            val = int(m.group(1))
+            new_val = _nearest_standard(val)
+            return f"border-radius: {new_val}px"
+
+        new_content = _re.sub(
+            r"border-radius\s*:\s*(\d+)px",
+            _replace_radius,
+            content,
+            flags=_re.IGNORECASE,
+        )
+
+        if new_content != content:
+            with open(fpath, "w", encoding="utf-8") as f:
+                f.write(new_content)
+            changed = True
+
+    return changed
+
+
 def auto_fix_design_issues(cwd: str) -> bool:
     """组合调用所有 auto-fix 函数，返回是否做过任何修改。"""
     changed1 = auto_fix_spacing_grid(cwd)
@@ -2345,11 +2469,12 @@ def auto_fix_design_issues(cwd: str) -> bool:
     changed17 = auto_fix_inline_styles(cwd)
     changed18 = auto_fix_color_contrast(cwd)
     changed19 = auto_fix_zindex(cwd)
+    changed20 = auto_fix_border_radius(cwd)
     return (
         changed1 or changed2 or changed3 or changed4 or changed5
         or changed6 or changed7 or changed8 or changed9 or changed10 or changed11
         or changed12 or changed13 or changed14 or changed15 or changed16 or changed17
-        or changed18 or changed19
+        or changed18 or changed19 or changed20
     )
 
 
@@ -2619,6 +2744,12 @@ def lint_design_quality(cwd: str) -> list[dict]:
     except Exception:
         pass
 
+    # 15. M70: border-radius 一致性检测
+    try:
+        violations.extend(check_border_radius_chaos(cwd))
+    except Exception:
+        pass
+
     return violations
 
 
@@ -2777,6 +2908,11 @@ def design_score(cwd: str) -> "tuple[int, list[str]]":
     if "zindex_chaos" in warning_rules:
         score -= 5
         notes.append("检测到z-index堆叠混乱(-5)")
+
+    # 15. M70: border-radius 一致性扣分（warning 级别，-5）
+    if "border_radius_chaos" in warning_rules:
+        score -= 5
+        notes.append("检测到border-radius不一致(-5)")
 
     score = max(0, score)
     if not notes:
