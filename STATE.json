@@ -2,7 +2,7 @@
   "project": "flipped",
   "description": "接入本地 MLX 双模型(GLM-5.2 编排者 / Kimi-K2.7-Code 执行者)的 agentic 代码编辑器平台。fork Roo Code + 自定义驾驭层(强制验证/循环检测/上下文压缩/人工审批/子Agent/可观测性) + MCP 联网与外部能力。",
   "updated": "2026-07-11",
-  "current_milestone": "M60 auto_fix_empty_links — 空链接a转span移除href (719 passed)",
+  "current_milestone": "M61 auto_fix_inline_styles — 内联style提取为CSS class (727 passed)",
   "key_facts": {
     "dev_host": "Apple M5 Max, 128GB RAM, 1.1TB 可用磁盘 — 开发/控制节点，非模型宿主",
     "model_cluster": "exo 集群 @ http://100.64.201.37:52415 (内网, OpenAI 兼容)；公网 https://dgmt.top/exo (需 Bearer token)",
@@ -864,6 +864,18 @@
           "title": "auto_fix_empty_links + _is_bad_href + auto_fix_design_issues 集成",
           "status": "done",
           "note": "re.sub 匹配 (<a...>)(.*?)(</a>) → _is_bad_href 判断 → <a 转 <span + 移除 href → 保留内容和属性。719 passed。"
+        }
+      }
+    },
+    "M61": {
+      "title": "auto_fix_inline_styles — 内联style提取为CSS class",
+      "status": "done",
+      "note": "新增 auto_fix_inline_styles(cwd)。策略：1.保护 <style> 块；2.找带 style= 的标签；3.md5(style内容)[:8] 生成 auto-style-xxxxxxxx class 名；4.移除 style= 属性，追加 class 到元素（已有 class 则追加）；5.CSS 规则添加到 <style> 块（已有则追加，无则新建在 </head> 前）。相同样式复用同一 class（去重）。集成到 auto_fix_design_issues（第 17 个 auto-fix，changed17）。8 TDD 测试：移除/加class/加CSS规则/保留已有class/无违规不改/空目录/幂等/组合函数包含。全量 727 passed（+8，无回归）。",
+      "tasks": {
+        "M61.1": {
+          "title": "auto_fix_inline_styles + _process_tag + auto_fix_design_issues 集成",
+          "status": "done",
+          "note": "保护 <style> 块 → re.sub 匹配带 style= 的标签 → _process_tag 提取style内容+md5生成class+移除style+追加class → 恢复 <style> 块 → CSS 规则追加到 <style> 或新建。727 passed。"
         }
       }
     }

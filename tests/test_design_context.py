@@ -3953,3 +3953,171 @@ def test_auto_fix_design_issues_includes_empty_links():
 
     assert "<span" in content
     assert "<a href=\"#\">" not in content
+
+
+# ---------- M61: auto_fix_inline_styles ----------
+
+
+def test_auto_fix_inline_styles_removes():
+    """style='...' 属性应被移除，替换为 CSS class。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_inline_styles, check_inline_styles
+
+    html = """<html><head><meta name="viewport" content="width=device-width"></head>
+    <body><main><section>content</section></main>
+    <div style="color: red;">Hello</div>
+    </body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        changed = auto_fix_inline_styles(td)
+        with open(os.path.join(td, "index.html")) as f:
+            content = f.read()
+        violations = check_inline_styles(td)
+
+    assert changed is True
+    assert 'style="color: red;"' not in content
+    style_violations = [v for v in violations if v["rule"] == "inline_style"]
+    assert style_violations == [], f"修复后不应有内联样式: {style_violations}"
+
+
+def test_auto_fix_inline_styles_adds_class():
+    """修复后元素应有自动生成的 class。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_inline_styles
+
+    html = """<html><head><meta name="viewport" content="width=device-width"></head>
+    <body><main><section>content</section></main>
+    <div style="color: red;">Hello</div>
+    </body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        auto_fix_inline_styles(td)
+        with open(os.path.join(td, "index.html")) as f:
+            content = f.read()
+
+    assert "class=" in content
+    assert "auto-style-" in content
+
+
+def test_auto_fix_inline_styles_adds_css_rule():
+    """修复后 <style> 块应包含对应的 CSS 规则。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_inline_styles
+
+    html = """<html><head><meta name="viewport" content="width=device-width"></head>
+    <body><main><section>content</section></main>
+    <div style="color: red;">Hello</div>
+    </body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        auto_fix_inline_styles(td)
+        with open(os.path.join(td, "index.html")) as f:
+            content = f.read()
+
+    assert "<style>" in content
+    assert "color: red" in content or "color:red" in content
+
+
+def test_auto_fix_inline_styles_preserves_existing_class():
+    """元素已有 class 时应追加而非覆盖。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_inline_styles
+
+    html = """<html><head><meta name="viewport" content="width=device-width"></head>
+    <body><main><section>content</section></main>
+    <div class="card" style="color: red;">Hello</div>
+    </body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        auto_fix_inline_styles(td)
+        with open(os.path.join(td, "index.html")) as f:
+            content = f.read()
+
+    assert 'class="card' in content
+    assert "auto-style-" in content
+    assert 'style="color: red;"' not in content
+
+
+def test_auto_fix_inline_styles_no_change_if_clean():
+    """无内联样式时不应修改。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_inline_styles
+
+    html = """<html><head><meta name="viewport" content="width=device-width">
+    <style>.card { color: red; }</style></head>
+    <body><main><section>content</section></main>
+    <div class="card">Hello</div>
+    </body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        changed = auto_fix_inline_styles(td)
+
+    assert changed is False
+
+
+def test_auto_fix_inline_styles_empty_dir():
+    """空目录应返回 False。"""
+    import tempfile
+    from driving.design_context import auto_fix_inline_styles
+
+    with tempfile.TemporaryDirectory() as td:
+        changed = auto_fix_inline_styles(td)
+
+    assert changed is False
+
+
+def test_auto_fix_inline_styles_idempotent():
+    """修复后再次运行不应再修改。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_inline_styles
+
+    html = """<html><head><meta name="viewport" content="width=device-width"></head>
+    <body><main><section>content</section></main>
+    <div style="color: red;">Hello</div>
+    </body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        auto_fix_inline_styles(td)
+        changed2 = auto_fix_inline_styles(td)
+
+    assert changed2 is False
+
+
+def test_auto_fix_design_issues_includes_inline_styles():
+    """auto_fix_design_issues 组合函数应包含 inline_styles 修复。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_design_issues
+
+    html = """<html><head><meta name="viewport" content="width=device-width"></head>
+    <body><main><section>content</section></main>
+    <div style="color: red;">Hello</div>
+    </body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        auto_fix_design_issues(td)
+        with open(os.path.join(td, "index.html")) as f:
+            content = f.read()
+
+    assert 'style="color: red;"' not in content
+    assert "auto-style-" in content

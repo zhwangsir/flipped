@@ -1931,6 +1931,168 @@ def auto_fix_empty_links(cwd: str) -> bool:
     return changed
 
 
+def auto_fix_inline_styles(cwd: str) -> bool:
+    """M61: 将内联 style="..." 提取为 CSS class。
+
+    策略：
+    1. 保护 <style> 块避免误匹配
+    2. 找所有带 style="..." 的 HTML 标签
+    3. 用 md5(style内容)[:8] 生成 class 名 "auto-style-xxxxxxxx"
+    4. 移除 style="..." 属性，追加 class 到元素
+    5. 将 CSS 规则添加到 <style> 块（已有则追加，无则新建）
+    6. 相同样式复用同一 class（去重）
+
+    幂等：无内联样式时返回 False 不修改。
+    """
+    import os as _os
+    import re as _re
+    import hashlib as _hashlib
+
+    changed = False
+    for fname in _os.listdir(cwd) if _os.path.exists(cwd) else []:
+        if not fname.endswith(".html"):
+            continue
+        fpath = _os.path.join(cwd, fname)
+        if not _os.path.isfile(fpath):
+            continue
+        try:
+            content = open(fpath, "r", encoding="utf-8").read()
+        except Exception:
+            continue
+
+        # 先检查是否有违规
+        violations = check_inline_styles(_os.path.dirname(fpath))
+        has_violation = any(
+            v["file"] == fname and v["rule"] == "inline_style"
+            for v in violations
+        )
+        if not has_violation:
+            continue
+
+        # 保护 <style> 块
+        saved_blocks: list[str] = []
+
+        def _save_block(m):
+            saved_blocks.append(m.group(0))
+            return f"\x00STYLE_BLOCK_{len(saved_blocks) - 1}\x00"
+
+        protected = _re.sub(
+            r"<style\b[^>]*>.*?</style>",
+            _save_block, content, flags=_re.IGNORECASE | _re.DOTALL,
+        )
+
+        # style 内容 → class 名映射（去重）
+        style_to_class: dict[str, str] = {}
+        css_rules: list[str] = []
+
+        def _process_tag(m):
+            full_tag = m.group(0)
+
+            # 提取 style="..."
+            style_match = _re.search(
+                r'\s*style\s*=\s*["\']([^"\']*)["\']',
+                full_tag, _re.IGNORECASE,
+            )
+            if not style_match:
+                return full_tag
+
+            style_content = style_match.group(1).strip()
+            if not style_content:
+                # 空样式，直接移除
+                return full_tag[:style_match.start()] + full_tag[style_match.end():]
+
+            # 生成 class 名（基于 style 内容的 hash）
+            style_hash = _hashlib.md5(style_content.encode()).hexdigest()[:8]
+            class_name = f"auto-style-{style_hash}"
+
+            # 记录 CSS 规则（去重）
+            if style_content not in style_to_class:
+                style_to_class[style_content] = class_name
+                css_rules.append(f".{class_name} {{ {style_content} }}")
+            else:
+                class_name = style_to_class[style_content]
+
+            # 移除 style="..." 属性
+            new_tag = full_tag[:style_match.start()] + full_tag[style_match.end():]
+
+            # 添加 class
+            class_match = _re.search(
+                r'\bclass\s*=\s*["\']([^"\']*)["\']',
+                new_tag, _re.IGNORECASE,
+            )
+            if class_match:
+                # 追加到现有 class
+                existing_class = class_match.group(1)
+                new_class = f"{existing_class} {class_name}"
+                new_tag = (
+                    new_tag[:class_match.start()]
+                    + f'class="{new_class}"'
+                    + new_tag[class_match.end():]
+                )
+            else:
+                # 添加新 class 属性（在标签名后）
+                new_tag = _re.sub(
+                    r"(<\w+)",
+                    rf'\1 class="{class_name}"',
+                    new_tag,
+                    count=1,
+                )
+
+            return new_tag
+
+        # 只匹配带 style= 的标签
+        new_protected = _re.sub(
+            r"<\w+\b[^>]*\bstyle\s*=\s*[\"'][^\"']*[\"'][^>]*>",
+            _process_tag,
+            protected,
+            flags=_re.IGNORECASE,
+        )
+
+        # 恢复 <style> 块
+        for idx, block in enumerate(saved_blocks):
+            new_protected = new_protected.replace(f"\x00STYLE_BLOCK_{idx}\x00", block)
+
+        # 添加 CSS 规则到 <style> 块
+        if css_rules:
+            css_block = "\n".join(css_rules)
+            style_block_match = _re.search(
+                r"(<style\b[^>]*>)(.*?)(</style>)",
+                new_protected, _re.IGNORECASE | _re.DOTALL,
+            )
+            if style_block_match:
+                # 追加到现有 <style> 块
+                existing_css = style_block_match.group(2)
+                new_css = existing_css.rstrip() + "\n" + css_block + "\n"
+                new_protected = (
+                    new_protected[:style_block_match.start()]
+                    + style_block_match.group(1)
+                    + new_css
+                    + style_block_match.group(3)
+                    + new_protected[style_block_match.end():]
+                )
+            else:
+                # 在 </head> 前创建新的 <style> 块
+                head_close = _re.search(r"</head>", new_protected, _re.IGNORECASE)
+                style_tag = f"<style>\n{css_block}\n</style>\n"
+                if head_close:
+                    insert_pos = head_close.start()
+                    new_protected = (
+                        new_protected[:insert_pos]
+                        + style_tag
+                        + new_protected[insert_pos:]
+                    )
+                else:
+                    # 没有 <head>，在文件开头添加
+                    new_protected = style_tag + new_protected
+
+        if new_protected != content:
+            with open(fpath, "w", encoding="utf-8") as f:
+                f.write(new_protected)
+            changed = True
+
+    return changed
+
+
 def auto_fix_design_issues(cwd: str) -> bool:
     """组合调用所有 auto-fix 函数，返回是否做过任何修改。"""
     changed1 = auto_fix_spacing_grid(cwd)
@@ -1949,10 +2111,11 @@ def auto_fix_design_issues(cwd: str) -> bool:
     changed14 = auto_fix_placeholder_text(cwd)
     changed15 = auto_fix_console_log(cwd)
     changed16 = auto_fix_empty_links(cwd)
+    changed17 = auto_fix_inline_styles(cwd)
     return (
         changed1 or changed2 or changed3 or changed4 or changed5
         or changed6 or changed7 or changed8 or changed9 or changed10 or changed11
-        or changed12 or changed13 or changed14 or changed15 or changed16
+        or changed12 or changed13 or changed14 or changed15 or changed16 or changed17
     )
 
 
