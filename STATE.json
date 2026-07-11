@@ -2,7 +2,7 @@
   "project": "flipped",
   "description": "接入本地 MLX 双模型(GLM-5.2 编排者 / Kimi-K2.7-Code 执行者)的 agentic 代码编辑器平台。fork Roo Code + 自定义驾驭层(强制验证/循环检测/上下文压缩/人工审批/子Agent/可观测性) + MCP 联网与外部能力。",
   "updated": "2026-07-12",
-  "current_milestone": "M86 UI/UX 整体打磨 (build + vitest 35 passed)",
+  "current_milestone": "M87 交互反馈与入场动效系统化 (build + vitest 35 passed)",
   "key_facts": {
     "dev_host": "Apple M5 Max, 128GB RAM, 1.1TB 可用磁盘 — 开发/控制节点，非模型宿主",
     "model_cluster": "exo 集群 @ http://100.64.201.37:52415 (内网, OpenAI 兼容)；公网 https://dgmt.top/exo (需 Bearer token)",
@@ -1196,6 +1196,28 @@
           "title": "工具卡 detail/child max-height 防撑开",
           "status": "done",
           "note": "app.css: tool-det max-height 180px + overflow-y auto + padding-right 4px; tool-child-tx max-height 240px + overflow-y auto。防止长终端输出/文件内容撑开整个对话流。"
+        }
+      }
+    },
+    "M87": {
+      "title": "交互反馈与入场动效系统化(模型掉线期间 UI/UX 深度打磨 续)",
+      "status": "done",
+      "note": "M86 之后的 UI/UX 深度打磨。识别到 Palette/Settings/Plugins/Factory overlay 已有入场动画(fade-in/scale-in/slide-up)，M87.1 跳过。聚焦于交互微反馈与空状态呼吸感。4 项全部完成：(1) Sidebar: thread:hover translateX(0.5px) 预备感 + side-foot-item:hover translateX(0.5px) + transition 补全 transform;(2) ContextPanel: ft-row:hover translateX(1px) + diff-file-head:not(:disabled):hover 背景 + rbrowser-detected 加 lift-in 入场 + line-comment 加 slide-up 入场 + rdiff-clean svg 加 breathe-soft 3.2s 呼吸;(3) 空状态统一: side-empty/palette-empty/factory-empty 加 fade-in + rbrowser-empty/factory-empty svg 加 breathe-soft 3.6s 呼吸。Vitest 35 passed、npm run build 通过(524ms, CSS 93.35 kB)。遵循 Film Atelier 设计：克制、有质感、物理感。",
+      "tasks": {
+        "M87.2": {
+          "title": "Sidebar 微反馈(thread hover / foot-item hover)",
+          "status": "done",
+          "note": "app.css: thread:hover 加 translateX(0.5px); side-foot-item transition 补 transform + :hover translateX(0.5px)。物理感预备。"
+        },
+        "M87.3": {
+          "title": "ContextPanel 反馈(ft-row/diff-file-head/rbrowser-detected/line-comment/rdiff-clean)",
+          "status": "done",
+          "note": "app.css: ft-row:hover translateX(1px) + transition transform; diff-file-head:not(:disabled):hover 加 bg-hover; rbrowser-detected 加 lift-in animation; line-comment 加 slide-up animation; rdiff-clean svg 加 breathe-soft 3.2s infinite。"
+        },
+        "M87.4": {
+          "title": "空状态统一入场动效",
+          "status": "done",
+          "note": "app.css: side-empty/palette-empty/factory-empty 加 fade-in; rbrowser-empty svg 加 breathe-soft 3.6s; factory-empty svg 加 breathe-soft 3.6s。空状态有呼吸感, 符合 Film Atelier。"
         }
       }
     }

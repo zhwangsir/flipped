@@ -492,6 +492,7 @@ body.resizing {
 }
 .thread:hover {
   background: var(--bg-hover);
+  transform: translateX(0.5px);
 }
 .thread.active {
   background: var(--bg-surface);
@@ -539,6 +540,7 @@ body.resizing {
   font-size: var(--text-xs);
   color: var(--text-faint);
   text-align: center;
+  animation: fade-in var(--dur) var(--ease-out-quart) both;
 }
 .side-empty.tall {
   padding-top: 44px;
@@ -561,7 +563,8 @@ body.resizing {
   border-radius: var(--radius-sm);
   font-size: var(--text-sm);
   color: var(--text-secondary);
-  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease),
+    transform var(--dur-fast) var(--ease-spring);
 }
 .side-foot-item svg {
   color: var(--text-muted);
@@ -569,6 +572,7 @@ body.resizing {
 .side-foot-item:hover {
   background: var(--bg-hover);
   color: var(--text-primary);
+  transform: translateX(0.5px);
 }
 .side-foot-mode {
   flex: 1;
@@ -1622,6 +1626,7 @@ body.resizing {
 }
 .rdiff-clean svg {
   color: var(--success);
+  animation: breathe-soft 3.2s var(--ease) infinite;
 }
 .rdiff .file-head {
   gap: 8px;
@@ -1729,10 +1734,11 @@ body.resizing {
   border-radius: var(--radius-sm);
   color: var(--text-secondary);
   text-align: left;
-  transition: background var(--dur-fast) var(--ease);
+  transition: background var(--dur-fast) var(--ease), transform var(--dur-fast) var(--ease-spring);
 }
 .ft-row:hover {
   background: var(--bg-hover);
+  transform: translateX(1px);
 }
 .ft-row svg {
   color: var(--text-muted);
@@ -1885,6 +1891,7 @@ body.resizing {
   border-radius: var(--radius-sm);
   background: var(--bg-surface);
   font-family: var(--font-sans);
+  animation: slide-up var(--dur) var(--ease-spring) both;
 }
 .line-comment-ref {
   font-family: var(--font-mono);
@@ -2216,6 +2223,7 @@ body.resizing {
   background: color-mix(in oklab, var(--success) 8%, var(--bg-surface));
   border: none;
   border-bottom: 1px solid var(--border-subtle);
+  animation: lift-in var(--dur) var(--ease-out-quart) both;
   cursor: pointer;
   text-align: left;
 }
@@ -2257,6 +2265,7 @@ body.resizing {
 .rbrowser-empty svg {
   color: var(--text-faint);
   margin-bottom: 4px;
+  animation: breathe-soft 3.6s var(--ease) infinite;
 }
 .rbrowser-empty-sub {
   font-size: var(--text-xs);
@@ -2821,6 +2830,7 @@ textarea:focus {
   text-align: center;
   color: var(--text-faint);
   font-size: var(--text-sm);
+  animation: fade-in var(--dur) var(--ease-out-quart) both;
 }
 .palette kbd,
 .palette-search kbd {
@@ -2922,6 +2932,9 @@ textarea:focus {
 }
 .diff-file-head:disabled {
   cursor: default;
+}
+.diff-file-head:not(:disabled):hover {
+  background: var(--bg-hover);
 }
 .diff-file-chev {
   color: var(--text-faint);
@@ -3705,9 +3718,11 @@ textarea:focus {
   padding: 64px 24px;
   color: var(--text-faint);
   text-align: center;
+  animation: fade-in var(--dur) var(--ease-out-quart) both;
 }
 .factory-empty svg {
   color: var(--border-strong);
+  animation: breathe-soft 3.6s var(--ease) infinite;
 }
 .factory-empty p {
   font-size: var(--text-md);
