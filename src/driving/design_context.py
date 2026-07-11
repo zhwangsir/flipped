@@ -4468,6 +4468,142 @@ def auto_fix_text_shadow(cwd: str) -> bool:
     return changed
 
 
+# ---------- M85: transform scale 一致性 ----------
+
+_STANDARD_SCALES = (0.8, 0.9, 0.95, 1.0, 1.05, 1.1, 1.2)
+
+_SCALE_RE = r"scale[XY]?\((\d+(?:\.\d+)?)"
+
+
+def check_transform_scale_chaos(cwd: str) -> list[dict]:
+    """M85: 检测 transform scale 一致性问题。
+
+    AI 生成 CSS 常见破绽：随机缩放值（0.97/1.07/0.85）无系统性。
+    标准集合：{0.8, 0.9, 0.95, 1, 1.05, 1.1, 1.2}。
+    匹配 scale()/scaleX()/scaleY() 的第一个数值参数。
+
+    规则1: 非标准值报 warning。
+    规则2: 超过 7 个不同值报 warning。
+    """
+    import os as _os
+    import re as _re
+
+    violations: list[dict] = []
+
+    if not _os.path.exists(cwd):
+        return violations
+
+    for fname in _os.listdir(cwd):
+        if not fname.endswith(".html"):
+            continue
+        fpath = _os.path.join(cwd, fname)
+        if not _os.path.isfile(fpath):
+            continue
+        try:
+            content = open(fpath, "r", encoding="utf-8").read()
+        except Exception:
+            continue
+
+        scale_matches = _re.findall(_SCALE_RE, content, _re.IGNORECASE)
+        if not scale_matches:
+            continue
+
+        values = [float(m) for m in scale_matches]
+        distinct = sorted(set(values))
+
+        non_standard = [v for v in distinct if v not in _STANDARD_SCALES]
+        if non_standard:
+            violations.append({
+                "rule": "transform_scale_chaos",
+                "severity": "warning",
+                "file": fname,
+                "message": (
+                    f"非标准 transform scale 值：{non_standard}，"
+                    f"应使用 0.8/0.9/0.95/1/1.05/1.1/1.2 系统化缩放"
+                ),
+            })
+
+        if len(distinct) > 7:
+            violations.append({
+                "rule": "transform_scale_chaos",
+                "severity": "warning",
+                "file": fname,
+                "message": (
+                    f"transform scale 有 {len(distinct)} 个不同值：{distinct}，"
+                    f"应精简到 ≤7 个系统化缩放"
+                ),
+            })
+
+    return violations
+
+
+def auto_fix_transform_scale(cwd: str) -> bool:
+    """M85: 规范化 transform scale 值到标准集合 {0.8,0.9,0.95,1,1.05,1.1,1.2}。"""
+    import os as _os
+    import re as _re
+
+    def _nearest_scale(val: float) -> float:
+        best = _STANDARD_SCALES[0]
+        best_dist = abs(best - val)
+        for s in _STANDARD_SCALES[1:]:
+            d = abs(s - val)
+            if d < best_dist or (d == best_dist and s > best):
+                best, best_dist = s, d
+        return best
+
+    def _is_standard(val: float) -> bool:
+        return val in _STANDARD_SCALES
+
+    if not _os.path.exists(cwd):
+        return False
+
+    changed = False
+    for fname in _os.listdir(cwd):
+        if not fname.endswith(".html"):
+            continue
+        fpath = _os.path.join(cwd, fname)
+        if not _os.path.isfile(fpath):
+            continue
+        try:
+            content = open(fpath, "r", encoding="utf-8").read()
+        except Exception:
+            continue
+
+        violations = check_transform_scale_chaos(_os.path.dirname(fpath))
+        has_violation = any(
+            v["file"] == fname and v["rule"] == "transform_scale_chaos"
+            for v in violations
+        )
+        if not has_violation:
+            continue
+
+        def _replace_scale(m):
+            val = float(m.group(1))
+            if _is_standard(val):
+                return m.group(0)
+            std = _nearest_scale(val)
+            # 格式化：去掉多余的 .0
+            if std == int(std):
+                std_str = str(int(std))
+            else:
+                std_str = str(std)
+            return m.group(0).replace(m.group(1), std_str)
+
+        new_content = _re.sub(
+            _SCALE_RE,
+            _replace_scale,
+            content,
+            flags=_re.IGNORECASE,
+        )
+
+        if new_content != content:
+            with open(fpath, "w", encoding="utf-8") as f:
+                f.write(new_content)
+            changed = True
+
+    return changed
+
+
 def auto_fix_design_issues(cwd: str) -> bool:
     """组合调用所有 auto-fix 函数，返回是否做过任何修改。"""
     changed1 = auto_fix_spacing_grid(cwd)
@@ -4504,13 +4640,14 @@ def auto_fix_design_issues(cwd: str) -> bool:
     changed32 = auto_fix_padding(cwd)
     changed33 = auto_fix_margin(cwd)
     changed34 = auto_fix_text_shadow(cwd)
+    changed35 = auto_fix_transform_scale(cwd)
     return (
         changed1 or changed2 or changed3 or changed4 or changed5
         or changed6 or changed7 or changed8 or changed9 or changed10 or changed11
         or changed12 or changed13 or changed14 or changed15 or changed16 or changed17
         or changed18 or changed19 or changed20 or changed21 or changed22 or changed23
         or changed24 or changed25 or changed26 or changed27 or changed28 or changed29
-        or changed30 or changed31 or changed32 or changed33 or changed34
+        or changed30 or changed31 or changed32 or changed33 or changed34 or changed35
     )
 
 
@@ -4870,6 +5007,12 @@ def lint_design_quality(cwd: str) -> list[dict]:
     except Exception:
         pass
 
+    # 30. M85: transform scale 一致性检测
+    try:
+        violations.extend(check_transform_scale_chaos(cwd))
+    except Exception:
+        pass
+
     return violations
 
 
@@ -5103,6 +5246,11 @@ def design_score(cwd: str) -> "tuple[int, list[str]]":
     if "text_shadow_chaos" in warning_rules:
         score -= 5
         notes.append("检测到text-shadow不一致(-5)")
+
+    # 30. M85: transform scale 一致性扣分（warning 级别，-5）
+    if "transform_scale_chaos" in warning_rules:
+        score -= 5
+        notes.append("检测到transform-scale不一致(-5)")
 
     score = max(0, score)
     if not notes:

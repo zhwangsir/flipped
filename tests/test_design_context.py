@@ -1904,7 +1904,7 @@ body { transition: opacity 0.3s ease; }
 
     html_with_states = base_html.replace(
         "</style>",
-        "button:hover{opacity:0.85}button:active{transform:scale(0.98)}button:disabled{opacity:0.5}</style>",
+        "button:hover{opacity:0.85}button:active{transform:scale(0.95)}button:disabled{opacity:0.5}</style>",
     )
 
     with tempfile.TemporaryDirectory() as td1:
@@ -1985,7 +1985,7 @@ def test_design_score_perfect_with_all_dimensions():
 body { transition: opacity 0.3s ease; transform: translateY(0); }
 :focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
 button:hover { opacity: 0.85; }
-button:active { transform: scale(0.98); }
+button:active { transform: scale(0.95); }
 button:focus { outline: 2px solid var(--color-accent); }
 button:disabled { opacity: 0.5; cursor: not-allowed; }
 @media (max-width: 768px) { body { font-size: 14px; } }
@@ -2308,7 +2308,7 @@ def test_design_score_penalizes_aria_label_missing():
 :root { --color-bg: #0D0D12; --color-text: #F5F5F5; --color-accent: #0A84FF; }
 body { transition: opacity 0.3s ease; }
 :focus-visible { outline: 2px solid var(--color-accent); }
-button:hover{opacity:0.85}button:active{transform:scale(0.98)}button:focus{outline:2px solid blue}button:disabled{opacity:0.5}
+button:hover{opacity:0.85}button:active{transform:scale(0.95)}button:focus{outline:2px solid blue}button:disabled{opacity:0.5}
 @media (max-width: 768px) { body { font-size: 14px; } }
 </style></head><body>
 <header><nav>Logo</nav></header>
@@ -2711,7 +2711,7 @@ def test_design_score_penalizes_missing_scroll_animation():
 :root { --color-bg: #0D0D12; --color-text: #F5F5F5; --color-accent: #0A84FF; }
 body { transition: opacity 0.3s ease; }
 :focus-visible { outline: 2px solid var(--color-accent); }
-button:hover{opacity:0.85}button:active{transform:scale(0.98)}button:focus{outline:2px solid blue}button:disabled{opacity:0.5}
+button:hover{opacity:0.85}button:active{transform:scale(0.95)}button:focus{outline:2px solid blue}button:disabled{opacity:0.5}
 @media (max-width: 768px) { body { font-size: 14px; } }
 </style></head><body>
 <header><nav>Logo</nav></header>
@@ -2908,7 +2908,7 @@ def test_design_score_penalizes_placeholder_text():
 :root { --color-bg: #0D0D12; --color-text: #F5F5F5; --color-accent: #0A84FF; }
 body { transition: opacity 0.3s ease; }
 :focus-visible { outline: 2px solid var(--color-accent); }
-button:hover{opacity:0.85}button:active{transform:scale(0.98)}button:focus{outline:2px solid blue}button:disabled{opacity:0.5}
+button:hover{opacity:0.85}button:active{transform:scale(0.95)}button:focus{outline:2px solid blue}button:disabled{opacity:0.5}
 @media (max-width: 768px) { body { font-size: 14px; } }
 @keyframes fadeInUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
 section{animation:fadeInUp 0.5s ease-out both}
@@ -3254,7 +3254,7 @@ def test_design_score_penalizes_empty_links():
 :root { --color-bg: #0D0D12; --color-text: #F5F5F5; --color-accent: #0A84FF; }
 body { transition: opacity 0.3s ease; }
 :focus-visible { outline: 2px solid var(--color-accent); }
-button:hover{opacity:0.85}button:active{transform:scale(0.98)}button:focus{outline:2px solid blue}button:disabled{opacity:0.5}
+button:hover{opacity:0.85}button:active{transform:scale(0.95)}button:focus{outline:2px solid blue}button:disabled{opacity:0.5}
 @media (max-width: 768px) { body { font-size: 14px; } }
 @keyframes fadeInUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
 section{animation:fadeInUp 0.5s ease-out both}
@@ -3417,7 +3417,7 @@ def test_design_score_penalizes_inline_styles():
 :root { --color-bg: #0D0D12; --color-text: #F5F5F5; --color-accent: #0A84FF; }
 body { transition: opacity 0.3s ease; }
 :focus-visible { outline: 2px solid var(--color-accent); }
-button:hover{opacity:0.85}button:active{transform:scale(0.98)}button:focus{outline:2px solid blue}button:disabled{opacity:0.5}
+button:hover{opacity:0.85}button:active{transform:scale(0.95)}button:focus{outline:2px solid blue}button:disabled{opacity:0.5}
 @media (max-width: 768px) { body { font-size: 14px; } }
 @keyframes fadeInUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
 section{animation:fadeInUp 0.5s ease-out both}
@@ -3604,7 +3604,7 @@ def test_design_score_penalizes_console_log():
 :root { --color-bg: #0D0D12; --color-text: #F5F5F5; --color-accent: #0A84FF; }
 body { transition: opacity 0.3s ease; }
 :focus-visible { outline: 2px solid var(--color-accent); }
-button:hover{opacity:0.85}button:active{transform:scale(0.98)}button:focus{outline:2px solid blue}button:disabled{opacity:0.5}
+button:hover{opacity:0.85}button:active{transform:scale(0.95)}button:focus{outline:2px solid blue}button:disabled{opacity:0.5}
 @media (max-width: 768px) { body { font-size: 14px; } }
 @keyframes fadeInUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
 section{animation:fadeInUp 0.5s ease-out both}
@@ -7786,4 +7786,235 @@ def test_auto_fix_design_issues_includes_text_shadow():
         auto_fix_design_issues(td)
         violations = check_text_shadow_chaos(td)
     ts_v = [v for v in violations if v["rule"] == "text_shadow_chaos"]
+    assert ts_v == [], f"组合修复后不应有违规: {ts_v}"
+
+
+# ---------- M85: transform scale 一致性检测 + auto-fix ----------
+
+def test_check_transform_scale_chaos_no_html():
+    """无 HTML 文件不应报违规。"""
+    import tempfile
+    from driving.design_context import check_transform_scale_chaos
+    with tempfile.TemporaryDirectory() as td:
+        violations = check_transform_scale_chaos(td)
+    assert violations == []
+
+
+def test_check_transform_scale_chaos_non_standard():
+    """非标准 scale 值应报 warning。"""
+    import tempfile
+    import os
+    from driving.design_context import check_transform_scale_chaos
+    html = """<html><head><meta name="viewport" content="width=device-width">
+    <style>
+    .a { transform: scale(0.97); }
+    .b { transform: scale(1.07); }
+    </style></head>
+    <body><main><section>content</section></main></body></html>"""
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        violations = check_transform_scale_chaos(td)
+    ts_v = [v for v in violations if v["rule"] == "transform_scale_chaos"]
+    assert len(ts_v) >= 1
+    assert ts_v[0]["severity"] == "warning"
+
+
+def test_check_transform_scale_chaos_clean():
+    """标准 scale 值不应报违规。"""
+    import tempfile
+    import os
+    from driving.design_context import check_transform_scale_chaos
+    html = """<html><head><meta name="viewport" content="width=device-width">
+    <style>
+    .a { transform: scale(0.9); }
+    .b { transform: scale(1); }
+    .c { transform: scale(1.1); }
+    </style></head>
+    <body><main><section>content</section></main></body></html>"""
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        violations = check_transform_scale_chaos(td)
+    ts_v = [v for v in violations if v["rule"] == "transform_scale_chaos"]
+    assert ts_v == []
+
+
+def test_check_transform_scale_chaos_scalex_scaley():
+    """scaleX/scaleY 也应检测。"""
+    import tempfile
+    import os
+    from driving.design_context import check_transform_scale_chaos
+    html = """<html><head><meta name="viewport" content="width=device-width">
+    <style>
+    .a { transform: scaleX(0.97); }
+    .b { transform: scaleY(1.07); }
+    </style></head>
+    <body><main><section>content</section></main></body></html>"""
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        violations = check_transform_scale_chaos(td)
+    ts_v = [v for v in violations if v["rule"] == "transform_scale_chaos"]
+    assert len(ts_v) >= 1
+
+
+def test_check_transform_scale_chaos_two_values():
+    """scale(1.1, 0.9) 双值也应检测。"""
+    import tempfile
+    import os
+    from driving.design_context import check_transform_scale_chaos
+    html = """<html><head><meta name="viewport" content="width=device-width">
+    <style>
+    .a { transform: scale(0.97, 1.07); }
+    </style></head>
+    <body><main><section>content</section></main></body></html>"""
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        violations = check_transform_scale_chaos(td)
+    ts_v = [v for v in violations if v["rule"] == "transform_scale_chaos"]
+    assert len(ts_v) >= 1
+
+
+def test_check_transform_scale_chaos_too_many_distinct():
+    """超过 7 个不同 scale 值应报 warning。"""
+    import tempfile
+    import os
+    from driving.design_context import check_transform_scale_chaos
+    html = """<html><head><meta name="viewport" content="width=device-width">
+    <style>
+    .a { transform: scale(0.8); }
+    .b { transform: scale(0.9); }
+    .c { transform: scale(0.95); }
+    .d { transform: scale(1); }
+    .e { transform: scale(1.05); }
+    .f { transform: scale(1.1); }
+    .g { transform: scale(1.2); }
+    .h { transform: scale(0.85); }
+    </style></head>
+    <body><main><section>content</section></main></body></html>"""
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        violations = check_transform_scale_chaos(td)
+    ts_v = [v for v in violations if v["rule"] == "transform_scale_chaos"]
+    assert len(ts_v) >= 1
+
+
+def test_check_transform_scale_chaos_empty_dir():
+    """空目录不应报违规。"""
+    import tempfile
+    from driving.design_context import check_transform_scale_chaos
+    with tempfile.TemporaryDirectory() as td:
+        violations = check_transform_scale_chaos(td)
+    assert violations == []
+
+
+def test_lint_design_quality_includes_transform_scale():
+    """lint_design_quality 应包含 transform scale 检查。"""
+    import tempfile
+    import os
+    from driving.design_context import lint_design_quality
+    html = """<html><head><meta name="viewport" content="width=device-width">
+    <style>
+    .a { transform: scale(0.97); }
+    </style></head>
+    <body><main><section>content</section></main></body></html>"""
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        violations = lint_design_quality(td)
+    ts_v = [v for v in violations if v["rule"] == "transform_scale_chaos"]
+    assert len(ts_v) >= 1
+
+
+def test_auto_fix_transform_scale_normalizes():
+    """auto_fix_transform_scale 应将非标准值映射到最近标准值。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_transform_scale, check_transform_scale_chaos
+    html = """<html><head><meta name="viewport" content="width=device-width">
+    <style>
+    .a { transform: scale(0.97); }
+    .b { transform: scale(1.07); }
+    </style></head>
+    <body><main><section>content</section></main></body></html>"""
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        changed = auto_fix_transform_scale(td)
+        assert changed is True
+        content = open(os.path.join(td, "index.html")).read()
+        # 0.97 -> 0.95, 1.07 -> 1.05（距离相等取较大值）
+        assert "0.95" in content
+        assert "1.05" in content
+        violations = check_transform_scale_chaos(td)
+    ts_v = [v for v in violations if v["rule"] == "transform_scale_chaos"]
+    assert ts_v == []
+
+
+def test_auto_fix_transform_scale_no_change_if_clean():
+    """标准值不应修改。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_transform_scale
+    html = """<html><head><meta name="viewport" content="width=device-width">
+    <style>
+    .a { transform: scale(0.9); }
+    .b { transform: scale(1.1); }
+    </style></head>
+    <body><main><section>content</section></main></body></html>"""
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        changed = auto_fix_transform_scale(td)
+        assert changed is False
+
+
+def test_auto_fix_transform_scale_empty_dir():
+    """空目录不应报错。"""
+    import tempfile
+    from driving.design_context import auto_fix_transform_scale
+    with tempfile.TemporaryDirectory() as td:
+        changed = auto_fix_transform_scale(td)
+    assert changed is False
+
+
+def test_auto_fix_transform_scale_idempotent():
+    """二次调用不应再修改。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_transform_scale, auto_fix_design_issues
+    html = """<html><head><meta name="viewport" content="width=device-width">
+    <style>
+    .a { transform: scale(0.97); }
+    .b { transform: scale(1.07); }
+    </style></head>
+    <body><main><section>content</section></main></body></html>"""
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        auto_fix_design_issues(td)
+        changed2 = auto_fix_transform_scale(td)
+        assert changed2 is False
+
+
+def test_auto_fix_design_issues_includes_transform_scale():
+    """auto_fix_design_issues 组合函数应包含 transform scale 修复。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_design_issues, check_transform_scale_chaos
+    html = """<html><head><meta name="viewport" content="width=device-width">
+    <style>
+    .a { transform: scale(0.97); }
+    .b { transform: scale(1.07); }
+    </style></head>
+    <body><main><section>content</section></main></body></html>"""
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        auto_fix_design_issues(td)
+        violations = check_transform_scale_chaos(td)
+    ts_v = [v for v in violations if v["rule"] == "transform_scale_chaos"]
     assert ts_v == [], f"组合修复后不应有违规: {ts_v}"
