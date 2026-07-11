@@ -2,7 +2,7 @@
   "project": "flipped",
   "description": "接入本地 MLX 双模型(GLM-5.2 编排者 / Kimi-K2.7-Code 执行者)的 agentic 代码编辑器平台。fork Roo Code + 自定义驾驭层(强制验证/循环检测/上下文压缩/人工审批/子Agent/可观测性) + MCP 联网与外部能力。",
   "updated": "2026-07-11",
-  "current_milestone": "M55 auto_fix_placeholder_text — 占位文本自动替换为中性文案 (677 passed)",
+  "current_milestone": "M56 空链接/无效 href 检测 — href=#/javascript:void(0)/缺失 href (687 passed)",
   "key_facts": {
     "dev_host": "Apple M5 Max, 128GB RAM, 1.1TB 可用磁盘 — 开发/控制节点，非模型宿主",
     "model_cluster": "exo 集群 @ http://100.64.201.37:52415 (内网, OpenAI 兼容)；公网 https://dgmt.top/exo (需 Bearer token)",
@@ -798,12 +798,24 @@
     "M55": {
       "title": "auto_fix_placeholder_text — 占位文本自动替换为中性文案",
       "status": "done",
-      "note": "M54 lint 的自然补充。新增 auto_fix_placeholder_text(cwd)：先用 _save_block 保护 script/style 块（避免替换 JS/CSS 中的内容），再用 re.split 拆分标签和文本节点，只在文本节点上应用 _PLACEHOLDER_REPLACEMENTS（11 类替换映射 + 重复字符≥5 → 页面内容）。修复了 \1 反向引用与非捕获组冲突的 bug。集成到 auto_fix_design_issues（第 14 个 auto-fix 函数）。8 个 TDD 测试。全量 677 passed（+8，无回归）。",
+      "note": "M54 lint 的自然补充。新增 auto_fix_placeholder_text(cwd)：先用 _save_block 保护 script/style 块（避免替换 JS/CSS 中的内容），再用 re.split 拆分标签和文本节点，只在文本节点上应用 _PLACEHOLDER_REPLACEMENTS（11 类替换映射 + 重复字符≥5 → 页面内容）。修复了反向引用与非捕获组冲突的 bug。集成到 auto_fix_design_issues（第 14 个 auto-fix 函数）。8 个 TDD 测试。全量 677 passed（+8，无回归）。",
       "tasks": {
         "M55.1": {
           "title": "auto_fix_placeholder_text + _PLACEHOLDER_REPLACEMENTS + auto_fix_design_issues 集成 + 8 测试",
           "status": "done",
-          "note": "新增 auto_fix_placeholder_text + _PLACEHOLDER_REPLACEMENTS（11 类替换映射）+ script/style 块保护 + 文本节点拆分替换 + auto_fix_design_issues 集成（第 14 个）。8 测试覆盖：Lorem ipsum / 中文示例 / Click here / 干净不报 / 空目录 / 重复字符 / 幂等 / 组合函数。修复 \1 反向引用 bug（非捕获组 → 捕获组）。677 passed。"
+          "note": "新增 auto_fix_placeholder_text + _PLACEHOLDER_REPLACEMENTS（11 类替换映射）+ script/style 块保护 + 文本节点拆分替换 + auto_fix_design_issues 集成（第 14 个）。8 测试覆盖：Lorem ipsum / 中文示例 / Click here / 干净不报 / 空目录 / 重复字符 / 幂等 / 组合函数。修复反向引用 bug（非捕获组 → 捕获组）。677 passed。"
+        }
+      }
+    },
+    "M56": {
+      "title": "空链接/无效 href 检测 — href=#/javascript:void(0)/缺失 href",
+      "status": "done",
+      "note": "AI 生成 UI 常见破绽：空链接和无效 href。新增 check_empty_links(cwd)：检测 href='#'（空锚点）、href='javascript:void(0)'（过时模式）、<a> 缺少 href 属性、href='#section' 锚点目标 id 不存在。合法链接（相对路径/外部URL/mailto:/tel:/有效锚点跳转）不报违规。集成到 lint_design_quality（第 18 维）+ design_score（-5 扣分）。10 个 TDD 测试。全量 687 passed（+10，无回归）。",
+      "tasks": {
+        "M56.1": {
+          "title": "check_empty_links + lint/score 集成 + 10 测试",
+          "status": "done",
+          "note": "新增 check_empty_links + 锚点 id 验证 + lint_design_quality 集成 + design_score -5 扣分。10 测试覆盖：无 HTML / href=# / javascript:void(0) / 缺少 href / 有效 href / 外部 URL / 空目录 / 锚点跳转 / lint 集成 / score 对比。687 passed。"
         }
       }
     }

@@ -3086,3 +3086,197 @@ def test_auto_fix_design_issues_includes_placeholder_text():
             content = f.read()
 
     assert "lorem ipsum" not in content.lower()
+
+
+# ---------- M56: 空链接/无效 href 检测（AI 生成 UI 常见破绽） ----------
+
+
+def test_check_empty_links_no_html():
+    """无 HTML 文件时不应报违规。"""
+    import tempfile
+    from driving.design_context import check_empty_links
+
+    with tempfile.TemporaryDirectory() as td:
+        violations = check_empty_links(td)
+
+    assert violations == []
+
+
+def test_check_empty_links_hash_href():
+    """href='#' 应报违规。"""
+    import tempfile
+    import os
+    from driving.design_context import check_empty_links
+
+    html = """<html><head><meta name="viewport" content="width=device-width"></head>
+    <body><main><section><a href="#">Link</a></section></main></body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        violations = check_empty_links(td)
+
+    link_violations = [v for v in violations if v["rule"] == "empty_link"]
+    assert len(link_violations) >= 1
+    assert link_violations[0]["severity"] == "warning"
+
+
+def test_check_empty_links_javascript_void():
+    """href='javascript:void(0)' 应报违规。"""
+    import tempfile
+    import os
+    from driving.design_context import check_empty_links
+
+    html = """<html><head><meta name="viewport" content="width=device-width"></head>
+    <body><main><section><a href="javascript:void(0)">Click</a></section></main></body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        violations = check_empty_links(td)
+
+    link_violations = [v for v in violations if v["rule"] == "empty_link"]
+    assert len(link_violations) >= 1
+
+
+def test_check_empty_links_missing_href():
+    """<a> 无 href 属性应报违规。"""
+    import tempfile
+    import os
+    from driving.design_context import check_empty_links
+
+    html = """<html><head><meta name="viewport" content="width=device-width"></head>
+    <body><main><section><a>Link without href</a></section></main></body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        violations = check_empty_links(td)
+
+    link_violations = [v for v in violations if v["rule"] == "empty_link"]
+    assert len(link_violations) >= 1
+
+
+def test_check_empty_links_valid_href():
+    """有效 href 不应报违规。"""
+    import tempfile
+    import os
+    from driving.design_context import check_empty_links
+
+    html = """<html><head><meta name="viewport" content="width=device-width"></head>
+    <body><main><section><a href="/docs">查看文档</a></section></main></body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        violations = check_empty_links(td)
+
+    link_violations = [v for v in violations if v["rule"] == "empty_link"]
+    assert link_violations == [], f"有效 href 不应报违规: {link_violations}"
+
+
+def test_check_empty_links_external_url():
+    """外部 URL 不应报违规。"""
+    import tempfile
+    import os
+    from driving.design_context import check_empty_links
+
+    html = """<html><head><meta name="viewport" content="width=device-width"></head>
+    <body><main><section><a href="https://example.com">External</a></section></main></body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        violations = check_empty_links(td)
+
+    link_violations = [v for v in violations if v["rule"] == "empty_link"]
+    assert link_violations == []
+
+
+def test_check_empty_links_empty_dir():
+    """空目录应返回空列表。"""
+    import tempfile
+    from driving.design_context import check_empty_links
+
+    with tempfile.TemporaryDirectory() as td:
+        violations = check_empty_links(td)
+
+    assert violations == []
+
+
+def test_check_empty_links_anchor_link():
+    """href='#section' 锚点链接不应报违规（同页跳转是合法的）。"""
+    import tempfile
+    import os
+    from driving.design_context import check_empty_links
+
+    html = """<html><head><meta name="viewport" content="width=device-width"></head>
+    <body><main><section id="top"><a href="#section2">跳转</a></section>
+    <section id="section2">内容</section></main></body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        violations = check_empty_links(td)
+
+    link_violations = [v for v in violations if v["rule"] == "empty_link"]
+    assert link_violations == [], f"锚点链接不应报违规: {link_violations}"
+
+
+def test_lint_design_quality_includes_empty_links():
+    """lint_design_quality 应包含 empty_link 规则。"""
+    import tempfile
+    import os
+    from driving.design_context import lint_design_quality
+
+    html = """<html><head><meta name="viewport" content="width=device-width"></head>
+    <body><main><section><a href="#">Link</a></section></main></body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        violations = lint_design_quality(td)
+
+    link_violations = [v for v in violations if v["rule"] == "empty_link"]
+    assert len(link_violations) >= 1
+
+
+def test_design_score_penalizes_empty_links():
+    """有空链接的 HTML 应比有效链接的分数低。"""
+    import tempfile
+    import os
+    from driving.design_context import design_score
+
+    base_html = """<!DOCTYPE html>
+<html lang="zh"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+:root { --color-bg: #0D0D12; --color-text: #F5F5F5; --color-accent: #0A84FF; }
+body { transition: opacity 0.3s ease; }
+:focus-visible { outline: 2px solid var(--color-accent); }
+button:hover{opacity:0.85}button:active{transform:scale(0.98)}button:focus{outline:2px solid blue}button:disabled{opacity:0.5}
+@media (max-width: 768px) { body { font-size: 14px; } }
+@keyframes fadeInUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
+section{animation:fadeInUp 0.8s ease-out both}
+</style></head><body>
+<header><nav>Logo</nav></header>
+<main><section><a href="__HREF__">查看详情</a></section></main>
+<footer>Copyright</footer>
+</body></html>"""
+
+    valid_html = base_html.replace("__HREF__", "/docs")
+    empty_html = base_html.replace("__HREF__", "#")
+
+    with tempfile.TemporaryDirectory() as td1:
+        with open(os.path.join(td1, "index.html"), "w") as f:
+            f.write(valid_html)
+        score_valid, _ = design_score(td1)
+
+    with tempfile.TemporaryDirectory() as td2:
+        with open(os.path.join(td2, "index.html"), "w") as f:
+            f.write(empty_html)
+        score_empty, _ = design_score(td2)
+
+    assert score_valid > score_empty, (
+        f"有效链接应比空链接分数高: {score_valid} vs {score_empty}"
+    )

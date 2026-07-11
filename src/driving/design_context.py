@@ -1552,6 +1552,107 @@ def auto_fix_placeholder_text(cwd: str) -> bool:
     return changed
 
 
+def check_empty_links(cwd: str) -> list[dict]:
+    """M56: 检测空链接/无效 href。
+
+    AI 生成 UI 常见破绽：
+    - href="#" （空锚点）
+    - href="javascript:void(0)" （过时模式）
+    - <a> 缺少 href 属性
+
+    合法链接（不报违规）：
+    - /path（相对路径）
+    - https://... （外部 URL）
+    - #section-id（锚点跳转，有对应 id 存在）
+    - mailto: / tel:
+    """
+    import os as _os
+    import re as _re
+
+    violations: list[dict] = []
+
+    for fname in _os.listdir(cwd) if _os.path.exists(cwd) else []:
+        if not fname.endswith(".html"):
+            continue
+        fpath = _os.path.join(cwd, fname)
+        if not _os.path.isfile(fpath):
+            continue
+        try:
+            content = open(fpath, "r", encoding="utf-8").read()
+        except Exception:
+            continue
+
+        # 提取所有 id 用于锚点验证
+        ids = set(_re.findall(r'\bid\s*=\s*["\']([^"\']+)["\']', content, _re.IGNORECASE))
+
+        # 找所有 <a> 标签
+        for match in _re.finditer(r"<a\b([^>]*)>", content, _re.IGNORECASE):
+            attrs = match.group(1) or ""
+
+            # 提取 href
+            href_match = _re.search(r'\bhref\s*=\s*["\']([^"\']*)["\']', attrs, _re.IGNORECASE)
+
+            if not href_match:
+                # 无 href 属性
+                violations.append({
+                    "rule": "empty_link",
+                    "severity": "warning",
+                    "file": fname,
+                    "message": "<a> 缺少 href 属性",
+                })
+                continue
+
+            href = href_match.group(1).strip()
+
+            # 空 href
+            if not href:
+                violations.append({
+                    "rule": "empty_link",
+                    "severity": "warning",
+                    "file": fname,
+                    "message": "href 为空字符串",
+                })
+                continue
+
+            # href="#" — 纯锚点无目标
+            if href == "#":
+                violations.append({
+                    "rule": "empty_link",
+                    "severity": "warning",
+                    "file": fname,
+                    "message": "href='#' 空锚点链接",
+                })
+                continue
+
+            # href="#section" — 锚点跳转，检查目标 id 是否存在
+            if href.startswith("#"):
+                anchor_id = href[1:]
+                if anchor_id and anchor_id not in ids:
+                    violations.append({
+                        "rule": "empty_link",
+                        "severity": "warning",
+                        "file": fname,
+                        "message": f"href='{href}' 锚点目标 id 不存在",
+                    })
+                # 锚点存在则合法，不报
+                continue
+
+            # javascript: 协议
+            if href.lower().startswith("javascript:"):
+                violations.append({
+                    "rule": "empty_link",
+                    "severity": "warning",
+                    "file": fname,
+                    "message": "href 使用 javascript: 协议（过时模式）",
+                })
+                continue
+
+            # 其他合法链接：/path, https://, http://, mailto:, tel:
+            # 不报违规
+
+    return violations
+
+
 def auto_fix_design_issues(cwd: str) -> bool:
     """组合调用所有 auto-fix 函数，返回是否做过任何修改。"""
     changed1 = auto_fix_spacing_grid(cwd)
@@ -1817,6 +1918,12 @@ def lint_design_quality(cwd: str) -> list[dict]:
     except Exception:
         pass
 
+    # 11. M56: 空链接/无效 href 检测
+    try:
+        violations.extend(check_empty_links(cwd))
+    except Exception:
+        pass
+
     return violations
 
 
@@ -1955,6 +2062,11 @@ def design_score(cwd: str) -> "tuple[int, list[str]]":
     if "placeholder_text" in error_rules:
         score -= 10
         notes.append("检测到占位文本(-10)")
+
+    # 11. M56: 空链接扣分（warning 级别，-5）
+    if "empty_link" in warning_rules:
+        score -= 5
+        notes.append("检测到空链接/无效href(-5)")
 
     score = max(0, score)
     if not notes:
