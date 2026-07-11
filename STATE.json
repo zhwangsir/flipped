@@ -2,7 +2,7 @@
   "project": "flipped",
   "description": "接入本地 MLX 双模型(GLM-5.2 编排者 / Kimi-K2.7-Code 执行者)的 agentic 代码编辑器平台。fork Roo Code + 自定义驾驭层(强制验证/循环检测/上下文压缩/人工审批/子Agent/可观测性) + MCP 联网与外部能力。",
   "updated": "2026-07-11",
-  "current_milestone": "M77 letter-spacing一致性检测+auto-fix (856 passed)",
+  "current_milestone": "M78 border-width一致性检测+auto-fix (869 passed)",
   "key_facts": {
     "dev_host": "Apple M5 Max, 128GB RAM, 1.1TB 可用磁盘 — 开发/控制节点，非模型宿主",
     "model_cluster": "exo 集群 @ http://100.64.201.37:52415 (内网, OpenAI 兼容)；公网 https://dgmt.top/exo (需 Bearer token)",
@@ -1068,6 +1068,18 @@
           "title": "check_letter_spacing_chaos + auto_fix_letter_spacing + lint/score 集成",
           "status": "done",
           "note": "新增 check_letter_spacing_chaos（非标准letter-spacing或>6个不同值→warning）+ auto_fix_letter_spacing（映射到最近标准字间距）+ lint/score/auto_fix_design_issues 集成。12 TDD 测试（含 normal_keyword_not_flagged 测试）。856 passed。"
+        }
+      }
+    },
+    "M78": {
+      "title": "border-width 一致性检测 + auto-fix",
+      "status": "done",
+      "note": "AI 生成 CSS 常见破绽：随机边框宽度（3px/5px/7px）无系统性。新增 check_border_width_chaos(cwd)：标准集合（px）{0, 1, 2, 4, 8}，非标准值或>5个不同值报 warning。正则精确匹配 border/border-width/border-top/border-top-width 等，排除 border-radius/border-color/border-style/border-spacing。新增 auto_fix_border_width(cwd)：非标准值映射到最近标准值（距离相等取较大值），保留属性名。幂等。集成到 lint_design_quality（第30维）+ auto_fix_design_issues（第28组）+ design_score（-5）。13 TDD 测试全过。全量 869 passed（+13，无回归）。设计质量系统：Lint 30 维、Auto-fix 28 组。",
+      "tasks": {
+        "M78.1": {
+          "title": "check_border_width_chaos + auto_fix_border_width + lint/score 集成",
+          "status": "done",
+          "note": "新增 check_border_width_chaos（非标准border-width或>5个不同值→warning）+ auto_fix_border_width（映射到最近标准边框宽度，保留属性名）+ lint/score/auto_fix_design_issues 集成。13 TDD 测试（含 border_radius_not_flagged + none_keyword_not_flagged 测试）。869 passed。"
         }
       }
     }

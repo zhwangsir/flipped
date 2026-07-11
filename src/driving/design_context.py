@@ -3442,6 +3442,148 @@ def auto_fix_letter_spacing(cwd: str) -> bool:
     return changed
 
 
+# ---------- M78: border-width 一致性 ----------
+
+_STANDARD_BORDER_WIDTHS = (0, 1, 2, 4, 8)
+
+_BORDER_WIDTH_RE = (
+    r"border(?:-(?:top|right|bottom|left))?(?:-width)?\s*:\s*(\d+)px"
+)
+
+
+def check_border_width_chaos(cwd: str) -> list[dict]:
+    """M78: 检测 border-width 一致性问题。
+
+    AI 生成 CSS 常见破绽：随机边框宽度（3px/5px/7px）无系统性。
+    标准集合（px）：{0, 1, 2, 4, 8}。
+
+    规则1: 非标准值报 warning。
+    规则2: 超过 5 个不同值报 warning。
+
+    注意：border-radius / border-color / border-style / border-spacing 不会被误匹配，
+    因为正则要求 border 后可选 -(top|right|bottom|left) 可选 -width 然后直接 :。
+    """
+    import os as _os
+    import re as _re
+
+    violations: list[dict] = []
+
+    if not _os.path.exists(cwd):
+        return violations
+
+    for fname in _os.listdir(cwd):
+        if not fname.endswith(".html"):
+            continue
+        fpath = _os.path.join(cwd, fname)
+        if not _os.path.isfile(fpath):
+            continue
+        try:
+            content = open(fpath, "r", encoding="utf-8").read()
+        except Exception:
+            continue
+
+        bw_matches = _re.findall(_BORDER_WIDTH_RE, content, _re.IGNORECASE)
+        if not bw_matches:
+            continue
+
+        values = [int(m) for m in bw_matches]
+        distinct = sorted(set(values))
+
+        # 规则1: 非标准值
+        non_standard = [v for v in distinct if v not in _STANDARD_BORDER_WIDTHS]
+        if non_standard:
+            violations.append({
+                "rule": "border_width_chaos",
+                "severity": "warning",
+                "file": fname,
+                "message": (
+                    f"非标准 border-width 值：{non_standard}px，"
+                    f"应使用 0/1/2/4/8 系统化边框宽度"
+                ),
+            })
+
+        # 规则2: 超过 5 个不同值
+        if len(distinct) > 5:
+            violations.append({
+                "rule": "border_width_chaos",
+                "severity": "warning",
+                "file": fname,
+                "message": (
+                    f"border-width 有 {len(distinct)} 个不同值：{distinct}px，"
+                    f"应精简到 ≤5 个系统化边框宽度"
+                ),
+            })
+
+    return violations
+
+
+def auto_fix_border_width(cwd: str) -> bool:
+    """M78: 规范化 border-width 值到标准集合 {0,1,2,4,8}px。"""
+    import os as _os
+    import re as _re
+
+    def _nearest_border_width(val: int) -> int:
+        """返回标准集合中最近的值（距离相等时取较大值）。"""
+        best = _STANDARD_BORDER_WIDTHS[0]
+        best_dist = abs(best - val)
+        for s in _STANDARD_BORDER_WIDTHS[1:]:
+            d = abs(s - val)
+            if d < best_dist or (d == best_dist and s > best):
+                best, best_dist = s, d
+        return best
+
+    def _is_standard(val: int) -> bool:
+        return val in _STANDARD_BORDER_WIDTHS
+
+    if not _os.path.exists(cwd):
+        return False
+
+    changed = False
+    for fname in _os.listdir(cwd):
+        if not fname.endswith(".html"):
+            continue
+        fpath = _os.path.join(cwd, fname)
+        if not _os.path.isfile(fpath):
+            continue
+        try:
+            content = open(fpath, "r", encoding="utf-8").read()
+        except Exception:
+            continue
+
+        # 先检查是否有违规
+        violations = check_border_width_chaos(_os.path.dirname(fpath))
+        has_violation = any(
+            v["file"] == fname and v["rule"] == "border_width_chaos"
+            for v in violations
+        )
+        if not has_violation:
+            continue
+
+        # 替换非标准 border-width 值
+        # 用两步替换：先匹配完整属性声明，再替换其中的 px 值
+        def _replace_border_width(m):
+            val = int(m.group(2))
+            if _is_standard(val):
+                return m.group(0)  # 已标准
+            std = _nearest_border_width(val)
+            prop = m.group(1)  # 完整属性名（含 -top/-width 等）
+            return f"{prop}: {std}px"
+
+        new_content = _re.sub(
+            r"(border(?:-(?:top|right|bottom|left))?(?:-width)?)\s*:\s*(\d+)px",
+            _replace_border_width,
+            content,
+            flags=_re.IGNORECASE,
+        )
+
+        if new_content != content:
+            with open(fpath, "w", encoding="utf-8") as f:
+                f.write(new_content)
+            changed = True
+
+    return changed
+
+
 def auto_fix_design_issues(cwd: str) -> bool:
     """组合调用所有 auto-fix 函数，返回是否做过任何修改。"""
     changed1 = auto_fix_spacing_grid(cwd)
@@ -3471,12 +3613,13 @@ def auto_fix_design_issues(cwd: str) -> bool:
     changed25 = auto_fix_line_height(cwd)
     changed26 = auto_fix_font_weight(cwd)
     changed27 = auto_fix_letter_spacing(cwd)
+    changed28 = auto_fix_border_width(cwd)
     return (
         changed1 or changed2 or changed3 or changed4 or changed5
         or changed6 or changed7 or changed8 or changed9 or changed10 or changed11
         or changed12 or changed13 or changed14 or changed15 or changed16 or changed17
         or changed18 or changed19 or changed20 or changed21 or changed22 or changed23
-        or changed24 or changed25 or changed26 or changed27
+        or changed24 or changed25 or changed26 or changed27 or changed28
     )
 
 
@@ -3794,6 +3937,12 @@ def lint_design_quality(cwd: str) -> list[dict]:
     except Exception:
         pass
 
+    # 23. M78: border-width 一致性检测
+    try:
+        violations.extend(check_border_width_chaos(cwd))
+    except Exception:
+        pass
+
     return violations
 
 
@@ -3992,6 +4141,11 @@ def design_score(cwd: str) -> "tuple[int, list[str]]":
     if "letter_spacing_chaos" in warning_rules:
         score -= 5
         notes.append("检测到letter-spacing不一致(-5)")
+
+    # 23. M78: border-width 一致性扣分（warning 级别，-5）
+    if "border_width_chaos" in warning_rules:
+        score -= 5
+        notes.append("检测到border-width不一致(-5)")
 
     score = max(0, score)
     if not notes:

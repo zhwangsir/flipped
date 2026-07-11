@@ -6157,3 +6157,227 @@ def test_auto_fix_design_issues_includes_letter_spacing():
         violations = check_letter_spacing_chaos(td)
     ls_v = [v for v in violations if v["rule"] == "letter_spacing_chaos"]
     assert ls_v == [], f"组合修复后不应有违规: {ls_v}"
+
+
+# ---------- M78: border-width 一致性检测 + auto-fix ----------
+
+
+def test_check_border_width_chaos_no_html():
+    """没有 HTML 文件时应返回空列表。"""
+    import tempfile
+    from driving.design_context import check_border_width_chaos
+    with tempfile.TemporaryDirectory() as td:
+        result = check_border_width_chaos(td)
+    assert result == []
+
+
+def test_check_border_width_chaos_non_standard():
+    """非标准 border-width 值应报 warning。"""
+    import tempfile
+    import os
+    from driving.design_context import check_border_width_chaos
+    html = """<html><head><style>
+    .a { border: 3px solid #ccc; }
+    .b { border-width: 5px; }
+    .c { border-top: 7px solid red; }
+    </style></head><body>text</body></html>"""
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        violations = check_border_width_chaos(td)
+    bw_v = [v for v in violations if v["rule"] == "border_width_chaos"]
+    assert len(bw_v) > 0
+    assert bw_v[0]["severity"] == "warning"
+
+
+def test_check_border_width_chaos_clean():
+    """标准 border-width 值不应报违规。"""
+    import tempfile
+    import os
+    from driving.design_context import check_border_width_chaos
+    html = """<html><head><style>
+    .a { border: 0px solid #ccc; }
+    .b { border-width: 1px; }
+    .c { border-top: 2px solid red; }
+    .d { border-left-width: 4px; }
+    .e { border-bottom: 8px solid blue; }
+    </style></head><body>text</body></html>"""
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        violations = check_border_width_chaos(td)
+    bw_v = [v for v in violations if v["rule"] == "border_width_chaos"]
+    assert bw_v == []
+
+
+def test_check_border_width_chaos_border_radius_not_flagged():
+    """border-radius 不应被 border-width 检测误报。"""
+    import tempfile
+    import os
+    from driving.design_context import check_border_width_chaos
+    html = """<html><head><style>
+    .a { border-radius: 12px; }
+    .b { border-radius: 24px; }
+    </style></head><body>text</body></html>"""
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        violations = check_border_width_chaos(td)
+    bw_v = [v for v in violations if v["rule"] == "border_width_chaos"]
+    assert bw_v == []
+
+
+def test_check_border_width_chaos_none_keyword_not_flagged():
+    """border: none / border: 0 不应报违规。"""
+    import tempfile
+    import os
+    from driving.design_context import check_border_width_chaos
+    html = """<html><head><style>
+    .a { border: none; }
+    .b { border: 0; }
+    </style></head><body>text</body></html>"""
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        violations = check_border_width_chaos(td)
+    bw_v = [v for v in violations if v["rule"] == "border_width_chaos"]
+    assert bw_v == []
+
+
+def test_check_border_width_chaos_too_many_distinct():
+    """超过 5 个不同 border-width 值应报 warning。"""
+    import tempfile
+    import os
+    from driving.design_context import check_border_width_chaos
+    html = """<html><head><style>
+    .a { border: 0px solid; }
+    .b { border: 1px solid; }
+    .c { border: 2px solid; }
+    .d { border: 4px solid; }
+    .e { border: 8px solid; }
+    .f { border: 3px solid; }
+    </style></head><body>text</body></html>"""
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        violations = check_border_width_chaos(td)
+    bw_v = [v for v in violations if v["rule"] == "border_width_chaos"]
+    # 应有 "too many" 类违规
+    too_many = [v for v in bw_v if "不同" in v["message"]]
+    assert len(too_many) > 0
+
+
+def test_check_border_width_chaos_empty_dir():
+    """空目录应返回空列表。"""
+    import tempfile
+    from driving.design_context import check_border_width_chaos
+    with tempfile.TemporaryDirectory() as td:
+        result = check_border_width_chaos(td)
+    assert result == []
+
+
+def test_lint_design_quality_includes_border_width():
+    """lint_design_quality 应包含 border_width_chaos 检测。"""
+    import tempfile
+    import os
+    from driving.design_context import lint_design_quality
+    html = """<html><head><style>
+    .a { border: 3px solid #ccc; }
+    </style></head><body>text</body></html>"""
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        violations = lint_design_quality(td)
+    bw_v = [v for v in violations if v["rule"] == "border_width_chaos"]
+    assert len(bw_v) > 0
+
+
+def test_auto_fix_border_width_normalizes():
+    """auto_fix_border_width 应将非标准值映射到最近标准值。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_border_width
+    html = """<html><head><style>
+    .a { border: 3px solid #ccc; }
+    .b { border-width: 5px; }
+    .c { border-top: 7px solid red; }
+    </style></head><body>text</body></html>"""
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        changed = auto_fix_border_width(td)
+        assert changed is True
+        with open(os.path.join(td, "index.html"), "r") as f:
+            content = f.read()
+    # 3 -> 4 (3 与 2/4 等距，取较大值)
+    assert "4px" in content
+    # 5 -> 4 (最近)
+    assert "4px" in content
+    # 7 -> 8 (最近)
+    assert "8px" in content
+    # 原始值不应残留
+    assert "3px" not in content
+    assert "5px" not in content
+    assert "7px" not in content
+
+
+def test_auto_fix_border_width_no_change_if_clean():
+    """已经是标准值时不应修改文件。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_border_width
+    html = """<html><head><style>
+    .a { border: 1px solid #ccc; }
+    .b { border-width: 2px; }
+    </style></head><body>text</body></html>"""
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        changed = auto_fix_border_width(td)
+        assert changed is False
+
+
+def test_auto_fix_border_width_empty_dir():
+    """空目录应返回 False。"""
+    import tempfile
+    from driving.design_context import auto_fix_border_width
+    with tempfile.TemporaryDirectory() as td:
+        changed = auto_fix_border_width(td)
+    assert changed is False
+
+
+def test_auto_fix_border_width_idempotent():
+    """多次调用 auto_fix_border_width 应幂等。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_border_width
+    html = """<html><head><style>
+    .a { border: 3px solid #ccc; }
+    .b { border-width: 6px; }
+    </style></head><body>text</body></html>"""
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        auto_fix_border_width(td)
+        changed2 = auto_fix_border_width(td)
+        assert changed2 is False
+
+
+def test_auto_fix_design_issues_includes_border_width():
+    """auto_fix_design_issues 组合函数应包含 border-width 修复。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_design_issues, check_border_width_chaos
+    html = """<html><head><meta name="viewport" content="width=device-width">
+    <style>
+    .a { border: 3px solid #ccc; }
+    .b { border-width: 5px; }
+    </style></head>
+    <body><main><section>content</section></main></body></html>"""
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        auto_fix_design_issues(td)
+        violations = check_border_width_chaos(td)
+    bw_v = [v for v in violations if v["rule"] == "border_width_chaos"]
+    assert bw_v == [], f"组合修复后不应有违规: {bw_v}"
