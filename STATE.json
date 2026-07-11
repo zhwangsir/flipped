@@ -2,7 +2,7 @@
   "project": "flipped",
   "description": "接入本地 MLX 双模型(GLM-5.2 编排者 / Kimi-K2.7-Code 执行者)的 agentic 代码编辑器平台。fork Roo Code + 自定义驾驭层(强制验证/循环检测/上下文压缩/人工审批/子Agent/可观测性) + MCP 联网与外部能力。",
   "updated": "2026-07-11",
-  "current_milestone": "M51 Worker 文件上下文累积 — 读取已有文件让 worker 在其基础上扩展 (642 passed)",
+  "current_milestone": "M52 设计质量回归保护 — 新版本 design_score 低于旧版本时自动回退 (647 passed)",
   "key_facts": {
     "dev_host": "Apple M5 Max, 128GB RAM, 1.1TB 可用磁盘 — 开发/控制节点，非模型宿主",
     "model_cluster": "exo 集群 @ http://100.64.201.37:52415 (内网, OpenAI 兼容)；公网 https://dgmt.top/exo (需 Bearer token)",
@@ -756,6 +756,18 @@
           "title": "_read_file_context + local_worker prompt 集成 + 5 测试",
           "status": "done",
           "note": "新增 _read_file_context + prompt 注入文件上下文 + 5 TDD 测试。642 passed。"
+        }
+      }
+    },
+    "M52": {
+      "title": "设计质量回归保护 — 新版本 design_score 低于旧版本时自动回退",
+      "status": "done",
+      "note": "M51 让 worker 读取已有文件并扩展，但如果 worker 生成的新版本质量更差（design_score 更低），仍会覆盖已有的高质量代码。M52 新增 _check_design_regression(cwd, old_content) 函数：比较新版本（磁盘上的）和旧版本（写入前的备份）的 design_score，如果新版本分数低于旧版本，自动回退到旧版本。在 local_worker 中：写入文件前保存旧内容 → 写入 + auto_fix → 检测回归 → 如果回归则恢复旧内容。5 个 TDD 测试（无旧内容不检测/分数降低检测到回归/分数提升无回归/worker自动回退/worker保留更高质量新版本）。全量 647 passed（+5，无回归）。核心价值：无限迭代中设计质量只升不降，防止低质量输出覆盖高质量成果。",
+      "tasks": {
+        "M52.1": {
+          "title": "_check_design_regression + local_worker 回退集成 + 5 测试",
+          "status": "done",
+          "note": "新增 _check_design_regression + 旧内容备份 + 回归检测 + 自动回退 + 5 TDD 测试。647 passed。"
         }
       }
     }

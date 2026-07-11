@@ -687,3 +687,120 @@ def test_worker_prompt_no_file_context_when_empty():
 
         prompt = captured_kwargs["json"]["messages"][0]["content"]
         assert "现有" not in prompt
+
+
+# ---------- M52: 设计质量回归保护 ----------
+
+
+def test_check_design_regression_no_old_content():
+    """无旧内容时不检测回归（首次生成）。"""
+    from driving.orchestrator import _check_design_regression
+    with tempfile.TemporaryDirectory() as d:
+        # cwd 有新文件但无旧内容
+        with open(os.path.join(d, "index.html"), "w") as f:
+            f.write("<!DOCTYPE html><html><body><h1>new</h1></body></html>")
+        assert _check_design_regression(d, "") is False
+
+
+def test_check_design_regression_score_dropped():
+    """新版本 design_score 低于旧版本 → 回归。"""
+    from driving.orchestrator import _check_design_regression
+    # 旧版本：高质量 HTML（有 viewport/CSS变量/语义化/响应式/无障碍）
+    old_html = (
+        "<!DOCTYPE html>\n<html lang=\"zh\"><head>\n"
+        "<meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width\">\n"
+        "<style>:root { --color-accent: #0A84FF; --color-bg: #0D0D12; }\n"
+        "@media (max-width: 768px) { body { font-size: 14px; } }\n"
+        "</style></head><body>\n"
+        "<header><nav>Logo</nav></header>\n"
+        "<main><section><h1>Title</h1><button>CTA</button></section></main>\n"
+        "<footer>Footer</footer>\n</body></html>"
+    )
+    # 新版本：低质量 HTML（缺失大量元素）
+    new_html = "<html><body><h1>bad</h1></body></html>"
+    with tempfile.TemporaryDirectory() as d:
+        with open(os.path.join(d, "index.html"), "w") as f:
+            f.write(new_html)
+        assert _check_design_regression(d, old_html) is True
+
+
+def test_check_design_regression_score_improved():
+    """新版本 design_score 高于或等于旧版本 → 无回归。"""
+    from driving.orchestrator import _check_design_regression
+    # 旧版本：低质量
+    old_html = "<html><body><h1>bad</h1></body></html>"
+    # 新版本：高质量
+    new_html = (
+        "<!DOCTYPE html>\n<html lang=\"zh\"><head>\n"
+        "<meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width\">\n"
+        "<style>:root { --color-accent: #0A84FF; }\n"
+        "@media (max-width: 768px) { body { font-size: 14px; } }\n"
+        "</style></head><body>\n"
+        "<header><nav>Logo</nav></header>\n"
+        "<main><section><h1>Title</h1><button>CTA</button></section></main>\n"
+        "<footer>Footer</footer>\n</body></html>"
+    )
+    with tempfile.TemporaryDirectory() as d:
+        with open(os.path.join(d, "index.html"), "w") as f:
+            f.write(new_html)
+        assert _check_design_regression(d, old_html) is False
+
+
+def test_worker_reverts_on_regression():
+    """worker 生成低质量 HTML 覆盖高质量已有文件 → 自动回退。"""
+    with tempfile.TemporaryDirectory() as d:
+        # 先创建高质量已有文件
+        good_html = (
+            "<!DOCTYPE html>\n<html lang=\"zh\"><head>\n"
+            "<meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width\">\n"
+            "<style>:root { --color-accent: #0A84FF; --color-bg: #0D0D12; }\n"
+            "@media (max-width: 768px) { body { font-size: 14px; } }\n"
+            "</style></head><body>\n"
+            "<header><nav>Logo</nav></header>\n"
+            "<main><section><h1>Good Title</h1><button>CTA</button></section></main>\n"
+            "<footer>Footer</footer>\n</body></html>"
+        )
+        with open(os.path.join(d, "index.html"), "w") as f:
+            f.write(good_html)
+
+        # worker 生成低质量 HTML（丢失 viewport/CSS变量/语义化等）
+        bad_html = _mock_kimi_response({"index.html": "<html><body><h1>bad</h1></body></html>"})
+
+        with _mock_stream(bad_html):
+            result = local_worker(_make_state(d))
+
+        # 回退后磁盘上应保留高质量内容
+        with open(os.path.join(d, "index.html")) as f:
+            final_content = f.read()
+        assert "Good Title" in final_content  # 旧内容保留
+        assert "viewport" in final_content.lower()  # 高质量特征保留
+
+
+def test_worker_keeps_new_version_when_no_regression():
+    """worker 生成更高质量 HTML → 保留新版本。"""
+    with tempfile.TemporaryDirectory() as d:
+        # 先创建低质量已有文件
+        bad_html_existing = "<html><body><h1>old bad</h1></body></html>"
+        with open(os.path.join(d, "index.html"), "w") as f:
+            f.write(bad_html_existing)
+
+        # worker 生成高质量 HTML
+        good_new_html = (
+            "```html:index.html\n"
+            "<!DOCTYPE html>\n<html lang=\"zh\"><head>\n"
+            "<meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width\">\n"
+            "<style>:root { --color-accent: #0A84FF; }\n"
+            "@media (max-width: 768px) { body { font-size: 14px; } }\n"
+            "</style></head><body>\n"
+            "<header><nav>Logo</nav></header>\n"
+            "<main><section><h1>New Good Title</h1><button>CTA</button></section></main>\n"
+            "<footer>Footer</footer>\n</body></html>\n"
+            "```"
+        )
+        with _mock_stream(good_new_html):
+            result = local_worker(_make_state(d))
+
+        # 保留新版本
+        with open(os.path.join(d, "index.html")) as f:
+            final_content = f.read()
+        assert "New Good Title" in final_content

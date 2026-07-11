@@ -660,6 +660,35 @@ def _read_file_context(cwd: str) -> str:
     return f"现有 index.html 已有[{'; '.join(parts)}]。在其基础上扩展，保留已有结构，只添加新内容。"
 
 
+def _check_design_regression(cwd: str, old_content: str) -> bool:
+    """检测 design_score 是否回归（新版本比旧版本差）。
+
+    M52: 防止 worker 生成的低质量代码覆盖已有的高质量代码。
+    如果新版本 design_score 低于旧版本，返回 True（检测到回归）。
+    无旧版本或异常时 fail-open 返回 False。
+    """
+    if not old_content or len(old_content) < 50:
+        return False
+
+    try:
+        from driving.design_context import design_score
+        import tempfile
+        import os as _os
+
+        # 新版本分数（cwd 磁盘上的）
+        new_score, _ = design_score(cwd)
+
+        # 旧版本分数：写到临时目录计算
+        with tempfile.TemporaryDirectory() as td:
+            with open(_os.path.join(td, "index.html"), "w") as f:
+                f.write(old_content)
+            old_score, _ = design_score(td)
+
+        return new_score < old_score
+    except Exception:
+        return False
+
+
 def local_worker(state: OrchestratorState) -> dict:
     """本地 worker：直接调 Kimi 生成代码并写文件到 cwd，无需 Docker/沙箱。
 
@@ -691,6 +720,16 @@ def local_worker(state: OrchestratorState) -> dict:
 
     # M51: 读取已有文件结构，让 worker 在其基础上扩展而非从零生成。
     _file_ctx = _read_file_context(cwd)
+
+    # M52: 保存旧 index.html 内容用于 design_score 回归检测。
+    _old_html = ""
+    _old_path = os.path.join(cwd, "index.html")
+    if os.path.isfile(_old_path):
+        try:
+            with open(_old_path, "r", encoding="utf-8") as f:
+                _old_html = f.read()
+        except Exception:
+            pass
 
     prompt = (
         f"在 `{cwd}` 下完成：\n{_subtask_short}\n\n"
@@ -948,6 +987,14 @@ def local_worker(state: OrchestratorState) -> dict:
             auto_fix_design_issues(cwd)
         except Exception:
             pass
+
+        # M52: design_score 回归检测 — 如果新版本分数低于旧版本，回退到旧版本。
+        # 防止 worker 生成的低质量代码覆盖已有的高质量代码。
+        if _old_html and _check_design_regression(cwd, _old_html):
+            with open(_old_path, "w", encoding="utf-8") as f:
+                f.write(_old_html)
+            import sys as _sys
+            print(f"[local_worker] design_regression: 回退到旧版本（design_score 回归）", file=_sys.stderr, flush=True)
 
     tool_calls = len(files_written)
     # 即使没解析出文件块，只要 Kimi 有响应内容，就不算 infrastructure error。
