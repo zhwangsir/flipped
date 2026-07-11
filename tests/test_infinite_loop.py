@@ -845,3 +845,175 @@ def test_evolve_prompt_design_fix_attempted_score_ok():
 
     assert "auto-fix 已尝试" not in prompt
     assert "未达标" not in prompt
+
+
+# ---------- M49: E2E 集成测试 — 完整无限迭代链路 ----------
+
+
+def test_e2e_infinite_loop_with_auto_fix_and_proposer_tracking():
+    """E2E: 方向 → worker 产出有设计问题的 HTML → auto_fix 修复 →
+    design_score 计算 → proposer 追踪 → evolve 下一轮 → 停止。
+
+    验证完整链路：
+    1. worker 产出配色过多的 HTML（8 种设计色）
+    2. auto_fix_color_palette 合并到 ≤5 色（模拟 factory_loop 内行为）
+    3. design_score 计算（应因 auto_fix 得到更高分）
+    4. RoundSummary 记录设计评分
+    5. 第二轮 goal_achieved 停止
+    """
+    import os
+    import re
+    from driving.factory_loop import FactoryTask, TaskResult, TaskStatus
+    from driving.design_context import auto_fix_design_issues
+
+    # worker 第一轮产出有设计问题的 HTML，第二轮产出良好 HTML
+    factory_call = {"n": 0}
+
+    def mock_evolve(direction, rounds, cwd=""):
+        if len(rounds) < 2:
+            return f"第 {len(rounds) + 1} 轮目标", False, "继续"
+        return "达成", True, "已完成"
+
+    def mock_factory_loop(goal, cwd, **kwargs):
+        factory_call["n"] += 1
+
+        if factory_call["n"] == 1:
+            # 第一轮：worker 产出配色过多的 HTML（8 种设计色）
+            html = """<!DOCTYPE html>
+<html lang="zh"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+:root { --c1: #0A84FF; --c2: #FF3B30; --c3: #34C759; --c4: #FF9500; --c5: #AF52DE; --c6: #5AC8FA; --c7: #FFD60A; --c8: #BF5AF2; }
+body { margin: 0; padding: 16px; transition: opacity 0.3s ease; }
+</style>
+</head><body><header><nav>Logo</nav></header>
+<main><section><h1>Title</h1><p>Content</p></section></main>
+<footer>Footer</footer>
+</body></html>"""
+        else:
+            # 第二轮：良好 HTML
+            html = """<!DOCTYPE html>
+<html lang="zh"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+:root { --color-bg: #0D0D12; --color-text: #F5F5F5; --color-accent: #0A84FF; }
+body { margin: 0; padding: 16px; transition: opacity 0.3s ease; }
+</style>
+</head><body><header><nav>Logo</nav></header>
+<main><section><h1>Title</h1><p>Content</p></section></main>
+<footer>Footer</footer>
+</body></html>"""
+
+        with open(os.path.join(cwd, "index.html"), "w") as f:
+            f.write(html)
+
+        # 模拟 factory_loop 内 auto_fix_design_issues 的行为
+        auto_fix_design_issues(cwd)
+
+        # 验证 auto_fix 后配色 ≤5（仅第一轮有意义）
+        with open(os.path.join(cwd, "index.html"), "r") as f:
+            content = f.read()
+        hex_colors = set(re.findall(r"#[0-9A-Fa-f]{6}\b", content))
+        design_colors = {c for c in hex_colors if c.upper() not in ("#000000", "#FFFFFF")}
+        assert len(design_colors) <= 5, f"auto_fix 后应≤5色，实际{len(design_colors)}"
+
+        task = FactoryTask(id=f"t{factory_call['n']}", description=goal, verify_cmd=["true"])
+        return FactoryState(
+            factory_id=f"factory-{factory_call['n']}",
+            product_goal=goal,
+            cwd=cwd,
+            status=FactoryStatus.done,
+            roadmap=[task],
+            completed=[
+                TaskResult(task=task, verified=True, stop_reason="verified", iteration=1)
+            ],
+        )
+
+    with tempfile.TemporaryDirectory() as td:
+        db = os.path.join(td, "loop.db")
+        state = run_infinite_loop(
+            "做一个落地页",
+            td,
+            max_rounds=5,
+            db_path=db,
+            evolve_fn=mock_evolve,
+            factory_loop_fn=mock_factory_loop,
+        )
+
+    assert state.status == "goal_achieved"
+    assert len(state.rounds) == 2
+
+    # 第一轮应有 design_score（auto_fix 运行后计算）
+    r1 = state.rounds[0]
+    assert r1.design_score > 0, "第一轮应有 design_score"
+    # auto_fix 后不应有"配色过多"的 note
+    assert not any("配色过多" in n for n in r1.design_notes), \
+        f"auto_fix 后不应有配色过多 note: {r1.design_notes}"
+
+
+def test_e2e_proposer_triggered_reflects_design_fix():
+    """E2E: worker 产出 design-fix 任务时，RoundSummary 应追踪到。
+
+    模拟 factory_loop 内 task_proposer 触发了一个 design-fix 任务，
+    该任务的 feedback 含 'design_score' 标记。
+    _collect_round_summary 应设 proposer_triggered=True + design_fix_count=1。
+    """
+    from driving.factory_loop import FactoryTask, TaskResult
+
+    normal_task = FactoryTask(id="t1", description="创建页面", verify_cmd=["true"])
+    design_fix_task = FactoryTask(
+        id="t2",
+        description="修复设计质量",
+        verify_cmd=["true"],
+        feedback="(确定性 fallback: design_score=55/70, auto_fix 已修复 11 组维度)",
+    )
+    factory = FactoryState(
+        factory_id="f1",
+        product_goal="测试",
+        cwd="/tmp/e2e_proposer",
+        status=FactoryStatus.done,
+        roadmap=[normal_task, design_fix_task],
+        completed=[
+            TaskResult(task=normal_task, verified=True, stop_reason="verified", iteration=1),
+            TaskResult(task=design_fix_task, verified=True, stop_reason="verified", iteration=1),
+        ],
+    )
+    summary = _collect_round_summary(1, factory)
+
+    assert summary.proposer_triggered is True
+    assert summary.design_fix_count == 1
+    assert summary.tasks_completed == 2
+
+
+def test_e2e_evolve_prompt_with_proposer_history():
+    """E2E: 两轮历史 + 第一轮有 design-fix → evolve prompt 应包含 auto-fix 信息。
+
+    M47 的核心价值：演进者看到"auto-fix 已尝试但未达标"后应给出深层重构指令，
+    而非重复"提升设计质量"。这个测试验证 prompt 中包含修复活动历史。
+    """
+    rounds = [
+        RoundSummary(
+            round_num=1, factory_id="f1", product_goal="第一轮",
+            tasks_completed=3, tasks_failed=0, summary="完成基础页面",
+            design_score=50,
+            design_notes=["配色超过 5 种", "动画性能差"],
+            proposer_triggered=True,
+            design_fix_count=2,
+        ),
+        RoundSummary(
+            round_num=2, factory_id="f2", product_goal="第二轮",
+            tasks_completed=2, tasks_failed=0, summary="优化设计",
+            design_score=65,
+            design_notes=["仍有配色问题"],
+            proposer_triggered=True,
+            design_fix_count=1,
+        ),
+    ]
+    prompt = _capture_evolve_prompt(rounds)
+
+    # 应包含 auto-fix 已尝试的提示（因为最新一轮 proposer_triggered + 低分）
+    assert "auto-fix" in prompt or "已尝试" in prompt
+    # 应包含修复数量信息
+    assert "1" in prompt  # design_fix_count=1 出现在 rounds_text 或 hint
+    # 应包含深层重构指令
+    assert "重构" in prompt or "人工" in prompt

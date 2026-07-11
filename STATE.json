@@ -2,7 +2,7 @@
   "project": "flipped",
   "description": "接入本地 MLX 双模型(GLM-5.2 编排者 / Kimi-K2.7-Code 执行者)的 agentic 代码编辑器平台。fork Roo Code + 自定义驾驭层(强制验证/循环检测/上下文压缩/人工审批/子Agent/可观测性) + MCP 联网与外部能力。",
   "updated": "2026-07-11",
-  "current_milestone": "M48 auto_fix_color_palette — 配色超 5 种时确定性合并到 top-5 (628 passed)",
+  "current_milestone": "M49 E2E 集成测试 — 完整无限迭代链路验证 (631 passed)",
   "key_facts": {
     "dev_host": "Apple M5 Max, 128GB RAM, 1.1TB 可用磁盘 — 开发/控制节点，非模型宿主",
     "model_cluster": "exo 集群 @ http://100.64.201.37:52415 (内网, OpenAI 兼容)；公网 https://dgmt.top/exo (需 Bearer token)",
@@ -720,6 +720,18 @@
           "title": "auto_fix_color_palette + 接入 auto_fix_design_issues + 4 测试",
           "status": "done",
           "note": "新增 _rgb_distance/_normalize_hex/auto_fix_color_palette + 接入组合修复第 12 组。628 passed。"
+        }
+      }
+    },
+    "M49": {
+      "title": "E2E 集成测试 — 完整无限迭代链路验证",
+      "status": "done",
+      "note": "3 个 E2E 集成测试验证完整链路：(1) 方向→worker 产出 8 色HTML→auto_fix_color_palette 合并到≤5色→design_score 计算→evolve→第二轮→goal_achieved；(2) design-fix 任务 feedback 标记 → RoundSummary proposer_triggered/design_fix_count 追踪；(3) 两轮历史 + design-fix → evolve prompt 包含 auto-fix 已尝试 + 深层重构指令。全量 631 passed（+3，无回归）。",
+      "tasks": {
+        "M49.1": {
+          "title": "3 个 E2E 集成测试",
+          "status": "done",
+          "note": "auto_fix+design_score+proposer_tracking 全链路 E2E。631 passed。"
         }
       }
     }
