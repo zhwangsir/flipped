@@ -3742,6 +3742,142 @@ def auto_fix_animation_duration(cwd: str) -> bool:
     return changed
 
 
+# ---------- M80: filter/backdrop-filter blur 一致性 ----------
+
+_STANDARD_FILTER_BLUR = (0, 2, 4, 8, 12, 16, 24)
+
+_FILTER_BLUR_RE = (
+    r"\b(?:backdrop-)?filter\s*:\s*[^;]*blur\((\d+)px\)"
+)
+
+
+def check_filter_blur_chaos(cwd: str) -> list[dict]:
+    """M80: 检测 filter/backdrop-filter blur 一致性问题。
+
+    AI 生成 CSS 常见破绽：随机模糊半径（3px/5px/7px）无系统性。
+    标准集合（px）：{0, 2, 4, 8, 12, 16, 24}。
+
+    规则1: 非标准值报 warning。
+    规则2: 超过 7 个不同值报 warning。
+    """
+    import os as _os
+    import re as _re
+
+    violations: list[dict] = []
+
+    if not _os.path.exists(cwd):
+        return violations
+
+    for fname in _os.listdir(cwd):
+        if not fname.endswith(".html"):
+            continue
+        fpath = _os.path.join(cwd, fname)
+        if not _os.path.isfile(fpath):
+            continue
+        try:
+            content = open(fpath, "r", encoding="utf-8").read()
+        except Exception:
+            continue
+
+        blur_matches = _re.findall(_FILTER_BLUR_RE, content, _re.IGNORECASE)
+        if not blur_matches:
+            continue
+
+        values = [int(m) for m in blur_matches]
+        distinct = sorted(set(values))
+
+        # 规则1: 非标准值
+        non_standard = [v for v in distinct if v not in _STANDARD_FILTER_BLUR]
+        if non_standard:
+            violations.append({
+                "rule": "filter_blur_chaos",
+                "severity": "warning",
+                "file": fname,
+                "message": (
+                    f"非标准 filter blur 值：{non_standard}px，"
+                    f"应使用 0/2/4/8/12/16/24 系统化模糊半径"
+                ),
+            })
+
+        # 规则2: 超过 7 个不同值
+        if len(distinct) > 7:
+            violations.append({
+                "rule": "filter_blur_chaos",
+                "severity": "warning",
+                "file": fname,
+                "message": (
+                    f"filter blur 有 {len(distinct)} 个不同值：{distinct}px，"
+                    f"应精简到 ≤7 个系统化模糊半径"
+                ),
+            })
+
+    return violations
+
+
+def auto_fix_filter_blur(cwd: str) -> bool:
+    """M80: 规范化 filter/backdrop-filter blur 值到标准集合 {0,2,4,8,12,16,24}px。"""
+    import os as _os
+    import re as _re
+
+    def _nearest_filter_blur(val: int) -> int:
+        best = _STANDARD_FILTER_BLUR[0]
+        best_dist = abs(best - val)
+        for s in _STANDARD_FILTER_BLUR[1:]:
+            d = abs(s - val)
+            if d < best_dist or (d == best_dist and s > best):
+                best, best_dist = s, d
+        return best
+
+    def _is_standard(val: int) -> bool:
+        return val in _STANDARD_FILTER_BLUR
+
+    if not _os.path.exists(cwd):
+        return False
+
+    changed = False
+    for fname in _os.listdir(cwd):
+        if not fname.endswith(".html"):
+            continue
+        fpath = _os.path.join(cwd, fname)
+        if not _os.path.isfile(fpath):
+            continue
+        try:
+            content = open(fpath, "r", encoding="utf-8").read()
+        except Exception:
+            continue
+
+        # 先检查是否有违规
+        violations = check_filter_blur_chaos(_os.path.dirname(fpath))
+        has_violation = any(
+            v["file"] == fname and v["rule"] == "filter_blur_chaos"
+            for v in violations
+        )
+        if not has_violation:
+            continue
+
+        # 替换非标准 blur 值
+        def _replace_blur(m):
+            val = int(m.group(1))
+            if _is_standard(val):
+                return m.group(0)
+            std = _nearest_filter_blur(val)
+            return m.group(0).replace(f"{val}px", f"{std}px")
+
+        new_content = _re.sub(
+            _FILTER_BLUR_RE,
+            _replace_blur,
+            content,
+            flags=_re.IGNORECASE,
+        )
+
+        if new_content != content:
+            with open(fpath, "w", encoding="utf-8") as f:
+                f.write(new_content)
+            changed = True
+
+    return changed
+
+
 def auto_fix_design_issues(cwd: str) -> bool:
     """组合调用所有 auto-fix 函数，返回是否做过任何修改。"""
     changed1 = auto_fix_spacing_grid(cwd)
@@ -3773,12 +3909,14 @@ def auto_fix_design_issues(cwd: str) -> bool:
     changed27 = auto_fix_letter_spacing(cwd)
     changed28 = auto_fix_border_width(cwd)
     changed29 = auto_fix_animation_duration(cwd)
+    changed30 = auto_fix_filter_blur(cwd)
     return (
         changed1 or changed2 or changed3 or changed4 or changed5
         or changed6 or changed7 or changed8 or changed9 or changed10 or changed11
         or changed12 or changed13 or changed14 or changed15 or changed16 or changed17
         or changed18 or changed19 or changed20 or changed21 or changed22 or changed23
         or changed24 or changed25 or changed26 or changed27 or changed28 or changed29
+        or changed30
     )
 
 
@@ -4108,6 +4246,12 @@ def lint_design_quality(cwd: str) -> list[dict]:
     except Exception:
         pass
 
+    # 25. M80: filter/backdrop-filter blur 一致性检测
+    try:
+        violations.extend(check_filter_blur_chaos(cwd))
+    except Exception:
+        pass
+
     return violations
 
 
@@ -4316,6 +4460,11 @@ def design_score(cwd: str) -> "tuple[int, list[str]]":
     if "animation_duration_chaos" in warning_rules:
         score -= 5
         notes.append("检测到animation-duration不一致(-5)")
+
+    # 25. M80: filter/backdrop-filter blur 一致性扣分（warning 级别，-5）
+    if "filter_blur_chaos" in warning_rules:
+        score -= 5
+        notes.append("检测到filter-blur不一致(-5)")
 
     score = max(0, score)
     if not notes:

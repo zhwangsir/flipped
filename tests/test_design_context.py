@@ -6607,3 +6607,230 @@ def test_auto_fix_design_issues_includes_animation_duration():
         violations = check_animation_duration_chaos(td)
     ad_v = [v for v in violations if v["rule"] == "animation_duration_chaos"]
     assert ad_v == [], f"组合修复后不应有违规: {ad_v}"
+
+
+# ---------- M80: filter/backdrop-filter blur 一致性检测 + auto-fix ----------
+
+
+def test_check_filter_blur_chaos_no_html():
+    """没有 HTML 文件时应返回空列表。"""
+    import tempfile
+    from driving.design_context import check_filter_blur_chaos
+    with tempfile.TemporaryDirectory() as td:
+        result = check_filter_blur_chaos(td)
+    assert result == []
+
+
+def test_check_filter_blur_chaos_non_standard():
+    """非标准 filter blur 值应报 warning。"""
+    import tempfile
+    import os
+    from driving.design_context import check_filter_blur_chaos
+    html = """<html><head><style>
+    .a { filter: blur(3px); }
+    .b { filter: blur(7px); }
+    .c { backdrop-filter: blur(5px); }
+    </style></head><body>text</body></html>"""
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        violations = check_filter_blur_chaos(td)
+    fb_v = [v for v in violations if v["rule"] == "filter_blur_chaos"]
+    assert len(fb_v) > 0
+    assert fb_v[0]["severity"] == "warning"
+
+
+def test_check_filter_blur_chaos_clean():
+    """标准 filter blur 值不应报违规。"""
+    import tempfile
+    import os
+    from driving.design_context import check_filter_blur_chaos
+    html = """<html><head><style>
+    .a { filter: blur(0px); }
+    .b { filter: blur(2px); }
+    .c { filter: blur(4px); }
+    .d { filter: blur(8px); }
+    .e { filter: blur(12px); }
+    .f { filter: blur(16px); }
+    .g { filter: blur(24px); }
+    </style></head><body>text</body></html>"""
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        violations = check_filter_blur_chaos(td)
+    fb_v = [v for v in violations if v["rule"] == "filter_blur_chaos"]
+    assert fb_v == []
+
+
+def test_check_filter_blur_chaos_backdrop_filter():
+    """backdrop-filter 的 blur 值也应被检测。"""
+    import tempfile
+    import os
+    from driving.design_context import check_filter_blur_chaos
+    html = """<html><head><style>
+    .a { backdrop-filter: blur(3px); }
+    .b { backdrop-filter: blur(7px); }
+    </style></head><body>text</body></html>"""
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        violations = check_filter_blur_chaos(td)
+    fb_v = [v for v in violations if v["rule"] == "filter_blur_chaos"]
+    assert len(fb_v) > 0
+
+
+def test_check_filter_blur_chaos_no_blur_not_flagged():
+    """filter 不含 blur() 时不应报违规。"""
+    import tempfile
+    import os
+    from driving.design_context import check_filter_blur_chaos
+    html = """<html><head><style>
+    .a { filter: brightness(1.2); }
+    .b { filter: grayscale(0.5); }
+    </style></head><body>text</body></html>"""
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        violations = check_filter_blur_chaos(td)
+    fb_v = [v for v in violations if v["rule"] == "filter_blur_chaos"]
+    assert fb_v == []
+
+
+def test_check_filter_blur_chaos_too_many_distinct():
+    """超过 7 个不同 filter blur 值应报 warning。"""
+    import tempfile
+    import os
+    from driving.design_context import check_filter_blur_chaos
+    html = """<html><head><style>
+    .a { filter: blur(0px); }
+    .b { filter: blur(2px); }
+    .c { filter: blur(4px); }
+    .d { filter: blur(8px); }
+    .e { filter: blur(12px); }
+    .f { filter: blur(16px); }
+    .g { filter: blur(24px); }
+    .h { filter: blur(3px); }
+    </style></head><body>text</body></html>"""
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        violations = check_filter_blur_chaos(td)
+    fb_v = [v for v in violations if v["rule"] == "filter_blur_chaos"]
+    too_many = [v for v in fb_v if "不同" in v["message"]]
+    assert len(too_many) > 0
+
+
+def test_check_filter_blur_chaos_empty_dir():
+    """空目录应返回空列表。"""
+    import tempfile
+    from driving.design_context import check_filter_blur_chaos
+    with tempfile.TemporaryDirectory() as td:
+        result = check_filter_blur_chaos(td)
+    assert result == []
+
+
+def test_lint_design_quality_includes_filter_blur():
+    """lint_design_quality 应包含 filter_blur_chaos 检测。"""
+    import tempfile
+    import os
+    from driving.design_context import lint_design_quality
+    html = """<html><head><style>
+    .a { filter: blur(3px); }
+    </style></head><body>text</body></html>"""
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        violations = lint_design_quality(td)
+    fb_v = [v for v in violations if v["rule"] == "filter_blur_chaos"]
+    assert len(fb_v) > 0
+
+
+def test_auto_fix_filter_blur_normalizes():
+    """auto_fix_filter_blur 应将非标准值映射到最近标准值。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_filter_blur
+    html = """<html><head><style>
+    .a { filter: blur(3px); }
+    .b { filter: blur(7px); }
+    .c { backdrop-filter: blur(5px); }
+    </style></head><body>text</body></html>"""
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        changed = auto_fix_filter_blur(td)
+        assert changed is True
+        with open(os.path.join(td, "index.html"), "r") as f:
+            content = f.read()
+    # 3 -> 2 或 4（3 与 2/4 等距，取较大值 → 4px）
+    assert "4px" in content
+    # 7 -> 8（最近）
+    assert "8px" in content
+    # 5 -> 4（最近）
+    assert "4px" in content
+    # 原始值不应残留
+    assert "blur(3px)" not in content
+    assert "blur(7px)" not in content
+    assert "blur(5px)" not in content
+
+
+def test_auto_fix_filter_blur_no_change_if_clean():
+    """已经是标准值时不应修改文件。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_filter_blur
+    html = """<html><head><style>
+    .a { filter: blur(4px); }
+    .b { filter: blur(8px); }
+    </style></head><body>text</body></html>"""
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        changed = auto_fix_filter_blur(td)
+        assert changed is False
+
+
+def test_auto_fix_filter_blur_empty_dir():
+    """空目录应返回 False。"""
+    import tempfile
+    from driving.design_context import auto_fix_filter_blur
+    with tempfile.TemporaryDirectory() as td:
+        changed = auto_fix_filter_blur(td)
+    assert changed is False
+
+
+def test_auto_fix_filter_blur_idempotent():
+    """多次调用 auto_fix_filter_blur 应幂等。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_filter_blur
+    html = """<html><head><style>
+    .a { filter: blur(3px); }
+    .b { filter: blur(10px); }
+    </style></head><body>text</body></html>"""
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        auto_fix_filter_blur(td)
+        changed2 = auto_fix_filter_blur(td)
+        assert changed2 is False
+
+
+def test_auto_fix_design_issues_includes_filter_blur():
+    """auto_fix_design_issues 组合函数应包含 filter blur 修复。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_design_issues, check_filter_blur_chaos
+    html = """<html><head><meta name="viewport" content="width=device-width">
+    <style>
+    .a { filter: blur(3px); }
+    .b { backdrop-filter: blur(7px); }
+    </style></head>
+    <body><main><section>content</section></main></body></html>"""
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        auto_fix_design_issues(td)
+        violations = check_filter_blur_chaos(td)
+    fb_v = [v for v in violations if v["rule"] == "filter_blur_chaos"]
+    assert fb_v == [], f"组合修复后不应有违规: {fb_v}"
