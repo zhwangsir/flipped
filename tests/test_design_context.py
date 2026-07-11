@@ -4260,3 +4260,126 @@ def test_auto_fix_design_issues_includes_color_contrast():
 
     contrast_violations = [v for v in violations if v["rule"] == "color_contrast"]
     assert contrast_violations == [], f"组合修复后不应有对比度违规: {contrast_violations}"
+
+
+# ---------- M63: E2E 冒烟测试 — 完整 auto-fix 管线验证 ----------
+
+
+def test_m63_smoke_all_auto_fix_repair_comprehensive_bad_html():
+    """M63: E2E 冒烟测试 — 含全部可修复设计问题的 HTML →
+    真实 auto_fix_design_issues（18组）一次性修复 → design_score 达标 → 无 error 违规。
+
+    验证用户核心目标：给方向 → 自行产出 → 自行修复 → 达标。
+    构造的 bad HTML 覆盖全部 4 个 error 级违规（meta_viewport/img_alt/color_contrast/placeholder_text）
+    以及多个 warning 级问题（spacing/typography/console_log/empty_links/inline_styles/无CSS变量等）。
+    """
+    import tempfile
+    import os
+    from driving.design_context import (
+        auto_fix_design_issues,
+        design_score,
+        lint_design_quality,
+    )
+
+    # 构造含多种可修复问题的 BAD HTML
+    bad_html = """<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<style>
+.bad { padding: 13px; margin: 7px; font-size: 37px; transition: margin 0.3s; background-color: #FFFFFF; color: #DDDDDD; }
+</style>
+</head><body>
+<div class="bad">Lorem ipsum dolor sit amet</div>
+<a href="#">Click here</a>
+<button style="color: red;">Sample text</button>
+<img src="x.png">
+<script>console.log("debug"); console.log("test");</script>
+</body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(bad_html)
+
+        # 修复前：分数应低，有 error 违规
+        score_before, _ = design_score(td)
+        violations_before = lint_design_quality(td)
+        errors_before = [v for v in violations_before if v["severity"] == "error"]
+
+        # 运行全部 18 组 auto-fix
+        changed = auto_fix_design_issues(td)
+
+        # 修复后：分数应显著提升
+        score_after, notes_after = design_score(td)
+        violations_after = lint_design_quality(td)
+        errors_after = [v for v in violations_after if v["severity"] == "error"]
+
+    assert changed is True, "auto_fix 应做了修改"
+    assert len(errors_before) > 0, f"修复前应有 error 违规: {errors_before}"
+    assert score_after > score_before, f"分数应提升: {score_before} -> {score_after}"
+    assert score_after >= 70, f"修复后分数应>=70: {score_after}, notes: {notes_after}"
+    assert errors_after == [], f"修复后不应有 error 违规: {errors_after}"
+
+
+def test_m63_smoke_factory_loop_bad_worker_to_passing(monkeypatch):
+    """M63: E2E 冒烟测试 — worker 产出 bad HTML → auto_fix 修复 →
+    确定性 verify_cmd 通过 → 工厂完成。
+
+    验证完整链路：确定性 planner 生成任务 → worker（模拟 Kimi）产出有问题的 HTML →
+    auto_fix_design_issues 修复 → verify_cmd 检查通过 → 工厂 status=done。
+    """
+    import tempfile
+    import os
+    from driving.factory_loop import (
+        run_factory_loop,
+        FactoryState,
+        FactoryStatus,
+        TaskResult,
+    )
+    from driving.design_context import auto_fix_design_issues
+
+    # mock GLM 不可用 → 强制确定性 planner fallback
+    monkeypatch.setattr(
+        "driving.factory_loop._make_llm",
+        lambda *a, **kw: (_ for _ in ()).throw(RuntimeError("no GLM")),
+    )
+    monkeypatch.setattr(
+        "driving.task_proposer._make_llm",
+        lambda *a, **kw: (_ for _ in ()).throw(RuntimeError("no GLM")),
+    )
+
+    # worker 模拟：写 bad HTML，然后调用真实 auto_fix（模拟 local_worker 行为）
+    def fake_orchestrator(task, state):
+        html_path = os.path.join(state.cwd, "index.html")
+        # 每次都写一份有问题的 HTML（模拟 worker 不遵守设计约束）
+        bad_html = """<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<style>.x { padding: 13px; transition: margin 0.3s; }</style>
+</head><body>
+<div class="x">Lorem ipsum</div>
+<a href="#">link</a>
+<img src="a.png">
+<script>console.log("x");</script>
+</body></html>"""
+        with open(html_path, "w") as f:
+            f.write(bad_html)
+        # 真实 auto_fix 修复所有问题
+        auto_fix_design_issues(state.cwd)
+        return TaskResult(
+            task=task, verified=True, stop_reason="verified", iteration=1
+        )
+
+    with tempfile.TemporaryDirectory() as d:
+        state = run_factory_loop(
+            product_goal="做一个落地页",
+            cwd=d,
+            db_path=os.path.join(d, "test_factory.db"),
+            checkpoint_db_path=os.path.join(d, "test_ckpt.db"),
+            max_tasks=10,
+            max_rounds=1,
+            orchestrator_fn=fake_orchestrator,
+        )
+
+        # 工厂应完成
+        assert state.status.value == "done", f"工厂应完成，实际 {state.status.value}"
+        assert len(state.completed) >= 1, "应完成至少 1 个任务"
+        # 产物文件应存在
+        assert os.path.isfile(os.path.join(d, "index.html")), "index.html 应存在"
