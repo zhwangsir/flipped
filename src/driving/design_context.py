@@ -2448,6 +2448,162 @@ def auto_fix_border_radius(cwd: str) -> bool:
     return changed
 
 
+# ---------- M71: box-shadow elevation 混乱检测 + auto-fix ----------
+
+# 标准 elevation scale（blur 值 → 完整 shadow 值）
+_STANDARD_SHADOW_BLURS = (2, 6, 15, 25)
+_STANDARD_SHADOWS: dict[int, str] = {
+    2: "0 1px 2px rgba(0,0,0,0.05)",     # sm
+    6: "0 4px 6px rgba(0,0,0,0.07)",      # md
+    15: "0 10px 15px rgba(0,0,0,0.1)",     # lg
+    25: "0 20px 25px rgba(0,0,0,0.15)",    # xl
+}
+
+
+def _extract_shadow_blur(shadow_val: str) -> "int | None":
+    """从 box-shadow 值中提取 blur radius（第3个空格分隔 token 的 px 值）。
+
+    box-shadow 格式: offset-x offset-y blur spread color
+    例: "0 3px 7px rgba(0,0,0,0.1)" → blur=7
+    """
+    tokens = shadow_val.strip().split()
+    # 跳过 inset 关键词
+    tokens = [t for t in tokens if t.lower() != "inset"]
+    if len(tokens) < 3:
+        return None
+    blur_token = tokens[2]
+    # 提取数字（可能带 - 前缀和 px 后缀）
+    import re as _re
+    m = _re.match(r"-?(\d+)px", blur_token)
+    if m:
+        return int(m.group(1))
+    return None
+
+
+def check_box_shadow_chaos(cwd: str) -> list[dict]:
+    """M71: 检测 box-shadow elevation 混乱。
+
+    AI 生成 CSS 常见破绽：随机 box-shadow 值（3px/7px/13px blur）无系统性 elevation scale。
+    标准 blur 值集合：{2, 6, 15, 25}（对应 sm/md/lg/xl）。
+    报 warning 当：
+    - 任意 blur 值不在标准集合中
+    - 或超过 4 个不同 blur 值（elevation 过多）
+    """
+    import os as _os
+    import re as _re
+
+    violations: list[dict] = []
+    for fname in _os.listdir(cwd) if _os.path.exists(cwd) else []:
+        if not fname.endswith(".html"):
+            continue
+        fpath = _os.path.join(cwd, fname)
+        if not _os.path.isfile(fpath):
+            continue
+        try:
+            content = open(fpath, "r", encoding="utf-8").read()
+        except Exception:
+            continue
+        # 匹配 box-shadow: <value>;
+        shadow_matches = _re.findall(
+            r"box-shadow\s*:\s*([^;]+)", content, _re.IGNORECASE,
+        )
+        if not shadow_matches:
+            continue
+        blurs: list[int] = []
+        for shadow_val in shadow_matches:
+            blur = _extract_shadow_blur(shadow_val.strip())
+            if blur is not None:
+                blurs.append(blur)
+        if not blurs:
+            continue
+        distinct = sorted(set(blurs))
+        non_standard = [b for b in distinct if b not in _STANDARD_SHADOW_BLURS]
+        if non_standard:
+            violations.append({
+                "rule": "box_shadow_chaos",
+                "severity": "warning",
+                "file": fname,
+                "message": f"非标准 box-shadow blur 值：{non_standard}，应使用 2/6/15/25 系统化 elevation",
+            })
+            continue
+        if len(distinct) > 4:
+            violations.append({
+                "rule": "box_shadow_chaos",
+                "severity": "warning",
+                "file": fname,
+                "message": f"box-shadow 有 {len(distinct)} 个不同 blur 值：{distinct}，应精简到 ≤4 个系统化 elevation",
+            })
+    return violations
+
+
+def auto_fix_box_shadow(cwd: str) -> bool:
+    """M71: 规范化 box-shadow 值到标准 elevation scale。
+
+    非标准 blur 值映射到最近标准值（距离相等取较大值），并替换完整 shadow 值。
+    标准 scale: 2px(sm) / 6px(md) / 15px(lg) / 25px(xl)。
+    幂等：标准值再次运行不修改。
+    """
+    import os as _os
+    import re as _re
+
+    def _nearest_standard_blur(val: int) -> int:
+        best = _STANDARD_SHADOW_BLURS[0]
+        best_dist = abs(best - val)
+        for s in _STANDARD_SHADOW_BLURS[1:]:
+            d = abs(s - val)
+            if d < best_dist or (d == best_dist and s > best):
+                best, best_dist = s, d
+        return best
+
+    changed = False
+    if not _os.path.exists(cwd):
+        return False
+
+    for fname in _os.listdir(cwd):
+        if not fname.endswith(".html"):
+            continue
+        fpath = _os.path.join(cwd, fname)
+        if not _os.path.isfile(fpath):
+            continue
+        try:
+            content = open(fpath, "r", encoding="utf-8").read()
+        except Exception:
+            continue
+
+        # 先检查是否有违规
+        violations = check_box_shadow_chaos(_os.path.dirname(fpath))
+        has_violation = any(
+            v["file"] == fname and v["rule"] == "box_shadow_chaos"
+            for v in violations
+        )
+        if not has_violation:
+            continue
+
+        # 替换每个非标准 box-shadow 值
+        def _replace_shadow(m):
+            shadow_val = m.group(1).strip()
+            blur = _extract_shadow_blur(shadow_val)
+            if blur is None or blur in _STANDARD_SHADOW_BLURS:
+                return m.group(0)  # 不修改
+            std_blur = _nearest_standard_blur(blur)
+            std_shadow = _STANDARD_SHADOWS[std_blur]
+            return f"box-shadow: {std_shadow}"
+
+        new_content = _re.sub(
+            r"box-shadow\s*:\s*([^;]+)",
+            _replace_shadow,
+            content,
+            flags=_re.IGNORECASE,
+        )
+
+        if new_content != content:
+            with open(fpath, "w", encoding="utf-8") as f:
+                f.write(new_content)
+            changed = True
+
+    return changed
+
+
 def auto_fix_design_issues(cwd: str) -> bool:
     """组合调用所有 auto-fix 函数，返回是否做过任何修改。"""
     changed1 = auto_fix_spacing_grid(cwd)
@@ -2470,11 +2626,12 @@ def auto_fix_design_issues(cwd: str) -> bool:
     changed18 = auto_fix_color_contrast(cwd)
     changed19 = auto_fix_zindex(cwd)
     changed20 = auto_fix_border_radius(cwd)
+    changed21 = auto_fix_box_shadow(cwd)
     return (
         changed1 or changed2 or changed3 or changed4 or changed5
         or changed6 or changed7 or changed8 or changed9 or changed10 or changed11
         or changed12 or changed13 or changed14 or changed15 or changed16 or changed17
-        or changed18 or changed19 or changed20
+        or changed18 or changed19 or changed20 or changed21
     )
 
 
@@ -2750,6 +2907,12 @@ def lint_design_quality(cwd: str) -> list[dict]:
     except Exception:
         pass
 
+    # 16. M71: box-shadow elevation 混乱检测
+    try:
+        violations.extend(check_box_shadow_chaos(cwd))
+    except Exception:
+        pass
+
     return violations
 
 
@@ -2913,6 +3076,11 @@ def design_score(cwd: str) -> "tuple[int, list[str]]":
     if "border_radius_chaos" in warning_rules:
         score -= 5
         notes.append("检测到border-radius不一致(-5)")
+
+    # 16. M71: box-shadow elevation 混乱扣分（warning 级别，-5）
+    if "box_shadow_chaos" in warning_rules:
+        score -= 5
+        notes.append("检测到box-shadow elevation混乱(-5)")
 
     score = max(0, score)
     if not notes:

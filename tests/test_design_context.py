@@ -4851,3 +4851,179 @@ def test_auto_fix_design_issues_includes_border_radius():
 
     radius_violations = [v for v in violations if v["rule"] == "border_radius_chaos"]
     assert radius_violations == [], f"组合修复后不应有违规: {radius_violations}"
+
+
+# ======================== M71: box-shadow elevation 混乱检测 + auto-fix ========================
+
+
+def test_check_box_shadow_chaos_no_html():
+    """无 HTML 文件的目录返回空列表。"""
+    import tempfile
+    from driving.design_context import check_box_shadow_chaos
+    with tempfile.TemporaryDirectory() as td:
+        assert check_box_shadow_chaos(td) == []
+
+
+def test_check_box_shadow_chaos_non_standard():
+    """非标准 box-shadow blur 值应报 warning。"""
+    import tempfile
+    import os
+    from driving.design_context import check_box_shadow_chaos
+    html = """<html><head><style>
+    .a { box-shadow: 0 3px 7px rgba(0,0,0,0.1); }
+    .b { box-shadow: 0 13px 29px rgba(0,0,0,0.2); }
+    </style></head><body><main><section>x</section></main></body></html>"""
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        violations = check_box_shadow_chaos(td)
+    shadow_v = [v for v in violations if v["rule"] == "box_shadow_chaos"]
+    assert len(shadow_v) >= 1
+    assert shadow_v[0]["severity"] == "warning"
+
+
+def test_check_box_shadow_chaos_clean():
+    """标准 elevation 值不报违规。"""
+    import tempfile
+    import os
+    from driving.design_context import check_box_shadow_chaos
+    html = """<html><head><style>
+    .a { box-shadow: 0 1px 2px rgba(0,0,0,0.05); }
+    .b { box-shadow: 0 4px 6px rgba(0,0,0,0.07); }
+    .c { box-shadow: 0 10px 15px rgba(0,0,0,0.1); }
+    </style></head><body><main><section>x</section></main></body></html>"""
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        violations = check_box_shadow_chaos(td)
+    shadow_v = [v for v in violations if v["rule"] == "box_shadow_chaos"]
+    assert shadow_v == [], f"标准值不应报违规: {shadow_v}"
+
+
+def test_check_box_shadow_chaos_too_many():
+    """超过 4 个不同 box-shadow 值报 warning。"""
+    import tempfile
+    import os
+    from driving.design_context import check_box_shadow_chaos
+    html = """<html><head><style>
+    .a { box-shadow: 0 1px 2px rgba(0,0,0,0.05); }
+    .b { box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+    .c { box-shadow: 0 4px 6px rgba(0,0,0,0.07); }
+    .d { box-shadow: 0 6px 8px rgba(0,0,0,0.08); }
+    .e { box-shadow: 0 10px 15px rgba(0,0,0,0.1); }
+    </style></head><body><main><section>x</section></main></body></html>"""
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        violations = check_box_shadow_chaos(td)
+    shadow_v = [v for v in violations if v["rule"] == "box_shadow_chaos"]
+    assert len(shadow_v) >= 1
+
+
+def test_check_box_shadow_chaos_empty_dir():
+    """空目录返回空列表。"""
+    import tempfile
+    from driving.design_context import check_box_shadow_chaos
+    with tempfile.TemporaryDirectory() as td:
+        assert check_box_shadow_chaos(td) == []
+
+
+def test_lint_design_quality_includes_box_shadow():
+    """lint_design_quality 应包含 box-shadow 检查。"""
+    import tempfile
+    import os
+    from driving.design_context import lint_design_quality
+    html = """<html><head><style>
+    .a { box-shadow: 0 3px 7px rgba(0,0,0,0.1); }
+    </style></head><body><main><section>x</section></main></body></html>"""
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        violations = lint_design_quality(td)
+    shadow_v = [v for v in violations if v["rule"] == "box_shadow_chaos"]
+    assert len(shadow_v) >= 1, f"lint 应检测到 box-shadow 违规: {violations}"
+
+
+def test_auto_fix_box_shadow_normalizes():
+    """非标准 box-shadow 应规范化到最近标准 elevation。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_box_shadow, check_box_shadow_chaos
+    html = """<html><head><meta name="viewport" content="width=device-width">
+    <style>
+    .a { box-shadow: 0 3px 7px rgba(0,0,0,0.1); }
+    .b { box-shadow: 0 13px 29px rgba(0,0,0,0.2); }
+    </style></head>
+    <body><main><section>content</section></main></body></html>"""
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        changed = auto_fix_box_shadow(td)
+        content = open(os.path.join(td, "index.html"), "r").read()
+        violations = check_box_shadow_chaos(td)
+    assert changed is True, "应报告已修改"
+    shadow_v = [v for v in violations if v["rule"] == "box_shadow_chaos"]
+    assert shadow_v == [], f"修复后不应有违规: {shadow_v}"
+    # 7px blur → 6px (md), 29px blur → 25px (xl-ish)
+    assert "6px" in content or "15px" in content or "25px" in content, f"应有标准值: {content}"
+
+
+def test_auto_fix_box_shadow_no_change_if_clean():
+    """标准 box-shadow 不修改。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_box_shadow
+    html = """<html><head><style>
+    .a { box-shadow: 0 1px 2px rgba(0,0,0,0.05); }
+    .b { box-shadow: 0 4px 6px rgba(0,0,0,0.07); }
+    </style></head><body><main><section>x</section></main></body></html>"""
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        changed = auto_fix_box_shadow(td)
+    assert changed is False, "标准值不应修改"
+
+
+def test_auto_fix_box_shadow_empty_dir():
+    """空目录返回 False。"""
+    import tempfile
+    from driving.design_context import auto_fix_box_shadow
+    with tempfile.TemporaryDirectory() as td:
+        assert auto_fix_box_shadow(td) is False
+
+
+def test_auto_fix_box_shadow_idempotent():
+    """二次运行不修改。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_box_shadow
+    html = """<html><head><style>
+    .a { box-shadow: 0 3px 7px rgba(0,0,0,0.1); }
+    .b { box-shadow: 0 13px 29px rgba(0,0,0,0.2); }
+    </style></head><body><main><section>x</section></main></body></html>"""
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        auto_fix_box_shadow(td)
+        changed2 = auto_fix_box_shadow(td)
+    assert changed2 is False, "二次运行不应修改"
+
+
+def test_auto_fix_design_issues_includes_box_shadow():
+    """auto_fix_design_issues 组合函数应包含 box-shadow 修复。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_design_issues, check_box_shadow_chaos
+    html = """<html><head><meta name="viewport" content="width=device-width">
+    <style>
+    .a { box-shadow: 0 3px 7px rgba(0,0,0,0.1); }
+    .b { box-shadow: 0 13px 29px rgba(0,0,0,0.2); }
+    </style></head>
+    <body><main><section>content</section></main></body></html>"""
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        auto_fix_design_issues(td)
+        violations = check_box_shadow_chaos(td)
+    shadow_v = [v for v in violations if v["rule"] == "box_shadow_chaos"]
+    assert shadow_v == [], f"组合修复后不应有违规: {shadow_v}"
