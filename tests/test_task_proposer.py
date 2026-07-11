@@ -741,3 +741,309 @@ def test_propose_design_fix_auto_fix_can_reach_threshold():
 
     # auto_fix 后 score 应达标（≥70），返回 None
     assert result is None, f"auto_fix 后应达标，但仍生成修复任务: {result}"
+
+
+# ---------- M64: 确定性 feature proposer（第三个 fallback）----------
+
+
+def test_propose_feature_task_no_html():
+    """无 HTML 文件时，feature proposer 返回 None。"""
+    from driving.task_proposer import propose_feature_task
+
+    with tempfile.TemporaryDirectory() as td:
+        state = _make_state(td)
+        result = propose_feature_task(state)
+
+    assert result is None
+
+
+def test_propose_feature_task_adds_missing_feature():
+    """良好 HTML 但缺少功能维度 → 生成功能增强任务。"""
+    from driving.task_proposer import propose_feature_task
+
+    good_html = """<!DOCTYPE html>
+<html lang="zh"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+:root { --color-bg: #0D0D12; --color-text: #F5F5F5; --color-accent: #0A84FF; }
+body { padding: 16px; margin: 0; font-size: 16px; transition: opacity 0.3s ease; }
+h1 { font-size: 48px; }
+:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+@media (max-width: 768px) { body { font-size: 14px; } }
+button:hover { opacity: 0.85; }
+button:active { transform: scale(0.98); }
+button:disabled { opacity: 0.5; cursor: not-allowed; }
+</style></head><body>
+<header><nav>Logo</nav></header>
+<main><section><h1>Title</h1>
+<button>Click</button>
+</section></main>
+<footer>Copyright</footer>
+</body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(good_html)
+        state = _make_state(td)
+        result = propose_feature_task(state)
+
+    assert result is not None
+    assert result.verify_cmd  # 有验收命令
+    assert "feature-" in result.id
+
+
+def test_propose_feature_task_skips_already_done():
+    """已完成的功能任务不重复生成，找下一个未完成的。"""
+    from driving.task_proposer import propose_feature_task
+    from driving.factory_loop import TaskResult
+
+    good_html = """<!DOCTYPE html>
+<html lang="zh"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+:root { --color-bg: #0D0D12; --color-text: #F5F5F5; --color-accent: #0A84FF; }
+body { padding: 16px; margin: 0; font-size: 16px; }
+</style></head><body>
+<header><nav>Logo</nav></header>
+<main><h1>Title</h1></main>
+<footer>Copyright</footer>
+</body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(good_html)
+        state = _make_state(td)
+        # 模拟已有一个 feature 任务完成
+        state.completed.append(TaskResult(
+            task=FactoryTask(
+                id="feature-1",
+                description="添加表单组件",
+                verify_cmd=["true"],
+                feedback="(确定性 feature: 添加 <form>)",
+            ),
+            verified=True,
+            stop_reason="verified",
+            iteration=1,
+        ))
+        result = propose_feature_task(state)
+
+    assert result is not None
+    assert result.id != "feature-1"  # 不重复
+    assert "feature-" in result.id
+
+
+def test_propose_feature_task_skips_existing_html_features():
+    """HTML 已有的功能维度不生成任务，找缺失的。"""
+    from driving.task_proposer import propose_feature_task
+
+    # 有 <form> 和 <svg> 但缺少其他
+    partial_html = """<!DOCTYPE html>
+<html lang="zh"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+:root { --color-bg: #0D0D12; --color-text: #F5F5F5; --color-accent: #0A84FF; }
+body { padding: 16px; margin: 0; font-size: 16px; }
+</style></head><body>
+<header><nav>Logo</nav></header>
+<main>
+<h1>Title</h1>
+<form><input type="text"><button>Submit</button></form>
+<svg width="24" height="24"><circle cx="12" cy="12" r="10"/></svg>
+</main>
+<footer>Copyright</footer>
+</body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(partial_html)
+        state = _make_state(td)
+        result = propose_feature_task(state)
+
+    assert result is not None
+    # 不应该是 feature-1 (form) 或 feature-2 (svg)，因为 HTML 已有
+    assert result.id not in ("feature-1", "feature-2")
+
+
+def test_propose_feature_task_all_done_returns_none():
+    """所有功能维度都已有 → 返回 None。"""
+    from driving.task_proposer import propose_feature_task
+
+    # 包含所有 feature 检查点的 HTML
+    full_html = """<!DOCTYPE html>
+<html lang="zh"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="test">
+<link rel="icon" href="favicon.ico">
+<link rel="preload" href="font.woff2" as="font">
+<style>
+html { scroll-behavior: smooth; }
+:root { --color-bg: #0D0D12; --color-text: #F5F5F5; --color-accent: #0A84FF; }
+body { padding: 16px; margin: 0; font-size: 16px; }
+:focus-visible { outline: 2px solid var(--color-accent); }
+@media (max-width: 768px) { body { font-size: 14px; } }
+@media print { body { color: #000; } }
+@media (prefers-color-scheme: dark) { body { background: #000; } }
+</style></head><body>
+<header><nav>Logo</nav></header>
+<main>
+<section><h1>Title</h1></section>
+<form><input type="text" aria-label="name"><button>Submit</button></form>
+<svg width="24" height="24"><circle cx="12" cy="12" r="10"/></svg>
+<details><summary>More</summary><p>Details</p></details>
+<picture><source srcset="img.webp"><img src="img.jpg" alt="img"></picture>
+</main>
+<footer>Copyright</footer>
+</body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(full_html)
+        state = _make_state(td)
+        result = propose_feature_task(state)
+
+    assert result is None
+
+
+def test_propose_feature_task_verify_cmd_is_python():
+    """验收命令是 python -c 格式。"""
+    from driving.task_proposer import propose_feature_task
+
+    good_html = """<!DOCTYPE html>
+<html lang="zh"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+:root { --color-bg: #0D0D12; --color-text: #F5F5F5; --color-accent: #0A84FF; }
+body { padding: 16px; margin: 0; font-size: 16px; }
+</style></head><body>
+<header><nav>Logo</nav></header>
+<main><h1>Title</h1></main>
+<footer>Copyright</footer>
+</body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(good_html)
+        state = _make_state(td)
+        result = propose_feature_task(state)
+
+    assert result is not None
+    assert "python -c" in result.verify_cmd[0]
+
+
+def test_factory_loop_uses_feature_fallback():
+    """E2E: GLM 不可用 + design_score 达标 → feature fallback 接管。"""
+    from driving.factory_loop import run_factory_loop, FactoryTask, TaskResult
+
+    good_html = """<!DOCTYPE html>
+<html lang="zh"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+:root { --color-bg: #0D0D12; --color-text: #F5F5F5; --color-accent: #0A84FF; }
+body { padding: 16px; margin: 0; font-size: 16px; transition: opacity 0.3s ease; }
+h1 { font-size: 48px; }
+:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+@media (max-width: 768px) { body { font-size: 14px; } }
+button:hover { opacity: 0.85; }
+button:active { transform: scale(0.98); }
+button:disabled { opacity: 0.5; cursor: not-allowed; }
+</style></head><body>
+<header><nav>Logo</nav></header>
+<main><section><h1>Title</h1>
+<button>Click</button>
+</section></main>
+<footer>Copyright</footer>
+</body></html>"""
+
+    def fake_proposer(state):
+        return None  # GLM 不可用
+
+    def fake_design_fix(state):
+        return None  # design_score 已达标
+
+    feature_task = FactoryTask(
+        id="feature-1",
+        description="添加表单组件",
+        verify_cmd=["true"],
+    )
+
+    def fake_feature_fallback(state):
+        return feature_task
+
+    def fake_orchestrator(task, state):
+        return TaskResult(task=task, verified=True, stop_reason="verified", iteration=1)
+
+    with tempfile.TemporaryDirectory() as d:
+        with open(os.path.join(d, "index.html"), "w") as f:
+            f.write(good_html)
+        state = run_factory_loop(
+            product_goal="test",
+            cwd=d,
+            db_path=os.path.join(d, "test_factory.db"),
+            checkpoint_db_path=os.path.join(d, "test_ckpt.db"),
+            max_tasks=10,
+            planner=lambda s: [FactoryTask(id="t0", description="init", verify_cmd=["true"])],
+            orchestrator_fn=fake_orchestrator,
+            task_proposer=fake_proposer,
+            design_fix_fallback=fake_design_fix,
+            feature_fallback=fake_feature_fallback,
+        )
+
+    # 初始 1 + feature 1 = 2
+    assert len(state.completed) == 2
+    assert state.completed[1].task.id == "feature-1"
+
+
+def test_factory_loop_auto_feature_fallback_when_proposer_disabled(monkeypatch):
+    """M64: FLIPPED_AUTO_PROPOSER=1 时，不传 feature_fallback 也自动接入。
+
+    验证 GLM 不可用 + design_score 达标时，feature_fallback 确定性接管。
+    """
+    from driving.factory_loop import run_factory_loop, FactoryTask, TaskResult
+
+    monkeypatch.setenv("FLIPPED_AUTO_PROPOSER", "1")
+
+    good_html = """<!DOCTYPE html>
+<html lang="zh"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+:root { --color-bg: #0D0D12; --color-text: #F5F5F5; --color-accent: #0A84FF; }
+body { padding: 16px; margin: 0; font-size: 16px; transition: opacity 0.3s ease; }
+h1 { font-size: 48px; }
+:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+@media (max-width: 768px) { body { font-size: 14px; } }
+button:hover { opacity: 0.85; }
+button:active { transform: scale(0.98); }
+button:disabled { opacity: 0.5; cursor: not-allowed; }
+</style></head><body>
+<header><nav>Logo</nav></header>
+<main><section><h1>Title</h1>
+<button>Click</button>
+</section></main>
+<footer>Copyright</footer>
+</body></html>"""
+
+    def fake_orchestrator(task, state):
+        # feature 任务的验收命令可能失败（因为 HTML 还没更新），
+        # 这里 mock orchestrator 让所有任务都通过
+        return TaskResult(task=task, verified=True, stop_reason="verified", iteration=1)
+
+    with tempfile.TemporaryDirectory() as d:
+        with open(os.path.join(d, "index.html"), "w") as f:
+            f.write(good_html)
+        with patch("driving.task_proposer._invoke_structured", side_effect=RuntimeError("no GLM")):
+            state = run_factory_loop(
+                product_goal="test",
+                cwd=d,
+                db_path=os.path.join(d, "test_factory.db"),
+                checkpoint_db_path=os.path.join(d, "test_ckpt.db"),
+                max_tasks=10,
+                max_rounds=3,
+                planner=lambda s: [FactoryTask(id="t0", description="init", verify_cmd=["true"])],
+                orchestrator_fn=fake_orchestrator,
+                # 不传 feature_fallback，验证自动接入
+            )
+
+    # 初始 1 + feature fallback ≥1 = ≥2 个任务
+    assert len(state.completed) >= 2
+    feature_tasks = [r for r in state.completed if "feature-" in r.task.id]
+    assert len(feature_tasks) >= 1

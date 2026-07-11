@@ -263,3 +263,94 @@ def propose_design_fix_task(state: FactoryState) -> FactoryTask | None:
         verify_cmd=verify_cmd,
         feedback=feedback,
     )
+
+
+def propose_feature_task(state: FactoryState) -> FactoryTask | None:
+    """确定性 feature proposer（M64，第三个 fallback）。
+
+    当 GLM 不可用且 design_score 已达标时，扫描当前 HTML 产物，
+    找出缺少的功能维度，生成有意义的增强任务，让工厂持续迭代产出更丰富的页面。
+
+    每个功能维度有对应的确定性验收命令，不依赖 LLM。
+    已完成的或 HTML 已有的功能维度不重复生成。
+    所有功能维度都已具备时返回 None。
+    """
+    import os as _os
+
+    cwd = state.cwd
+    if not _os.path.exists(cwd):
+        return None
+
+    # 读取第一个 HTML 文件内容
+    html_content = ""
+    try:
+        for fname in _os.listdir(cwd):
+            if fname.endswith(".html"):
+                fpath = _os.path.join(cwd, fname)
+                if _os.path.isfile(fpath):
+                    try:
+                        html_content = open(fpath, "r", encoding="utf-8").read()
+                        break
+                    except Exception:
+                        continue
+    except Exception:
+        return None
+
+    if not html_content:
+        return None
+
+    # 已完成的 feature 任务 id 集合（去重）
+    done_feature_ids = {
+        r.task.id for r in state.completed if r.task.id.startswith("feature-")
+    }
+
+    safe_cwd = cwd.replace("'", "\\'")
+
+    # 功能维度清单：(id, HTML 标记, 任务描述, 验收命令)
+    # 验收命令统一用 python -c 格式，检查 HTML 是否包含对应标记
+    features = [
+        ("feature-1", "<form",
+         "添加表单组件（<form> + input + label，用于用户交互）",
+         f"python -c \"f=open('{safe_cwd}/index.html');c=f.read();assert '<form' in c,'no form';f.close()\""),
+        ("feature-2", "<svg",
+         "添加 SVG 图标（内联 SVG，提升视觉表现力）",
+         f"python -c \"f=open('{safe_cwd}/index.html');c=f.read();assert '<svg' in c,'no svg';f.close()\""),
+        ("feature-3", "<picture",
+         "添加响应式图片（<picture> + source srcset，适配不同屏幕）",
+         f"python -c \"f=open('{safe_cwd}/index.html');c=f.read();assert '<picture' in c,'no picture';f.close()\""),
+        ("feature-4", "@media print",
+         "添加打印样式（@media print，优化打印输出效果）",
+         f"python -c \"f=open('{safe_cwd}/index.html');c=f.read();assert '@media print' in c.lower(),'no print styles';f.close()\""),
+        ("feature-5", "<details",
+         "添加折叠组件（<details> + <summary>，用于可展开内容）",
+         f"python -c \"f=open('{safe_cwd}/index.html');c=f.read();assert '<details' in c,'no details';f.close()\""),
+        ("feature-6", "scroll-behavior",
+         "添加平滑滚动（CSS scroll-behavior: smooth，提升导航体验）",
+         f"python -c \"f=open('{safe_cwd}/index.html');c=f.read();assert 'scroll-behavior' in c,'no smooth scroll';f.close()\""),
+        ("feature-7", 'name="description"',
+         "添加 SEO meta（<meta name=\"description\">，优化搜索引擎收录）",
+         f"python -c \"f=open('{safe_cwd}/index.html');c=f.read();assert 'name=\\\"description\\\"' in c or 'name=\\'description\\'' in c,'no seo meta';f.close()\""),
+        ("feature-8", "prefers-color-scheme",
+         "添加暗色模式适配（@media prefers-color-scheme，跟随系统主题）",
+         f"python -c \"f=open('{safe_cwd}/index.html');c=f.read();assert 'prefers-color-scheme' in c,'no dark mode';f.close()\""),
+        ("feature-9", 'rel="icon"',
+         "添加 favicon（<link rel=\"icon\">，浏览器标签图标）",
+         f"python -c \"f=open('{safe_cwd}/index.html');c=f.read();assert 'rel=\\\"icon\\\"' in c or 'rel=\\'icon\\'' in c,'no favicon';f.close()\""),
+        ("feature-10", 'rel="preload"',
+         "添加资源预加载（<link rel=\"preload\">，优化关键资源加载）",
+         f"python -c \"f=open('{safe_cwd}/index.html');c=f.read();assert 'rel=\\\"preload\\\"' in c or 'rel=\\'preload\\'' in c,'no preload';f.close()\""),
+    ]
+
+    for fid, marker, desc, verify in features:
+        if fid in done_feature_ids:
+            continue  # 已完成的任务，跳过
+        if marker in html_content:
+            continue  # HTML 已有此功能，跳过
+        return FactoryTask(
+            id=fid,
+            description=desc,
+            verify_cmd=[verify],
+            feedback=f"(确定性 feature: 添加 {marker})",
+        )
+
+    return None  # 所有功能维度都已具备

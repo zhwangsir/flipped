@@ -678,6 +678,7 @@ def run_factory_loop(
     task_proposer: "Callable[[FactoryState], FactoryTask | None] | None" = None,
     event_bus=None,
     design_fix_fallback: "Callable[[FactoryState], FactoryTask | None] | None" = None,
+    feature_fallback: "Callable[[FactoryState], FactoryTask | None] | None" = None,
 ) -> FactoryState:
     """启动/继续一个工厂循环；状态持久化到 db_path，支持崩溃恢复。
 
@@ -688,6 +689,8 @@ def run_factory_loop(
     返回 None 表示停止迭代。max_rounds 限制自主生成的轮次，防止空转。
     M41: design_fix_fallback——task_proposer 返回 None 时（如 GLM 不可用），
     调用 design_fix_fallback 检查 design_score，低分时确定性生成修复任务。
+    M64: feature_fallback——design_fix_fallback 也返回 None 时（design_score 已达标），
+    调用 feature_fallback 扫描 HTML 缺失功能维度，生成功能增强任务。
     """
     planner = planner or default_planner
     orchestrator_fn = orchestrator_fn or default_orchestrator_fn
@@ -707,6 +710,13 @@ def run_factory_loop(
         try:
             from driving.task_proposer import propose_design_fix_task
             design_fix_fallback = propose_design_fix_task
+        except Exception:
+            pass
+    # M64: feature_fallback 自动接入——design_fix 也返回 None 时，扫描 HTML 缺失功能
+    if feature_fallback is None and _auto_proposer:
+        try:
+            from driving.task_proposer import propose_feature_task
+            feature_fallback = propose_feature_task
         except Exception:
             pass
 
@@ -760,6 +770,12 @@ def run_factory_loop(
                     if proposed is None and design_fix_fallback is not None:
                         try:
                             proposed = design_fix_fallback(state)
+                        except Exception:
+                            proposed = None
+                    # M64: design_score 已达标时，feature_fallback 生成功能增强任务
+                    if proposed is None and feature_fallback is not None:
+                        try:
+                            proposed = feature_fallback(state)
                         except Exception:
                             proposed = None
                     if proposed is not None:

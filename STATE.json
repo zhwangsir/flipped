@@ -2,7 +2,7 @@
   "project": "flipped",
   "description": "接入本地 MLX 双模型(GLM-5.2 编排者 / Kimi-K2.7-Code 执行者)的 agentic 代码编辑器平台。fork Roo Code + 自定义驾驭层(强制验证/循环检测/上下文压缩/人工审批/子Agent/可观测性) + MCP 联网与外部能力。",
   "updated": "2026-07-11",
-  "current_milestone": "M63 E2E冒烟测试 — 完整auto-fix管线端到端验证 (735 passed)",
+  "current_milestone": "M64 确定性feature_proposer — 第三个fallback让无GLM时也能持续迭代 (743 passed)",
   "key_facts": {
     "dev_host": "Apple M5 Max, 128GB RAM, 1.1TB 可用磁盘 — 开发/控制节点，非模型宿主",
     "model_cluster": "exo 集群 @ http://100.64.201.37:52415 (内网, OpenAI 兼容)；公网 https://dgmt.top/exo (需 Bearer token)",
@@ -900,6 +900,18 @@
           "title": "2 个 E2E 冒烟测试",
           "status": "done",
           "note": "comprehensive bad HTML → 18组auto_fix → score≥70无error；factory_loop bad worker → auto_fix → done。735 passed。"
+        }
+      }
+    },
+    "M64": {
+      "title": "确定性 feature_proposer — 第三个 fallback 让无 GLM 时也能持续迭代",
+      "status": "done",
+      "note": "新增 propose_feature_task(state) 确定性 feature proposer（第三个 fallback）。当 GLM 不可用（task_proposer 返回 None）且 design_score 已达标（design_fix_fallback 返回 None）时，扫描 HTML 产物找出缺失的功能维度（form/svg/picture/print样式/details折叠/平滑滚动/SEO meta/暗色模式适配/favicon/资源预加载），生成有意义的增强任务。每个功能维度有对应确定性验收命令（python -c 检查 HTML 是否包含标记）。已完成的或 HTML 已有的功能维度不重复生成（通过 id 去重 + HTML 标记检查）。所有功能维度都已具备时返回 None。factory_loop 新增 feature_fallback 参数并自动接入（FLIPPED_AUTO_PROPOSER=1 时延迟导入 propose_feature_task）。8 个 TDD 测试（无HTML/缺少功能生成任务/跳过已完成/跳过HTML已有/全部都有返回None/验收命令格式/E2E工厂集成/自动接入）。全量 743 passed（+8，无回归）。核心价值：三层确定性 fallback（task_proposer GLM → design_fix_fallback 修复设计 → feature_fallback 增强功能），即使 GLM 完全不可用，工厂仍能持续迭代产出功能丰富的页面。",
+      "tasks": {
+        "M64.1": {
+          "title": "propose_feature_task + factory_loop 集成 + 8 测试",
+          "status": "done",
+          "note": "新增 propose_feature_task（10个功能维度）+ factory_loop feature_fallback 参数 + 自动接入 + 8 TDD 测试。743 passed。"
         }
       }
     }
