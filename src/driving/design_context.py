@@ -4024,6 +4024,147 @@ def auto_fix_gap(cwd: str) -> bool:
     return changed
 
 
+# ---------- M82: padding 一致性 ----------
+
+_STANDARD_PADDINGS = (0, 4, 8, 12, 16, 24, 32, 48, 64)
+
+_PADDING_RE = r"\bpadding(?:-(?:top|right|bottom|left))?\s*:\s*([^;]+)"
+
+
+def check_padding_chaos(cwd: str) -> list[dict]:
+    """M82: 检测 padding/padding-top 等 一致性问题。
+
+    AI 生成 CSS 常见破绽：随机内边距（7px/13px/18px）无系统性。
+    标准集合（px）：{0, 4, 8, 12, 16, 24, 32, 48, 64}（8px 网格系统）。
+
+    规则1: 非标准值报 warning。
+    规则2: 超过 9 个不同值报 warning。
+    """
+    import os as _os
+    import re as _re
+
+    violations: list[dict] = []
+
+    if not _os.path.exists(cwd):
+        return violations
+
+    for fname in _os.listdir(cwd):
+        if not fname.endswith(".html"):
+            continue
+        fpath = _os.path.join(cwd, fname)
+        if not _os.path.isfile(fpath):
+            continue
+        try:
+            content = open(fpath, "r", encoding="utf-8").read()
+        except Exception:
+            continue
+
+        pad_matches = _re.findall(_PADDING_RE, content, _re.IGNORECASE)
+        if not pad_matches:
+            continue
+
+        values: list[int] = []
+        for val_str in pad_matches:
+            px_matches = _re.findall(r"(\d+)px", val_str)
+            values.extend(int(m) for m in px_matches)
+
+        if not values:
+            continue
+
+        distinct = sorted(set(values))
+
+        non_standard = [v for v in distinct if v not in _STANDARD_PADDINGS]
+        if non_standard:
+            violations.append({
+                "rule": "padding_chaos",
+                "severity": "warning",
+                "file": fname,
+                "message": (
+                    f"非标准 padding 值：{non_standard}px，"
+                    f"应使用 0/4/8/12/16/24/32/48/64 系统化内边距（8px 网格）"
+                ),
+            })
+
+        if len(distinct) > 9:
+            violations.append({
+                "rule": "padding_chaos",
+                "severity": "warning",
+                "file": fname,
+                "message": (
+                    f"padding 有 {len(distinct)} 个不同值：{distinct}px，"
+                    f"应精简到 ≤9 个系统化内边距"
+                ),
+            })
+
+    return violations
+
+
+def auto_fix_padding(cwd: str) -> bool:
+    """M82: 规范化 padding 值到标准集合 {0,4,8,12,16,24,32,48,64}px。"""
+    import os as _os
+    import re as _re
+
+    def _nearest_padding(val: int) -> int:
+        best = _STANDARD_PADDINGS[0]
+        best_dist = abs(best - val)
+        for s in _STANDARD_PADDINGS[1:]:
+            d = abs(s - val)
+            if d < best_dist or (d == best_dist and s > best):
+                best, best_dist = s, d
+        return best
+
+    def _is_standard(val: int) -> bool:
+        return val in _STANDARD_PADDINGS
+
+    if not _os.path.exists(cwd):
+        return False
+
+    changed = False
+    for fname in _os.listdir(cwd):
+        if not fname.endswith(".html"):
+            continue
+        fpath = _os.path.join(cwd, fname)
+        if not _os.path.isfile(fpath):
+            continue
+        try:
+            content = open(fpath, "r", encoding="utf-8").read()
+        except Exception:
+            continue
+
+        violations = check_padding_chaos(_os.path.dirname(fpath))
+        has_violation = any(
+            v["file"] == fname and v["rule"] == "padding_chaos"
+            for v in violations
+        )
+        if not has_violation:
+            continue
+
+        def _replace_padding(m):
+            val_str = m.group(1)
+            def _replace_px(pm):
+                val = int(pm.group(1))
+                if _is_standard(val):
+                    return pm.group(0)
+                std = _nearest_padding(val)
+                return f"{std}px"
+            new_val = _re.sub(r"(\d+)px", _replace_px, val_str)
+            return f"{m.group(0)[:m.start(1) - m.start(0)]}{new_val}"
+
+        new_content = _re.sub(
+            _PADDING_RE,
+            _replace_padding,
+            content,
+            flags=_re.IGNORECASE,
+        )
+
+        if new_content != content:
+            with open(fpath, "w", encoding="utf-8") as f:
+                f.write(new_content)
+            changed = True
+
+    return changed
+
+
 def auto_fix_design_issues(cwd: str) -> bool:
     """组合调用所有 auto-fix 函数，返回是否做过任何修改。"""
     changed1 = auto_fix_spacing_grid(cwd)
@@ -4057,13 +4198,14 @@ def auto_fix_design_issues(cwd: str) -> bool:
     changed29 = auto_fix_animation_duration(cwd)
     changed30 = auto_fix_filter_blur(cwd)
     changed31 = auto_fix_gap(cwd)
+    changed32 = auto_fix_padding(cwd)
     return (
         changed1 or changed2 or changed3 or changed4 or changed5
         or changed6 or changed7 or changed8 or changed9 or changed10 or changed11
         or changed12 or changed13 or changed14 or changed15 or changed16 or changed17
         or changed18 or changed19 or changed20 or changed21 or changed22 or changed23
         or changed24 or changed25 or changed26 or changed27 or changed28 or changed29
-        or changed30 or changed31
+        or changed30 or changed31 or changed32
     )
 
 
@@ -4405,6 +4547,12 @@ def lint_design_quality(cwd: str) -> list[dict]:
     except Exception:
         pass
 
+    # 27. M82: padding 一致性检测
+    try:
+        violations.extend(check_padding_chaos(cwd))
+    except Exception:
+        pass
+
     return violations
 
 
@@ -4623,6 +4771,11 @@ def design_score(cwd: str) -> "tuple[int, list[str]]":
     if "gap_chaos" in warning_rules:
         score -= 5
         notes.append("检测到gap不一致(-5)")
+
+    # 27. M82: padding 一致性扣分（warning 级别，-5）
+    if "padding_chaos" in warning_rules:
+        score -= 5
+        notes.append("检测到padding不一致(-5)")
 
     score = max(0, score)
     if not notes:

@@ -7071,3 +7071,237 @@ def test_auto_fix_design_issues_includes_gap():
         violations = check_gap_chaos(td)
     gap_v = [v for v in violations if v["rule"] == "gap_chaos"]
     assert gap_v == [], f"组合修复后不应有违规: {gap_v}"
+
+
+# ---------- M82: padding 一致性检测 + auto-fix ----------
+
+def test_check_padding_chaos_no_html():
+    """无 HTML 文件不应报违规。"""
+    import tempfile
+    from driving.design_context import check_padding_chaos
+    with tempfile.TemporaryDirectory() as td:
+        violations = check_padding_chaos(td)
+    assert violations == []
+
+
+def test_check_padding_chaos_non_standard():
+    """非标准 padding 值应报 warning。"""
+    import tempfile
+    import os
+    from driving.design_context import check_padding_chaos
+    html = """<html><head><meta name="viewport" content="width=device-width">
+    <style>
+    .a { padding: 7px; }
+    .b { padding: 13px; }
+    </style></head>
+    <body><main><section>content</section></main></body></html>"""
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        violations = check_padding_chaos(td)
+    p_v = [v for v in violations if v["rule"] == "padding_chaos"]
+    assert len(p_v) >= 1
+    assert p_v[0]["severity"] == "warning"
+
+
+def test_check_padding_chaos_clean():
+    """标准 padding 值不应报违规。"""
+    import tempfile
+    import os
+    from driving.design_context import check_padding_chaos
+    html = """<html><head><meta name="viewport" content="width=device-width">
+    <style>
+    .a { padding: 8px; }
+    .b { padding: 16px; }
+    .c { padding: 24px; }
+    </style></head>
+    <body><main><section>content</section></main></body></html>"""
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        violations = check_padding_chaos(td)
+    p_v = [v for v in violations if v["rule"] == "padding_chaos"]
+    assert p_v == []
+
+
+def test_check_padding_chaos_shorthand():
+    """padding: 8px 16px 简写也应检测。"""
+    import tempfile
+    import os
+    from driving.design_context import check_padding_chaos
+    html = """<html><head><meta name="viewport" content="width=device-width">
+    <style>
+    .a { padding: 7px 13px; }
+    </style></head>
+    <body><main><section>content</section></main></body></html>"""
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        violations = check_padding_chaos(td)
+    p_v = [v for v in violations if v["rule"] == "padding_chaos"]
+    assert len(p_v) >= 1
+
+
+def test_check_padding_chaos_longhand():
+    """padding-top/right/bottom/left 也应检测。"""
+    import tempfile
+    import os
+    from driving.design_context import check_padding_chaos
+    html = """<html><head><meta name="viewport" content="width=device-width">
+    <style>
+    .a { padding-top: 7px; padding-right: 13px; padding-bottom: 5px; padding-left: 18px; }
+    </style></head>
+    <body><main><section>content</section></main></body></html>"""
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        violations = check_padding_chaos(td)
+    p_v = [v for v in violations if v["rule"] == "padding_chaos"]
+    assert len(p_v) >= 1
+
+
+def test_check_padding_chaos_too_many_distinct():
+    """超过 9 个不同 padding 值应报 warning。"""
+    import tempfile
+    import os
+    from driving.design_context import check_padding_chaos
+    html = """<html><head><meta name="viewport" content="width=device-width">
+    <style>
+    .a { padding: 4px; }
+    .b { padding: 8px; }
+    .c { padding: 12px; }
+    .d { padding: 16px; }
+    .e { padding: 24px; }
+    .f { padding: 32px; }
+    .g { padding: 48px; }
+    .h { padding: 64px; }
+    .i { padding: 0px; }
+    .j { padding: 20px; }
+    </style></head>
+    <body><main><section>content</section></main></body></html>"""
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        violations = check_padding_chaos(td)
+    p_v = [v for v in violations if v["rule"] == "padding_chaos"]
+    assert len(p_v) >= 1
+
+
+def test_check_padding_chaos_empty_dir():
+    """空目录不应报违规。"""
+    import tempfile
+    from driving.design_context import check_padding_chaos
+    with tempfile.TemporaryDirectory() as td:
+        violations = check_padding_chaos(td)
+    assert violations == []
+
+
+def test_lint_design_quality_includes_padding():
+    """lint_design_quality 应包含 padding 检查。"""
+    import tempfile
+    import os
+    from driving.design_context import lint_design_quality
+    html = """<html><head><meta name="viewport" content="width=device-width">
+    <style>
+    .a { padding: 7px; }
+    </style></head>
+    <body><main><section>content</section></main></body></html>"""
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        violations = lint_design_quality(td)
+    p_v = [v for v in violations if v["rule"] == "padding_chaos"]
+    assert len(p_v) >= 1
+
+
+def test_auto_fix_padding_normalizes():
+    """auto_fix_padding 应将非标准值映射到最近标准值。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_padding, check_padding_chaos
+    html = """<html><head><meta name="viewport" content="width=device-width">
+    <style>
+    .a { padding: 7px; }
+    .b { padding: 13px; }
+    .c { padding: 5px; }
+    </style></head>
+    <body><main><section>content</section></main></body></html>"""
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        changed = auto_fix_padding(td)
+        assert changed is True
+        content = open(os.path.join(td, "index.html")).read()
+        # 7 -> 8, 13 -> 12, 5 -> 4（距离相等取较大值 4）
+        assert "8px" in content
+        assert "12px" in content
+        assert "4px" in content
+        violations = check_padding_chaos(td)
+    p_v = [v for v in violations if v["rule"] == "padding_chaos"]
+    assert p_v == []
+
+
+def test_auto_fix_padding_no_change_if_clean():
+    """标准值不应修改。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_padding
+    html = """<html><head><meta name="viewport" content="width=device-width">
+    <style>
+    .a { padding: 8px; }
+    .b { padding: 16px; }
+    </style></head>
+    <body><main><section>content</section></main></body></html>"""
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        changed = auto_fix_padding(td)
+        assert changed is False
+
+
+def test_auto_fix_padding_empty_dir():
+    """空目录不应报错。"""
+    import tempfile
+    from driving.design_context import auto_fix_padding
+    with tempfile.TemporaryDirectory() as td:
+        changed = auto_fix_padding(td)
+    assert changed is False
+
+
+def test_auto_fix_padding_idempotent():
+    """二次调用不应再修改。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_padding, auto_fix_design_issues
+    html = """<html><head><meta name="viewport" content="width=device-width">
+    <style>
+    .a { padding: 7px; }
+    .b { padding: 13px; }
+    </style></head>
+    <body><main><section>content</section></main></body></html>"""
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        auto_fix_design_issues(td)
+        changed2 = auto_fix_padding(td)
+        assert changed2 is False
+
+
+def test_auto_fix_design_issues_includes_padding():
+    """auto_fix_design_issues 组合函数应包含 padding 修复。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_design_issues, check_padding_chaos
+    html = """<html><head><meta name="viewport" content="width=device-width">
+    <style>
+    .a { padding: 7px; }
+    .b { padding: 13px; }
+    </style></head>
+    <body><main><section>content</section></main></body></html>"""
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        auto_fix_design_issues(td)
+        violations = check_padding_chaos(td)
+    p_v = [v for v in violations if v["rule"] == "padding_chaos"]
+    assert p_v == [], f"组合修复后不应有违规: {p_v}"

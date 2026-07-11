@@ -2,7 +2,7 @@
   "project": "flipped",
   "description": "接入本地 MLX 双模型(GLM-5.2 编排者 / Kimi-K2.7-Code 执行者)的 agentic 代码编辑器平台。fork Roo Code + 自定义驾驭层(强制验证/循环检测/上下文压缩/人工审批/子Agent/可观测性) + MCP 联网与外部能力。",
   "updated": "2026-07-12",
-  "current_milestone": "M81 gap一致性检测+auto-fix (908 passed)",
+  "current_milestone": "M82 padding一致性检测+auto-fix (921 passed)",
   "key_facts": {
     "dev_host": "Apple M5 Max, 128GB RAM, 1.1TB 可用磁盘 — 开发/控制节点，非模型宿主",
     "model_cluster": "exo 集群 @ http://100.64.201.37:52415 (内网, OpenAI 兼容)；公网 https://dgmt.top/exo (需 Bearer token)",
@@ -1116,6 +1116,18 @@
           "title": "check_gap_chaos + auto_fix_gap + lint/score 集成",
           "status": "done",
           "note": "新增 check_gap_chaos（非标准gap值或>9个不同值→warning）+ auto_fix_gap（映射到最近标准值，保留简写结构）+ lint/score/auto_fix_design_issues 集成。13 TDD 测试（含 shorthand_two_values + row_gap 测试）。908 passed。"
+        }
+      }
+    },
+    "M82": {
+      "title": "padding 一致性检测 + auto-fix",
+      "status": "done",
+      "note": "AI 生成 CSS 常见破绽：随机内边距（7px/13px/18px）无系统性。新增 check_padding_chaos(cwd)：标准集合（px）{0, 4, 8, 12, 16, 24, 32, 48, 64}（8px 网格系统），非标准值或>9个不同值报 warning。正则匹配 padding/padding-top/padding-right/padding-bottom/padding-left 及简写。新增 auto_fix_padding(cwd)：非标准值映射到最近标准值（距离相等取较大值），仅替换 Npx 中的 N，保留简写结构。幂等。集成到 lint_design_quality（第34维）+ auto_fix_design_issues（第32组）+ design_score（-5）。13 TDD 测试全过。全量 921 passed（+13，无回归）。设计质量系统：Lint 34 维、Auto-fix 32 组。",
+      "tasks": {
+        "M82.1": {
+          "title": "check_padding_chaos + auto_fix_padding + lint/score 集成",
+          "status": "done",
+          "note": "新增 check_padding_chaos + auto_fix_padding + lint/score/auto_fix_design_issues 集成。13 TDD 测试（含 shorthand + longhand 测试）。921 passed。"
         }
       }
     }
