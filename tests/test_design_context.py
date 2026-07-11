@@ -7577,3 +7577,213 @@ def test_auto_fix_design_issues_includes_margin():
         violations = check_margin_chaos(td)
     m_v = [v for v in violations if v["rule"] == "margin_chaos"]
     assert m_v == [], f"组合修复后不应有违规: {m_v}"
+
+
+# ---------- M84: text-shadow blur 一致性检测 + auto-fix ----------
+
+def test_check_text_shadow_chaos_no_html():
+    """无 HTML 文件不应报违规。"""
+    import tempfile
+    from driving.design_context import check_text_shadow_chaos
+    with tempfile.TemporaryDirectory() as td:
+        violations = check_text_shadow_chaos(td)
+    assert violations == []
+
+
+def test_check_text_shadow_chaos_non_standard():
+    """非标准 text-shadow blur 值应报 warning。"""
+    import tempfile
+    import os
+    from driving.design_context import check_text_shadow_chaos
+    html = """<html><head><meta name="viewport" content="width=device-width">
+    <style>
+    .a { text-shadow: 1px 1px 3px rgba(0,0,0,0.5); }
+    .b { text-shadow: 0 0 7px #000; }
+    </style></head>
+    <body><main><section>content</section></main></body></html>"""
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        violations = check_text_shadow_chaos(td)
+    ts_v = [v for v in violations if v["rule"] == "text_shadow_chaos"]
+    assert len(ts_v) >= 1
+    assert ts_v[0]["severity"] == "warning"
+
+
+def test_check_text_shadow_chaos_clean():
+    """标准 text-shadow blur 值不应报违规。"""
+    import tempfile
+    import os
+    from driving.design_context import check_text_shadow_chaos
+    html = """<html><head><meta name="viewport" content="width=device-width">
+    <style>
+    .a { text-shadow: 1px 1px 2px rgba(0,0,0,0.5); }
+    .b { text-shadow: 0 0 4px #000; }
+    .c { text-shadow: 0 0 8px #fff; }
+    </style></head>
+    <body><main><section>content</section></main></body></html>"""
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        violations = check_text_shadow_chaos(td)
+    ts_v = [v for v in violations if v["rule"] == "text_shadow_chaos"]
+    assert ts_v == []
+
+
+def test_check_text_shadow_chaos_no_blur():
+    """text-shadow 无 blur（只有2个值）不应报违规。"""
+    import tempfile
+    import os
+    from driving.design_context import check_text_shadow_chaos
+    html = """<html><head><meta name="viewport" content="width=device-width">
+    <style>
+    .a { text-shadow: 1px 1px rgba(0,0,0,0.5); }
+    </style></head>
+    <body><main><section>content</section></main></body></html>"""
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        violations = check_text_shadow_chaos(td)
+    ts_v = [v for v in violations if v["rule"] == "text_shadow_chaos"]
+    assert ts_v == []
+
+
+def test_check_text_shadow_chaos_too_many_distinct():
+    """超过 5 个不同 blur 值应报 warning。"""
+    import tempfile
+    import os
+    from driving.design_context import check_text_shadow_chaos
+    html = """<html><head><meta name="viewport" content="width=device-width">
+    <style>
+    .a { text-shadow: 0 0 1px #000; }
+    .b { text-shadow: 0 0 2px #000; }
+    .c { text-shadow: 0 0 4px #000; }
+    .d { text-shadow: 0 0 8px #000; }
+    .e { text-shadow: 0 0 0px #000; }
+    .f { text-shadow: 0 0 3px #000; }
+    </style></head>
+    <body><main><section>content</section></main></body></html>"""
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        violations = check_text_shadow_chaos(td)
+    ts_v = [v for v in violations if v["rule"] == "text_shadow_chaos"]
+    assert len(ts_v) >= 1
+
+
+def test_check_text_shadow_chaos_empty_dir():
+    """空目录不应报违规。"""
+    import tempfile
+    from driving.design_context import check_text_shadow_chaos
+    with tempfile.TemporaryDirectory() as td:
+        violations = check_text_shadow_chaos(td)
+    assert violations == []
+
+
+def test_lint_design_quality_includes_text_shadow():
+    """lint_design_quality 应包含 text-shadow 检查。"""
+    import tempfile
+    import os
+    from driving.design_context import lint_design_quality
+    html = """<html><head><meta name="viewport" content="width=device-width">
+    <style>
+    .a { text-shadow: 0 0 3px #000; }
+    </style></head>
+    <body><main><section>content</section></main></body></html>"""
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        violations = lint_design_quality(td)
+    ts_v = [v for v in violations if v["rule"] == "text_shadow_chaos"]
+    assert len(ts_v) >= 1
+
+
+def test_auto_fix_text_shadow_normalizes():
+    """auto_fix_text_shadow 应将非标准 blur 映射到最近标准值。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_text_shadow, check_text_shadow_chaos
+    html = """<html><head><meta name="viewport" content="width=device-width">
+    <style>
+    .a { text-shadow: 1px 1px 3px rgba(0,0,0,0.5); }
+    .b { text-shadow: 0 0 7px #000; }
+    </style></head>
+    <body><main><section>content</section></main></body></html>"""
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        changed = auto_fix_text_shadow(td)
+        assert changed is True
+        content = open(os.path.join(td, "index.html")).read()
+        # 3 -> 4, 7 -> 8（距离相等取较大值）
+        assert "4px" in content
+        assert "8px" in content
+        violations = check_text_shadow_chaos(td)
+    ts_v = [v for v in violations if v["rule"] == "text_shadow_chaos"]
+    assert ts_v == []
+
+
+def test_auto_fix_text_shadow_no_change_if_clean():
+    """标准值不应修改。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_text_shadow
+    html = """<html><head><meta name="viewport" content="width=device-width">
+    <style>
+    .a { text-shadow: 0 0 2px #000; }
+    .b { text-shadow: 0 0 4px #000; }
+    </style></head>
+    <body><main><section>content</section></main></body></html>"""
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        changed = auto_fix_text_shadow(td)
+        assert changed is False
+
+
+def test_auto_fix_text_shadow_empty_dir():
+    """空目录不应报错。"""
+    import tempfile
+    from driving.design_context import auto_fix_text_shadow
+    with tempfile.TemporaryDirectory() as td:
+        changed = auto_fix_text_shadow(td)
+    assert changed is False
+
+
+def test_auto_fix_text_shadow_idempotent():
+    """二次调用不应再修改。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_text_shadow, auto_fix_design_issues
+    html = """<html><head><meta name="viewport" content="width=device-width">
+    <style>
+    .a { text-shadow: 0 0 3px #000; }
+    .b { text-shadow: 0 0 7px #000; }
+    </style></head>
+    <body><main><section>content</section></main></body></html>"""
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        auto_fix_design_issues(td)
+        changed2 = auto_fix_text_shadow(td)
+        assert changed2 is False
+
+
+def test_auto_fix_design_issues_includes_text_shadow():
+    """auto_fix_design_issues 组合函数应包含 text-shadow 修复。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_design_issues, check_text_shadow_chaos
+    html = """<html><head><meta name="viewport" content="width=device-width">
+    <style>
+    .a { text-shadow: 0 0 3px #000; }
+    .b { text-shadow: 0 0 7px #000; }
+    </style></head>
+    <body><main><section>content</section></main></body></html>"""
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        auto_fix_design_issues(td)
+        violations = check_text_shadow_chaos(td)
+    ts_v = [v for v in violations if v["rule"] == "text_shadow_chaos"]
+    assert ts_v == [], f"组合修复后不应有违规: {ts_v}"

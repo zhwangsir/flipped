@@ -2,7 +2,7 @@
   "project": "flipped",
   "description": "接入本地 MLX 双模型(GLM-5.2 编排者 / Kimi-K2.7-Code 执行者)的 agentic 代码编辑器平台。fork Roo Code + 自定义驾驭层(强制验证/循环检测/上下文压缩/人工审批/子Agent/可观测性) + MCP 联网与外部能力。",
   "updated": "2026-07-12",
-  "current_milestone": "M83 margin一致性检测+auto-fix (936 passed)",
+  "current_milestone": "M84 text-shadow blur一致性检测+auto-fix (948 passed)",
   "key_facts": {
     "dev_host": "Apple M5 Max, 128GB RAM, 1.1TB 可用磁盘 — 开发/控制节点，非模型宿主",
     "model_cluster": "exo 集群 @ http://100.64.201.37:52415 (内网, OpenAI 兼容)；公网 https://dgmt.top/exo (需 Bearer token)",
@@ -1140,6 +1140,18 @@
           "title": "check_margin_chaos + auto_fix_margin + lint/score 集成",
           "status": "done",
           "note": "新增 check_margin_chaos + auto_fix_margin + lint/score/auto_fix_design_issues 集成。15 TDD 测试（含 auto_not_flagged + preserves_auto 测试）。936 passed。"
+        }
+      }
+    },
+    "M84": {
+      "title": "text-shadow blur 一致性检测 + auto-fix",
+      "status": "done",
+      "note": "AI 生成 CSS 常见破绽：随机文字阴影模糊（3px/5px/7px）无系统性。新增 check_text_shadow_chaos(cwd)：标准集合（px）{0, 1, 2, 4, 8}（文字阴影通常较小），非标准值或>5个不同值报 warning。复用 _extract_shadow_blur 提取第3个 token 的 blur 值，支持逗号分隔的多个阴影。新增 auto_fix_text_shadow(cwd)：非标准 blur 映射到最近标准值（距离相等取较大值），仅替换第3个 token（blur），保留 h-shadow/v-shadow/color。幂等。集成到 lint_design_quality（第36维）+ auto_fix_design_issues（第34组）+ design_score（-5）。12 TDD 测试全过（含 no_blur + too_many_distinct 测试）。全量 948 passed（+12，无回归）。设计质量系统：Lint 36 维、Auto-fix 34 组。",
+      "tasks": {
+        "M84.1": {
+          "title": "check_text_shadow_chaos + auto_fix_text_shadow + lint/score 集成",
+          "status": "done",
+          "note": "新增 check_text_shadow_chaos + auto_fix_text_shadow + lint/score/auto_fix_design_issues 集成。12 TDD 测试（含 no_blur + too_many_distinct 测试）。948 passed。"
         }
       }
     }

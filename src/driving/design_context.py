@@ -4307,6 +4307,167 @@ def auto_fix_margin(cwd: str) -> bool:
     return changed
 
 
+# ---------- M84: text-shadow blur 一致性 ----------
+
+_STANDARD_TEXT_SHADOW_BLURS = (0, 1, 2, 4, 8)
+
+_TEXT_SHADOW_RE = r"\btext-shadow\s*:\s*([^;]+)"
+
+
+def check_text_shadow_chaos(cwd: str) -> list[dict]:
+    """M84: 检测 text-shadow blur 一致性问题。
+
+    AI 生成 CSS 常见破绽：随机文字阴影模糊（3px/5px/7px）无系统性。
+    标准集合（px）：{0, 1, 2, 4, 8}（文字阴影通常较小）。
+    复用 _extract_shadow_blur 提取第3个 token 的 blur 值。
+
+    规则1: 非标准值报 warning。
+    规则2: 超过 5 个不同值报 warning。
+    """
+    import os as _os
+    import re as _re
+
+    violations: list[dict] = []
+
+    if not _os.path.exists(cwd):
+        return violations
+
+    for fname in _os.listdir(cwd):
+        if not fname.endswith(".html"):
+            continue
+        fpath = _os.path.join(cwd, fname)
+        if not _os.path.isfile(fpath):
+            continue
+        try:
+            content = open(fpath, "r", encoding="utf-8").read()
+        except Exception:
+            continue
+
+        shadow_matches = _re.findall(_TEXT_SHADOW_RE, content, _re.IGNORECASE)
+        if not shadow_matches:
+            continue
+
+        blurs: list[int] = []
+        for shadow_val in shadow_matches:
+            # text-shadow 可能有多个阴影（逗号分隔），逐个提取
+            for part in shadow_val.split(","):
+                blur = _extract_shadow_blur(part.strip())
+                if blur is not None:
+                    blurs.append(blur)
+
+        if not blurs:
+            continue
+
+        distinct = sorted(set(blurs))
+
+        non_standard = [b for b in distinct if b not in _STANDARD_TEXT_SHADOW_BLURS]
+        if non_standard:
+            violations.append({
+                "rule": "text_shadow_chaos",
+                "severity": "warning",
+                "file": fname,
+                "message": (
+                    f"非标准 text-shadow blur 值：{non_standard}px，"
+                    f"应使用 0/1/2/4/8 系统化文字阴影模糊"
+                ),
+            })
+
+        if len(distinct) > 5:
+            violations.append({
+                "rule": "text_shadow_chaos",
+                "severity": "warning",
+                "file": fname,
+                "message": (
+                    f"text-shadow blur 有 {len(distinct)} 个不同值：{distinct}px，"
+                    f"应精简到 ≤5 个系统化模糊"
+                ),
+            })
+
+    return violations
+
+
+def auto_fix_text_shadow(cwd: str) -> bool:
+    """M84: 规范化 text-shadow blur 值到标准集合 {0,1,2,4,8}px。"""
+    import os as _os
+    import re as _re
+
+    def _nearest_text_shadow_blur(val: int) -> int:
+        best = _STANDARD_TEXT_SHADOW_BLURS[0]
+        best_dist = abs(best - val)
+        for s in _STANDARD_TEXT_SHADOW_BLURS[1:]:
+            d = abs(s - val)
+            if d < best_dist or (d == best_dist and s > best):
+                best, best_dist = s, d
+        return best
+
+    def _is_standard(val: int) -> bool:
+        return val in _STANDARD_TEXT_SHADOW_BLURS
+
+    if not _os.path.exists(cwd):
+        return False
+
+    changed = False
+    for fname in _os.listdir(cwd):
+        if not fname.endswith(".html"):
+            continue
+        fpath = _os.path.join(cwd, fname)
+        if not _os.path.isfile(fpath):
+            continue
+        try:
+            content = open(fpath, "r", encoding="utf-8").read()
+        except Exception:
+            continue
+
+        violations = check_text_shadow_chaos(_os.path.dirname(fpath))
+        has_violation = any(
+            v["file"] == fname and v["rule"] == "text_shadow_chaos"
+            for v in violations
+        )
+        if not has_violation:
+            continue
+
+        def _replace_text_shadow(m):
+            shadow_val = m.group(1)
+            # 逐个处理逗号分隔的多个阴影
+            parts = shadow_val.split(",")
+            new_parts = []
+            for part in parts:
+                tokens = part.strip().split()
+                # 跳过 none 关键词
+                if len(tokens) < 3:
+                    new_parts.append(part)
+                    continue
+                # 第3个 token 是 blur
+                blur_token = tokens[2]
+                px_m = _re.match(r"-?(\d+)px", blur_token)
+                if px_m:
+                    val = int(px_m.group(1))
+                    if not _is_standard(val):
+                        std = _nearest_text_shadow_blur(val)
+                        # 保留负号
+                        prefix = "-" if blur_token.startswith("-") else ""
+                        tokens[2] = f"{prefix}{std}px"
+                        new_parts.append(" ".join(tokens))
+                        continue
+                new_parts.append(part)
+            new_val = ",".join(new_parts)
+            return f"{m.group(0)[:m.start(1) - m.start(0)]}{new_val}"
+
+        new_content = _re.sub(
+            _TEXT_SHADOW_RE,
+            _replace_text_shadow,
+            content,
+            flags=_re.IGNORECASE,
+        )
+
+        if new_content != content:
+            with open(fpath, "w", encoding="utf-8") as f:
+                f.write(new_content)
+            changed = True
+
+    return changed
+
+
 def auto_fix_design_issues(cwd: str) -> bool:
     """组合调用所有 auto-fix 函数，返回是否做过任何修改。"""
     changed1 = auto_fix_spacing_grid(cwd)
@@ -4342,13 +4503,14 @@ def auto_fix_design_issues(cwd: str) -> bool:
     changed31 = auto_fix_gap(cwd)
     changed32 = auto_fix_padding(cwd)
     changed33 = auto_fix_margin(cwd)
+    changed34 = auto_fix_text_shadow(cwd)
     return (
         changed1 or changed2 or changed3 or changed4 or changed5
         or changed6 or changed7 or changed8 or changed9 or changed10 or changed11
         or changed12 or changed13 or changed14 or changed15 or changed16 or changed17
         or changed18 or changed19 or changed20 or changed21 or changed22 or changed23
         or changed24 or changed25 or changed26 or changed27 or changed28 or changed29
-        or changed30 or changed31 or changed32 or changed33
+        or changed30 or changed31 or changed32 or changed33 or changed34
     )
 
 
@@ -4702,6 +4864,12 @@ def lint_design_quality(cwd: str) -> list[dict]:
     except Exception:
         pass
 
+    # 29. M84: text-shadow blur 一致性检测
+    try:
+        violations.extend(check_text_shadow_chaos(cwd))
+    except Exception:
+        pass
+
     return violations
 
 
@@ -4930,6 +5098,11 @@ def design_score(cwd: str) -> "tuple[int, list[str]]":
     if "margin_chaos" in warning_rules:
         score -= 5
         notes.append("检测到margin不一致(-5)")
+
+    # 29. M84: text-shadow blur 一致性扣分（warning 级别，-5）
+    if "text_shadow_chaos" in warning_rules:
+        score -= 5
+        notes.append("检测到text-shadow不一致(-5)")
 
     score = max(0, score)
     if not notes:
