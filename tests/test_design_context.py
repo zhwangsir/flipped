@@ -1186,7 +1186,7 @@ h1 { font-size: 48px; }
 :focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
 @media (max-width: 768px) { body { font-size: 14px; } }
 @keyframes fadeInUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
-section{animation:fadeInUp 0.8s ease-out both}
+section{animation:fadeInUp 0.5s ease-out both}
 </style></head><body>
 <header><nav>Logo</nav></header>
 <main><section><h1>Title</h1></section></main>
@@ -2540,7 +2540,7 @@ def test_check_scroll_animation_present():
 
     html = """<html><head><style>
     @keyframes fadeInUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
-    section{animation:fadeInUp 0.8s ease-out both}
+    section{animation:fadeInUp 0.5s ease-out both}
     </style></head><body><section>content</section></body></html>"""
 
     with tempfile.TemporaryDirectory() as td:
@@ -2721,7 +2721,7 @@ button:hover{opacity:0.85}button:active{transform:scale(0.98)}button:focus{outli
 
     html_with_anim = base_html.replace(
         "</style>",
-        "@keyframes fadeInUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}section{animation:fadeInUp 0.8s ease-out both}</style>",
+        "@keyframes fadeInUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}section{animation:fadeInUp 0.5s ease-out both}</style>",
     )
 
     with tempfile.TemporaryDirectory() as td1:
@@ -2911,7 +2911,7 @@ body { transition: opacity 0.3s ease; }
 button:hover{opacity:0.85}button:active{transform:scale(0.98)}button:focus{outline:2px solid blue}button:disabled{opacity:0.5}
 @media (max-width: 768px) { body { font-size: 14px; } }
 @keyframes fadeInUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
-section{animation:fadeInUp 0.8s ease-out both}
+section{animation:fadeInUp 0.5s ease-out both}
 </style></head><body>
 <header><nav>Logo</nav></header>
 <main><section><h1>__TITLE__</h1><p>__BODY__</p></section></main>
@@ -3257,7 +3257,7 @@ body { transition: opacity 0.3s ease; }
 button:hover{opacity:0.85}button:active{transform:scale(0.98)}button:focus{outline:2px solid blue}button:disabled{opacity:0.5}
 @media (max-width: 768px) { body { font-size: 14px; } }
 @keyframes fadeInUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
-section{animation:fadeInUp 0.8s ease-out both}
+section{animation:fadeInUp 0.5s ease-out both}
 </style></head><body>
 <header><nav>Logo</nav></header>
 <main><section><a href="__HREF__">查看详情</a></section></main>
@@ -3420,7 +3420,7 @@ body { transition: opacity 0.3s ease; }
 button:hover{opacity:0.85}button:active{transform:scale(0.98)}button:focus{outline:2px solid blue}button:disabled{opacity:0.5}
 @media (max-width: 768px) { body { font-size: 14px; } }
 @keyframes fadeInUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
-section{animation:fadeInUp 0.8s ease-out both}
+section{animation:fadeInUp 0.5s ease-out both}
 </style></head><body>
 <header><nav>Logo</nav></header>
 <main><section><div __ATTR__>查看详情</div></section></main>
@@ -3607,7 +3607,7 @@ body { transition: opacity 0.3s ease; }
 button:hover{opacity:0.85}button:active{transform:scale(0.98)}button:focus{outline:2px solid blue}button:disabled{opacity:0.5}
 @media (max-width: 768px) { body { font-size: 14px; } }
 @keyframes fadeInUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
-section{animation:fadeInUp 0.8s ease-out both}
+section{animation:fadeInUp 0.5s ease-out both}
 </style></head><body>
 <header><nav>Logo</nav></header>
 <main><section>内容</section></main>
@@ -6381,3 +6381,229 @@ def test_auto_fix_design_issues_includes_border_width():
         violations = check_border_width_chaos(td)
     bw_v = [v for v in violations if v["rule"] == "border_width_chaos"]
     assert bw_v == [], f"组合修复后不应有违规: {bw_v}"
+
+
+# ---------- M79: animation-duration 一致性检测 + auto-fix ----------
+
+
+def test_check_animation_duration_chaos_no_html():
+    """没有 HTML 文件时应返回空列表。"""
+    import tempfile
+    from driving.design_context import check_animation_duration_chaos
+    with tempfile.TemporaryDirectory() as td:
+        result = check_animation_duration_chaos(td)
+    assert result == []
+
+
+def test_check_animation_duration_chaos_non_standard():
+    """非标准 animation-duration 值应报 warning。"""
+    import tempfile
+    import os
+    from driving.design_context import check_animation_duration_chaos
+    html = """<html><head><style>
+    .a { animation-duration: 250ms; }
+    .b { animation-duration: 400ms; }
+    .c { animation-duration: 0.7s; }
+    </style></head><body>text</body></html>"""
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        violations = check_animation_duration_chaos(td)
+    ad_v = [v for v in violations if v["rule"] == "animation_duration_chaos"]
+    assert len(ad_v) > 0
+    assert ad_v[0]["severity"] == "warning"
+
+
+def test_check_animation_duration_chaos_clean():
+    """标准 animation-duration 值不应报违规。"""
+    import tempfile
+    import os
+    from driving.design_context import check_animation_duration_chaos
+    html = """<html><head><style>
+    .a { animation-duration: 0ms; }
+    .b { animation-duration: 150ms; }
+    .c { animation-duration: 200ms; }
+    .d { animation-duration: 300ms; }
+    .e { animation-duration: 500ms; }
+    .f { animation-duration: 1000ms; }
+    .g { animation-duration: 2000ms; }
+    </style></head><body>text</body></html>"""
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        violations = check_animation_duration_chaos(td)
+    ad_v = [v for v in violations if v["rule"] == "animation_duration_chaos"]
+    assert ad_v == []
+
+
+def test_check_animation_duration_chaos_shorthand():
+    """animation 简写中的时长也应被检测。"""
+    import tempfile
+    import os
+    from driving.design_context import check_animation_duration_chaos
+    html = """<html><head><style>
+    .a { animation: fadeIn 250ms ease-in; }
+    .b { animation: slideUp 400ms linear; }
+    </style></head><body>text</body></html>"""
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        violations = check_animation_duration_chaos(td)
+    ad_v = [v for v in violations if v["rule"] == "animation_duration_chaos"]
+    assert len(ad_v) > 0
+
+
+def test_check_animation_duration_chaos_animation_name_not_flagged():
+    """animation-name 不应被误报（无时间值）。"""
+    import tempfile
+    import os
+    from driving.design_context import check_animation_duration_chaos
+    html = """<html><head><style>
+    .a { animation-name: fadeIn; }
+    .b { animation-name: slideUp; }
+    </style></head><body>text</body></html>"""
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        violations = check_animation_duration_chaos(td)
+    ad_v = [v for v in violations if v["rule"] == "animation_duration_chaos"]
+    assert ad_v == []
+
+
+def test_check_animation_duration_chaos_too_many_distinct():
+    """超过 7 个不同 animation-duration 值应报 warning。"""
+    import tempfile
+    import os
+    from driving.design_context import check_animation_duration_chaos
+    html = """<html><head><style>
+    .a { animation-duration: 0ms; }
+    .b { animation-duration: 150ms; }
+    .c { animation-duration: 200ms; }
+    .d { animation-duration: 300ms; }
+    .e { animation-duration: 500ms; }
+    .f { animation-duration: 1000ms; }
+    .g { animation-duration: 2000ms; }
+    .h { animation-duration: 400ms; }
+    </style></head><body>text</body></html>"""
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        violations = check_animation_duration_chaos(td)
+    ad_v = [v for v in violations if v["rule"] == "animation_duration_chaos"]
+    too_many = [v for v in ad_v if "不同" in v["message"]]
+    assert len(too_many) > 0
+
+
+def test_check_animation_duration_chaos_empty_dir():
+    """空目录应返回空列表。"""
+    import tempfile
+    from driving.design_context import check_animation_duration_chaos
+    with tempfile.TemporaryDirectory() as td:
+        result = check_animation_duration_chaos(td)
+    assert result == []
+
+
+def test_lint_design_quality_includes_animation_duration():
+    """lint_design_quality 应包含 animation_duration_chaos 检测。"""
+    import tempfile
+    import os
+    from driving.design_context import lint_design_quality
+    html = """<html><head><style>
+    .a { animation-duration: 250ms; }
+    </style></head><body>text</body></html>"""
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        violations = lint_design_quality(td)
+    ad_v = [v for v in violations if v["rule"] == "animation_duration_chaos"]
+    assert len(ad_v) > 0
+
+
+def test_auto_fix_animation_duration_normalizes():
+    """auto_fix_animation_duration 应将非标准值映射到最近标准值。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_animation_duration
+    html = """<html><head><style>
+    .a { animation-duration: 250ms; }
+    .b { animation-duration: 700ms; }
+    .c { animation-duration: 0.4s; }
+    </style></head><body>text</body></html>"""
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        changed = auto_fix_animation_duration(td)
+        assert changed is True
+        with open(os.path.join(td, "index.html"), "r") as f:
+            content = f.read()
+    # 250ms -> 200ms 或 300ms（250 与 200/300 等距，取较大值 → 300ms）
+    assert "300ms" in content
+    # 700ms -> 500ms（最近）
+    assert "500ms" in content
+    # 0.4s = 400ms -> 300ms 或 500ms（400 与 300/500 等距，取较大值 → 500ms）
+    # 原始值不应残留
+    assert "250ms" not in content
+    assert "700ms" not in content
+    assert "0.4s" not in content
+
+
+def test_auto_fix_animation_duration_no_change_if_clean():
+    """已经是标准值时不应修改文件。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_animation_duration
+    html = """<html><head><style>
+    .a { animation-duration: 300ms; }
+    .b { animation-duration: 500ms; }
+    </style></head><body>text</body></html>"""
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        changed = auto_fix_animation_duration(td)
+        assert changed is False
+
+
+def test_auto_fix_animation_duration_empty_dir():
+    """空目录应返回 False。"""
+    import tempfile
+    from driving.design_context import auto_fix_animation_duration
+    with tempfile.TemporaryDirectory() as td:
+        changed = auto_fix_animation_duration(td)
+    assert changed is False
+
+
+def test_auto_fix_animation_duration_idempotent():
+    """多次调用 auto_fix_animation_duration 应幂等。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_animation_duration
+    html = """<html><head><style>
+    .a { animation-duration: 250ms; }
+    .b { animation-duration: 800ms; }
+    </style></head><body>text</body></html>"""
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        auto_fix_animation_duration(td)
+        changed2 = auto_fix_animation_duration(td)
+        assert changed2 is False
+
+
+def test_auto_fix_design_issues_includes_animation_duration():
+    """auto_fix_design_issues 组合函数应包含 animation-duration 修复。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_design_issues, check_animation_duration_chaos
+    html = """<html><head><meta name="viewport" content="width=device-width">
+    <style>
+    .a { animation-duration: 250ms; }
+    .b { animation-duration: 700ms; }
+    </style></head>
+    <body><main><section>content</section></main></body></html>"""
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        auto_fix_design_issues(td)
+        violations = check_animation_duration_chaos(td)
+    ad_v = [v for v in violations if v["rule"] == "animation_duration_chaos"]
+    assert ad_v == [], f"组合修复后不应有违规: {ad_v}"

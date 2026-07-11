@@ -2,7 +2,7 @@
   "project": "flipped",
   "description": "接入本地 MLX 双模型(GLM-5.2 编排者 / Kimi-K2.7-Code 执行者)的 agentic 代码编辑器平台。fork Roo Code + 自定义驾驭层(强制验证/循环检测/上下文压缩/人工审批/子Agent/可观测性) + MCP 联网与外部能力。",
   "updated": "2026-07-11",
-  "current_milestone": "M78 border-width一致性检测+auto-fix (869 passed)",
+  "current_milestone": "M79 animation-duration一致性检测+auto-fix (882 passed)",
   "key_facts": {
     "dev_host": "Apple M5 Max, 128GB RAM, 1.1TB 可用磁盘 — 开发/控制节点，非模型宿主",
     "model_cluster": "exo 集群 @ http://100.64.201.37:52415 (内网, OpenAI 兼容)；公网 https://dgmt.top/exo (需 Bearer token)",
@@ -1080,6 +1080,18 @@
           "title": "check_border_width_chaos + auto_fix_border_width + lint/score 集成",
           "status": "done",
           "note": "新增 check_border_width_chaos（非标准border-width或>5个不同值→warning）+ auto_fix_border_width（映射到最近标准边框宽度，保留属性名）+ lint/score/auto_fix_design_issues 集成。13 TDD 测试（含 border_radius_not_flagged + none_keyword_not_flagged 测试）。869 passed。"
+        }
+      }
+    },
+    "M79": {
+      "title": "animation-duration 一致性检测 + auto-fix",
+      "status": "done",
+      "note": "AI 生成 CSS 常见破绽：随机动画时长（250ms/400ms/700ms）无系统性。新增 check_animation_duration_chaos(cwd)：标准集合（ms）{0, 150, 200, 300, 500, 1000, 2000}（扩展自 transition 集，增加 1000/2000ms 长动画），非标准值或>7个不同值报 warning。匹配 animation 简写和 animation-duration 属性，排除 animation-name/timing-function 等。新增 auto_fix_animation_duration(cwd)：非标准值映射到最近标准值（距离相等取较大值），保留原单位 s/ms。幂等。集成到 lint_design_quality（第31维）+ auto_fix_design_issues（第29组）+ design_score（-5）。13 TDD 测试全过。全量 882 passed（+13，无回归）。修复了已有测试中 0.8s 非标准动画时长导致的回归。设计质量系统：Lint 31 维、Auto-fix 29 组。",
+      "tasks": {
+        "M79.1": {
+          "title": "check_animation_duration_chaos + auto_fix_animation_duration + lint/score 集成",
+          "status": "done",
+          "note": "新增 check_animation_duration_chaos（非标准animation-duration或>7个不同值→warning）+ auto_fix_animation_duration（映射到最近标准动画时长，保留单位）+ lint/score/auto_fix_design_issues 集成。13 TDD 测试（含 shorthand + animation_name_not_flagged 测试）。882 passed。修复已有测试中 0.8s 动画时长回归。"
         }
       }
     }

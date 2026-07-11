@@ -3584,6 +3584,164 @@ def auto_fix_border_width(cwd: str) -> bool:
     return changed
 
 
+# ---------- M79: animation-duration 一致性 ----------
+
+_STANDARD_ANIMATION_MS = (0, 150, 200, 300, 500, 1000, 2000)
+
+
+def check_animation_duration_chaos(cwd: str) -> list[dict]:
+    """M79: 检测 animation-duration 一致性问题。
+
+    AI 生成 CSS 常见破绽：随机动画时长（250ms/400ms/700ms）无系统性。
+    标准时长集合（ms）：{0, 150, 200, 300, 500, 1000, 2000}。
+
+    规则1: 非标准值报 warning。
+    规则2: 超过 7 个不同值报 warning。
+    """
+    import os as _os
+    import re as _re
+
+    violations: list[dict] = []
+
+    if not _os.path.exists(cwd):
+        return violations
+
+    for fname in _os.listdir(cwd):
+        if not fname.endswith(".html"):
+            continue
+        fpath = _os.path.join(cwd, fname)
+        if not _os.path.isfile(fpath):
+            continue
+        try:
+            content = open(fpath, "r", encoding="utf-8").read()
+        except Exception:
+            continue
+
+        # 匹配 animation: <value>; 和 animation-duration: <value>;
+        anim_matches = _re.findall(
+            r"\banimation(?:-duration)?\s*:\s*([^;]+)",
+            content, _re.IGNORECASE,
+        )
+        if not anim_matches:
+            continue
+
+        durations: list[int] = []
+        for aval in anim_matches:
+            dur_matches = _re.findall(r"(\d+(?:\.\d+)?)(ms|s)\b", aval)
+            for num_str, unit in dur_matches:
+                durations.append(_parse_duration_to_ms(num_str, unit))
+
+        if not durations:
+            continue
+
+        distinct = sorted(set(durations))
+
+        # 规则1: 非标准值
+        non_standard = [d for d in distinct if d not in _STANDARD_ANIMATION_MS]
+        if non_standard:
+            violations.append({
+                "rule": "animation_duration_chaos",
+                "severity": "warning",
+                "file": fname,
+                "message": (
+                    f"非标准 animation-duration：{non_standard}ms，"
+                    f"应使用 0/150/200/300/500/1000/2000 系统化时长"
+                ),
+            })
+
+        # 规则2: 超过 7 个不同值
+        if len(distinct) > 7:
+            violations.append({
+                "rule": "animation_duration_chaos",
+                "severity": "warning",
+                "file": fname,
+                "message": (
+                    f"animation-duration 有 {len(distinct)} 个不同值：{distinct}ms，"
+                    f"应精简到 ≤7 个系统化时长"
+                ),
+            })
+
+    return violations
+
+
+def auto_fix_animation_duration(cwd: str) -> bool:
+    """M79: 规范化 animation-duration 值到标准集合 {0,150,200,300,500,1000,2000}ms。
+
+    非标准值映射到最近标准值（距离相等取较大值），保留原单位（s/ms）。
+    幂等：标准值再次运行不修改。
+    """
+    import os as _os
+    import re as _re
+
+    def _nearest_animation_ms(ms: int) -> int:
+        best = _STANDARD_ANIMATION_MS[0]
+        best_dist = abs(best - ms)
+        for s in _STANDARD_ANIMATION_MS[1:]:
+            d = abs(s - ms)
+            if d < best_dist or (d == best_dist and s > best):
+                best, best_dist = s, d
+        return best
+
+    if not _os.path.exists(cwd):
+        return False
+
+    changed = False
+    for fname in _os.listdir(cwd):
+        if not fname.endswith(".html"):
+            continue
+        fpath = _os.path.join(cwd, fname)
+        if not _os.path.isfile(fpath):
+            continue
+        try:
+            content = open(fpath, "r", encoding="utf-8").read()
+        except Exception:
+            continue
+
+        # 先检查是否有违规
+        violations = check_animation_duration_chaos(_os.path.dirname(fpath))
+        has_violation = any(
+            v["file"] == fname and v["rule"] == "animation_duration_chaos"
+            for v in violations
+        )
+        if not has_violation:
+            continue
+
+        # 在每个 animation/animation-duration: <value>; 块内替换非标准 duration
+        def _fix_anim_block(m):
+            prefix = m.group(1)
+            aval = m.group(2)
+
+            def _replace_dur(dm):
+                num_str = dm.group(1)
+                unit = dm.group(2)
+                ms = _parse_duration_to_ms(num_str, unit)
+                if ms in _STANDARD_ANIMATION_MS:
+                    return dm.group(0)
+                std_ms = _nearest_animation_ms(ms)
+                return _ms_to_str(std_ms, unit)
+
+            new_aval = _re.sub(
+                r"(\d+(?:\.\d+)?)(ms|s)\b",
+                _replace_dur,
+                aval,
+            )
+            return prefix + new_aval
+
+        new_content = _re.sub(
+            r"(\banimation(?:-duration)?\s*:\s*)([^;]+)",
+            _fix_anim_block,
+            content,
+            flags=_re.IGNORECASE,
+        )
+
+        if new_content != content:
+            with open(fpath, "w", encoding="utf-8") as f:
+                f.write(new_content)
+            changed = True
+
+    return changed
+
+
 def auto_fix_design_issues(cwd: str) -> bool:
     """组合调用所有 auto-fix 函数，返回是否做过任何修改。"""
     changed1 = auto_fix_spacing_grid(cwd)
@@ -3614,12 +3772,13 @@ def auto_fix_design_issues(cwd: str) -> bool:
     changed26 = auto_fix_font_weight(cwd)
     changed27 = auto_fix_letter_spacing(cwd)
     changed28 = auto_fix_border_width(cwd)
+    changed29 = auto_fix_animation_duration(cwd)
     return (
         changed1 or changed2 or changed3 or changed4 or changed5
         or changed6 or changed7 or changed8 or changed9 or changed10 or changed11
         or changed12 or changed13 or changed14 or changed15 or changed16 or changed17
         or changed18 or changed19 or changed20 or changed21 or changed22 or changed23
-        or changed24 or changed25 or changed26 or changed27 or changed28
+        or changed24 or changed25 or changed26 or changed27 or changed28 or changed29
     )
 
 
@@ -3943,6 +4102,12 @@ def lint_design_quality(cwd: str) -> list[dict]:
     except Exception:
         pass
 
+    # 24. M79: animation-duration 一致性检测
+    try:
+        violations.extend(check_animation_duration_chaos(cwd))
+    except Exception:
+        pass
+
     return violations
 
 
@@ -4146,6 +4311,11 @@ def design_score(cwd: str) -> "tuple[int, list[str]]":
     if "border_width_chaos" in warning_rules:
         score -= 5
         notes.append("检测到border-width不一致(-5)")
+
+    # 24. M79: animation-duration 一致性扣分（warning 级别，-5）
+    if "animation_duration_chaos" in warning_rules:
+        score -= 5
+        notes.append("检测到animation-duration不一致(-5)")
 
     score = max(0, score)
     if not notes:
