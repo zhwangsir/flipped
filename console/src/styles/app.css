@@ -3561,6 +3561,7 @@ textarea:focus {
   background: var(--bg-elevated);
   border: 1px solid var(--border);
   border-radius: var(--radius);
+  animation: slide-up var(--dur) var(--ease-out-quart) both;
 }
 .plan-head {
   display: flex;
@@ -3611,6 +3612,7 @@ textarea:focus {
   display: inline-flex;
   flex: 0 0 auto;
   color: var(--text-secondary);
+  transition: color var(--dur) var(--ease-out-quart);
 }
 .plan-step.done .plan-ico { color: var(--success); }
 .plan-step.retry .plan-ico { color: var(--warning); }
@@ -3622,6 +3624,7 @@ textarea:focus {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  transition: color var(--dur) var(--ease-out-quart);
 }
 .plan-step.done .plan-text { color: var(--text-secondary); }
 .plan-step.aborted .plan-text { color: var(--text-muted); text-decoration: line-through; }

@@ -2,7 +2,7 @@
   "project": "flipped",
   "description": "接入本地 MLX 双模型(GLM-5.2 编排者 / Kimi-K2.7-Code 执行者)的 agentic 代码编辑器平台。fork Roo Code + 自定义驾驭层(强制验证/循环检测/上下文压缩/人工审批/子Agent/可观测性) + MCP 联网与外部能力。",
   "updated": "2026-07-12",
-  "current_milestone": "M87 交互反馈与入场动效系统化 (build + vitest 35 passed)",
+  "current_milestone": "M88 PlanCard 入场与状态过渡 + E2E 前端烟雾测试 9 passed (build + vitest 35 passed)",
   "key_facts": {
     "dev_host": "Apple M5 Max, 128GB RAM, 1.1TB 可用磁盘 — 开发/控制节点，非模型宿主",
     "model_cluster": "exo 集群 @ http://100.64.201.37:52415 (内网, OpenAI 兼容)；公网 https://dgmt.top/exo (需 Bearer token)",
@@ -1218,6 +1218,23 @@
           "title": "空状态统一入场动效",
           "status": "done",
           "note": "app.css: side-empty/palette-empty/factory-empty 加 fade-in; rbrowser-empty svg 加 breathe-soft 3.6s; factory-empty svg 加 breathe-soft 3.6s。空状态有呼吸感, 符合 Film Atelier。"
+        }
+      }
+    },
+    "M88": {
+      "title": "PlanCard 入场与状态过渡 + E2E 前端验证",
+      "status": "done",
+      "note": "UI/UX 深度打磨收尾。3 项完成:(1) plan-card 加 slide-up 入场动画;(2) plan-ico 加 color transition(状态变化时图标颜色平滑过渡而非突变);(3) plan-text 加 color transition(done/aborted 状态文字颜色平滑过渡)。E2E 验证:启动 dev server(:5273)后 console-smoke.spec.ts 9/9 全过(页面加载 459ms、侧栏/顶栏/三列布局渲染、工厂/插件导航点击、主题渲染、首屏加载 100ms)。console.spec.ts approval flow 失败为预期(需后端 API, 模型掉线)。Vitest 35 passed、npm run build 通过(550ms)。",
+      "tasks": {
+        "M88.1": {
+          "title": "plan-card 入场 + plan-ico/plan-text color transition",
+          "status": "done",
+          "note": "app.css: plan-card 加 animation slide-up; plan-ico 加 transition color var(--dur); plan-text 加 transition color var(--dur)。状态变化时颜色平滑过渡。"
+        },
+        "M88.2": {
+          "title": "E2E 前端烟雾测试验证",
+          "status": "done",
+          "note": "启动 dev server(:5273), console-smoke.spec.ts 9/9 全过。验证 M86+M87+M88 UI/UX 优化未破坏前端渲染。首屏加载 100ms(<3s)。"
         }
       }
     }
