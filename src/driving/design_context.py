@@ -3166,6 +3166,142 @@ def auto_fix_line_height(cwd: str) -> bool:
     return changed
 
 
+# ---------- M76: font-weight 一致性 ----------
+
+_STANDARD_FONT_WEIGHTS = (100, 200, 300, 400, 500, 600, 700, 800, 900)
+
+
+def check_font_weight_chaos(cwd: str) -> list[dict]:
+    """M76: 检测 font-weight 一致性问题。
+
+    AI 生成 CSS 常见破绽：非标准字重（350/450/550/650）无系统性。
+    标准集合：{100, 200, 300, 400, 500, 600, 700, 800, 900}（CSS 标准 100 倍数）。
+
+    规则1: 非标准值报 warning。
+    规则2: 超过 6 个不同值报 warning（设计系统应有 ≤6 个字重层级）。
+    """
+    import os as _os
+    import re as _re
+
+    violations: list[dict] = []
+
+    if not _os.path.exists(cwd):
+        return violations
+
+    for fname in _os.listdir(cwd):
+        if not fname.endswith(".html"):
+            continue
+        fpath = _os.path.join(cwd, fname)
+        if not _os.path.isfile(fpath):
+            continue
+        try:
+            content = open(fpath, "r", encoding="utf-8").read()
+        except Exception:
+            continue
+
+        # 只提取数值 font-weight（排除 normal/bold 关键字）
+        weight_matches = _re.findall(
+            r"font-weight\s*:\s*(\d+)", content, _re.IGNORECASE,
+        )
+        if not weight_matches:
+            continue
+
+        values = [int(m) for m in weight_matches]
+        distinct = sorted(set(values))
+
+        # 规则1: 非标准值
+        non_standard = [v for v in distinct if v not in _STANDARD_FONT_WEIGHTS]
+        if non_standard:
+            violations.append({
+                "rule": "font_weight_chaos",
+                "severity": "warning",
+                "file": fname,
+                "message": (
+                    f"非标准 font-weight 值：{non_standard}，"
+                    f"应使用 100/200/300/400/500/600/700/800/900 系统化字重"
+                ),
+            })
+
+        # 规则2: 超过 6 个不同值
+        if len(distinct) > 6:
+            violations.append({
+                "rule": "font_weight_chaos",
+                "severity": "warning",
+                "file": fname,
+                "message": (
+                    f"font-weight 有 {len(distinct)} 个不同值：{distinct}，"
+                    f"应精简到 ≤6 个系统化字重层级"
+                ),
+            })
+
+    return violations
+
+
+def auto_fix_font_weight(cwd: str) -> bool:
+    """M76: 规范化 font-weight 值到标准集合 {100,200,...,900}。"""
+    import os as _os
+    import re as _re
+
+    def _nearest_font_weight(val: int) -> int:
+        """返回标准集合中最近的值（距离相等时取较大值）。"""
+        best = _STANDARD_FONT_WEIGHTS[0]
+        best_dist = abs(best - val)
+        for s in _STANDARD_FONT_WEIGHTS[1:]:
+            d = abs(s - val)
+            if d < best_dist or (d == best_dist and s > best):
+                best, best_dist = s, d
+        return best
+
+    def _is_standard(val: int) -> bool:
+        return val in _STANDARD_FONT_WEIGHTS
+
+    if not _os.path.exists(cwd):
+        return False
+
+    changed = False
+    for fname in _os.listdir(cwd):
+        if not fname.endswith(".html"):
+            continue
+        fpath = _os.path.join(cwd, fname)
+        if not _os.path.isfile(fpath):
+            continue
+        try:
+            content = open(fpath, "r", encoding="utf-8").read()
+        except Exception:
+            continue
+
+        # 先检查是否有违规
+        violations = check_font_weight_chaos(_os.path.dirname(fpath))
+        has_violation = any(
+            v["file"] == fname and v["rule"] == "font_weight_chaos"
+            for v in violations
+        )
+        if not has_violation:
+            continue
+
+        # 替换非标准 font-weight 值（仅数值）
+        def _replace_font_weight(m):
+            val = int(m.group(1))
+            if _is_standard(val):
+                return m.group(0)  # 已标准
+            std = _nearest_font_weight(val)
+            return f"font-weight: {std}"
+
+        new_content = _re.sub(
+            r"font-weight\s*:\s*(\d+)",
+            _replace_font_weight,
+            content,
+            flags=_re.IGNORECASE,
+        )
+
+        if new_content != content:
+            with open(fpath, "w", encoding="utf-8") as f:
+                f.write(new_content)
+            changed = True
+
+    return changed
+
+
 def auto_fix_design_issues(cwd: str) -> bool:
     """组合调用所有 auto-fix 函数，返回是否做过任何修改。"""
     changed1 = auto_fix_spacing_grid(cwd)
@@ -3193,12 +3329,13 @@ def auto_fix_design_issues(cwd: str) -> bool:
     changed23 = auto_fix_opacity(cwd)
     changed24 = auto_fix_font_size(cwd)
     changed25 = auto_fix_line_height(cwd)
+    changed26 = auto_fix_font_weight(cwd)
     return (
         changed1 or changed2 or changed3 or changed4 or changed5
         or changed6 or changed7 or changed8 or changed9 or changed10 or changed11
         or changed12 or changed13 or changed14 or changed15 or changed16 or changed17
         or changed18 or changed19 or changed20 or changed21 or changed22 or changed23
-        or changed24 or changed25
+        or changed24 or changed25 or changed26
     )
 
 
@@ -3504,6 +3641,12 @@ def lint_design_quality(cwd: str) -> list[dict]:
     except Exception:
         pass
 
+    # 21. M76: font-weight 一致性检测
+    try:
+        violations.extend(check_font_weight_chaos(cwd))
+    except Exception:
+        pass
+
     return violations
 
 
@@ -3692,6 +3835,11 @@ def design_score(cwd: str) -> "tuple[int, list[str]]":
     if "line_height_chaos" in warning_rules:
         score -= 5
         notes.append("检测到line-height不一致(-5)")
+
+    # 21. M76: font-weight 一致性扣分（warning 级别，-5）
+    if "font_weight_chaos" in warning_rules:
+        score -= 5
+        notes.append("检测到font-weight不一致(-5)")
 
     score = max(0, score)
     if not notes:

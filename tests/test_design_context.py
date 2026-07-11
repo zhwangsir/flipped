@@ -5743,3 +5743,210 @@ def test_auto_fix_design_issues_includes_line_height():
         violations = check_line_height_chaos(td)
     lh_v = [v for v in violations if v["rule"] == "line_height_chaos"]
     assert lh_v == [], f"组合修复后不应有违规: {lh_v}"
+
+
+# ---------- M76: font-weight 一致性检测 + auto-fix ----------
+
+
+def test_check_font_weight_chaos_no_html():
+    """没有 HTML 文件时应返回空列表。"""
+    import tempfile
+    from driving.design_context import check_font_weight_chaos
+    with tempfile.TemporaryDirectory() as td:
+        result = check_font_weight_chaos(td)
+    assert result == []
+
+
+def test_check_font_weight_chaos_non_standard():
+    """非标准 font-weight 值应报 warning。"""
+    import tempfile
+    import os
+    from driving.design_context import check_font_weight_chaos
+    html = """<html><head><style>
+    .a { font-weight: 350; }
+    .b { font-weight: 450; }
+    .c { font-weight: 550; }
+    </style></head><body>text</body></html>"""
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        violations = check_font_weight_chaos(td)
+    fw_v = [v for v in violations if v["rule"] == "font_weight_chaos"]
+    assert len(fw_v) > 0
+    assert fw_v[0]["severity"] == "warning"
+
+
+def test_check_font_weight_chaos_clean():
+    """标准 font-weight 值不应报违规。"""
+    import tempfile
+    import os
+    from driving.design_context import check_font_weight_chaos
+    html = """<html><head><style>
+    .a { font-weight: 300; }
+    .b { font-weight: 400; }
+    .c { font-weight: 500; }
+    .d { font-weight: 600; }
+    .e { font-weight: 700; }
+    </style></head><body>text</body></html>"""
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        violations = check_font_weight_chaos(td)
+    fw_v = [v for v in violations if v["rule"] == "font_weight_chaos"]
+    assert fw_v == []
+
+
+def test_check_font_weight_chaos_keyword_values_not_flagged():
+    """normal/bold 关键字不应报违规。"""
+    import tempfile
+    import os
+    from driving.design_context import check_font_weight_chaos
+    html = """<html><head><style>
+    .a { font-weight: normal; }
+    .b { font-weight: bold; }
+    </style></head><body>text</body></html>"""
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        violations = check_font_weight_chaos(td)
+    fw_v = [v for v in violations if v["rule"] == "font_weight_chaos"]
+    assert fw_v == []
+
+
+def test_check_font_weight_chaos_too_many_distinct():
+    """超过 6 个不同 font-weight 值应报 warning。"""
+    import tempfile
+    import os
+    from driving.design_context import check_font_weight_chaos
+    html = """<html><head><style>
+    .a { font-weight: 100; }
+    .b { font-weight: 200; }
+    .c { font-weight: 300; }
+    .d { font-weight: 400; }
+    .e { font-weight: 500; }
+    .f { font-weight: 600; }
+    .g { font-weight: 700; }
+    </style></head><body>text</body></html>"""
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        violations = check_font_weight_chaos(td)
+    fw_v = [v for v in violations if v["rule"] == "font_weight_chaos"]
+    assert len(fw_v) > 0
+    assert "7" in fw_v[-1]["message"] or "不同" in fw_v[-1]["message"]
+
+
+def test_check_font_weight_chaos_empty_dir():
+    """空目录应返回空列表。"""
+    import tempfile
+    from driving.design_context import check_font_weight_chaos
+    with tempfile.TemporaryDirectory() as td:
+        result = check_font_weight_chaos(td)
+    assert result == []
+
+
+def test_lint_design_quality_includes_font_weight():
+    """lint_design_quality 应包含 font_weight_chaos 检测。"""
+    import tempfile
+    import os
+    from driving.design_context import lint_design_quality
+    html = """<html><head><style>
+    .a { font-weight: 350; }
+    </style></head><body>text</body></html>"""
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        violations = lint_design_quality(td)
+    fw_v = [v for v in violations if v["rule"] == "font_weight_chaos"]
+    assert len(fw_v) > 0
+
+
+def test_auto_fix_font_weight_normalizes():
+    """auto_fix_font_weight 应将非标准值映射到最近标准值。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_font_weight
+    html = """<html><head><style>
+    .a { font-weight: 350; }
+    .b { font-weight: 550; }
+    .c { font-weight: 650; }
+    </style></head><body>text</body></html>"""
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        changed = auto_fix_font_weight(td)
+        assert changed is True
+        with open(os.path.join(td, "index.html"), "r") as f:
+            content = f.read()
+    # 350 -> 400 (距离50, 300和400等距, 取较大值400)
+    assert "400" in content
+    # 550 -> 600 (距离50, 500和600等距, 取较大值600)
+    assert "600" in content
+    # 650 -> 700 (距离50, 600和700等距, 取较大值700)
+    assert "700" in content
+    # 原始值不应残留
+    assert "350" not in content
+    assert "550" not in content
+    assert "650" not in content
+
+
+def test_auto_fix_font_weight_no_change_if_clean():
+    """已经是标准值时不应修改文件。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_font_weight
+    html = """<html><head><style>
+    .a { font-weight: 400; }
+    .b { font-weight: 700; }
+    </style></head><body>text</body></html>"""
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        changed = auto_fix_font_weight(td)
+        assert changed is False
+
+
+def test_auto_fix_font_weight_empty_dir():
+    """空目录应返回 False。"""
+    import tempfile
+    from driving.design_context import auto_fix_font_weight
+    with tempfile.TemporaryDirectory() as td:
+        changed = auto_fix_font_weight(td)
+    assert changed is False
+
+
+def test_auto_fix_font_weight_idempotent():
+    """多次调用 auto_fix_font_weight 应幂等。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_font_weight
+    html = """<html><head><style>
+    .a { font-weight: 350; }
+    .b { font-weight: 750; }
+    </style></head><body>text</body></html>"""
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        auto_fix_font_weight(td)
+        changed2 = auto_fix_font_weight(td)
+        assert changed2 is False
+
+
+def test_auto_fix_design_issues_includes_font_weight():
+    """auto_fix_design_issues 组合函数应包含 font-weight 修复。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_design_issues, check_font_weight_chaos
+    html = """<html><head><meta name="viewport" content="width=device-width">
+    <style>
+    .a { font-weight: 350; }
+    .b { font-weight: 550; }
+    </style></head>
+    <body><main><section>content</section></main></body></html>"""
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        auto_fix_design_issues(td)
+        violations = check_font_weight_chaos(td)
+    fw_v = [v for v in violations if v["rule"] == "font_weight_chaos"]
+    assert fw_v == [], f"组合修复后不应有违规: {fw_v}"
