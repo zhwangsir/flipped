@@ -1748,6 +1748,105 @@ def check_console_log(cwd: str) -> list[dict]:
     return violations
 
 
+def _remove_console_log_from_js(js: str) -> str:
+    """从 JS 代码中移除所有 console.log(...) 语句。
+
+    使用括号计数法处理嵌套括号，移除语句后的分号和换行。
+    保留其他 JS 代码不变。
+    """
+    import re as _re
+
+    result: list[str] = []
+    i = 0
+    while i < len(js):
+        match = _re.search(r"console\.log\s*\(", js[i:])
+        if not match:
+            result.append(js[i:])
+            break
+
+        # 添加 console.log 之前的内容
+        start = i + match.start()
+        result.append(js[i:start])
+
+        # 找到匹配的右括号（处理嵌套括号）
+        paren_open = i + match.end() - 1  # 指向 (
+        depth = 1
+        j = paren_open + 1
+        while j < len(js) and depth > 0:
+            if js[j] == "(":
+                depth += 1
+            elif js[j] == ")":
+                depth -= 1
+            j += 1
+        # j 指向 ) 之后
+
+        # 跳过尾随空格和分号
+        while j < len(js) and js[j] in " \t":
+            j += 1
+        if j < len(js) and js[j] == ";":
+            j += 1
+        # 跳过行尾换行（只跳一个，避免吞多行）
+        if j < len(js) and js[j] == "\n":
+            j += 1
+
+        i = j
+
+    return "".join(result)
+
+
+def auto_fix_console_log(cwd: str) -> bool:
+    """M59: 移除 <script> 块中的 console.log 调试残留。
+
+    只处理 <script>...</script> 块内的 console.log 调用，
+    使用括号计数法移除整个语句（含参数和分号），保留其他 JS 代码。
+    幂等：无 console.log 时返回 False 不修改。
+    """
+    import os as _os
+    import re as _re
+
+    changed = False
+    for fname in _os.listdir(cwd) if _os.path.exists(cwd) else []:
+        if not fname.endswith(".html"):
+            continue
+        fpath = _os.path.join(cwd, fname)
+        if not _os.path.isfile(fpath):
+            continue
+        try:
+            content = open(fpath, "r", encoding="utf-8").read()
+        except Exception:
+            continue
+
+        # 先检查是否有 console.log 违规
+        violations = check_console_log(_os.path.dirname(fpath))
+        has_violation = any(
+            v["file"] == fname and v["rule"] == "console_log"
+            for v in violations
+        )
+        if not has_violation:
+            continue
+
+        # 处理每个 <script> 块，移除 console.log 语句
+        def _process_script(m):
+            script_open = m.group(1)
+            script_body = m.group(2)
+            script_close = m.group(3)
+            new_body = _remove_console_log_from_js(script_body)
+            return script_open + new_body + script_close
+
+        new_content = _re.sub(
+            r"(<script\b[^>]*>)(.*?)(</script>)",
+            _process_script,
+            content, flags=_re.IGNORECASE | _re.DOTALL,
+        )
+
+        if new_content != content:
+            with open(fpath, "w", encoding="utf-8") as f:
+                f.write(new_content)
+            changed = True
+
+    return changed
+
+
 def auto_fix_design_issues(cwd: str) -> bool:
     """组合调用所有 auto-fix 函数，返回是否做过任何修改。"""
     changed1 = auto_fix_spacing_grid(cwd)
@@ -1764,10 +1863,11 @@ def auto_fix_design_issues(cwd: str) -> bool:
     changed12 = auto_fix_color_palette(cwd)
     changed13 = auto_fix_scroll_animation(cwd)
     changed14 = auto_fix_placeholder_text(cwd)
+    changed15 = auto_fix_console_log(cwd)
     return (
         changed1 or changed2 or changed3 or changed4 or changed5
         or changed6 or changed7 or changed8 or changed9 or changed10 or changed11
-        or changed12 or changed13 or changed14
+        or changed12 or changed13 or changed14 or changed15
     )
 
 

@@ -3631,3 +3631,154 @@ __SCRIPT__
     assert score_clean > score_debug, (
         f"无 console.log 应比有 console.log 分数高: {score_clean} vs {score_debug}"
     )
+
+
+# ---------- M59: auto_fix_console_log — 自动移除 console.log 语句 ----------
+
+
+def test_auto_fix_console_log_removes():
+    """console.log 语句应被移除。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_console_log, check_console_log
+
+    html = """<html><head><meta name="viewport" content="width=device-width"></head>
+    <body><main><section>content</section></main>
+    <script>console.log("debug");</script>
+    </body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        changed = auto_fix_console_log(td)
+        with open(os.path.join(td, "index.html")) as f:
+            content = f.read()
+        violations = check_console_log(td)
+
+    assert changed is True
+    assert "console.log" not in content
+    log_violations = [v for v in violations if v["rule"] == "console_log"]
+    assert log_violations == [], f"修复后不应再有 console.log: {log_violations}"
+
+
+def test_auto_fix_console_log_multiple():
+    """多个 console.log 应全部被移除。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_console_log
+
+    html = """<html><head><meta name="viewport" content="width=device-width"></head>
+    <body><main><section>content</section></main>
+    <script>
+    console.log("a");
+    console.log("b");
+    console.log("c");
+    </script>
+    </body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        changed = auto_fix_console_log(td)
+        with open(os.path.join(td, "index.html")) as f:
+            content = f.read()
+
+    assert changed is True
+    assert "console.log" not in content
+
+
+def test_auto_fix_console_log_preserves_other_code():
+    """移除 console.log 时不应破坏其他 JS 代码。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_console_log
+
+    html = """<html><head><meta name="viewport" content="width=device-width"></head>
+    <body><main><section>content</section></main>
+    <script>
+    console.log("debug");
+    document.querySelector("h1").textContent = "Hello";
+    console.log("done");
+    </script>
+    </body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        auto_fix_console_log(td)
+        with open(os.path.join(td, "index.html")) as f:
+            content = f.read()
+
+    assert "console.log" not in content
+    assert 'document.querySelector("h1").textContent = "Hello"' in content
+
+
+def test_auto_fix_console_log_no_change_if_clean():
+    """无 console.log 时不应修改文件。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_console_log
+
+    html = """<html><head><meta name="viewport" content="width=device-width"></head>
+    <body><main><section>content</section></main>
+    <script>document.querySelector("h1").textContent = "Hello";</script>
+    </body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        changed = auto_fix_console_log(td)
+
+    assert changed is False
+
+
+def test_auto_fix_console_log_empty_dir():
+    """空目录应返回 False。"""
+    import tempfile
+    from driving.design_context import auto_fix_console_log
+
+    with tempfile.TemporaryDirectory() as td:
+        changed = auto_fix_console_log(td)
+
+    assert changed is False
+
+
+def test_auto_fix_console_log_idempotent():
+    """修复后再次运行不应再修改。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_console_log
+
+    html = """<html><head><meta name="viewport" content="width=device-width"></head>
+    <body><main><section>content</section></main>
+    <script>console.log("debug");</script>
+    </body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        auto_fix_console_log(td)
+        changed2 = auto_fix_console_log(td)
+
+    assert changed2 is False
+
+
+def test_auto_fix_design_issues_includes_console_log():
+    """auto_fix_design_issues 组合函数应包含 console_log 修复。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_design_issues
+
+    html = """<html><head><meta name="viewport" content="width=device-width"></head>
+    <body><main><section>content</section></main>
+    <script>console.log("debug");</script>
+    </body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        auto_fix_design_issues(td)
+        with open(os.path.join(td, "index.html")) as f:
+            content = f.read()
+
+    assert "console.log" not in content

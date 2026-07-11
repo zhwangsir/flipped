@@ -2,7 +2,7 @@
   "project": "flipped",
   "description": "接入本地 MLX 双模型(GLM-5.2 编排者 / Kimi-K2.7-Code 执行者)的 agentic 代码编辑器平台。fork Roo Code + 自定义驾驭层(强制验证/循环检测/上下文压缩/人工审批/子Agent/可观测性) + MCP 联网与外部能力。",
   "updated": "2026-07-11",
-  "current_milestone": "M58 console.log 调试残留检测 — script块内console.log检测 (704 passed)",
+  "current_milestone": "M59 auto_fix_console_log — 括号计数法移除console.log语句 (711 passed)",
   "key_facts": {
     "dev_host": "Apple M5 Max, 128GB RAM, 1.1TB 可用磁盘 — 开发/控制节点，非模型宿主",
     "model_cluster": "exo 集群 @ http://100.64.201.37:52415 (内网, OpenAI 兼容)；公网 https://dgmt.top/exo (需 Bearer token)",
@@ -840,6 +840,18 @@
           "title": "check_console_log + lint/score 集成 + 9 测试",
           "status": "done",
           "note": "新增 check_console_log + script块提取 + console.log( 匹配 + lint_design_quality 集成 + design_score -5 扣分。9 测试覆盖：无 HTML / 有log / 无log / 多个log / 空目录 / 无script / 文本不误报 / lint 集成 / score 对比。704 passed。"
+        }
+      }
+    },
+    "M59": {
+      "title": "auto_fix_console_log — 括号计数法移除console.log语句",
+      "status": "done",
+      "note": "新增 auto_fix_console_log(cwd) + _remove_console_log_from_js(js) 辅助函数。核心算法：括号计数法处理嵌套括号，扫描 console.log( 后逐字符计数 depth，找到匹配右括号，移除整个语句+分号+换行。只处理 <script> 块内，保留其他 JS 代码。集成到 auto_fix_design_issues（第 15 个 auto-fix，changed15）。7 TDD 测试：移除单个/多个/保留其他JS/无log不改/空目录/幂等/组合函数包含。全量 711 passed（+7，无回归）。",
+      "tasks": {
+        "M59.1": {
+          "title": "auto_fix_console_log + _remove_console_log_from_js + auto_fix_design_issues 集成",
+          "status": "done",
+          "note": "括号计数法 _remove_console_log_from_js：re.search 找 console.log( → depth 计数找匹配 ) → 跳过分号和换行 → 保留其他 JS。auto_fix_console_log：先 check_console_log 检查违规 → re.sub 处理 <script> 块 → 写回。7 测试全过。711 passed。"
         }
       }
     }
