@@ -7305,3 +7305,275 @@ def test_auto_fix_design_issues_includes_padding():
         violations = check_padding_chaos(td)
     p_v = [v for v in violations if v["rule"] == "padding_chaos"]
     assert p_v == [], f"组合修复后不应有违规: {p_v}"
+
+
+# ---------- M83: margin 一致性检测 + auto-fix ----------
+
+def test_check_margin_chaos_no_html():
+    """无 HTML 文件不应报违规。"""
+    import tempfile
+    from driving.design_context import check_margin_chaos
+    with tempfile.TemporaryDirectory() as td:
+        violations = check_margin_chaos(td)
+    assert violations == []
+
+
+def test_check_margin_chaos_non_standard():
+    """非标准 margin 值应报 warning。"""
+    import tempfile
+    import os
+    from driving.design_context import check_margin_chaos
+    html = """<html><head><meta name="viewport" content="width=device-width">
+    <style>
+    .a { margin: 7px; }
+    .b { margin: 13px; }
+    </style></head>
+    <body><main><section>content</section></main></body></html>"""
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        violations = check_margin_chaos(td)
+    m_v = [v for v in violations if v["rule"] == "margin_chaos"]
+    assert len(m_v) >= 1
+    assert m_v[0]["severity"] == "warning"
+
+
+def test_check_margin_chaos_clean():
+    """标准 margin 值不应报违规。"""
+    import tempfile
+    import os
+    from driving.design_context import check_margin_chaos
+    html = """<html><head><meta name="viewport" content="width=device-width">
+    <style>
+    .a { margin: 8px; }
+    .b { margin: 16px; }
+    .c { margin: 24px; }
+    </style></head>
+    <body><main><section>content</section></main></body></html>"""
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        violations = check_margin_chaos(td)
+    m_v = [v for v in violations if v["rule"] == "margin_chaos"]
+    assert m_v == []
+
+
+def test_check_margin_chaos_auto_not_flagged():
+    """margin: auto 不应报违规（auto 不是 px 值）。"""
+    import tempfile
+    import os
+    from driving.design_context import check_margin_chaos
+    html = """<html><head><meta name="viewport" content="width=device-width">
+    <style>
+    .a { margin: 0 auto; }
+    .b { margin: auto; }
+    </style></head>
+    <body><main><section>content</section></main></body></html>"""
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        violations = check_margin_chaos(td)
+    m_v = [v for v in violations if v["rule"] == "margin_chaos"]
+    assert m_v == []
+
+
+def test_check_margin_chaos_shorthand():
+    """margin: 8px 16px 简写也应检测。"""
+    import tempfile
+    import os
+    from driving.design_context import check_margin_chaos
+    html = """<html><head><meta name="viewport" content="width=device-width">
+    <style>
+    .a { margin: 7px 13px; }
+    </style></head>
+    <body><main><section>content</section></main></body></html>"""
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        violations = check_margin_chaos(td)
+    m_v = [v for v in violations if v["rule"] == "margin_chaos"]
+    assert len(m_v) >= 1
+
+
+def test_check_margin_chaos_longhand():
+    """margin-top/right/bottom/left 也应检测。"""
+    import tempfile
+    import os
+    from driving.design_context import check_margin_chaos
+    html = """<html><head><meta name="viewport" content="width=device-width">
+    <style>
+    .a { margin-top: 7px; margin-right: 13px; margin-bottom: 5px; margin-left: 18px; }
+    </style></head>
+    <body><main><section>content</section></main></body></html>"""
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        violations = check_margin_chaos(td)
+    m_v = [v for v in violations if v["rule"] == "margin_chaos"]
+    assert len(m_v) >= 1
+
+
+def test_check_margin_chaos_too_many_distinct():
+    """超过 9 个不同 margin 值应报 warning。"""
+    import tempfile
+    import os
+    from driving.design_context import check_margin_chaos
+    html = """<html><head><meta name="viewport" content="width=device-width">
+    <style>
+    .a { margin: 4px; }
+    .b { margin: 8px; }
+    .c { margin: 12px; }
+    .d { margin: 16px; }
+    .e { margin: 24px; }
+    .f { margin: 32px; }
+    .g { margin: 48px; }
+    .h { margin: 64px; }
+    .i { margin: 0px; }
+    .j { margin: 20px; }
+    </style></head>
+    <body><main><section>content</section></main></body></html>"""
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        violations = check_margin_chaos(td)
+    m_v = [v for v in violations if v["rule"] == "margin_chaos"]
+    assert len(m_v) >= 1
+
+
+def test_check_margin_chaos_empty_dir():
+    """空目录不应报违规。"""
+    import tempfile
+    from driving.design_context import check_margin_chaos
+    with tempfile.TemporaryDirectory() as td:
+        violations = check_margin_chaos(td)
+    assert violations == []
+
+
+def test_lint_design_quality_includes_margin():
+    """lint_design_quality 应包含 margin 检查。"""
+    import tempfile
+    import os
+    from driving.design_context import lint_design_quality
+    html = """<html><head><meta name="viewport" content="width=device-width">
+    <style>
+    .a { margin: 7px; }
+    </style></head>
+    <body><main><section>content</section></main></body></html>"""
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        violations = lint_design_quality(td)
+    m_v = [v for v in violations if v["rule"] == "margin_chaos"]
+    assert len(m_v) >= 1
+
+
+def test_auto_fix_margin_normalizes():
+    """auto_fix_margin 应将非标准值映射到最近标准值。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_margin, check_margin_chaos
+    html = """<html><head><meta name="viewport" content="width=device-width">
+    <style>
+    .a { margin: 7px; }
+    .b { margin: 13px; }
+    .c { margin: 5px; }
+    </style></head>
+    <body><main><section>content</section></main></body></html>"""
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        changed = auto_fix_margin(td)
+        assert changed is True
+        content = open(os.path.join(td, "index.html")).read()
+        # 7 -> 8, 13 -> 12, 5 -> 4
+        assert "8px" in content
+        assert "12px" in content
+        assert "4px" in content
+        violations = check_margin_chaos(td)
+    m_v = [v for v in violations if v["rule"] == "margin_chaos"]
+    assert m_v == []
+
+
+def test_auto_fix_margin_preserves_auto():
+    """auto_fix_margin 不应修改 auto 关键字。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_margin
+    html = """<html><head><meta name="viewport" content="width=device-width">
+    <style>
+    .a { margin: 0 auto; }
+    </style></head>
+    <body><main><section>content</section></main></body></html>"""
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        changed = auto_fix_margin(td)
+        assert changed is False
+        content = open(os.path.join(td, "index.html")).read()
+        assert "auto" in content
+
+
+def test_auto_fix_margin_no_change_if_clean():
+    """标准值不应修改。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_margin
+    html = """<html><head><meta name="viewport" content="width=device-width">
+    <style>
+    .a { margin: 8px; }
+    .b { margin: 16px; }
+    </style></head>
+    <body><main><section>content</section></main></body></html>"""
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        changed = auto_fix_margin(td)
+        assert changed is False
+
+
+def test_auto_fix_margin_empty_dir():
+    """空目录不应报错。"""
+    import tempfile
+    from driving.design_context import auto_fix_margin
+    with tempfile.TemporaryDirectory() as td:
+        changed = auto_fix_margin(td)
+    assert changed is False
+
+
+def test_auto_fix_margin_idempotent():
+    """二次调用不应再修改。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_margin, auto_fix_design_issues
+    html = """<html><head><meta name="viewport" content="width=device-width">
+    <style>
+    .a { margin: 7px; }
+    .b { margin: 13px; }
+    </style></head>
+    <body><main><section>content</section></main></body></html>"""
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        auto_fix_design_issues(td)
+        changed2 = auto_fix_margin(td)
+        assert changed2 is False
+
+
+def test_auto_fix_design_issues_includes_margin():
+    """auto_fix_design_issues 组合函数应包含 margin 修复。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_design_issues, check_margin_chaos
+    html = """<html><head><meta name="viewport" content="width=device-width">
+    <style>
+    .a { margin: 7px; }
+    .b { margin: 13px; }
+    </style></head>
+    <body><main><section>content</section></main></body></html>"""
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        auto_fix_design_issues(td)
+        violations = check_margin_chaos(td)
+    m_v = [v for v in violations if v["rule"] == "margin_chaos"]
+    assert m_v == [], f"组合修复后不应有违规: {m_v}"
