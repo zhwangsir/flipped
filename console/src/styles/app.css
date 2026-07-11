@@ -41,11 +41,13 @@
   bottom: 0;
   width: 2px;
   background: transparent;
-  transition: background var(--dur-fast) var(--ease);
+  border-radius: 1px;
+  transition: background var(--dur) var(--ease-out-quart);
 }
 .resize-handle:hover::after,
 body.resizing .resize-handle:hover::after {
   background: var(--blue);
+  box-shadow: 0 0 8px color-mix(in oklab, var(--blue) 40%, transparent);
 }
 body.resizing {
   cursor: col-resize;
@@ -61,6 +63,15 @@ body.resizing {
   padding: 0 var(--sp-4);
   background: var(--bg-app);
   border-bottom: 1px solid var(--border-subtle);
+  /* M68 — 微妙环境渐变，增加深度感 */
+  background-image: linear-gradient(
+    180deg,
+    color-mix(in oklab, var(--bg-app) 100%, transparent) 0%,
+    color-mix(in oklab, var(--bg-base) 40%, var(--bg-app)) 100%
+  );
+  backdrop-filter: saturate(1.1);
+  position: relative;
+  z-index: 30;
 }
 .crumb {
   display: flex;
@@ -91,11 +102,14 @@ body.resizing {
   color: var(--text-muted);
   font-size: var(--text-sm);
   border: 1px solid transparent;
-  transition: all var(--dur-fast) var(--ease);
+  transition: all var(--dur-fast) var(--ease-out-quart);
 }
 .icon-btn:hover {
   color: var(--text-primary);
   background: var(--bg-surface);
+}
+.icon-btn:active {
+  transform: scale(0.94);
 }
 .icon-btn.run {
   color: var(--success);
@@ -121,7 +135,11 @@ body.resizing {
   border-radius: 8px;
   border: 1px solid var(--border-subtle);
   background: var(--bg-surface);
-  box-shadow: var(--shadow-sm);
+  box-shadow: var(--shadow-sm), inset 0 1px 0 var(--edge-hi);
+  transition: border-color var(--dur-fast) var(--ease);
+}
+.pill:hover {
+  border-color: var(--border);
 }
 .pill .mono {
   color: var(--text-primary);
@@ -175,8 +193,20 @@ body.resizing {
   border: 1px solid var(--border-subtle);
   color: var(--text-secondary);
   font-size: var(--text-base);
-  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease),
-    border-color var(--dur-fast) var(--ease);
+  transition: background var(--dur) var(--ease-out-quart), color var(--dur) var(--ease-out-quart),
+    border-color var(--dur) var(--ease-out-quart), transform var(--dur-fast) var(--ease-spring),
+    box-shadow var(--dur) var(--ease-out-quart);
+  box-shadow: var(--shadow-sm);
+}
+.launcher-item:hover {
+  background: var(--bg-hover);
+  border-color: var(--border);
+  color: var(--text-primary);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-mid);
+}
+.launcher-item:active {
+  transform: translateY(0) scale(0.98);
 }
 .launcher-item > span {
   flex: 1;
@@ -217,19 +247,27 @@ body.resizing {
   border-radius: var(--radius-sm);
   font-size: var(--text-sm);
   color: var(--text-secondary);
-  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+  transition: background var(--dur-fast) var(--ease-out-quart), color var(--dur-fast) var(--ease-out-quart);
 }
 .side-nav-item:hover {
   background: var(--bg-hover);
   color: var(--text-primary);
 }
+.side-nav-item:active {
+  transform: scale(0.98);
+}
 .side-nav-item.active {
   background: var(--bg-surface);
   color: var(--text-primary);
+  box-shadow: inset 2px 0 0 var(--accent), var(--shadow-near);
 }
 .side-nav-item svg {
   color: var(--text-muted);
   flex: none;
+  transition: color var(--dur-fast) var(--ease);
+}
+.side-nav-item.active svg {
+  color: var(--accent-text);
 }
 
 /* ---- 项目分区 + 线程列表 ---- */
@@ -397,7 +435,7 @@ body.resizing {
   border: 1px solid var(--border);
   box-shadow: var(--shadow-lg);
   z-index: 50;
-  animation: rise var(--dur-fast) var(--ease) both;
+  animation: slide-up var(--dur-fast) var(--ease-out-quart) both;
 }
 .proj-menu-item {
   display: flex;
@@ -438,13 +476,14 @@ body.resizing {
   padding: 7px 9px;
   border-radius: var(--radius-sm);
   cursor: pointer;
-  transition: background var(--dur-fast) var(--ease);
+  transition: background var(--dur-fast) var(--ease-out-quart), color var(--dur-fast) var(--ease-out-quart);
 }
 .thread:hover {
   background: var(--bg-hover);
 }
 .thread.active {
   background: var(--bg-surface);
+  box-shadow: inset 2px 0 0 var(--accent);
 }
 .thread .dot {
   flex: none;
@@ -573,14 +612,17 @@ body.resizing {
   align-items: center;
   justify-content: center;
   gap: 7px;
-  transition: background var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
+  transition: background var(--dur) var(--ease-out-quart), border-color var(--dur) var(--ease-out-quart),
+    transform var(--dur-fast) var(--ease-spring), box-shadow var(--dur) var(--ease-out-quart);
+  box-shadow: var(--shadow-sm);
 }
 .new-task:hover {
   background: var(--bg-hover);
   border-color: var(--border-strong);
+  box-shadow: var(--shadow-near);
 }
 .new-task:active {
-  transform: scale(0.98);
+  transform: scale(0.97);
 }
 .side-label {
   padding: 10px 14px 6px;
@@ -734,7 +776,7 @@ body.resizing {
   gap: 14px;
   text-align: center;
   padding: 0 var(--sp-6);
-  animation: rise var(--dur) var(--ease) both;
+  animation: slide-up var(--dur-slow) var(--ease-out-quart) both;
 }
 /* Codex 招牌：用一句大问句替代空白页 */
 .empty-hero {
@@ -745,12 +787,14 @@ body.resizing {
   color: var(--text-primary);
   max-width: 620px;
   margin: 0;
+  animation: slide-up var(--dur-slow) var(--ease-out-quart) var(--stagger-1) both;
 }
 .empty-sub {
   font-size: var(--text-sm);
   color: var(--text-muted);
   max-width: 440px;
   line-height: var(--leading-body);
+  animation: slide-up var(--dur-slow) var(--ease-out-quart) var(--stagger-2) both;
 }
 .empty-hints {
   display: flex;
@@ -758,6 +802,7 @@ body.resizing {
   margin-top: 6px;
   flex-wrap: wrap;
   justify-content: center;
+  animation: slide-up var(--dur-slow) var(--ease-out-quart) var(--stagger-3) both;
 }
 .empty-hint {
   display: inline-flex;
@@ -769,14 +814,25 @@ body.resizing {
   border-radius: var(--radius-pill);
   border: 1px solid var(--border-subtle);
   background: var(--bg-surface);
+  transition: border-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease),
+    transform var(--dur-fast) var(--ease-spring);
+}
+.empty-hint:hover {
+  border-color: var(--border);
+  color: var(--text-primary);
+  transform: translateY(-1px);
 }
 .empty-hint svg {
   color: var(--text-muted);
+  transition: color var(--dur-fast) var(--ease);
+}
+.empty-hint:hover svg {
+  color: var(--text-secondary);
 }
 /* Codex 式扁平消息:无头像;agent 满宽文档式,用户右对齐灰气泡 */
 .turn {
   margin-bottom: var(--sp-5);
-  animation: rise var(--dur) var(--ease) both;
+  animation: slide-up var(--dur) var(--ease-out-quart) both;
 }
 .turn.user {
   display: flex;
@@ -838,13 +894,18 @@ body.resizing {
   background: var(--bg-elevated);
   border: 1px solid var(--border-subtle);
   overflow: hidden;
-  transition: border-color var(--dur-fast) var(--ease);
+  transition: border-color var(--dur) var(--ease-out-quart), box-shadow var(--dur) var(--ease-out-quart);
 }
 .tool-card:hover {
   border-color: var(--border);
+  box-shadow: var(--shadow-near);
 }
 .tool-card.error {
   border-color: color-mix(in oklab, var(--danger) 35%, var(--border));
+}
+.tool-card.error:hover {
+  border-color: color-mix(in oklab, var(--danger) 45%, var(--border));
+  box-shadow: 0 2px 8px color-mix(in oklab, var(--danger) 12%, transparent);
 }
 .tool-head {
   display: flex;
@@ -1058,7 +1119,7 @@ body.resizing {
   border: 1px solid var(--border);
   box-shadow: var(--shadow-lg);
   z-index: 60;
-  animation: rise var(--dur-fast) var(--ease) both;
+  animation: slide-up var(--dur-fast) var(--ease-out-quart) both;
 }
 .proj-picker-search {
   display: flex;
@@ -1225,8 +1286,8 @@ body.resizing {
   background: var(--bg-elevated);
   border-radius: 16px;
   padding: 14px 16px 12px;
-  box-shadow: var(--shadow-sm);
-  transition: border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
+  box-shadow: var(--shadow-sm), inset 0 1px 0 var(--edge-hi);
+  transition: border-color var(--dur) var(--ease-out-quart), box-shadow var(--dur) var(--ease-out-quart);
   position: relative;
 }
 /* R23 — @ 文件提及自动补全下拉(向上弹出) */
@@ -1242,7 +1303,7 @@ body.resizing {
   border: 1px solid var(--border);
   box-shadow: var(--shadow-lg);
   z-index: 50;
-  animation: rise var(--dur-fast) var(--ease) both;
+  animation: slide-up var(--dur-fast) var(--ease-out-quart) both;
 }
 .mention-label {
   padding: 5px 9px 4px;
@@ -1273,7 +1334,7 @@ body.resizing {
 }
 .composer-box:focus-within {
   border-color: var(--focus-border);
-  box-shadow: var(--focus-ring);
+  box-shadow: var(--focus-ring), var(--shadow-near);
 }
 .composer textarea {
   width: 100%;
@@ -1306,12 +1367,17 @@ body.resizing {
   border: 1px solid var(--border);
   color: var(--text-secondary);
   flex: none;
-  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+  transition: background var(--dur-fast) var(--ease-out-quart), color var(--dur-fast) var(--ease-out-quart),
+    transform var(--dur-fast) var(--ease-spring), border-color var(--dur-fast) var(--ease);
 }
 .cbar-plus:hover,
 .cbar-plus.active {
   background: var(--bg-hover);
   color: var(--text-primary);
+  border-color: var(--border-strong);
+}
+.cbar-plus:active {
+  transform: scale(0.9);
 }
 /* R14 — composer + 下拉菜单(向上弹出) */
 .cbar-plus-wrap {
@@ -1329,7 +1395,7 @@ body.resizing {
   border: 1px solid var(--border);
   box-shadow: var(--shadow-lg);
   z-index: 50;
-  animation: rise var(--dur-fast) var(--ease) both;
+  animation: slide-up var(--dur-fast) var(--ease-out-quart) both;
 }
 .plus-menu-label {
   padding: 6px 10px 4px;
@@ -1460,13 +1526,16 @@ body.resizing {
   display: grid;
   place-items: center;
   flex: none;
-  transition: background var(--dur-fast) var(--ease), transform var(--dur-fast) var(--ease);
+  transition: background var(--dur-fast) var(--ease-out-quart), transform var(--dur-fast) var(--ease-spring),
+    box-shadow var(--dur-fast) var(--ease-out-quart);
+  box-shadow: var(--shadow-sm);
 }
 .send:hover {
   background: var(--primary-hover);
+  box-shadow: var(--shadow-near);
 }
 .send:active {
-  transform: scale(0.93);
+  transform: scale(0.88);
 }
 
 /* ============ context panel ============ */
@@ -1494,7 +1563,7 @@ body.resizing {
   color: var(--text-muted);
   border-bottom: 2px solid transparent;
   white-space: nowrap;
-  transition: color var(--dur-fast) var(--ease);
+  transition: color var(--dur-fast) var(--ease-out-quart), border-color var(--dur) var(--ease-out-quart);
 }
 .tab:hover {
   color: var(--text-secondary);
@@ -2367,7 +2436,7 @@ button.mcp-row:hover {
   background: var(--bg-elevated);
   border: 1px solid var(--border-subtle);
   box-shadow: var(--shadow-sm);
-  animation: rise var(--dur) var(--ease) both;
+  animation: slide-up var(--dur) var(--ease-out-quart) both;
 }
 .status-banner .sb-icon {
   display: grid;
@@ -2429,7 +2498,7 @@ button.mcp-row:hover {
   background: oklch(30% 0.06 25 / 0.15);
   border: 1px solid var(--danger);
   box-shadow: var(--shadow-sm);
-  animation: rise var(--dur) var(--ease) both;
+  animation: slide-up var(--dur) var(--ease-out-quart) both;
 }
 
 .approval-card {
@@ -2439,7 +2508,7 @@ button.mcp-row:hover {
   padding: 14px 16px;
   margin-bottom: 18px;
   box-shadow: var(--shadow-md), inset 0 1px 0 var(--edge-hi);
-  animation: rise var(--dur) var(--ease) both;
+  animation: slide-up var(--dur) var(--ease-out-quart) both;
 }
 .approval-head {
   display: flex;
@@ -2619,7 +2688,8 @@ button.mcp-row:hover {
   align-items: flex-start;
   padding-top: 12vh;
   background: oklch(0% 0 0 / 0.42);
-  animation: rise var(--dur-fast) var(--ease) both;
+  backdrop-filter: blur(6px);
+  animation: fade-in var(--dur-fast) var(--ease-out-quart) both;
 }
 .palette {
   width: min(600px, 92vw);
@@ -2629,8 +2699,9 @@ button.mcp-row:hover {
   background: var(--bg-elevated);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-lg);
+  box-shadow: var(--shadow-far);
   overflow: hidden;
+  animation: scale-in var(--dur) var(--ease-spring) both;
 }
 .palette-search {
   display: flex;
@@ -2752,9 +2823,9 @@ textarea:focus {
   flex-direction: column;
   background: var(--bg-base);
   border-top: 1px solid var(--border);
-  box-shadow: var(--shadow-lg);
+  box-shadow: var(--shadow-far);
   transform: translateY(100%);
-  transition: transform var(--dur) var(--ease);
+  transition: transform var(--dur-slow) var(--ease-out-quart);
 }
 .term-drawer.open {
   transform: translateY(0);
@@ -2894,7 +2965,7 @@ textarea:focus {
   align-items: center;
   gap: 22px;
   text-align: center;
-  animation: rise var(--dur) var(--ease) both;
+  animation: slide-up var(--dur-slow) var(--ease-out-quart) both;
 }
 .new-thread .empty-hero {
   margin: 0 0 2px;
@@ -2959,7 +3030,7 @@ textarea:focus {
   display: grid;
   grid-template-columns: 268px 1fr;
   background: var(--bg-base);
-  animation: rise var(--dur-fast) var(--ease) both;
+  animation: fade-in var(--dur-fast) var(--ease-out-quart) both;
 }
 .settings-nav {
   border-right: 1px solid var(--border-subtle);
@@ -3004,11 +3075,12 @@ textarea:focus {
   color: var(--text-secondary);
   font-size: var(--text-sm);
   text-align: left;
-  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+  transition: background var(--dur-fast) var(--ease-out-quart), color var(--dur-fast) var(--ease-out-quart);
 }
 .settings-navitem svg {
   color: var(--text-muted);
   flex: none;
+  transition: color var(--dur-fast) var(--ease);
 }
 .settings-navitem:hover {
   background: var(--bg-hover);
@@ -3017,6 +3089,7 @@ textarea:focus {
 .settings-navitem.active {
   background: var(--bg-surface);
   color: var(--text-primary);
+  box-shadow: inset 2px 0 0 var(--accent);
 }
 .settings-navitem.active svg {
   color: var(--text-primary);
@@ -3229,7 +3302,7 @@ textarea:focus {
   display: flex;
   flex-direction: column;
   background: var(--bg-base);
-  animation: rise var(--dur-fast) var(--ease) both;
+  animation: slide-up var(--dur-fast) var(--ease-out-quart) both;
 }
 .plugins-head {
   display: flex;
@@ -3515,7 +3588,7 @@ textarea:focus {
   display: flex;
   flex-direction: column;
   background: var(--bg-base);
-  animation: rise var(--dur) var(--ease) both;
+  animation: slide-up var(--dur) var(--ease-out-quart) both;
 }
 .factory-head {
   display: flex;
