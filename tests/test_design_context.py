@@ -2737,3 +2737,200 @@ button:hover{opacity:0.85}button:active{transform:scale(0.98)}button:focus{outli
     assert score_with_anim > score_no_anim, (
         f"有入场动画应比无入场动画分数高: {score_with_anim} vs {score_no_anim}"
     )
+
+
+# ---------- M54: placeholder text lint（AI 生成 UI 头号破绽） ----------
+
+
+def test_check_placeholder_text_no_html():
+    """无 HTML 文件时不应报违规。"""
+    import tempfile
+    from driving.design_context import check_placeholder_text
+
+    with tempfile.TemporaryDirectory() as td:
+        violations = check_placeholder_text(td)
+
+    assert violations == []
+
+
+def test_check_placeholder_text_lorem_ipsum():
+    """检测 Lorem ipsum 占位文本。"""
+    import tempfile
+    import os
+    from driving.design_context import check_placeholder_text
+
+    html = """<html><head><meta name="viewport" content="width=device-width"></head>
+    <body><main><section><p>Lorem ipsum dolor sit amet</p></section></main></body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        violations = check_placeholder_text(td)
+
+    ph_violations = [v for v in violations if v["rule"] == "placeholder_text"]
+    assert len(ph_violations) >= 1
+    assert ph_violations[0]["severity"] == "error"
+
+
+def test_check_placeholder_text_chinese_sample():
+    """检测中文占位文本：示例文本/示例内容/内容内容内容。"""
+    import tempfile
+    import os
+    from driving.design_context import check_placeholder_text
+
+    html = """<html><head><meta name="viewport" content="width=device-width"></head>
+    <body><main><section><h1>示例标题</h1><p>内容内容内容</p></section></main></body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        violations = check_placeholder_text(td)
+
+    ph_violations = [v for v in violations if v["rule"] == "placeholder_text"]
+    assert len(ph_violations) >= 1
+
+
+def test_check_placeholder_text_click_here():
+    """检测 'Click here' / '点击这里' 等无信息量按钮文案。"""
+    import tempfile
+    import os
+    from driving.design_context import check_placeholder_text
+
+    html = """<html><head><meta name="viewport" content="width=device-width"></head>
+    <body><main><section><a href="#">Click here</a></section></main></body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        violations = check_placeholder_text(td)
+
+    ph_violations = [v for v in violations if v["rule"] == "placeholder_text"]
+    assert len(ph_violations) >= 1
+
+
+def test_check_placeholder_text_real_content():
+    """真实有意义的文案不应报违规。"""
+    import tempfile
+    import os
+    from driving.design_context import check_placeholder_text
+
+    html = """<html lang="zh"><head><meta name="viewport" content="width=device-width"></head>
+    <body><main><section>
+    <h1>Flipped AI 开发工厂</h1>
+    <p>接入本地 MLX 双模型的 agentic 代码编辑器平台</p>
+    <a href="/docs">查看文档</a>
+    </section></main></body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        violations = check_placeholder_text(td)
+
+    ph_violations = [v for v in violations if v["rule"] == "placeholder_text"]
+    assert ph_violations == [], f"真实文案不应报违规: {ph_violations}"
+
+
+def test_check_placeholder_text_sample_text():
+    """检测 'Sample text' / 'Sample content' 等英文占位。"""
+    import tempfile
+    import os
+    from driving.design_context import check_placeholder_text
+
+    html = """<html><head><meta name="viewport" content="width=device-width"></head>
+    <body><main><section><p>Sample text goes here</p></section></main></body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        violations = check_placeholder_text(td)
+
+    ph_violations = [v for v in violations if v["rule"] == "placeholder_text"]
+    assert len(ph_violations) >= 1
+
+
+def test_check_placeholder_text_empty_dir():
+    """空目录应返回空列表。"""
+    import tempfile
+    from driving.design_context import check_placeholder_text
+
+    with tempfile.TemporaryDirectory() as td:
+        violations = check_placeholder_text(td)
+
+    assert violations == []
+
+
+def test_check_placeholder_text_repeated_chars():
+    """检测重复字符占位：xxxxx / ..... / -----。"""
+    import tempfile
+    import os
+    from driving.design_context import check_placeholder_text
+
+    html = """<html><head><meta name="viewport" content="width=device-width"></head>
+    <body><main><section><h1>xxxxxxxxx</h1></section></main></body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        violations = check_placeholder_text(td)
+
+    ph_violations = [v for v in violations if v["rule"] == "placeholder_text"]
+    assert len(ph_violations) >= 1
+
+
+def test_lint_design_quality_includes_placeholder_text():
+    """lint_design_quality 应包含 placeholder_text 规则。"""
+    import tempfile
+    import os
+    from driving.design_context import lint_design_quality
+
+    html = """<html><head><meta name="viewport" content="width=device-width"></head>
+    <body><main><section><p>Lorem ipsum dolor sit amet</p></section></main></body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        violations = lint_design_quality(td)
+
+    ph_violations = [v for v in violations if v["rule"] == "placeholder_text"]
+    assert len(ph_violations) >= 1
+
+
+def test_design_score_penalizes_placeholder_text():
+    """有占位文本的 HTML 应比真实文案的分数低。"""
+    import tempfile
+    import os
+    from driving.design_context import design_score
+
+    base_html = """<!DOCTYPE html>
+<html lang="zh"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+:root { --color-bg: #0D0D12; --color-text: #F5F5F5; --color-accent: #0A84FF; }
+body { transition: opacity 0.3s ease; }
+:focus-visible { outline: 2px solid var(--color-accent); }
+button:hover{opacity:0.85}button:active{transform:scale(0.98)}button:focus{outline:2px solid blue}button:disabled{opacity:0.5}
+@media (max-width: 768px) { body { font-size: 14px; } }
+@keyframes fadeInUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
+section{animation:fadeInUp 0.8s ease-out both}
+</style></head><body>
+<header><nav>Logo</nav></header>
+<main><section><h1>__TITLE__</h1><p>__BODY__</p></section></main>
+<footer>Copyright</footer>
+</body></html>"""
+
+    real_html = base_html.replace("__TITLE__", "Flipped 开发工厂").replace("__BODY__", "自主迭代的 AI 平台")
+    placeholder_html = base_html.replace("__TITLE__", "示例标题").replace("__BODY__", "Lorem ipsum dolor sit amet")
+
+    with tempfile.TemporaryDirectory() as td1:
+        with open(os.path.join(td1, "index.html"), "w") as f:
+            f.write(real_html)
+        score_real, _ = design_score(td1)
+
+    with tempfile.TemporaryDirectory() as td2:
+        with open(os.path.join(td2, "index.html"), "w") as f:
+            f.write(placeholder_html)
+        score_ph, _ = design_score(td2)
+
+    assert score_real > score_ph, (
+        f"真实文案应比占位文本分数高: {score_real} vs {score_ph}"
+    )

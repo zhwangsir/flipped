@@ -1374,6 +1374,90 @@ def auto_fix_scroll_animation(cwd: str) -> bool:
     return changed
 
 
+# ---------- M54: placeholder text lint ----------
+
+# 占位文本模式（AI 生成 UI 头号破绽）
+# 只检查可见文本（剥离 <script>/<style> 和 HTML 标签后）
+_PLACEHOLDER_PATTERNS: list[tuple[str, str]] = [
+    (r"lorem\s+ipsum", "Lorem ipsum 占位文本"),
+    (r"示例(标题|文本|内容|文字|描述)", "中文示例占位文本"),
+    (r"(内容|标题|文字|描述)\1{2,}", "重复中文占位词"),
+    (r"sample\s*(text|content|title|description)", "英文 Sample 占位文本"),
+    (r"click\s+here", "无信息量按钮文案 'Click here'"),
+    (r"点击(这里|此处|这里了)", "无信息量按钮文案 '点击这里'"),
+    (r"(your|这里)\s*(content|text|title)\s*(here|这里|)", "Your content here 占位"),
+    (r"placeholder\s*(text|content)?", "Placeholder 占位文本"),
+    (r"占位(文本|内容|文字)", "中文占位文本"),
+    (r"(todo|tbd|fixme)", "未完成标记（TODO/TBD/FIXME）"),
+]
+
+
+def _extract_visible_text(html: str) -> str:
+    """提取 HTML 可见文本（去除 script/style/标签）。"""
+    import re as _re
+    # 去 script/style 块
+    text = _re.sub(r"<(script|style)\b[^>]*>.*?</\1>", "", html, flags=_re.IGNORECASE | _re.DOTALL)
+    # 去 HTML 标签
+    text = _re.sub(r"<[^>]+>", " ", text)
+    # 压缩空白
+    text = _re.sub(r"\s+", " ", text).strip()
+    return text
+
+
+def check_placeholder_text(cwd: str) -> list[dict]:
+    """M54: 检测 AI 生成 UI 的头号破绽——占位文本。
+
+    检测模式：
+    - Lorem ipsum（经典占位）
+    - 示例标题/示例文本/示例内容（中文占位）
+    - 内容内容内容/标题标题（重复中文词）
+    - Sample text/content（英文占位）
+    - Click here / 点击这里（无信息量按钮文案）
+    - Placeholder / 占位文本
+    - TODO / TBD / FIXME（未完成标记）
+    - 连续重复字符 ≥5（xxxxx / ..... / -----）
+
+    只检查可见文本，不检查属性/CSS/JS。
+    """
+    import os as _os
+    import re as _re
+
+    violations: list[dict] = []
+
+    for fname in _os.listdir(cwd) if _os.path.exists(cwd) else []:
+        if not fname.endswith(".html"):
+            continue
+        fpath = _os.path.join(cwd, fname)
+        if not _os.path.isfile(fpath):
+            continue
+        try:
+            content = open(fpath, "r", encoding="utf-8").read()
+        except Exception:
+            continue
+
+        visible = _extract_visible_text(content)
+
+        found_patterns: list[str] = []
+        for pattern, desc in _PLACEHOLDER_PATTERNS:
+            if _re.search(pattern, visible, _re.IGNORECASE):
+                found_patterns.append(desc)
+
+        # 重复字符检测：同一字符连续出现 ≥5 次
+        if _re.search(r"(.)\1{4,}", visible) and not _re.match(r"^\s*$", visible):
+            # 排除合法空白
+            found_patterns.append("重复字符占位（≥5个相同字符连续）")
+
+        if found_patterns:
+            violations.append({
+                "rule": "placeholder_text",
+                "severity": "error",
+                "file": fname,
+                "message": f"检测到占位文本: {', '.join(found_patterns)}",
+            })
+
+    return violations
+
+
 def auto_fix_design_issues(cwd: str) -> bool:
     """组合调用所有 auto-fix 函数，返回是否做过任何修改。"""
     changed1 = auto_fix_spacing_grid(cwd)
@@ -1632,6 +1716,12 @@ def lint_design_quality(cwd: str) -> list[dict]:
     except Exception:
         pass
 
+    # 10. M54: 占位文本检测
+    try:
+        violations.extend(check_placeholder_text(cwd))
+    except Exception:
+        pass
+
     return violations
 
 
@@ -1766,6 +1856,12 @@ def design_score(cwd: str) -> "tuple[int, list[str]]":
             notes.append(f"配色过多({len(design_colors)}种，建议≤5)(-5)")
         break
 
+    # 10. M54: 占位文本扣分（内容质量，error 级别）
+    if "placeholder_text" in error_rules:
+        score -= 10
+        notes.append("检测到占位文本(-10)")
+
+    score = max(0, score)
     if not notes:
         notes.append("设计质量良好")
     return score, notes
