@@ -1169,6 +1169,99 @@ def auto_fix_form_label(cwd: str) -> bool:
     return changed
 
 
+# ---------- M48: auto_fix_color_palette — 配色超过 5 种时合并 ----------
+
+
+_BW_COLORS = {"#000000", "#FFFFFF", "#FFF", "#000"}
+
+
+def _rgb_distance(c1: str, c2: str) -> int:
+    """计算两个 hex 颜色之间的 RGB 欧氏距离平方。"""
+    r1, g1, b1 = int(c1[1:3], 16), int(c1[3:5], 16), int(c1[5:7], 16)
+    r2, g2, b2 = int(c2[1:3], 16), int(c2[3:5], 16), int(c2[5:7], 16)
+    return (r1 - r2) ** 2 + (g1 - g2) ** 2 + (b1 - b2) ** 2
+
+
+def _normalize_hex(h: str) -> str:
+    """统一 hex 为大写 6 位 #RRGGBB。"""
+    h = h.upper()
+    if len(h) == 4:  # #ABC → #AABBCC
+        h = "#" + h[1] * 2 + h[2] * 2 + h[3] * 2
+    return h
+
+
+def auto_fix_color_palette(cwd: str) -> bool:
+    """配色超过 5 种设计色时，合并到 top-5 最常用色。
+
+    策略：按出现频次排序保留 top-5，剩余颜色替换为 RGB 距离最近的保留色。
+    黑白（#000000/#FFFFFF）不计入设计色。
+    """
+    import os as _os
+    import re as _re
+    from collections import Counter
+
+    changed = False
+    for fname in _os.listdir(cwd) if _os.path.exists(cwd) else []:
+        if not fname.endswith(".html"):
+            continue
+        fpath = _os.path.join(cwd, fname)
+        if not _os.path.isfile(fpath):
+            continue
+        try:
+            content = open(fpath, "r", encoding="utf-8").read()
+        except Exception:
+            continue
+
+        # 收集所有 hex 颜色（6 位和 3 位）
+        raw_colors = _re.findall(r"#[0-9A-Fa-f]{6}\b|#[0-9A-Fa-f]{3}\b", content)
+        if not raw_colors:
+            continue
+
+        # 统一为大写 6 位
+        norm_colors = [_normalize_hex(c) for c in raw_colors]
+        counter = Counter(norm_colors)
+
+        # 排除黑白
+        design_colors = {c for c in counter if c not in _BW_COLORS}
+        if len(design_colors) <= 5:
+            continue
+
+        # 按频次排序，保留 top-5
+        sorted_colors = sorted(design_colors, key=lambda c: counter[c], reverse=True)
+        keep = set(sorted_colors[:5])
+        replace = sorted_colors[5:]
+
+        # 为每个被替换的颜色找最近的保留色
+        replace_map: dict[str, str] = {}
+        for rc in replace:
+            nearest = min(keep, key=lambda kc: _rgb_distance(rc, kc))
+            replace_map[rc] = nearest
+
+        if not replace_map:
+            continue
+
+        # 执行替换：需要处理大小写和 3 位/6 位变体
+        new_content = content
+        for old_hex, new_hex in replace_map.items():
+            # 替换大写 6 位
+            new_content = new_content.replace(old_hex, new_hex)
+            # 替换小写 6 位
+            new_content = new_content.replace(old_hex.lower(), new_hex.lower())
+            # 替换 3 位简写（如果原始是 3 位形式，如 #0AF）
+            if old_hex[1] == old_hex[2] and old_hex[3] == old_hex[4] and old_hex[5] == old_hex[6]:
+                short_old = "#" + old_hex[1] + old_hex[3] + old_hex[5]
+                short_new = "#" + new_hex[1] + new_hex[3] + new_hex[5]
+                new_content = new_content.replace(short_old, short_new)
+                new_content = new_content.replace(short_old.lower(), short_new.lower())
+
+        if new_content != content:
+            with open(fpath, "w", encoding="utf-8") as f:
+                f.write(new_content)
+            changed = True
+
+    return changed
+
+
 def auto_fix_design_issues(cwd: str) -> bool:
     """组合调用所有 auto-fix 函数，返回是否做过任何修改。"""
     changed1 = auto_fix_spacing_grid(cwd)
@@ -1182,9 +1275,11 @@ def auto_fix_design_issues(cwd: str) -> bool:
     changed9 = auto_fix_component_states(cwd)
     changed10 = auto_fix_aria_label(cwd)
     changed11 = auto_fix_form_label(cwd)
+    changed12 = auto_fix_color_palette(cwd)
     return (
         changed1 or changed2 or changed3 or changed4 or changed5
         or changed6 or changed7 or changed8 or changed9 or changed10 or changed11
+        or changed12
     )
 
 

@@ -2393,3 +2393,105 @@ def test_build_design_brief_compact_includes_all_new_rules():
     assert "aria-label" in brief
     # M34: 标题层级
     assert "h1" in brief or "跳级" in brief
+
+
+# ---------- M48: auto_fix_color_palette — 配色超过 5 种时确定性合并 ----------
+
+
+def test_auto_fix_color_palette_too_many_colors():
+    """配色超过 5 种时，auto_fix 应合并到 top-5 最常用色。"""
+    import tempfile
+    import os
+    import re
+    from driving.design_context import auto_fix_color_palette, design_score
+
+    # 8 种设计色（不含黑白），其中 #0A84FF 出现 4 次（最多）
+    html = """<html><head>
+<style>
+:root { --c1: #0A84FF; --c2: #FF3B30; --c3: #34C759; --c4: #FF9500; --c5: #AF52DE; --c6: #5AC8FA; --c7: #FFD60A; --c8: #BF5AF2; }
+</style>
+</head><body>
+<div style="color:#0A84FF">a</div>
+<div style="color:#0A84FF">b</div>
+<div style="color:#0A84FF">c</div>
+<div style="color:#0A84FF">d</div>
+<div style="color:#FF3B30">e</div>
+<div style="color:#34C759">f</div>
+<div style="color:#FF9500">g</div>
+<div style="color:#AF52DE">h</div>
+</body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        changed = auto_fix_color_palette(td)
+        with open(os.path.join(td, "index.html"), "r") as f:
+            content = f.read()
+
+        # 验证：修改后设计色 ≤ 5
+        hex_colors = set(re.findall(r"#[0-9A-Fa-f]{6}\b", content))
+        design_colors = {c for c in hex_colors if c.upper() not in ("#000000", "#FFFFFF")}
+        score, notes = design_score(td)
+
+    assert changed is True
+    assert len(design_colors) <= 5, f"合并后应≤5色，实际{len(design_colors)}: {design_colors}"
+    # 最常用的色应保留
+    assert "#0A84FF" in content.upper() or "#0a84ff" in content.lower()
+
+
+def test_auto_fix_color_palette_five_or_less_no_change():
+    """配色 ≤ 5 种时不修改。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_color_palette
+
+    html = """<html><head>
+<style>:root { --c1: #0A84FF; --c2: #FF3B30; --c3: #34C759; }</style>
+</head><body><div style="color:#0A84FF">a</div></body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        changed = auto_fix_color_palette(td)
+
+    assert changed is False
+
+
+def test_auto_fix_color_palette_empty_dir():
+    """空目录不报错。"""
+    import tempfile
+    from driving.design_context import auto_fix_color_palette
+
+    with tempfile.TemporaryDirectory() as td:
+        changed = auto_fix_color_palette(td)
+    assert changed is False
+
+
+def test_auto_fix_design_issues_includes_color_palette():
+    """auto_fix_design_issues 组合应包含 color_palette 修复。"""
+    import tempfile
+    import os
+    import re
+    from driving.design_context import auto_fix_design_issues
+
+    # 7 种设计色
+    html = """<html lang="zh"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<style>:root { --c1: #0A84FF; --c2: #FF3B30; --c3: #34C759; --c4: #FF9500; --c5: #AF52DE; --c6: #5AC8FA; --c7: #FFD60A; }
+body { margin: 0; }</style>
+</head><body><header>H</header><main><section>S</section></main><footer>F</footer>
+<div style="color:#0A84FF">a</div><div style="color:#0A84FF">b</div>
+<div style="color:#FF3B30">c</div><div style="color:#34C759">d</div>
+<div style="color:#FF9500">e</div><div style="color:#AF52DE">f</div>
+</body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        auto_fix_design_issues(td)
+        with open(os.path.join(td, "index.html"), "r") as f:
+            content = f.read()
+        hex_colors = set(re.findall(r"#[0-9A-Fa-f]{6}\b", content))
+        design_colors = {c for c in hex_colors if c.upper() not in ("#000000", "#FFFFFF")}
+
+    assert len(design_colors) <= 5, f"组合修复后应≤5色，实际{len(design_colors)}"

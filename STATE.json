@@ -2,7 +2,7 @@
   "project": "flipped",
   "description": "接入本地 MLX 双模型(GLM-5.2 编排者 / Kimi-K2.7-Code 执行者)的 agentic 代码编辑器平台。fork Roo Code + 自定义驾驭层(强制验证/循环检测/上下文压缩/人工审批/子Agent/可观测性) + MCP 联网与外部能力。",
   "updated": "2026-07-11",
-  "current_milestone": "M47 _evolve_goal 利用 proposer_triggered 做更智能演进决策 (624 passed)",
+  "current_milestone": "M48 auto_fix_color_palette — 配色超 5 种时确定性合并到 top-5 (628 passed)",
   "key_facts": {
     "dev_host": "Apple M5 Max, 128GB RAM, 1.1TB 可用磁盘 — 开发/控制节点，非模型宿主",
     "model_cluster": "exo 集群 @ http://100.64.201.37:52415 (内网, OpenAI 兼容)；公网 https://dgmt.top/exo (需 Bearer token)",
@@ -708,6 +708,18 @@
           "title": "design_hint 分支 + rounds_text 追加修复信息 + 3 测试",
           "status": "done",
           "note": "proposer_triggered+design_fix_count>0+低分 → 深层重构提示；否则保持原有提示。624 passed。"
+        }
+      }
+    },
+    "M48": {
+      "title": "auto_fix_color_palette — 配色超 5 种时确定性合并到 top-5",
+      "status": "done",
+      "note": "新增 auto_fix_color_palette：扫描 HTML hex 颜色，排除黑白后按频次排序保留 top-5，剩余颜色替换为 RGB 距离最近的保留色。处理大小写和 3位/6位变体。接入 auto_fix_design_issues 第 12 组修复。4 个 TDD 测试。全量 628 passed（+4，无回归）。核心价值：M47 提到的'配色超过 5 种'不再是 auto-fix 无法处理的深层缺陷，现在可确定性修复。",
+      "tasks": {
+        "M48.1": {
+          "title": "auto_fix_color_palette + 接入 auto_fix_design_issues + 4 测试",
+          "status": "done",
+          "note": "新增 _rgb_distance/_normalize_hex/auto_fix_color_palette + 接入组合修复第 12 组。628 passed。"
         }
       }
     }
