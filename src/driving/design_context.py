@@ -2758,6 +2758,133 @@ def auto_fix_transition(cwd: str) -> bool:
     return changed
 
 
+# ---------- M73: opacity 一致性检测 + auto-fix ----------
+
+# 标准 opacity 集合：0/0.25/0.5/0.75/1（透明/微透/半透/强透/不透明）
+_STANDARD_OPACITIES = (0.0, 0.25, 0.5, 0.75, 1.0)
+
+
+def check_opacity_chaos(cwd: str) -> list[dict]:
+    """M73: 检测 opacity 值一致性。
+
+    AI 生成 CSS 常见破绽：随机 opacity 值（0.3/0.35/0.85/0.9）无系统性。
+    标准集合：{0, 0.25, 0.5, 0.75, 1}。
+    报 warning 当：
+    - 任意 opacity 值不在标准集合中
+    - 或超过 5 个不同 opacity 值
+    """
+    import os as _os
+    import re as _re
+
+    violations: list[dict] = []
+    for fname in _os.listdir(cwd) if _os.path.exists(cwd) else []:
+        if not fname.endswith(".html"):
+            continue
+        fpath = _os.path.join(cwd, fname)
+        if not _os.path.isfile(fpath):
+            continue
+        try:
+            content = open(fpath, "r", encoding="utf-8").read()
+        except Exception:
+            continue
+        # 匹配 opacity: <数字> （不含 fill-opacity 等子属性）
+        opacity_matches = _re.findall(
+            r"(?<![-\w])opacity\s*:\s*(\d+(?:\.\d+)?)", content, _re.IGNORECASE,
+        )
+        if not opacity_matches:
+            continue
+        values = [float(m) for m in opacity_matches]
+        distinct = sorted(set(values))
+        non_standard = [
+            v for v in distinct
+            if not any(abs(v - s) < 1e-6 for s in _STANDARD_OPACITIES)
+        ]
+        if non_standard:
+            violations.append({
+                "rule": "opacity_chaos",
+                "severity": "warning",
+                "file": fname,
+                "message": f"非标准 opacity 值：{non_standard}，应使用 0/0.25/0.5/0.75/1 系统化透明度",
+            })
+            continue
+        if len(distinct) > 5:
+            violations.append({
+                "rule": "opacity_chaos",
+                "severity": "warning",
+                "file": fname,
+                "message": f"opacity 有 {len(distinct)} 个不同值：{distinct}，应精简到 ≤5 个系统化透明度",
+            })
+    return violations
+
+
+def auto_fix_opacity(cwd: str) -> bool:
+    """M73: 规范化 opacity 值到标准集合 {0, 0.25, 0.5, 0.75, 1}。
+
+    非标准值映射到最近标准值（距离相等取较大值）。
+    幂等：标准值再次运行不修改。
+    """
+    import os as _os
+    import re as _re
+
+    def _nearest_opacity(val: float) -> float:
+        best = _STANDARD_OPACITIES[0]
+        best_dist = abs(best - val)
+        for s in _STANDARD_OPACITIES[1:]:
+            d = abs(s - val)
+            if d < best_dist or (d == best_dist and s > best):
+                best, best_dist = s, d
+        return best
+
+    def _is_standard(val: float) -> bool:
+        return any(abs(val - s) < 1e-6 for s in _STANDARD_OPACITIES)
+
+    changed = False
+    if not _os.path.exists(cwd):
+        return False
+
+    for fname in _os.listdir(cwd):
+        if not fname.endswith(".html"):
+            continue
+        fpath = _os.path.join(cwd, fname)
+        if not _os.path.isfile(fpath):
+            continue
+        try:
+            content = open(fpath, "r", encoding="utf-8").read()
+        except Exception:
+            continue
+
+        # 先检查是否有违规
+        violations = check_opacity_chaos(_os.path.dirname(fpath))
+        has_violation = any(
+            v["file"] == fname and v["rule"] == "opacity_chaos"
+            for v in violations
+        )
+        if not has_violation:
+            continue
+
+        # 替换非标准 opacity 值
+        def _replace_opacity(m):
+            val = float(m.group(1))
+            if _is_standard(val):
+                return m.group(0)  # 已标准
+            std = _nearest_opacity(val)
+            return f"opacity: {std:g}"
+
+        new_content = _re.sub(
+            r"(?<![-\w])opacity\s*:\s*(\d+(?:\.\d+)?)",
+            _replace_opacity,
+            content,
+            flags=_re.IGNORECASE,
+        )
+
+        if new_content != content:
+            with open(fpath, "w", encoding="utf-8") as f:
+                f.write(new_content)
+            changed = True
+
+    return changed
+
+
 def auto_fix_design_issues(cwd: str) -> bool:
     """组合调用所有 auto-fix 函数，返回是否做过任何修改。"""
     changed1 = auto_fix_spacing_grid(cwd)
@@ -2782,11 +2909,12 @@ def auto_fix_design_issues(cwd: str) -> bool:
     changed20 = auto_fix_border_radius(cwd)
     changed21 = auto_fix_box_shadow(cwd)
     changed22 = auto_fix_transition(cwd)
+    changed23 = auto_fix_opacity(cwd)
     return (
         changed1 or changed2 or changed3 or changed4 or changed5
         or changed6 or changed7 or changed8 or changed9 or changed10 or changed11
         or changed12 or changed13 or changed14 or changed15 or changed16 or changed17
-        or changed18 or changed19 or changed20 or changed21 or changed22
+        or changed18 or changed19 or changed20 or changed21 or changed22 or changed23
     )
 
 
@@ -3074,6 +3202,12 @@ def lint_design_quality(cwd: str) -> list[dict]:
     except Exception:
         pass
 
+    # 18. M73: opacity 一致性检测
+    try:
+        violations.extend(check_opacity_chaos(cwd))
+    except Exception:
+        pass
+
     return violations
 
 
@@ -3247,6 +3381,11 @@ def design_score(cwd: str) -> "tuple[int, list[str]]":
     if "transition_chaos" in warning_rules:
         score -= 5
         notes.append("检测到transition duration不一致(-5)")
+
+    # 18. M73: opacity 一致性扣分（warning 级别，-5）
+    if "opacity_chaos" in warning_rules:
+        score -= 5
+        notes.append("检测到opacity不一致(-5)")
 
     score = max(0, score)
     if not notes:

@@ -2,7 +2,7 @@
   "project": "flipped",
   "description": "接入本地 MLX 双模型(GLM-5.2 编排者 / Kimi-K2.7-Code 执行者)的 agentic 代码编辑器平台。fork Roo Code + 自定义驾驭层(强制验证/循环检测/上下文压缩/人工审批/子Agent/可观测性) + MCP 联网与外部能力。",
   "updated": "2026-07-11",
-  "current_milestone": "M72 transition duration一致性检测+auto-fix (800 passed)",
+  "current_milestone": "M73 opacity一致性检测+auto-fix (810 passed)",
   "key_facts": {
     "dev_host": "Apple M5 Max, 128GB RAM, 1.1TB 可用磁盘 — 开发/控制节点，非模型宿主",
     "model_cluster": "exo 集群 @ http://100.64.201.37:52415 (内网, OpenAI 兼容)；公网 https://dgmt.top/exo (需 Bearer token)",
@@ -1008,6 +1008,18 @@
           "title": "check_transition_chaos + auto_fix_transition + lint/score 集成",
           "status": "done",
           "note": "新增 check_transition_chaos（非标准duration或>4个不同值→warning）+ auto_fix_transition（映射到最近标准时长）+ lint/score/auto_fix_design_issues 集成。11 TDD 测试。800 passed。"
+        }
+      }
+    },
+    "M73": {
+      "title": "opacity 一致性检测 + auto-fix",
+      "status": "done",
+      "note": "AI 生成 CSS 常见破绽：随机 opacity 值（0.3/0.85/0.67）无系统性。新增 check_opacity_chaos(cwd)：标准集合 {0, 0.25, 0.5, 0.75, 1}，非标准值或>5个不同值报 warning。用负向回顾 (?<![-\\w]) 排除 fill-opacity/stroke-opacity 等子属性。新增 auto_fix_opacity(cwd)：非标准值映射到最近标准值（距离相等取较大值），f\"opacity: {std:g}\"。幂等。集成到 lint_design_quality（第25维）+ auto_fix_design_issues（第23组）+ design_score（-5）。10 TDD 测试全过。全量 810 passed（+10，无回归）。设计质量系统：Lint 25 维、Auto-fix 23 组。",
+      "tasks": {
+        "M73.1": {
+          "title": "check_opacity_chaos + auto_fix_opacity + lint/score 集成",
+          "status": "done",
+          "note": "新增 check_opacity_chaos（非标准opacity或>5个不同值→warning）+ auto_fix_opacity（映射到最近标准值）+ lint/score/auto_fix_design_issues 集成。10 TDD 测试。810 passed。"
         }
       }
     }

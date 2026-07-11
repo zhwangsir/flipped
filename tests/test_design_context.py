@@ -5200,3 +5200,161 @@ def test_auto_fix_design_issues_includes_transition():
         violations = check_transition_chaos(td)
     t_v = [v for v in violations if v["rule"] == "transition_chaos"]
     assert t_v == [], f"组合修复后不应有违规: {t_v}"
+
+
+# ======================== M73: opacity 一致性检测 + auto-fix ========================
+
+
+def test_check_opacity_chaos_no_html():
+    """无 HTML 文件的目录返回空列表。"""
+    import tempfile
+    from driving.design_context import check_opacity_chaos
+    with tempfile.TemporaryDirectory() as td:
+        assert check_opacity_chaos(td) == []
+
+
+def test_check_opacity_chaos_non_standard():
+    """非标准 opacity 值应报 warning。"""
+    import tempfile
+    import os
+    from driving.design_context import check_opacity_chaos
+    html = """<html><head><style>
+    .a { opacity: 0.3; }
+    .b { opacity: 0.85; }
+    </style></head><body><main><section>x</section></main></body></html>"""
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        violations = check_opacity_chaos(td)
+    o_v = [v for v in violations if v["rule"] == "opacity_chaos"]
+    assert len(o_v) >= 1
+    assert o_v[0]["severity"] == "warning"
+
+
+def test_check_opacity_chaos_clean():
+    """标准 opacity 值不报违规。"""
+    import tempfile
+    import os
+    from driving.design_context import check_opacity_chaos
+    html = """<html><head><style>
+    .a { opacity: 0; }
+    .b { opacity: 0.25; }
+    .c { opacity: 0.5; }
+    .d { opacity: 0.75; }
+    .e { opacity: 1; }
+    </style></head><body><main><section>x</section></main></body></html>"""
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        violations = check_opacity_chaos(td)
+    o_v = [v for v in violations if v["rule"] == "opacity_chaos"]
+    assert o_v == [], f"标准值不应报违规: {o_v}"
+
+
+def test_check_opacity_chaos_empty_dir():
+    """空目录返回空列表。"""
+    import tempfile
+    from driving.design_context import check_opacity_chaos
+    with tempfile.TemporaryDirectory() as td:
+        assert check_opacity_chaos(td) == []
+
+
+def test_lint_design_quality_includes_opacity():
+    """lint_design_quality 应包含 opacity 检查。"""
+    import tempfile
+    import os
+    from driving.design_context import lint_design_quality
+    html = """<html><head><style>
+    .a { opacity: 0.3; }
+    </style></head><body><main><section>x</section></main></body></html>"""
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        violations = lint_design_quality(td)
+    o_v = [v for v in violations if v["rule"] == "opacity_chaos"]
+    assert len(o_v) >= 1, f"lint 应检测到 opacity 违规: {violations}"
+
+
+def test_auto_fix_opacity_normalizes():
+    """非标准 opacity 应规范化到最近标准值。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_opacity, check_opacity_chaos
+    html = """<html><head><meta name="viewport" content="width=device-width">
+    <style>
+    .a { opacity: 0.3; }
+    .b { opacity: 0.85; }
+    </style></head>
+    <body><main><section>content</section></main></body></html>"""
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        changed = auto_fix_opacity(td)
+        content = open(os.path.join(td, "index.html"), "r").read()
+        violations = check_opacity_chaos(td)
+    assert changed is True, "应报告已修改"
+    o_v = [v for v in violations if v["rule"] == "opacity_chaos"]
+    assert o_v == [], f"修复后不应有违规: {o_v}"
+    # 0.3 → 0.25, 0.85 → 0.75
+    assert "0.25" in content or "0.75" in content, f"应有标准值: {content}"
+
+
+def test_auto_fix_opacity_no_change_if_clean():
+    """标准 opacity 不修改。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_opacity
+    html = """<html><head><style>
+    .a { opacity: 0.5; }
+    .b { opacity: 1; }
+    </style></head><body><main><section>x</section></main></body></html>"""
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        changed = auto_fix_opacity(td)
+    assert changed is False, "标准值不应修改"
+
+
+def test_auto_fix_opacity_empty_dir():
+    """空目录返回 False。"""
+    import tempfile
+    from driving.design_context import auto_fix_opacity
+    with tempfile.TemporaryDirectory() as td:
+        assert auto_fix_opacity(td) is False
+
+
+def test_auto_fix_opacity_idempotent():
+    """二次运行不修改。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_opacity
+    html = """<html><head><style>
+    .a { opacity: 0.3; }
+    .b { opacity: 0.85; }
+    </style></head><body><main><section>x</section></main></body></html>"""
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        auto_fix_opacity(td)
+        changed2 = auto_fix_opacity(td)
+    assert changed2 is False, "二次运行不应修改"
+
+
+def test_auto_fix_design_issues_includes_opacity():
+    """auto_fix_design_issues 组合函数应包含 opacity 修复。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_design_issues, check_opacity_chaos
+    html = """<html><head><meta name="viewport" content="width=device-width">
+    <style>
+    .a { opacity: 0.3; }
+    .b { opacity: 0.85; }
+    </style></head>
+    <body><main><section>content</section></main></body></html>"""
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        auto_fix_design_issues(td)
+        violations = check_opacity_chaos(td)
+    o_v = [v for v in violations if v["rule"] == "opacity_chaos"]
+    assert o_v == [], f"组合修复后不应有违规: {o_v}"
