@@ -2934,3 +2934,155 @@ section{animation:fadeInUp 0.8s ease-out both}
     assert score_real > score_ph, (
         f"真实文案应比占位文本分数高: {score_real} vs {score_ph}"
     )
+
+
+# ---------- M55: auto_fix_placeholder_text — 替换占位文本为有意义文案 ----------
+
+
+def test_auto_fix_placeholder_text_lorem_ipsum():
+    """Lorem ipsum 应被替换为中性文案。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_placeholder_text, check_placeholder_text
+
+    html = """<html><head><meta name="viewport" content="width=device-width"></head>
+    <body><main><section><p>Lorem ipsum dolor sit amet</p></section></main></body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        changed = auto_fix_placeholder_text(td)
+        with open(os.path.join(td, "index.html")) as f:
+            content = f.read()
+        violations = check_placeholder_text(td)
+
+    assert changed is True
+    assert "lorem ipsum" not in content.lower()
+    ph_violations = [v for v in violations if v["rule"] == "placeholder_text"]
+    assert ph_violations == [], f"修复后不应再有占位文本违规: {ph_violations}"
+
+
+def test_auto_fix_placeholder_text_chinese_sample():
+    """中文示例文本应被替换。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_placeholder_text
+
+    html = """<html><head><meta name="viewport" content="width=device-width"></head>
+    <body><main><section><h1>示例标题</h1><p>示例内容</p></section></main></body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        changed = auto_fix_placeholder_text(td)
+        with open(os.path.join(td, "index.html")) as f:
+            content = f.read()
+
+    assert changed is True
+    assert "示例标题" not in content
+    assert "示例内容" not in content
+
+
+def test_auto_fix_placeholder_text_click_here():
+    """Click here 应被替换为更有意义的文案。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_placeholder_text
+
+    html = """<html><head><meta name="viewport" content="width=device-width"></head>
+    <body><main><section><a href="#">Click here</a></section></main></body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        changed = auto_fix_placeholder_text(td)
+        with open(os.path.join(td, "index.html")) as f:
+            content = f.read()
+
+    assert changed is True
+    assert "click here" not in content.lower()
+
+
+def test_auto_fix_placeholder_text_no_change_if_clean():
+    """无占位文本时不应修改文件。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_placeholder_text
+
+    html = """<html lang="zh"><head><meta name="viewport" content="width=device-width"></head>
+    <body><main><section><h1>Flipped 开发工厂</h1><p>自主迭代的 AI 平台</p></section></main></body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        changed = auto_fix_placeholder_text(td)
+
+    assert changed is False
+
+
+def test_auto_fix_placeholder_text_empty_dir():
+    """空目录应返回 False。"""
+    import tempfile
+    from driving.design_context import auto_fix_placeholder_text
+
+    with tempfile.TemporaryDirectory() as td:
+        changed = auto_fix_placeholder_text(td)
+
+    assert changed is False
+
+
+def test_auto_fix_placeholder_text_repeated_chars():
+    """重复字符占位应被替换。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_placeholder_text
+
+    html = """<html><head><meta name="viewport" content="width=device-width"></head>
+    <body><main><section><h1>xxxxxxxxx</h1></section></main></body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        changed = auto_fix_placeholder_text(td)
+        with open(os.path.join(td, "index.html")) as f:
+            content = f.read()
+
+    assert changed is True
+    assert "xxxxxxxxx" not in content
+
+
+def test_auto_fix_placeholder_text_idempotent():
+    """修复后再次运行不应再修改。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_placeholder_text
+
+    html = """<html><head><meta name="viewport" content="width=device-width"></head>
+    <body><main><section><p>Lorem ipsum dolor sit amet</p></section></main></body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        auto_fix_placeholder_text(td)
+        changed2 = auto_fix_placeholder_text(td)
+
+    assert changed2 is False
+
+
+def test_auto_fix_design_issues_includes_placeholder_text():
+    """auto_fix_design_issues 组合函数应包含 placeholder_text 修复。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_design_issues
+
+    html = """<html><head><meta name="viewport" content="width=device-width"></head>
+    <body><main><section><p>Lorem ipsum dolor sit amet</p></section></main></body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        auto_fix_design_issues(td)
+        with open(os.path.join(td, "index.html")) as f:
+            content = f.read()
+
+    assert "lorem ipsum" not in content.lower()

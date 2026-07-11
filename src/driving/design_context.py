@@ -1458,6 +1458,100 @@ def check_placeholder_text(cwd: str) -> list[dict]:
     return violations
 
 
+# 占位文本替换映射（只作用于文本节点，不碰属性/CSS/JS）
+_PLACEHOLDER_REPLACEMENTS: list[tuple[str, str]] = [
+    (r"lorem\s+ipsum(?:\s+\w+)*", "这是页面内容区域，请替换为实际文案"),
+    (r"示例标题", "页面标题"),
+    (r"示例(文本|内容|文字|描述)", "页面内容"),
+    (r"(内容|标题|文字|描述)\1{2,}", "页面内容"),
+    (r"sample\s*(?:text|content|title|description)", "Page content"),
+    (r"click\s+here", "了解更多"),
+    (r"点击(这里|此处|这里了)", "查看详情"),
+    (r"(?:your|这里)\s*(?:content|text|title)\s*(?:here|这里|)", "Page content"),
+    (r"placeholder\s*(?:text|content)?", "页面内容"),
+    (r"占位(文本|内容|文字)", "页面内容"),
+    (r"(?:TODO|TBD|FIXME)", ""),
+]
+
+
+def auto_fix_placeholder_text(cwd: str) -> bool:
+    """M55: 替换占位文本为中性文案（只修改文本节点，不碰属性/CSS/JS）。
+
+    替换映射：
+    - Lorem ipsum... → 中性中文文案
+    - 示例标题/文本/内容 → 页面标题/页面内容
+    - 重复中文词 → 页面内容
+    - Sample text/content → Page content
+    - Click here → 了解更多
+    - 点击这里 → 查看详情
+    - Your content here → Page content
+    - placeholder → 页面内容
+    - 占位文本 → 页面内容
+    - TODO/TBD/FIXME → 移除
+    - 连续重复字符≥5 → 页面内容
+    """
+    import os as _os
+    import re as _re
+
+    changed = False
+    for fname in _os.listdir(cwd) if _os.path.exists(cwd) else []:
+        if not fname.endswith(".html"):
+            continue
+        fpath = _os.path.join(cwd, fname)
+        if not _os.path.isfile(fpath):
+            continue
+        try:
+            content = open(fpath, "r", encoding="utf-8").read()
+        except Exception:
+            continue
+
+        # 先检查是否有违规
+        violations = check_placeholder_text(_os.path.dirname(fpath))
+        has_violation = any(
+            v["file"] == fname and v["rule"] == "placeholder_text"
+            for v in violations
+        )
+        if not has_violation:
+            continue
+
+        # 保存 script/style 块，避免替换其中的内容
+        saved_blocks: list[str] = []
+
+        def _save_block(m):
+            saved_blocks.append(m.group(0))
+            return f"\x00SAVED_BLOCK_{len(saved_blocks) - 1}\x00"
+
+        protected = _re.sub(
+            r"<(?:script|style)\b[^>]*>.*?</(?:script|style)>",
+            _save_block, content, flags=_re.IGNORECASE | _re.DOTALL,
+        )
+
+        # 只在文本节点（> 和 < 之间）做替换
+        parts = _re.split(r"(<[^>]+>)", protected)
+        for i, part in enumerate(parts):
+            if part.startswith("<"):
+                continue  # 标签，跳过
+            new_part = part
+            for pattern, replacement in _PLACEHOLDER_REPLACEMENTS:
+                new_part = _re.sub(pattern, replacement, new_part, flags=_re.IGNORECASE)
+            # 重复字符检测：≥5 个相同字符 → 页面内容
+            new_part = _re.sub(r"(.)\1{4,}", "页面内容", new_part)
+            parts[i] = new_part
+
+        new_content = "".join(parts)
+
+        # 恢复 script/style 块
+        for idx, block in enumerate(saved_blocks):
+            new_content = new_content.replace(f"\x00SAVED_BLOCK_{idx}\x00", block)
+
+        if new_content != content:
+            with open(fpath, "w", encoding="utf-8") as f:
+                f.write(new_content)
+            changed = True
+
+    return changed
+
+
 def auto_fix_design_issues(cwd: str) -> bool:
     """组合调用所有 auto-fix 函数，返回是否做过任何修改。"""
     changed1 = auto_fix_spacing_grid(cwd)
@@ -1473,10 +1567,11 @@ def auto_fix_design_issues(cwd: str) -> bool:
     changed11 = auto_fix_form_label(cwd)
     changed12 = auto_fix_color_palette(cwd)
     changed13 = auto_fix_scroll_animation(cwd)
+    changed14 = auto_fix_placeholder_text(cwd)
     return (
         changed1 or changed2 or changed3 or changed4 or changed5
         or changed6 or changed7 or changed8 or changed9 or changed10 or changed11
-        or changed12 or changed13
+        or changed12 or changed13 or changed14
     )
 
 
