@@ -2,7 +2,7 @@
   "project": "flipped",
   "description": "接入本地 MLX 双模型(GLM-5.2 编排者 / Kimi-K2.7-Code 执行者)的 agentic 代码编辑器平台。fork Roo Code + 自定义驾驭层(强制验证/循环检测/上下文压缩/人工审批/子Agent/可观测性) + MCP 联网与外部能力。",
   "updated": "2026-07-11",
-  "current_milestone": "M64 确定性feature_proposer — 第三个fallback让无GLM时也能持续迭代 (743 passed)",
+  "current_milestone": "M65 infinite_loop透传feature_fallback+RoundSummary追踪feature_count (750 passed)",
   "key_facts": {
     "dev_host": "Apple M5 Max, 128GB RAM, 1.1TB 可用磁盘 — 开发/控制节点，非模型宿主",
     "model_cluster": "exo 集群 @ http://100.64.201.37:52415 (内网, OpenAI 兼容)；公网 https://dgmt.top/exo (需 Bearer token)",
@@ -912,6 +912,18 @@
           "title": "propose_feature_task + factory_loop 集成 + 8 测试",
           "status": "done",
           "note": "新增 propose_feature_task（10个功能维度）+ factory_loop feature_fallback 参数 + 自动接入 + 8 TDD 测试。743 passed。"
+        }
+      }
+    },
+    "M65": {
+      "title": "infinite_loop 透传 feature_fallback + RoundSummary 追踪 feature_count",
+      "status": "done",
+      "note": "将 M64 的 feature_fallback 透传到 infinite_loop 外层循环，并新增 RoundSummary.feature_count 字段追踪每轮功能增强任务数。三处修改：(1) RoundSummary 新增 feature_count 字段（默认0）；(2) _collect_round_summary 检测 feedback 含 '确定性 feature' 标记的任务，计数到 feature_count，同时纳入 proposer_triggered 触发标记；(3) _evolve_goal 的 rounds_text 追加 '增强 N 个功能维度' 让演进者看到历史功能增强活动；(4) run_infinite_loop 新增 feature_fallback 参数透传给 factory_loop。7 个 TDD 测试（透传/字段存在/默认值/检测feature任务/无feature任务/持久化/evolve prompt包含feature_count）。全量 750 passed（+7，无回归）。核心价值：演进者现在能看到每轮功能增强活动，做出更智能的下一轮决策。",
+      "tasks": {
+        "M65.1": {
+          "title": "透传 + RoundSummary feature_count + _collect 检测 + evolve prompt + 7 测试",
+          "status": "done",
+          "note": "feature_fallback 透传 + RoundSummary.feature_count + _collect_round_summary 检测 '确定性 feature' 标记 + _evolve_goal rounds_text 追加功能增强信息。7 测试全过。750 passed。"
         }
       }
     }

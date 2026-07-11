@@ -53,6 +53,8 @@ class RoundSummary(BaseModel):
     # 让演进者区分"已自动修复过但仍低分"与"从未尝试修复"
     proposer_triggered: bool = False
     design_fix_count: int = 0
+    # M65：追踪本轮 feature_fallback 生成的功能增强任务数
+    feature_count: int = 0
 
 
 class InfiniteLoopState(BaseModel):
@@ -99,6 +101,7 @@ def _evolve_goal(direction: str, rounds: list[RoundSummary], cwd: str = "") -> t
         f"    设计质量评分：{r.design_score}/100"
         + (f"（问题：{', '.join(r.design_notes[:3])}）" if r.design_notes else "")
         + (f"；自动修复 {r.design_fix_count} 个设计问题" if r.design_fix_count else "")
+        + (f"；增强 {r.feature_count} 个功能维度" if r.feature_count else "")
         + f"\n"
         f"    产出文件：{', '.join(r.artifacts[:10]) if r.artifacts else '无'}"
         for r in rounds
@@ -209,14 +212,19 @@ def _collect_round_summary(
     # M46：检测本轮是否触发了自主任务生成（task_proposer / design_fix_fallback）
     # design-fix 任务的 feedback 含 "design_score"/"auto_fix"/"确定性 fallback"；
     # task_proposer 生成的任务 feedback 含 "自主生成"。
+    # M65：feature 任务的 feedback 含 "确定性 feature"。
     _DESIGN_FIX_MARKERS = ("design_score", "auto_fix", "确定性 fallback")
-    _PROPOSER_MARKERS = ("自主生成",) + _DESIGN_FIX_MARKERS
+    _FEATURE_MARKER = "确定性 feature"
+    _PROPOSER_MARKERS = ("自主生成",) + _DESIGN_FIX_MARKERS + (_FEATURE_MARKER,)
     design_fix_count_val = 0
+    feature_count_val = 0
     proposer_triggered_val = False
     for tr in factory_state.completed:
         fb = tr.task.feedback or ""
         if any(m in fb for m in _DESIGN_FIX_MARKERS):
             design_fix_count_val += 1
+        if _FEATURE_MARKER in fb:
+            feature_count_val += 1
         if any(m in fb for m in _PROPOSER_MARKERS):
             proposer_triggered_val = True
 
@@ -232,6 +240,7 @@ def _collect_round_summary(
         design_notes=design_notes_val,
         proposer_triggered=proposer_triggered_val,
         design_fix_count=design_fix_count_val,
+        feature_count=feature_count_val,
     )
 
 
@@ -351,6 +360,7 @@ def run_infinite_loop(
     event_bus=None,
     task_proposer: "Callable[[FactoryState], FactoryTask | None] | None" = None,
     design_fix_fallback: "Callable[[FactoryState], FactoryTask | None] | None" = None,
+    feature_fallback: "Callable[[FactoryState], FactoryTask | None] | None" = None,
 ) -> InfiniteLoopState:
     """无限迭代循环：基于方向自主演进产品，每轮完成后生成下一轮 roadmap。
 
@@ -364,6 +374,7 @@ def run_infinite_loop(
         task_proposer: M46 自主任务生成器，透传给 factory_loop（None 时由
             factory_loop 内部按 FLIPPED_AUTO_PROPOSER 自动接线）
         design_fix_fallback: M46 确定性 design fix fallback，透传给 factory_loop
+        feature_fallback: M65 确定性 feature proposer，透传给 factory_loop
 
     停止条件：
     - 用户停止（FLIPPED_STOP_LOOP 环境变量或 stop 文件）
@@ -438,6 +449,7 @@ def run_infinite_loop(
             event_bus=event_bus,
             task_proposer=task_proposer,
             design_fix_fallback=design_fix_fallback,
+            feature_fallback=feature_fallback,
         )
 
         # 收集本轮成果

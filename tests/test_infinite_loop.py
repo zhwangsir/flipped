@@ -1017,3 +1017,152 @@ def test_e2e_evolve_prompt_with_proposer_history():
     assert "1" in prompt  # design_fix_count=1 出现在 rounds_text 或 hint
     # 应包含深层重构指令
     assert "重构" in prompt or "人工" in prompt
+
+
+# ---------- M65: infinite_loop 透传 feature_fallback + RoundSummary 追踪 feature_count ----------
+
+
+def test_run_infinite_loop_passes_feature_fallback_to_factory_loop():
+    """run_infinite_loop 应把 feature_fallback 透传给 factory_loop。"""
+    received_kwargs = {}
+
+    def mock_evolve(direction, rounds):
+        if not rounds:
+            return direction, False, "首轮"
+        return "达成", True, "完成"
+
+    def mock_factory_loop(goal, cwd, **kwargs):
+        received_kwargs.update(kwargs)
+        return _make_factory_state(goal, completed=1)
+
+    def my_feature_fallback(state):
+        return None
+
+    with tempfile.TemporaryDirectory() as td:
+        db = os.path.join(td, "loop.db")
+        run_infinite_loop(
+            "方向",
+            td,
+            max_rounds=5,
+            db_path=db,
+            evolve_fn=mock_evolve,
+            factory_loop_fn=mock_factory_loop,
+            feature_fallback=my_feature_fallback,
+        )
+
+    assert "feature_fallback" in received_kwargs
+    assert received_kwargs["feature_fallback"] is my_feature_fallback
+
+
+def test_round_summary_has_feature_count_field():
+    """RoundSummary 应有 feature_count 字段。"""
+    rs = RoundSummary(
+        round_num=1, factory_id="f1", product_goal="测试",
+        tasks_completed=2, tasks_failed=0,
+        feature_count=3,
+    )
+    assert rs.feature_count == 3
+
+
+def test_round_summary_feature_count_default():
+    """RoundSummary 的 feature_count 默认值为 0。"""
+    rs = RoundSummary(
+        round_num=1, factory_id="f1", product_goal="测试",
+        tasks_completed=1, tasks_failed=0,
+    )
+    assert rs.feature_count == 0
+
+
+def test_collect_round_summary_detects_feature_tasks():
+    """_collect_round_summary 应从 completed 中检测 feature 任务。
+
+    M65：feature 任务的 feedback 含 '确定性 feature' 标记，
+    应被识别并记入 RoundSummary.feature_count。
+    """
+    from driving.factory_loop import FactoryTask, TaskResult
+
+    normal_task = FactoryTask(id="t1", description="创建页面", verify_cmd=["true"])
+    feature_task = FactoryTask(
+        id="feature-1", description="添加表单组件",
+        verify_cmd=["true"],
+        feedback="(确定性 feature: 添加 <form>)",
+    )
+    factory = FactoryState(
+        factory_id="f1",
+        product_goal="测试",
+        cwd="/tmp/test_m65",
+        status=FactoryStatus.done,
+        roadmap=[normal_task, feature_task],
+        completed=[
+            TaskResult(task=normal_task, verified=True, stop_reason="verified", iteration=1),
+            TaskResult(task=feature_task, verified=True, stop_reason="verified", iteration=1),
+        ],
+    )
+    summary = _collect_round_summary(1, factory)
+
+    assert summary.feature_count == 1
+    assert summary.proposer_triggered is True  # feature 也算自主生成
+
+
+def test_collect_round_summary_no_feature_tasks():
+    """没有 feature 任务时，feature_count=0。"""
+    from driving.factory_loop import FactoryTask, TaskResult
+
+    normal_task = FactoryTask(id="t1", description="创建页面", verify_cmd=["true"])
+    factory = FactoryState(
+        factory_id="f1",
+        product_goal="测试",
+        cwd="/tmp/test_m65_none",
+        status=FactoryStatus.done,
+        roadmap=[normal_task],
+        completed=[
+            TaskResult(task=normal_task, verified=True, stop_reason="verified", iteration=1),
+        ],
+    )
+    summary = _collect_round_summary(1, factory)
+
+    assert summary.feature_count == 0
+
+
+def test_loop_state_persists_feature_count():
+    """feature_count 应能持久化到 SQLite 并恢复。"""
+    with tempfile.TemporaryDirectory() as td:
+        db = os.path.join(td, "loop.db")
+        state = InfiniteLoopState(
+            loop_id="feature-persist",
+            direction="测试",
+            cwd=td,
+            design_style="dark",
+            max_rounds=5,
+        )
+        state.rounds.append(RoundSummary(
+            round_num=1, factory_id="f1", product_goal="第一轮",
+            tasks_completed=3, tasks_failed=0, summary="完成",
+            feature_count=2,
+        ))
+        save_loop_state(state, db)
+
+        loaded = load_loop_state("feature-persist", db)
+        assert loaded is not None
+        assert loaded.rounds[0].feature_count == 2
+
+
+def test_evolve_goal_includes_feature_count_in_rounds_text():
+    """_evolve_goal 的 prompt 应包含 feature_count 信息。"""
+    rounds = [
+        RoundSummary(
+            round_num=1, factory_id="f1", product_goal="第一轮",
+            tasks_completed=5, tasks_failed=0, summary="完成",
+            feature_count=3,
+        ),
+        RoundSummary(
+            round_num=2, factory_id="f1", product_goal="第二轮",
+            tasks_completed=2, tasks_failed=0, summary="增强功能",
+            feature_count=2,
+        ),
+    ]
+    prompt = _capture_evolve_prompt(rounds)
+
+    # 应包含 feature 增强数量
+    assert "功能" in prompt or "feature" in prompt.lower()
+    assert "3" in prompt  # feature_count=3
