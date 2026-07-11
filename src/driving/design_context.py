@@ -1794,6 +1794,61 @@ def _remove_console_log_from_js(js: str) -> str:
     return "".join(result)
 
 
+def check_zindex_chaos(cwd: str) -> list[dict]:
+    """M69: 检测 z-index 堆叠混乱。
+
+    AI 生成 CSS 常见破绽：z-index 军备竞赛（9999/999/500）或过多不同值。
+    报 warning 当：
+    - 任意 z-index 值 > 100（典型 AI hack: 9999/999/500）
+    - 或超过 5 个不同 z-index 值（堆叠混乱，缺系统性）
+    """
+    import os as _os
+    import re as _re
+
+    violations: list[dict] = []
+
+    for fname in _os.listdir(cwd) if _os.path.exists(cwd) else []:
+        if not fname.endswith(".html"):
+            continue
+        fpath = _os.path.join(cwd, fname)
+        if not _os.path.isfile(fpath):
+            continue
+        try:
+            content = open(fpath, "r", encoding="utf-8").read()
+        except Exception:
+            continue
+
+        # 提取所有 z-index: <number> 声明
+        matches = _re.findall(r"z-index\s*:\s*(\d+)", content, _re.IGNORECASE)
+        if not matches:
+            continue
+
+        values = [int(m) for m in matches]
+        distinct = sorted(set(values))
+
+        # 规则1: 任意值 > 100
+        high_values = [v for v in distinct if v > 100]
+        if high_values:
+            violations.append({
+                "rule": "zindex_chaos",
+                "severity": "warning",
+                "file": fname,
+                "message": f"z-index 值过大（>100）：{high_values}，应使用 0/10/20 系统化层级",
+            })
+            continue  # 已报违规，不再重复报
+
+        # 规则2: 超过 5 个不同值
+        if len(distinct) > 5:
+            violations.append({
+                "rule": "zindex_chaos",
+                "severity": "warning",
+                "file": fname,
+                "message": f"z-index 有 {len(distinct)} 个不同值：{distinct}，应精简到 ≤5 个系统化层级",
+            })
+
+    return violations
+
+
 def auto_fix_console_log(cwd: str) -> bool:
     """M59: 移除 <script> 块中的 console.log 调试残留。
 
@@ -2209,6 +2264,66 @@ def auto_fix_color_contrast(cwd: str) -> bool:
     return changed
 
 
+def auto_fix_zindex(cwd: str) -> bool:
+    """M69: 规范化 z-index 值为 0/10/20/30... 系统化层级。
+
+    收集所有 z-index 值，排序后按排名映射到 10 的倍数。
+    保留堆叠顺序，消除 9999/999 等 AI hack 和过多不同值。
+    幂等：规范化后再次运行不修改（0/10/20 已是 10 的倍数）。
+    """
+    import os as _os
+    import re as _re
+
+    changed = False
+    if not _os.path.exists(cwd):
+        return False
+
+    for fname in _os.listdir(cwd):
+        if not fname.endswith(".html"):
+            continue
+        fpath = _os.path.join(cwd, fname)
+        if not _os.path.isfile(fpath):
+            continue
+        try:
+            content = open(fpath, "r", encoding="utf-8").read()
+        except Exception:
+            continue
+
+        # 先检查是否有违规
+        violations = check_zindex_chaos(_os.path.dirname(fpath))
+        has_violation = any(
+            v["file"] == fname and v["rule"] == "zindex_chaos"
+            for v in violations
+        )
+        if not has_violation:
+            continue
+
+        # 收集所有 z-index 值，排序去重
+        matches = _re.findall(r"z-index\s*:\s*(\d+)", content, _re.IGNORECASE)
+        distinct = sorted(set(int(m) for m in matches))
+
+        # 映射：按排名 → rank * 10
+        value_map = {val: idx * 10 for idx, val in enumerate(distinct)}
+
+        # 替换每个 z-index 值
+        def _replace_zindex(m):
+            val = int(m.group(1))
+            return f"z-index: {value_map[val]}"
+
+        new_content = _re.sub(
+            r"z-index\s*:\s*(\d+)",
+            _replace_zindex,
+            content,
+        )
+
+        if new_content != content:
+            with open(fpath, "w", encoding="utf-8") as f:
+                f.write(new_content)
+            changed = True
+
+    return changed
+
+
 def auto_fix_design_issues(cwd: str) -> bool:
     """组合调用所有 auto-fix 函数，返回是否做过任何修改。"""
     changed1 = auto_fix_spacing_grid(cwd)
@@ -2229,11 +2344,12 @@ def auto_fix_design_issues(cwd: str) -> bool:
     changed16 = auto_fix_empty_links(cwd)
     changed17 = auto_fix_inline_styles(cwd)
     changed18 = auto_fix_color_contrast(cwd)
+    changed19 = auto_fix_zindex(cwd)
     return (
         changed1 or changed2 or changed3 or changed4 or changed5
         or changed6 or changed7 or changed8 or changed9 or changed10 or changed11
         or changed12 or changed13 or changed14 or changed15 or changed16 or changed17
-        or changed18
+        or changed18 or changed19
     )
 
 
@@ -2497,6 +2613,12 @@ def lint_design_quality(cwd: str) -> list[dict]:
     except Exception:
         pass
 
+    # 14. M69: z-index 堆叠混乱检测
+    try:
+        violations.extend(check_zindex_chaos(cwd))
+    except Exception:
+        pass
+
     return violations
 
 
@@ -2650,6 +2772,11 @@ def design_score(cwd: str) -> "tuple[int, list[str]]":
     if "console_log" in warning_rules:
         score -= 5
         notes.append("检测到console.log调试残留(-5)")
+
+    # 14. M69: z-index 堆叠混乱扣分（warning 级别，-5）
+    if "zindex_chaos" in warning_rules:
+        score -= 5
+        notes.append("检测到z-index堆叠混乱(-5)")
 
     score = max(0, score)
     if not notes:

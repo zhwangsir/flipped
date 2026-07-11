@@ -2,7 +2,7 @@
   "project": "flipped",
   "description": "接入本地 MLX 双模型(GLM-5.2 编排者 / Kimi-K2.7-Code 执行者)的 agentic 代码编辑器平台。fork Roo Code + 自定义驾驭层(强制验证/循环检测/上下文压缩/人工审批/子Agent/可观测性) + MCP 联网与外部能力。",
   "updated": "2026-07-11",
-  "current_milestone": "M66 _evolve_goal利用feature_count做更智能演进决策 (753 passed)",
+  "current_milestone": "M69 z-index堆叠混乱检测+auto-fix (767 passed)",
   "key_facts": {
     "dev_host": "Apple M5 Max, 128GB RAM, 1.1TB 可用磁盘 — 开发/控制节点，非模型宿主",
     "model_cluster": "exo 集群 @ http://100.64.201.37:52415 (内网, OpenAI 兼容)；公网 https://dgmt.top/exo (需 Bearer token)",
@@ -936,6 +936,42 @@
           "title": "feature_hint + 3 测试",
           "status": "done",
           "note": "design_score≥70 + feature_count>0 → 功能深化提示；低分时设计优先不触发。3 测试全过。753 passed。"
+        }
+      }
+    },
+    "M67": {
+      "title": "E2E集成测试验证三层fallback完整链路",
+      "status": "done",
+      "note": "3 个 E2E 集成测试验证三层 fallback 完整链路（task_proposer GLM → design_fix_fallback → feature_fallback）。测试1：验证 feature 任务被 RoundSummary 追踪（feature_count=1, proposer_triggered=True）。测试2：使用真实的 propose_design_fix_task + propose_feature_task，GLM mock 返回 None + good HTML → 验证 feature 任务被生成执行。测试3：验证 _evolve_goal prompt 在 design_score=85 + feature_count=2 时包含'深化'提示。解决 conftest FLIPPED_AUTO_PROPOSER=0 阻断自动接线的陷阱。全量 756 passed（+3，无回归）。",
+      "tasks": {
+        "M67.1": {
+          "title": "3 个 E2E 集成测试 + conftest 陷阱修复",
+          "status": "done",
+          "note": "三层 fallback E2E 完整链路验证。756 passed。"
+        }
+      }
+    },
+    "M68": {
+      "title": "深度打磨UI界面 — 动效系统+微交互+视觉深度",
+      "status": "done",
+      "note": "用户中途介入指令'深度打磨UI界面'。系统性打磨三层：动效令牌系统→全局关键帧→组件微交互。tokens.css 新增3条缓动曲线(ease-spring/ease-out-quart/ease-in-out-quart)+3段交错延迟(stagger-1/2/3)+3层阴影(shadow-near/mid/far)。global.css 新增6组关键帧(slide-up/fade-in/scale-in/breathe/shimmer/glow-pulse)+精致滚动条(7px宽)。app.css 深度打磨15+核心组件微交互(topbar/icon-btn/pill/resize-handle/side-nav-item/launcher-item/thread/empty-state/composer-box/palette/term-drawer等)，7处 rise→slide-up 统一。验证：console build通过 + vitest 35 passed + playwright E2E全绿。commit 470ee7f。",
+      "tasks": {
+        "M68.1": {
+          "title": "tokens.css + global.css + app.css 三层深度打磨",
+          "status": "done",
+          "note": "动效令牌系统 + 6组关键帧 + 15+组件微交互打磨。commit 470ee7f。"
+        }
+      }
+    },
+    "M69": {
+      "title": "z-index 堆叠混乱检测 + auto-fix",
+      "status": "done",
+      "note": "AI 生成 CSS 常见破绽：z-index 军备竞赛（9999/999/500）或过多不同值。新增 check_zindex_chaos(cwd)：检测任意 z-index 值>100（典型 AI hack）或超过5个不同值（堆叠混乱），报 warning。新增 auto_fix_zindex(cwd)：收集所有 z-index 值排序去重，按排名映射到 rank*10（0/10/20/30/40...），保留堆叠顺序消除 9999/999。幂等性：规范化后值已是10的倍数不再修改。集成到 lint_design_quality（第21维 lint 规则）+ auto_fix_design_issues（第19个 auto-fix）+ design_score（-5扣分）。11 TDD 测试全过。全量 767 passed（+11，无回归）。设计质量系统：Lint 21 维、Auto-fix 19 组、design_score 含 zindex_chaos 扣分。",
+      "tasks": {
+        "M69.1": {
+          "title": "check_zindex_chaos + auto_fix_zindex + lint/score 集成",
+          "status": "done",
+          "note": "新增 check_zindex_chaos（>100或>5个不同值→warning）+ auto_fix_zindex（排序映射到rank*10）+ lint/score/auto_fix_design_issues 集成。11 TDD 测试。767 passed。"
         }
       }
     }

@@ -4383,3 +4383,239 @@ def test_m63_smoke_factory_loop_bad_worker_to_passing(monkeypatch):
         assert len(state.completed) >= 1, "应完成至少 1 个任务"
         # 产物文件应存在
         assert os.path.isfile(os.path.join(d, "index.html")), "index.html 应存在"
+
+
+# ---------- M69: z-index 堆叠混乱检测 + auto-fix ----------
+
+
+def test_check_zindex_chaos_no_html():
+    """无 HTML 文件时应返回空列表。"""
+    import tempfile
+    from driving.design_context import check_zindex_chaos
+
+    with tempfile.TemporaryDirectory() as td:
+        violations = check_zindex_chaos(td)
+
+    assert violations == []
+
+
+def test_check_zindex_chaos_high_value():
+    """z-index 值 > 100（如 9999）应报 warning（典型 AI 堆叠军备竞赛）。"""
+    import tempfile
+    import os
+    from driving.design_context import check_zindex_chaos
+
+    html = """<html><head><meta name="viewport" content="width=device-width">
+    <style>
+    .modal { z-index: 9999; }
+    .overlay { z-index: 999; }
+    </style></head>
+    <body><main><section>content</section></main></body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        violations = check_zindex_chaos(td)
+
+    zindex_violations = [v for v in violations if v["rule"] == "zindex_chaos"]
+    assert len(zindex_violations) >= 1, f"z-index 9999 应报违规: {violations}"
+    assert zindex_violations[0]["severity"] == "warning"
+
+
+def test_check_zindex_chaos_clean():
+    """z-index 0/10/20（≤5 个且都 ≤100）不应报违规。"""
+    import tempfile
+    import os
+    from driving.design_context import check_zindex_chaos
+
+    html = """<html><head><meta name="viewport" content="width=device-width">
+    <style>
+    .base { z-index: 0; }
+    .dropdown { z-index: 10; }
+    .modal { z-index: 20; }
+    </style></head>
+    <body><main><section>content</section></main></body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        violations = check_zindex_chaos(td)
+
+    zindex_violations = [v for v in violations if v["rule"] == "zindex_chaos"]
+    assert zindex_violations == [], f"合理的 z-index 系统不应报违规: {zindex_violations}"
+
+
+def test_check_zindex_chaos_too_many():
+    """超过 5 个不同 z-index 值应报 warning（堆叠混乱）。"""
+    import tempfile
+    import os
+    from driving.design_context import check_zindex_chaos
+
+    html = """<html><head><meta name="viewport" content="width=device-width">
+    <style>
+    .a { z-index: 1; }
+    .b { z-index: 2; }
+    .c { z-index: 3; }
+    .d { z-index: 4; }
+    .e { z-index: 5; }
+    .f { z-index: 6; }
+    </style></head>
+    <body><main><section>content</section></main></body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        violations = check_zindex_chaos(td)
+
+    zindex_violations = [v for v in violations if v["rule"] == "zindex_chaos"]
+    assert len(zindex_violations) >= 1, f"6 个不同 z-index 值应报违规: {violations}"
+
+
+def test_check_zindex_chaos_empty_dir():
+    """空目录应返回空列表。"""
+    import tempfile
+    from driving.design_context import check_zindex_chaos
+
+    with tempfile.TemporaryDirectory() as td:
+        violations = check_zindex_chaos(td)
+
+    assert violations == []
+
+
+def test_lint_design_quality_includes_zindex():
+    """lint_design_quality 应包含 zindex_chaos 规则。"""
+    import tempfile
+    import os
+    from driving.design_context import lint_design_quality
+
+    html = """<html><head><meta name="viewport" content="width=device-width">
+    <style>
+    .modal { z-index: 9999; }
+    </style></head>
+    <body><main><section>content</section></main></body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        violations = lint_design_quality(td)
+
+    zindex_violations = [v for v in violations if v["rule"] == "zindex_chaos"]
+    assert len(zindex_violations) >= 1, f"lint 应包含 zindex_chaos: {violations}"
+
+
+def test_auto_fix_zindex_normalizes():
+    """z-index 9999/999/100/50/10 应被规范化为 0/10/20/30/40。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_zindex, check_zindex_chaos
+
+    html = """<html><head><meta name="viewport" content="width=device-width">
+    <style>
+    .a { z-index: 10; }
+    .b { z-index: 50; }
+    .c { z-index: 100; }
+    .d { z-index: 999; }
+    .e { z-index: 9999; }
+    </style></head>
+    <body><main><section>content</section></main></body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        changed = auto_fix_zindex(td)
+        content = open(os.path.join(td, "index.html"), "r").read()
+        violations = check_zindex_chaos(td)
+
+    assert changed is True, "应报告已修改"
+    # 修复后不应有 z-index 违规
+    zindex_violations = [v for v in violations if v["rule"] == "zindex_chaos"]
+    assert zindex_violations == [], f"修复后不应有 z-index 违规: {zindex_violations}"
+    # 应包含规范化后的值（0/10/20/30/40）
+    assert "z-index: 40" in content, f"最高值应规范化为 40: {content}"
+    assert "z-index: 0" in content, f"最低值应规范化为 0: {content}"
+    assert "9999" not in content, f"不应再包含 9999: {content}"
+    assert "999;" not in content, f"不应再包含 999: {content}"
+
+
+def test_auto_fix_zindex_no_change_if_clean():
+    """合理的 z-index 系统不应被修改。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_zindex
+
+    html = """<html><head><meta name="viewport" content="width=device-width">
+    <style>
+    .base { z-index: 0; }
+    .dropdown { z-index: 10; }
+    .modal { z-index: 20; }
+    </style></head>
+    <body><main><section>content</section></main></body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        original = open(os.path.join(td, "index.html"), "r").read()
+        changed = auto_fix_zindex(td)
+        after = open(os.path.join(td, "index.html"), "r").read()
+
+    assert changed is False, "合理 z-index 不应报告修改"
+    assert original == after, "内容不应改变"
+
+
+def test_auto_fix_zindex_empty_dir():
+    """空目录应返回 False。"""
+    import tempfile
+    from driving.design_context import auto_fix_zindex
+
+    with tempfile.TemporaryDirectory() as td:
+        changed = auto_fix_zindex(td)
+
+    assert changed is False
+
+
+def test_auto_fix_zindex_idempotent():
+    """两次 auto_fix 结果应一致（幂等性）。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_zindex
+
+    html = """<html><head><meta name="viewport" content="width=device-width">
+    <style>
+    .a { z-index: 9999; }
+    .b { z-index: 500; }
+    .c { z-index: 1; }
+    </style></head>
+    <body><main><section>content</section></main></body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        auto_fix_zindex(td)
+        first_run = open(os.path.join(td, "index.html"), "r").read()
+        auto_fix_zindex(td)
+        second_run = open(os.path.join(td, "index.html"), "r").read()
+
+    assert first_run == second_run, f"幂等性失败:\n第一次:\n{first_run}\n第二次:\n{second_run}"
+
+
+def test_auto_fix_design_issues_includes_zindex():
+    """auto_fix_design_issues 组合函数应包含 z-index 修复。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_design_issues, check_zindex_chaos
+
+    html = """<html><head><meta name="viewport" content="width=device-width">
+    <style>
+    .modal { z-index: 9999; }
+    .overlay { z-index: 500; }
+    </style></head>
+    <body><main><section>content</section></main></body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        auto_fix_design_issues(td)
+        violations = check_zindex_chaos(td)
+
+    zindex_violations = [v for v in violations if v["rule"] == "zindex_chaos"]
+    assert zindex_violations == [], f"组合修复后不应有 z-index 违规: {zindex_violations}"
