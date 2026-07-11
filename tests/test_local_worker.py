@@ -586,3 +586,104 @@ def test_auto_fix_design_issues_integration_with_local_worker():
         assert "<main" in content.lower(), "应注入 <main> 标签"
         assert "<header" in content.lower(), "应注入 <header> 标签"
         assert "<footer" in content.lower(), "应注入 <footer> 标签"
+
+
+# ---------- M51: Worker 文件上下文累积 ----------
+
+
+def test_read_file_context_no_file():
+    """无 index.html 时返回空字符串。"""
+    from driving.orchestrator import _read_file_context
+    with tempfile.TemporaryDirectory() as d:
+        assert _read_file_context(d) == ""
+
+
+def test_read_file_context_with_existing_html():
+    """有 index.html 时返回结构摘要（CSS 变量名 + 标签计数）。"""
+    from driving.orchestrator import _read_file_context
+    with tempfile.TemporaryDirectory() as d:
+        html = """<!DOCTYPE html>
+<html lang="zh"><head><meta charset="utf-8">
+<style>:root { --color-accent: #0A84FF; --color-bg: #0D0D12; }</style>
+</head><body><header><nav>Logo</nav></header>
+<main><section><h1>Title</h1><button>CTA</button></section></main>
+<footer>Footer</footer>
+</body></html>"""
+        with open(os.path.join(d, "index.html"), "w") as f:
+            f.write(html)
+        ctx = _read_file_context(d)
+        assert ctx != ""
+        # 应包含 CSS 变量名
+        assert "--color-accent" in ctx or "--color-bg" in ctx
+        # 应包含已有标签信息
+        assert "header" in ctx or "main" in ctx or "section" in ctx
+
+
+def test_read_file_context_empty_file():
+    """空/tiny 文件返回空字符串。"""
+    from driving.orchestrator import _read_file_context
+    with tempfile.TemporaryDirectory() as d:
+        with open(os.path.join(d, "index.html"), "w") as f:
+            f.write("")
+        assert _read_file_context(d) == ""
+
+
+def test_worker_prompt_includes_file_context():
+    """有 index.html 时 worker prompt 包含已有文件结构摘要。"""
+    with tempfile.TemporaryDirectory() as d:
+        # 先创建已有 index.html
+        existing_html = (
+            "<!DOCTYPE html>\n<html lang=\"zh\"><head><style>\n"
+            ":root { --color-accent: #0A84FF; }\n"
+            "</style></head><body><header><nav>Logo</nav></header>"
+            "<main><section><h1>已有标题</h1></section></main></body></html>"
+        )
+        with open(os.path.join(d, "index.html"), "w") as f:
+            f.write(existing_html)
+
+        # mock Kimi 响应
+        content = _mock_kimi_response({"index.html": "<!DOCTYPE html><h1>updated</h1>"})
+        captured_kwargs = {}
+
+        def fake_stream(*args, **kwargs):
+            if not captured_kwargs:
+                captured_kwargs.update(kwargs)
+            mock_resp = MagicMock()
+            mock_resp.raise_for_status = MagicMock()
+            mock_resp.iter_lines = MagicMock(side_effect=lambda: iter(_make_stream_lines(content)))
+            cm = MagicMock()
+            cm.__enter__ = MagicMock(return_value=mock_resp)
+            cm.__exit__ = MagicMock(return_value=False)
+            return cm
+
+        with patch("httpx.stream", side_effect=fake_stream):
+            local_worker(_make_state(d))
+
+        prompt = captured_kwargs["json"]["messages"][0]["content"]
+        # prompt 应包含已有文件的结构信息
+        assert "现有" in prompt or "已有" in prompt
+        assert "--color-accent" in prompt or "header" in prompt
+
+
+def test_worker_prompt_no_file_context_when_empty():
+    """无 index.html 时 worker prompt 不包含文件上下文。"""
+    with tempfile.TemporaryDirectory() as d:
+        content = _mock_kimi_response({"index.html": "<!DOCTYPE html><h1>new</h1>"})
+        captured_kwargs = {}
+
+        def fake_stream(*args, **kwargs):
+            if not captured_kwargs:
+                captured_kwargs.update(kwargs)
+            mock_resp = MagicMock()
+            mock_resp.raise_for_status = MagicMock()
+            mock_resp.iter_lines = MagicMock(side_effect=lambda: iter(_make_stream_lines(content)))
+            cm = MagicMock()
+            cm.__enter__ = MagicMock(return_value=mock_resp)
+            cm.__exit__ = MagicMock(return_value=False)
+            return cm
+
+        with patch("httpx.stream", side_effect=fake_stream):
+            local_worker(_make_state(d))
+
+        prompt = captured_kwargs["json"]["messages"][0]["content"]
+        assert "现有" not in prompt

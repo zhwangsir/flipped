@@ -2,7 +2,7 @@
   "project": "flipped",
   "description": "接入本地 MLX 双模型(GLM-5.2 编排者 / Kimi-K2.7-Code 执行者)的 agentic 代码编辑器平台。fork Roo Code + 自定义驾驭层(强制验证/循环检测/上下文压缩/人工审批/子Agent/可观测性) + MCP 联网与外部能力。",
   "updated": "2026-07-11",
-  "current_milestone": "M50 增强确定性 roadmap — 更多 UI 维度任务让无 GLM 时也能持续迭代 (637 passed)",
+  "current_milestone": "M51 Worker 文件上下文累积 — 读取已有文件让 worker 在其基础上扩展 (642 passed)",
   "key_facts": {
     "dev_host": "Apple M5 Max, 128GB RAM, 1.1TB 可用磁盘 — 开发/控制节点，非模型宿主",
     "model_cluster": "exo 集群 @ http://100.64.201.37:52415 (内网, OpenAI 兼容)；公网 https://dgmt.top/exo (需 Bearer token)",
@@ -744,6 +744,18 @@
           "title": "_deterministic_roadmap 扩展 3→8 个任务 + 6 测试",
           "status": "done",
           "note": "8 个确定性任务覆盖 HTML结构/CSS变量/hero/响应式/无障碍/动画/组件状态/语义区块 + 6 TDD 测试。637 passed。"
+        }
+      }
+    },
+    "M51": {
+      "title": "Worker 文件上下文累积 — 读取已有文件让 worker 在其基础上扩展",
+      "status": "done",
+      "note": "核心问题：local_worker 每次都从头重新生成 index.html，不读取已有内容。无限迭代中每个任务'替换'而非'累积'改进，导致设计不随迭代提升。M51 新增 _read_file_context(cwd) 函数：读取已有 index.html，提取 CSS 变量名 + HTML 标签计数，生成简洁结构摘要（~200字符），注入 worker prompt。worker 知道已有结构后在其基础上扩展，保留已有内容。5 个 TDD 测试（无文件返回空/有文件返回结构/空文件返回空/prompt包含上下文/prompt无上下文时不含'现有'）。全量 642 passed（+5，无回归）。",
+      "tasks": {
+        "M51.1": {
+          "title": "_read_file_context + local_worker prompt 集成 + 5 测试",
+          "status": "done",
+          "note": "新增 _read_file_context + prompt 注入文件上下文 + 5 TDD 测试。642 passed。"
         }
       }
     }

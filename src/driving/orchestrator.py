@@ -619,6 +619,47 @@ def _auto_fix_hex_in_dir(cwd: str, hex_map: dict[str, str]) -> bool:
     return fixed_any
 
 
+def _read_file_context(cwd: str) -> str:
+    """读取 cwd 下已有 index.html，返回简洁结构摘要。
+
+    M51: 让 worker 知道已有文件内容，避免每次从零生成。
+    无限迭代中每个任务应在前一个任务的成果上构建，而非替换。
+    只提取关键结构信息（CSS 变量名 + 标签计数），控制 prompt 长度。
+    """
+    import os
+    import re
+
+    html_path = os.path.join(cwd, "index.html")
+    if not os.path.isfile(html_path):
+        return ""
+    try:
+        with open(html_path, "r", encoding="utf-8") as f:
+            content = f.read()
+    except Exception:
+        return ""
+    if not content.strip() or len(content) < 50:
+        return ""
+
+    # 提取 CSS 变量名（不含值，控制长度）
+    css_vars = re.findall(r'(--[\w-]+)\s*:', content)
+    # 提取主要 HTML 标签
+    tags = re.findall(r'<(header|main|section|footer|nav|article|h[1-6]|button|a|form|input|@media)\b', content)
+
+    parts = []
+    if css_vars:
+        unique_vars = sorted(set(css_vars))[:6]
+        parts.append(f"CSS变量: {','.join(unique_vars)}")
+    if tags:
+        from collections import Counter
+        tc = Counter(tags)
+        parts.append(f"标签: {','.join(f'{t}×{c}' for t, c in tc.most_common(8))}")
+
+    if not parts:
+        return ""
+
+    return f"现有 index.html 已有[{'; '.join(parts)}]。在其基础上扩展，保留已有结构，只添加新内容。"
+
+
 def local_worker(state: OrchestratorState) -> dict:
     """本地 worker：直接调 Kimi 生成代码并写文件到 cwd，无需 Docker/沙箱。
 
@@ -648,8 +689,12 @@ def local_worker(state: OrchestratorState) -> dict:
     _rules_short = project_rules[-300:] if project_rules and len(project_rules) > 300 else (project_rules or "")
     _feedback_short = feedback[:80] if feedback else ""
 
+    # M51: 读取已有文件结构，让 worker 在其基础上扩展而非从零生成。
+    _file_ctx = _read_file_context(cwd)
+
     prompt = (
         f"在 `{cwd}` 下完成：\n{_subtask_short}\n\n"
+        + (f"{_file_ctx}\n" if _file_ctx else "")
         + (f"约束：{_rules_short}\n" if _rules_short else "")
         + (f"反馈：{_feedback_short}\n" if _feedback_short else "")
         + "用 ```html:index.html 格式输出完整代码，末尾 ```。只输出代码块。\n"
