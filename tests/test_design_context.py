@@ -4121,3 +4121,142 @@ def test_auto_fix_design_issues_includes_inline_styles():
 
     assert 'style="color: red;"' not in content
     assert "auto-style-" in content
+
+
+# ---------- M62: auto_fix_color_contrast ----------
+
+
+def test_auto_fix_color_contrast_adjusts():
+    """低对比度的文本颜色应被调整为满足 WCAG AA 标准。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_color_contrast, check_color_contrast
+
+    # #DDDDDD (浅灰) on #FFFFFF (白底) → 对比度约 1.4:1，远低于 4.5:1
+    html = """<html><head><meta name="viewport" content="width=device-width">
+    <style>
+    .text { background-color: #FFFFFF; color: #DDDDDD; }
+    </style></head>
+    <body><main><section>content</section></main>
+    <div class="text">Hello</div>
+    </body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        changed = auto_fix_color_contrast(td)
+        with open(os.path.join(td, "index.html")) as f:
+            content = f.read()
+        violations = check_color_contrast(td)
+
+    assert changed is True
+    assert "#FFFFFF" in content  # 背景色不变
+    contrast_violations = [v for v in violations if v["rule"] == "color_contrast"]
+    assert contrast_violations == [], f"修复后不应有对比度违规: {contrast_violations}"
+
+
+def test_auto_fix_color_contrast_no_change_if_ok():
+    """高对比度颜色对不应被修改。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_color_contrast
+
+    # #000000 (黑) on #FFFFFF (白) → 对比度 21:1，远高于 4.5:1
+    html = """<html><head><meta name="viewport" content="width=device-width">
+    <style>
+    .text { background-color: #FFFFFF; color: #000000; }
+    </style></head>
+    <body><main><section>content</section></main>
+    <div class="text">Hello</div>
+    </body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        changed = auto_fix_color_contrast(td)
+
+    assert changed is False
+
+
+def test_auto_fix_color_contrast_empty_dir():
+    """空目录应返回 False。"""
+    import tempfile
+    from driving.design_context import auto_fix_color_contrast
+
+    with tempfile.TemporaryDirectory() as td:
+        changed = auto_fix_color_contrast(td)
+
+    assert changed is False
+
+
+def test_auto_fix_color_contrast_idempotent():
+    """修复后再次运行不应再修改。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_color_contrast
+
+    html = """<html><head><meta name="viewport" content="width=device-width">
+    <style>
+    .text { background-color: #FFFFFF; color: #DDDDDD; }
+    </style></head>
+    <body><main><section>content</section></main>
+    <div class="text">Hello</div>
+    </body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        auto_fix_color_contrast(td)
+        changed2 = auto_fix_color_contrast(td)
+
+    assert changed2 is False
+
+
+def test_auto_fix_color_contrast_dark_bg():
+    """深色背景上的低对比度文本应被提亮。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_color_contrast, check_color_contrast
+
+    # #333333 (深灰) on #0D0D12 (近黑) → 对比度约 1.5:1
+    html = """<html><head><meta name="viewport" content="width=device-width">
+    <style>
+    .text { background-color: #0D0D12; color: #333333; }
+    </style></head>
+    <body><main><section>content</section></main>
+    <div class="text">Hello</div>
+    </body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        changed = auto_fix_color_contrast(td)
+        violations = check_color_contrast(td)
+
+    assert changed is True
+    contrast_violations = [v for v in violations if v["rule"] == "color_contrast"]
+    assert contrast_violations == [], f"修复后不应有对比度违规: {contrast_violations}"
+
+
+def test_auto_fix_design_issues_includes_color_contrast():
+    """auto_fix_design_issues 组合函数应包含 color_contrast 修复。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_design_issues, check_color_contrast
+
+    html = """<html><head><meta name="viewport" content="width=device-width">
+    <style>
+    .text { background-color: #FFFFFF; color: #DDDDDD; }
+    </style></head>
+    <body><main><section>content</section></main>
+    <div class="text">Hello</div>
+    </body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        auto_fix_design_issues(td)
+        violations = check_color_contrast(td)
+
+    contrast_violations = [v for v in violations if v["rule"] == "color_contrast"]
+    assert contrast_violations == [], f"组合修复后不应有对比度违规: {contrast_violations}"

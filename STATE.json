@@ -2,7 +2,7 @@
   "project": "flipped",
   "description": "接入本地 MLX 双模型(GLM-5.2 编排者 / Kimi-K2.7-Code 执行者)的 agentic 代码编辑器平台。fork Roo Code + 自定义驾驭层(强制验证/循环检测/上下文压缩/人工审批/子Agent/可观测性) + MCP 联网与外部能力。",
   "updated": "2026-07-11",
-  "current_milestone": "M61 auto_fix_inline_styles — 内联style提取为CSS class (727 passed)",
+  "current_milestone": "M62 auto_fix_color_contrast — 低对比度颜色对自动调整满足WCAG AA (733 passed)",
   "key_facts": {
     "dev_host": "Apple M5 Max, 128GB RAM, 1.1TB 可用磁盘 — 开发/控制节点，非模型宿主",
     "model_cluster": "exo 集群 @ http://100.64.201.37:52415 (内网, OpenAI 兼容)；公网 https://dgmt.top/exo (需 Bearer token)",
@@ -876,6 +876,18 @@
           "title": "auto_fix_inline_styles + _process_tag + auto_fix_design_issues 集成",
           "status": "done",
           "note": "保护 <style> 块 → re.sub 匹配带 style= 的标签 → _process_tag 提取style内容+md5生成class+移除style+追加class → 恢复 <style> 块 → CSS 规则追加到 <style> 或新建。727 passed。"
+        }
+      }
+    },
+    "M62": {
+      "title": "auto_fix_color_contrast — 低对比度颜色对自动调整满足WCAG AA",
+      "status": "done",
+      "note": "新增 auto_fix_color_contrast(cwd) + _adjust_color_for_contrast 辅助函数。算法：遍历 HTML 的 CSS 规则块 { ... }，提取 background+color 配对，计算 WCAG 对比度。低于 4.5:1 时：浅色背景(luminance>0.179)→文本向 #000000 混合；深色背景→文本向 #FFFFFF 混合。二分搜索 50 次迭代找最小调整量使对比度达标，保证幂等性（修复后再次运行不再修改）。仅替换 color 属性内的 hex 值，保留原格式。集成到 auto_fix_design_issues（第 18 个 auto-fix，changed18）。6 TDD 测试：浅灰on白底调整/高对比度不改/空目录/幂等/深色背景提亮/组合函数包含。全量 733 passed（+6，无回归）。",
+      "tasks": {
+        "M62.1": {
+          "title": "auto_fix_color_contrast + _adjust_color_for_contrast + auto_fix_design_issues 集成",
+          "status": "done",
+          "note": "WCAG 相对亮度公式判断 bg 亮/暗 → 二分搜索混合文本颜色到 #000/#FFF → 仅替换 color hex 值。6 测试全过。733 passed。"
         }
       }
     }

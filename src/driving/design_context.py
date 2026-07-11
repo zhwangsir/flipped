@@ -2093,6 +2093,122 @@ def auto_fix_inline_styles(cwd: str) -> bool:
     return changed
 
 
+# ---------- M62: 颜色对比度自动修复 ----------
+
+
+def _adjust_color_for_contrast(text_hex: str, bg_hex: str, target_ratio: float = 4.5) -> "str | None":
+    """调整 text_hex 使其与 bg_hex 的对比度 >= target_ratio。
+
+    根据 bg 亮度决定向黑（#000000）还是向白（#FFFFFF）混合，
+    二分搜索最小调整量。返回新 hex（大写），无法达标时返回 None。
+    """
+    bg_lum = relative_luminance(hex_to_rgb(bg_hex))
+    # bg 亮 → 文本向黑混合；bg 暗 → 文本向白混合
+    # 阈值 0.179：此亮度下纯黑/纯白文本对比度恰约 4.58:1，保证极端色可达标
+    target_hex = "#000000" if bg_lum > 0.179 else "#FFFFFF"
+    text_rgb = hex_to_rgb(text_hex)
+    target_rgb = hex_to_rgb(target_hex)
+
+    def blend_hex(t: float) -> str:
+        r = round(text_rgb[0] * (1 - t) + target_rgb[0] * t)
+        g = round(text_rgb[1] * (1 - t) + target_rgb[1] * t)
+        b = round(text_rgb[2] * (1 - t) + target_rgb[2] * t)
+        return f"#{r:02X}{g:02X}{b:02X}"
+
+    # 确认极端色能达标
+    try:
+        if contrast_ratio(blend_hex(1.0), bg_hex) < target_ratio:
+            return None
+    except Exception:
+        return None
+
+    # 二分搜索最小 t 使对比度达标
+    lo, hi = 0.0, 1.0
+    for _ in range(50):
+        mid = (lo + hi) / 2
+        try:
+            r = contrast_ratio(blend_hex(mid), bg_hex)
+        except Exception:
+            lo = mid
+            continue
+        if r >= target_ratio:
+            hi = mid
+        else:
+            lo = mid
+    return blend_hex(hi)
+
+
+def auto_fix_color_contrast(cwd: str) -> bool:
+    """M62: 自动调整低对比度颜色对，使其满足 WCAG AA 标准 (>=4.5:1)。
+
+    遍历 HTML 文件的 CSS 规则块 { ... }，找到 background + color 配对，
+    计算对比度。低于 4.5:1 时：
+    - 浅色背景 → 加深文本颜色（向 #000000 混合）
+    - 深色背景 → 提亮文本颜色（向 #FFFFFF 混合）
+    二分搜索找到最小调整量，保证幂等性（修复后再次运行不再修改）。
+    """
+    import os as _os
+    import re as _re
+
+    changed = False
+    if not _os.path.exists(cwd):
+        return False
+
+    for fname in _os.listdir(cwd):
+        if not fname.endswith(".html"):
+            continue
+        fpath = _os.path.join(cwd, fname)
+        if not _os.path.isfile(fpath):
+            continue
+        try:
+            content = open(fpath, "r", encoding="utf-8").read()
+        except Exception:
+            continue
+
+        new_content = content
+        # 收集所有需要替换的块（start, end, new_block），逆序应用避免偏移
+        replacements: list[tuple[int, int, str]] = []
+        for block_match in _re.finditer(r"\{[^{}]*\}", content):
+            block = block_match.group(0)
+            bg_match = _re.search(
+                r"(?:background-color|background)\s*:\s*(#[0-9A-Fa-f]{6})",
+                block, _re.IGNORECASE,
+            )
+            color_match = _re.search(
+                r"(?<!background-)color\s*:\s*(#[0-9A-Fa-f]{6})",
+                block, _re.IGNORECASE,
+            )
+            if not (bg_match and color_match):
+                continue
+            bg_hex = bg_match.group(1)
+            text_hex = color_match.group(1)
+            try:
+                ratio = contrast_ratio(text_hex, bg_hex)
+            except Exception:
+                continue
+            if ratio >= 4.5:
+                continue
+            new_text_hex = _adjust_color_for_contrast(text_hex, bg_hex, 4.5)
+            if not new_text_hex or new_text_hex.upper() == text_hex.upper():
+                continue
+            # 仅替换 color 属性内的 hex 值，保留原格式
+            old_color_str = color_match.group(0)
+            new_color_str = old_color_str.replace(text_hex, new_text_hex)
+            new_block = block[:color_match.start()] + new_color_str + block[color_match.end():]
+            replacements.append((block_match.start(), block_match.end(), new_block))
+
+        # 逆序应用替换，避免偏移
+        for start, end, new_block in sorted(replacements, key=lambda x: x[0], reverse=True):
+            new_content = new_content[:start] + new_block + new_content[end:]
+
+        if new_content != content:
+            with open(fpath, "w", encoding="utf-8") as f:
+                f.write(new_content)
+            changed = True
+
+    return changed
+
+
 def auto_fix_design_issues(cwd: str) -> bool:
     """组合调用所有 auto-fix 函数，返回是否做过任何修改。"""
     changed1 = auto_fix_spacing_grid(cwd)
@@ -2112,10 +2228,12 @@ def auto_fix_design_issues(cwd: str) -> bool:
     changed15 = auto_fix_console_log(cwd)
     changed16 = auto_fix_empty_links(cwd)
     changed17 = auto_fix_inline_styles(cwd)
+    changed18 = auto_fix_color_contrast(cwd)
     return (
         changed1 or changed2 or changed3 or changed4 or changed5
         or changed6 or changed7 or changed8 or changed9 or changed10 or changed11
         or changed12 or changed13 or changed14 or changed15 or changed16 or changed17
+        or changed18
     )
 
 
