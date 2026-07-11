@@ -2,7 +2,7 @@
   "project": "flipped",
   "description": "接入本地 MLX 双模型(GLM-5.2 编排者 / Kimi-K2.7-Code 执行者)的 agentic 代码编辑器平台。fork Roo Code + 自定义驾驭层(强制验证/循环检测/上下文压缩/人工审批/子Agent/可观测性) + MCP 联网与外部能力。",
   "updated": "2026-07-11",
-  "current_milestone": "M65 infinite_loop透传feature_fallback+RoundSummary追踪feature_count (750 passed)",
+  "current_milestone": "M66 _evolve_goal利用feature_count做更智能演进决策 (753 passed)",
   "key_facts": {
     "dev_host": "Apple M5 Max, 128GB RAM, 1.1TB 可用磁盘 — 开发/控制节点，非模型宿主",
     "model_cluster": "exo 集群 @ http://100.64.201.37:52415 (内网, OpenAI 兼容)；公网 https://dgmt.top/exo (需 Bearer token)",
@@ -924,6 +924,18 @@
           "title": "透传 + RoundSummary feature_count + _collect 检测 + evolve prompt + 7 测试",
           "status": "done",
           "note": "feature_fallback 透传 + RoundSummary.feature_count + _collect_round_summary 检测 '确定性 feature' 标记 + _evolve_goal rounds_text 追加功能增强信息。7 测试全过。750 passed。"
+        }
+      }
+    },
+    "M66": {
+      "title": "_evolve_goal 利用 feature_count 做更智能演进决策",
+      "status": "done",
+      "note": "_evolve_goal 新增 feature_hint：当 design_score≥70 且 feature_count>0 时，提示演进者产品已进入功能深化阶段，下一轮可关注更复杂的功能交互（多步骤表单/动态数据加载/用户状态管理）或内容丰富度（多语言文案/富文本/多媒体）。design_score 低分时 feature_hint 不触发（设计优先，避免功能深化提示干扰设计修复）。3 个 TDD 测试（达标+feature→深化提示/无feature→不触发/低分→设计优先不触发feature_hint）。全量 753 passed（+3，无回归）。",
+      "tasks": {
+        "M66.1": {
+          "title": "feature_hint + 3 测试",
+          "status": "done",
+          "note": "design_score≥70 + feature_count>0 → 功能深化提示；低分时设计优先不触发。3 测试全过。753 passed。"
         }
       }
     }

@@ -152,6 +152,18 @@ def _evolve_goal(direction: str, rounds: list[RoundSummary], cwd: str = "") -> t
             "下一轮可适度优化设计细节。\n"
         )
 
+    # M66：design_score 达标 + feature_count>0 时，提示功能深化
+    # 当设计质量已达标且功能增强已进行，演进者应关注更深层功能或内容丰富度
+    last_feature_count = rounds[-1].feature_count if rounds else 0
+    feature_hint = ""
+    if last_score >= 70 and last_feature_count > 0:
+        feature_hint = (
+            f"\n6. 上一轮已增强 {last_feature_count} 个功能维度，设计质量达标（{last_score}/100）。"
+            "产品已进入功能深化阶段，下一轮可关注更复杂的功能交互"
+            "（如多步骤表单、动态数据加载、用户状态管理）或内容丰富度"
+            "（如多语言文案、富文本内容、多媒体资源）。\n"
+        )
+
     msg = (
         f"产品方向：{direction}\n\n"
         f"已完成的轮次：\n{rounds_text}\n\n"
@@ -164,6 +176,7 @@ def _evolve_goal(direction: str, rounds: list[RoundSummary], cwd: str = "") -> t
         "3. next_goal 要具体、可执行，能被拆成 3-7 个开发任务。\n"
         "4. 优先修复失败的功能（FEATURE_CHECKLIST 里 status=failed 的项）。\n"
         f"{design_hint}"
+        f"{feature_hint}"
     )
 
     try:

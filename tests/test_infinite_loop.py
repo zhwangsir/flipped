@@ -1166,3 +1166,59 @@ def test_evolve_goal_includes_feature_count_in_rounds_text():
     # 应包含 feature 增强数量
     assert "功能" in prompt or "feature" in prompt.lower()
     assert "3" in prompt  # feature_count=3
+
+
+def test_evolve_goal_feature_hint_when_high_score_and_features():
+    """M66: design_score 达标 + feature_count>0 时，提示关注更深层功能/内容。
+
+    当设计质量已达标且功能增强已进行，演进者应收到提示：
+    产品已进入功能深化阶段，可关注更复杂的功能或内容丰富度。
+    """
+    rounds = [
+        RoundSummary(
+            round_num=1, factory_id="f1", product_goal="第一轮",
+            tasks_completed=5, tasks_failed=0, summary="基础页面",
+            design_score=85,  # 达标
+            feature_count=3,
+        ),
+    ]
+    prompt = _capture_evolve_prompt(rounds)
+
+    # 应包含功能深化提示
+    assert "功能" in prompt
+    # 应提示进入功能深化阶段或关注更深层功能
+    assert "深化" in prompt or "更复杂" in prompt or "内容" in prompt
+
+
+def test_evolve_goal_no_feature_hint_when_no_features():
+    """M66: feature_count=0 时不触发功能深化提示。"""
+    rounds = [
+        RoundSummary(
+            round_num=1, factory_id="f1", product_goal="第一轮",
+            tasks_completed=3, tasks_failed=0, summary="基础页面",
+            design_score=85,
+            feature_count=0,
+        ),
+    ]
+    prompt = _capture_evolve_prompt(rounds)
+
+    # 不应包含功能深化提示
+    assert "深化" not in prompt
+
+
+def test_evolve_goal_feature_hint_skipped_when_low_score():
+    """M66: design_score 低分时，feature_hint 让位于 design_hint（设计优先）。"""
+    rounds = [
+        RoundSummary(
+            round_num=1, factory_id="f1", product_goal="第一轮",
+            tasks_completed=5, tasks_failed=0, summary="基础页面",
+            design_score=50,  # 低分
+            feature_count=3,
+        ),
+    ]
+    prompt = _capture_evolve_prompt(rounds)
+
+    # 应优先提示设计质量问题，而非功能深化
+    assert "设计质量" in prompt or "提升设计" in prompt
+    # 不应包含功能深化提示（设计优先）
+    assert "深化" not in prompt
