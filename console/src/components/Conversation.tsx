@@ -236,7 +236,6 @@ export function Conversation() {
   const {
     stream,
     sendTask,
-    connection,
     selectedSessionId,
     sessionStatus,
     progress,
@@ -427,7 +426,7 @@ export function Conversation() {
             ref={taRef}
             data-testid='composer-input'
             rows={2}
-            placeholder='随心输入'
+            placeholder='描述你想构建的东西，或问任何问题…'
             value={text}
             disabled={disabled}
             onChange={(e) => onComposerChange(e.target.value, e.target.selectionStart)}
@@ -636,7 +635,7 @@ export function Conversation() {
           <h1 className='empty-hero'>
             {projectContext?.project
               ? `我们应该在 ${projectContext.project} 中构建什么？`
-              : '选择或导入一个项目开始'}
+              : '选择一个项目，开始构建'}
           </h1>
           {composer}
         </div>
@@ -661,7 +660,7 @@ export function Conversation() {
         {selectedSessionId && stream.length === 0 && !approvalPending && (
           <div className='empty-state'>
             <h1 className='empty-hero'>准备就绪</h1>
-            <div className='empty-sub'>等待事件流… · WebSocket {connection}</div>
+            <div className='empty-sub'>发送消息开始对话 · ⌘K 唤起命令面板</div>
           </div>
         )}
         {stream.map((it) => (

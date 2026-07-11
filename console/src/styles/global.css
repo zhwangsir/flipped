@@ -47,14 +47,14 @@ a:focus-visible,
   box-shadow: var(--focus-ring);
 }
 
-/* thin, unobtrusive scrollbars — M68 更精致 */
+/* thin, unobtrusive scrollbars — M86 更精致：6px 宽 + 渐隐 hover */
 * {
   scrollbar-width: thin;
-  scrollbar-color: var(--border-strong) transparent;
+  scrollbar-color: var(--border) transparent;
 }
 *::-webkit-scrollbar {
-  width: 7px;
-  height: 7px;
+  width: 6px;
+  height: 6px;
 }
 *::-webkit-scrollbar-track {
   background: transparent;
@@ -62,13 +62,17 @@ a:focus-visible,
 *::-webkit-scrollbar-thumb {
   background: var(--border);
   border-radius: 999px;
-  border: 2px solid transparent;
+  border: 1px solid transparent;
   background-clip: padding-box;
-  transition: background var(--dur-fast) var(--ease);
+  transition: background var(--dur) var(--ease-out-quart);
 }
 *::-webkit-scrollbar-thumb:hover {
   background: var(--text-faint);
   background-clip: padding-box;
+}
+/* 横向滚动条更细(代码块/工具卡内) */
+*::-webkit-scrollbar:horizontal {
+  height: 5px;
 }
 
 .mono {
@@ -140,6 +144,52 @@ a:focus-visible,
 @keyframes glow-pulse {
   0%, 100% { box-shadow: 0 0 0 0 var(--accent-soft); }
   50% { box-shadow: 0 0 12px 2px var(--accent-soft); }
+}
+
+/* M86 — 呼吸/物理感微动效系统(Film Atelier: 克制、有质感) */
+@keyframes breathe-soft {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.78; }
+}
+
+@keyframes lift-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fade-slide-right {
+  from {
+    opacity: 0;
+    transform: translateX(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes pulse-ring {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in oklab, var(--blue) 40%, transparent);
+  }
+  70% {
+    box-shadow: 0 0 0 6px color-mix(in oklab, var(--blue) 0%, transparent);
+  }
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in oklab, var(--blue) 0%, transparent);
+  }
+}
+
+/* 微妙的环境噪点(模拟胶片质感,克制) */
+@keyframes film-grain {
+  0%, 100% { opacity: 0.015; }
+  50% { opacity: 0.025; }
 }
 
 @media (prefers-reduced-motion: reduce) {

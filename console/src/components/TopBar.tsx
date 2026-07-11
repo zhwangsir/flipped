@@ -9,12 +9,20 @@ const CONN_LABEL: Record<string, string> = {
   idle: "未连接",
 };
 
-/** Codex 顶栏：极度克制。左侧栏折叠钮 + 线程标题，右侧用量芯片 + 极小连接点 + 面板折叠钮。 */
+const MODE_LABEL: Record<string, string> = {
+  auto: "自主",
+  agent: "智能体",
+  chat: "对话",
+  plan: "规划",
+};
+
+/** Codex 顶栏：极度克制。左侧栏折叠钮 + 线程标题 + 模式芯片，右侧用量芯片 + 极小连接点 + 面板折叠钮。 */
 export function TopBar() {
-  const { toggleSidebar, toggleContext, selectedSessionId, sessions, connection, metrics } = useApp();
+  const { toggleSidebar, toggleContext, selectedSessionId, sessions, connection, metrics, selectedMode } = useApp();
   const session = sessions.find((s) => s.id === selectedSessionId);
   const llm = metrics?.llm;
   const calls = llm?.total_calls ?? 0;
+  const modeLabel = MODE_LABEL[selectedMode] || selectedMode;
   return (
     <header className="topbar">
       <button
@@ -25,7 +33,12 @@ export function TopBar() {
       >
         <IconSidebar size={16} />
       </button>
-      {session && <span className="topbar-title">{session.title}</span>}
+      {session ? (
+        <span className="topbar-title">{session.title}</span>
+      ) : (
+        <span className="topbar-brand">flipped</span>
+      )}
+      <span className="topbar-mode mono" title={"当前模式：" + modeLabel}>{modeLabel}</span>
       <span className="spacer" />
       {calls > 0 && llm && (
         <span

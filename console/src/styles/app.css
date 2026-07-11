@@ -273,12 +273,23 @@ body.resizing {
 /* ---- 项目分区 + 线程列表 ---- */
 /* R15 — 「项目/对话」纯标签 + flipped 可折叠行(名后 chevron + hover ✎/⋯) */
 .side-group-label {
-  padding: 12px 10px 4px;
+  padding: 14px 10px 5px;
   font-size: var(--text-xs);
   font-weight: 600;
-  letter-spacing: 0.02em;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--text-faint);
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  animation: fade-slide-right var(--dur) var(--ease-out-quart) both;
+}
+.side-group-label::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--border-subtle);
+  opacity: 0.6;
 }
 .side-threads.conv {
   border-left: none;
@@ -476,7 +487,8 @@ body.resizing {
   padding: 7px 9px;
   border-radius: var(--radius-sm);
   cursor: pointer;
-  transition: background var(--dur-fast) var(--ease-out-quart), color var(--dur-fast) var(--ease-out-quart);
+  transition: background var(--dur-fast) var(--ease-out-quart), color var(--dur-fast) var(--ease-out-quart),
+    transform var(--dur-fast) var(--ease-spring);
 }
 .thread:hover {
   background: var(--bg-hover);
@@ -484,6 +496,7 @@ body.resizing {
 .thread.active {
   background: var(--bg-surface);
   box-shadow: inset 2px 0 0 var(--accent);
+  transform: translateX(1px);
 }
 .thread .dot {
   flex: none;
@@ -646,7 +659,8 @@ body.resizing {
   flex-direction: column;
   gap: 5px;
   border: 1px solid transparent;
-  transition: background var(--dur-fast) var(--ease);
+  transition: background var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease),
+    transform var(--dur-fast) var(--ease-spring);
 }
 .session:hover {
   background: var(--bg-surface);
@@ -655,6 +669,7 @@ body.resizing {
   background: var(--bg-surface);
   border-color: var(--border);
   box-shadow: inset 2px 0 0 var(--accent);
+  transform: translateX(1px);
 }
 .session-top {
   display: flex;
@@ -894,11 +909,13 @@ body.resizing {
   background: var(--bg-elevated);
   border: 1px solid var(--border-subtle);
   overflow: hidden;
-  transition: border-color var(--dur) var(--ease-out-quart), box-shadow var(--dur) var(--ease-out-quart);
+  transition: border-color var(--dur) var(--ease-out-quart), box-shadow var(--dur) var(--ease-out-quart),
+    transform var(--dur-fast) var(--ease-spring);
 }
 .tool-card:hover {
   border-color: var(--border);
   box-shadow: var(--shadow-near);
+  transform: translateY(-0.5px);
 }
 .tool-card.error {
   border-color: color-mix(in oklab, var(--danger) 35%, var(--border));
@@ -949,6 +966,10 @@ body.resizing {
   color: var(--text-muted);
   margin-bottom: 6px;
   white-space: pre-wrap;
+  max-height: 180px;
+  overflow-y: auto;
+  padding-right: 4px;
+  border-radius: var(--radius-xs);
 }
 .tool-status {
   font-size: 10.5px;
@@ -2610,6 +2631,8 @@ button.mcp-row:hover {
   overflow-x: auto;
   min-width: 0;
   flex: 1;
+  max-height: 240px;
+  overflow-y: auto;
 }
 .tool-child.terminal .tool-child-ic {
   color: var(--info);
@@ -2993,6 +3016,31 @@ textarea:focus {
   white-space: nowrap;
   max-width: 420px;
   margin-left: 4px;
+}
+/* M86 — 无会话时的品牌占位(淡色,克制) */
+.topbar-brand {
+  font-size: var(--text-sm);
+  color: var(--text-faint);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  margin-left: 4px;
+  user-select: none;
+}
+/* M86 — 顶栏模式芯片(轻量,呼应 composer-context 的模式选择) */
+.topbar-mode {
+  font-size: 10.5px;
+  color: var(--text-muted);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  margin-left: 8px;
+  user-select: none;
+  transition: color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
+}
+.topbar-mode:hover {
+  color: var(--text-secondary);
+  border-color: var(--border);
 }
 /* R11 — 顶栏右侧极小 WS 连接点(取代已删除的底部状态栏) */
 .topbar-conn {

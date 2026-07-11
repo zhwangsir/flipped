@@ -2,7 +2,7 @@
   "project": "flipped",
   "description": "接入本地 MLX 双模型(GLM-5.2 编排者 / Kimi-K2.7-Code 执行者)的 agentic 代码编辑器平台。fork Roo Code + 自定义驾驭层(强制验证/循环检测/上下文压缩/人工审批/子Agent/可观测性) + MCP 联网与外部能力。",
   "updated": "2026-07-12",
-  "current_milestone": "M85 transform-scale一致性检测+auto-fix (961 passed)",
+  "current_milestone": "M86 UI/UX 整体打磨 (build + vitest 35 passed)",
   "key_facts": {
     "dev_host": "Apple M5 Max, 128GB RAM, 1.1TB 可用磁盘 — 开发/控制节点，非模型宿主",
     "model_cluster": "exo 集群 @ http://100.64.201.37:52415 (内网, OpenAI 兼容)；公网 https://dgmt.top/exo (需 Bearer token)",
@@ -1164,6 +1164,38 @@
           "title": "check_transform_scale_chaos + auto_fix_transform_scale + lint/score 集成",
           "status": "done",
           "note": "新增 check_transform_scale_chaos + auto_fix_transform_scale + lint/score/auto_fix_design_issues 集成。13 TDD 测试（含 scalex_scaley + two_values 测试）。961 passed。修复已有测试中 scale(0.98) 回归。"
+        }
+      }
+    },
+    "M86": {
+      "title": "UI/UX 整体打磨(模型掉线期间优化界面与体验)",
+      "status": "done",
+      "note": "用户报告模型掉线，转向优化 console 前端 UI/UX。6 项打磨全部完成：(1) 滚动条 7→6px、横向 5px、hover 渐隐 transition、新增 5 个微动效(breathe-soft/lift-in/fade-slide-right/pulse-ring/film-grain);(2) composer placeholder 改为「描述你想构建的东西，或问任何问题…」、空状态副标题改为「发送消息开始对话 · ⌘K 唤起命令面板」、新线程无项目文案改为「选择一个项目，开始构建」;(3) TopBar 加无会话品牌占位「flipped」+ 模式芯片(自主/智能体/对话/规划)、新增 .topbar-brand/.topbar-mode 样式;(4) side-group-label 加分隔线 + fade-slide-right 动画、tool-card hover translateY(-0.5px) lift、thread/session active translateX(1px) 物理感;(5) tool-det max-height 180px + overflow-y、tool-child-tx max-height 240px + overflow-y 防止长输出撑开。Vitest 35 passed、npm run build 通过(545ms)。所有 E2E 失败均为 dev server 未启动(ERR_CONNECTION_REFUSED)，非 UI 代码问题。",
+      "tasks": {
+        "M86.1": {
+          "title": "滚动条精修 + 微动效系统",
+          "status": "done",
+          "note": "global.css: 滚动条 7→6px、横向 5px、hover transition var(--dur); 新增 breathe-soft/lift-in/fade-slide-right/pulse-ring/film-grain 5 个 keyframes。"
+        },
+        "M86.2": {
+          "title": "文案优化(composer/空状态/新线程)",
+          "status": "done",
+          "note": "Conversation.tsx: placeholder「随心输入」→「描述你想构建的东西，或问任何问题…」; 空状态副标题去掉 WebSocket 技术显示改为「发送消息开始对话 · ⌘K 唤起命令面板」; 新线程无项目文案「选择或导入一个项目开始」→「选择一个项目，开始构建」。移除未使用的 connection 变量。"
+        },
+        "M86.3": {
+          "title": "TopBar 模式芯片 + 品牌占位",
+          "status": "done",
+          "note": "TopBar.tsx: 加 MODE_LABEL 映射 + selectedMode 从 useApp 取 + 无会话时显示「flipped」品牌占位 + 模式芯片显示当前模式。app.css: 新增 .topbar-brand/.topbar-mode 样式(pill 芯片 + hover 反馈)。"
+        },
+        "M86.4": {
+          "title": "侧栏分组层次 + 卡片 hover lift",
+          "status": "done",
+          "note": "app.css: side-group-letter-spacing 0.02→0.06em + 加 ::after 分隔线 + fade-slide-right 入场动画; tool-card hover 加 translateY(-0.5px) lift; thread/session active 加 translateX(1px) 物理感 + ease-spring transition。"
+        },
+        "M86.5": {
+          "title": "工具卡 detail/child max-height 防撑开",
+          "status": "done",
+          "note": "app.css: tool-det max-height 180px + overflow-y auto + padding-right 4px; tool-child-tx max-height 240px + overflow-y auto。防止长终端输出/文件内容撑开整个对话流。"
         }
       }
     }
