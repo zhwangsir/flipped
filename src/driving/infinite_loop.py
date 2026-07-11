@@ -98,6 +98,7 @@ def _evolve_goal(direction: str, rounds: list[RoundSummary], cwd: str = "") -> t
         f"    成果：{r.summary}\n"
         f"    设计质量评分：{r.design_score}/100"
         + (f"（问题：{', '.join(r.design_notes[:3])}）" if r.design_notes else "")
+        + (f"；自动修复 {r.design_fix_count} 个设计问题" if r.design_fix_count else "")
         + f"\n"
         f"    产出文件：{', '.join(r.artifacts[:10]) if r.artifacts else '无'}"
         for r in rounds
@@ -116,15 +117,32 @@ def _evolve_goal(direction: str, rounds: list[RoundSummary], cwd: str = "") -> t
             pass
 
     # M21：检测上一轮设计质量评分，低分时提示演进者优先提升设计质量
+    # M47：若上一轮已触发 design-fix（proposer_triggered + design_fix_count>0）
+    #       但分数仍低，说明 auto-fix 能修复的维度已修完，剩余问题需要深层重构，
+    #       不再重复"提升设计质量"（会导致同样的 auto-fix 空转）。
     last_score = rounds[-1].design_score if rounds else 0
+    last_proposer = rounds[-1].proposer_triggered if rounds else False
+    last_fix_count = rounds[-1].design_fix_count if rounds else 0
     design_hint = ""
     if last_score > 0 and last_score < 70:
-        design_hint = (
-            f"\n5. ⚠️ 上一轮设计质量评分仅 {last_score}/100（低于 70 分阈值），"
-            "下一轮目标必须包含「提升设计质量」的明确指令。"
-            "常见问题：缺少 meta viewport、缺少 CSS 变量系统、无语义化 HTML 结构、"
-            "动画性能差（transition 未用 transform/opacity）、配色超过 5 种。\n"
-        )
+        if last_proposer and last_fix_count > 0:
+            # M47: auto-fix 已尝试但未达标——需要深层重构，非表面修复
+            design_hint = (
+                f"\n5. ⚠️ 上一轮设计质量评分仅 {last_score}/100（低于 70 分阈值）。"
+                f"auto-fix 已尝试修复 {last_fix_count} 个设计问题但仍未达标，"
+                "说明剩余问题是 auto-fix 无法处理的深层设计缺陷"
+                "（如配色系统冲突、布局结构不合理、组件层次缺失）。"
+                "下一轮目标必须包含「人工介入设计重构」的明确指令："
+                "重新设计配色系统（不超过 5 种）、重构布局语义结构、"
+                "确保 CSS 变量体系完整、动画用 transform/opacity。\n"
+            )
+        else:
+            design_hint = (
+                f"\n5. ⚠️ 上一轮设计质量评分仅 {last_score}/100（低于 70 分阈值），"
+                "下一轮目标必须包含「提升设计质量」的明确指令。"
+                "常见问题：缺少 meta viewport、缺少 CSS 变量系统、无语义化 HTML 结构、"
+                "动画性能差（transition 未用 transform/opacity）、配色超过 5 种。\n"
+            )
     elif last_score > 0 and last_score < 85:
         design_hint = (
             f"\n5. 上一轮设计质量评分 {last_score}/100，仍有提升空间，"

@@ -2,7 +2,7 @@
   "project": "flipped",
   "description": "接入本地 MLX 双模型(GLM-5.2 编排者 / Kimi-K2.7-Code 执行者)的 agentic 代码编辑器平台。fork Roo Code + 自定义驾驭层(强制验证/循环检测/上下文压缩/人工审批/子Agent/可观测性) + MCP 联网与外部能力。",
   "updated": "2026-07-11",
-  "current_milestone": "M46 infinite_loop 透传 task_proposer/design_fix_fallback + RoundSummary 追踪 (621 passed)",
+  "current_milestone": "M47 _evolve_goal 利用 proposer_triggered 做更智能演进决策 (624 passed)",
   "key_facts": {
     "dev_host": "Apple M5 Max, 128GB RAM, 1.1TB 可用磁盘 — 开发/控制节点，非模型宿主",
     "model_cluster": "exo 集群 @ http://100.64.201.37:52415 (内网, OpenAI 兼容)；公网 https://dgmt.top/exo (需 Bearer token)",
@@ -696,6 +696,18 @@
           "title": "透传参数 + RoundSummary 追踪字段 + 8 测试",
           "status": "done",
           "note": "run_infinite_loop 签名补 task_proposer/design_fix_fallback + 透传 factory_loop + RoundSummary 新增 proposer_triggered/design_fix_count + _collect_round_summary 检测标记。621 passed。"
+        }
+      }
+    },
+    "M47": {
+      "title": "_evolve_goal 利用 proposer_triggered 做更智能演进决策",
+      "status": "done",
+      "note": "_evolve_goal 的 design_hint 增强：当上一轮 proposer_triggered=True + design_fix_count>0 但 design_score 仍 <70 时，不再重复'提升设计质量'（会导致同样的 auto-fix 空转），改为提示'auto-fix 已尝试修复 N 个问题但仍未达标，需要人工介入设计重构'。rounds_text 也追加'自动修复 N 个设计问题'让演进者看到历史修复活动。3 个 TDD 测试。全量 624 passed（+3，无回归）。",
+      "tasks": {
+        "M47.1": {
+          "title": "design_hint 分支 + rounds_text 追加修复信息 + 3 测试",
+          "status": "done",
+          "note": "proposer_triggered+design_fix_count>0+低分 → 深层重构提示；否则保持原有提示。624 passed。"
         }
       }
     }

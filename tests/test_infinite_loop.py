@@ -758,3 +758,90 @@ def test_loop_state_persists_proposer_fields():
         assert loaded is not None
         assert loaded.rounds[0].proposer_triggered is True
         assert loaded.rounds[0].design_fix_count == 2
+
+
+# ---------- M47: _evolve_goal 利用 proposer_triggered 做更智能演进决策 ----------
+
+
+def _capture_evolve_prompt(rounds):
+    """辅助：mock GLM 捕获 _evolve_goal 的 prompt 文本。"""
+    from driving.infinite_loop import _evolve_goal
+
+    captured = {"text": ""}
+
+    class FakeLLM:
+        def with_structured_output(self, schema, **kwargs):
+            class FakeResult:
+                pass
+            return FakeResult()
+
+    import driving.orchestrator as orch
+    orig_invoke = orch._invoke_structured
+    orig_make = orch._make_llm
+
+    def capture_invoke(llm, schema, msg, **kwargs):
+        captured["text"] = msg
+        return type("R", (), {
+            "next_goal": "目标", "goal_achieved": False, "reasoning": "推理"
+        })()
+
+    orch._invoke_structured = capture_invoke
+    orch._make_llm = lambda *a, **kw: FakeLLM()
+    try:
+        _evolve_goal("方向", rounds, cwd="/tmp")
+    finally:
+        orch._invoke_structured = orig_invoke
+        orch._make_llm = orig_make
+    return captured["text"]
+
+
+def test_evolve_prompt_design_fix_already_attempted():
+    """M47: 上一轮已触发 design-fix 但分数仍低时，prompt 应提示'auto-fix 已尝试未达标'。
+
+    避免重复"提升设计质量"指令导致空转：auto-fix 已经修过一轮了，
+    再触发还是同样的结果。演进者应知道需要更深层的重构。
+    """
+    rounds = [RoundSummary(
+        round_num=1, factory_id="f1", product_goal="第一轮",
+        tasks_completed=3, tasks_failed=0, summary="完成",
+        design_score=50,
+        design_notes=["配色超过 5 种", "动画性能差"],
+        proposer_triggered=True,
+        design_fix_count=2,
+    )]
+    prompt = _capture_evolve_prompt(rounds)
+
+    assert "auto-fix" in prompt or "已尝试" in prompt or "已修复" in prompt
+    assert "重构" in prompt or "深层" in prompt or "人工" in prompt
+
+
+def test_evolve_prompt_no_design_fix_attempted_low_score():
+    """M47: 未触发 design-fix 且低分时，保持原有的'提升设计质量'提示。"""
+    rounds = [RoundSummary(
+        round_num=1, factory_id="f1", product_goal="第一轮",
+        tasks_completed=3, tasks_failed=0, summary="完成",
+        design_score=45,
+        design_notes=["缺少 viewport"],
+        proposer_triggered=False,
+        design_fix_count=0,
+    )]
+    prompt = _capture_evolve_prompt(rounds)
+
+    assert "提升设计质量" in prompt
+    assert "auto-fix" not in prompt.lower().replace("-", "_") or "未尝试" in prompt
+
+
+def test_evolve_prompt_design_fix_attempted_score_ok():
+    """M47: 已触发 design-fix 且分数达标时，不应出现'auto-fix 已尝试未达标'提示。"""
+    rounds = [RoundSummary(
+        round_num=1, factory_id="f1", product_goal="第一轮",
+        tasks_completed=3, tasks_failed=0, summary="完成",
+        design_score=85,
+        design_notes=["良好"],
+        proposer_triggered=True,
+        design_fix_count=1,
+    )]
+    prompt = _capture_evolve_prompt(rounds)
+
+    assert "auto-fix 已尝试" not in prompt
+    assert "未达标" not in prompt
