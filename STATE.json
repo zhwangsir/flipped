@@ -2,7 +2,7 @@
   "project": "flipped",
   "description": "接入本地 MLX 双模型(GLM-5.2 编排者 / Kimi-K2.7-Code 执行者)的 agentic 代码编辑器平台。fork Roo Code + 自定义驾驭层(强制验证/循环检测/上下文压缩/人工审批/子Agent/可观测性) + MCP 联网与外部能力。",
   "updated": "2026-07-11",
-  "current_milestone": "M56 空链接/无效 href 检测 — href=#/javascript:void(0)/缺失 href (687 passed)",
+  "current_milestone": "M57 内联样式检测 — style=属性检测（应改用CSS class）(695 passed)",
   "key_facts": {
     "dev_host": "Apple M5 Max, 128GB RAM, 1.1TB 可用磁盘 — 开发/控制节点，非模型宿主",
     "model_cluster": "exo 集群 @ http://100.64.201.37:52415 (内网, OpenAI 兼容)；公网 https://dgmt.top/exo (需 Bearer token)",
@@ -816,6 +816,18 @@
           "title": "check_empty_links + lint/score 集成 + 10 测试",
           "status": "done",
           "note": "新增 check_empty_links + 锚点 id 验证 + lint_design_quality 集成 + design_score -5 扣分。10 测试覆盖：无 HTML / href=# / javascript:void(0) / 缺少 href / 有效 href / 外部 URL / 空目录 / 锚点跳转 / lint 集成 / score 对比。687 passed。"
+        }
+      }
+    },
+    "M57": {
+      "title": "内联样式检测 — style=属性检测（应改用CSS class）",
+      "status": "done",
+      "note": "AI 生成 UI 常见破绽：内联样式 style=\"...\"。新增 check_inline_styles(cwd)：先剥离 <style>...</style> 块避免误报，再用正则匹配 HTML 标签上的 style=\"...\" 属性。集成到 lint_design_quality（第 19 维）+ design_score（-5 扣分）。8 个 TDD 测试。全量 695 passed（+8，无回归）。",
+      "tasks": {
+        "M57.1": {
+          "title": "check_inline_styles + lint/score 集成 + 8 测试",
+          "status": "done",
+          "note": "新增 check_inline_styles + <style>块剥离 + 标签 style= 属性检测 + lint_design_quality 集成 + design_score -5 扣分。8 测试覆盖：无 HTML / 有内联 / 无内联 / 多个内联 / 空目录 / 不误报style标签 / lint 集成 / score 对比。695 passed。"
         }
       }
     }

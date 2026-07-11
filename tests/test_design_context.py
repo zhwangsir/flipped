@@ -3280,3 +3280,166 @@ section{animation:fadeInUp 0.8s ease-out both}
     assert score_valid > score_empty, (
         f"有效链接应比空链接分数高: {score_valid} vs {score_empty}"
     )
+
+
+# ---------- M57: 内联样式检测（AI 应该用 CSS class 而非 inline style） ----------
+
+
+def test_check_inline_styles_no_html():
+    """无 HTML 文件时不应报违规。"""
+    import tempfile
+    from driving.design_context import check_inline_styles
+
+    with tempfile.TemporaryDirectory() as td:
+        violations = check_inline_styles(td)
+
+    assert violations == []
+
+
+def test_check_inline_styles_present():
+    """有 style= 内联样式应报违规。"""
+    import tempfile
+    import os
+    from driving.design_context import check_inline_styles
+
+    html = """<html><head><meta name="viewport" content="width=device-width"></head>
+    <body><main><section><div style="color:red;padding:10px">content</div></section></main></body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        violations = check_inline_styles(td)
+
+    style_violations = [v for v in violations if v["rule"] == "inline_style"]
+    assert len(style_violations) >= 1
+    assert style_violations[0]["severity"] == "warning"
+
+
+def test_check_inline_styles_absent():
+    """无内联样式不应报违规。"""
+    import tempfile
+    import os
+    from driving.design_context import check_inline_styles
+
+    html = """<html><head><meta name="viewport" content="width=device-width">
+    <style>.card{color:red;padding:10px}</style></head>
+    <body><main><section><div class="card">content</div></section></main></body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        violations = check_inline_styles(td)
+
+    style_violations = [v for v in violations if v["rule"] == "inline_style"]
+    assert style_violations == [], f"无内联样式不应报违规: {style_violations}"
+
+
+def test_check_inline_styles_multiple():
+    """多个内联样式应报多个违规。"""
+    import tempfile
+    import os
+    from driving.design_context import check_inline_styles
+
+    html = """<html><head><meta name="viewport" content="width=device-width"></head>
+    <body><main>
+    <div style="color:red">A</div>
+    <div style="color:blue">B</div>
+    <div style="color:green">C</div>
+    </main></body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        violations = check_inline_styles(td)
+
+    style_violations = [v for v in violations if v["rule"] == "inline_style"]
+    assert len(style_violations) >= 3
+
+
+def test_check_inline_styles_empty_dir():
+    """空目录应返回空列表。"""
+    import tempfile
+    from driving.design_context import check_inline_styles
+
+    with tempfile.TemporaryDirectory() as td:
+        violations = check_inline_styles(td)
+
+    assert violations == []
+
+
+def test_check_inline_styles_ignores_style_tag():
+    """<style> 标签内的 CSS 不应被误报为内联样式。"""
+    import tempfile
+    import os
+    from driving.design_context import check_inline_styles
+
+    html = """<html><head><meta name="viewport" content="width=device-width">
+    <style>body { color: red; }</style></head>
+    <body><main><section>content</section></main></body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        violations = check_inline_styles(td)
+
+    style_violations = [v for v in violations if v["rule"] == "inline_style"]
+    assert style_violations == [], f"<style> 标签不应被误报: {style_violations}"
+
+
+def test_lint_design_quality_includes_inline_styles():
+    """lint_design_quality 应包含 inline_style 规则。"""
+    import tempfile
+    import os
+    from driving.design_context import lint_design_quality
+
+    html = """<html><head><meta name="viewport" content="width=device-width"></head>
+    <body><main><section><div style="color:red">content</div></section></main></body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        violations = lint_design_quality(td)
+
+    style_violations = [v for v in violations if v["rule"] == "inline_style"]
+    assert len(style_violations) >= 1
+
+
+def test_design_score_penalizes_inline_styles():
+    """有内联样式的 HTML 应比用 CSS class 的分数低。"""
+    import tempfile
+    import os
+    from driving.design_context import design_score
+
+    base_html = """<!DOCTYPE html>
+<html lang="zh"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+:root { --color-bg: #0D0D12; --color-text: #F5F5F5; --color-accent: #0A84FF; }
+body { transition: opacity 0.3s ease; }
+:focus-visible { outline: 2px solid var(--color-accent); }
+button:hover{opacity:0.85}button:active{transform:scale(0.98)}button:focus{outline:2px solid blue}button:disabled{opacity:0.5}
+@media (max-width: 768px) { body { font-size: 14px; } }
+@keyframes fadeInUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
+section{animation:fadeInUp 0.8s ease-out both}
+</style></head><body>
+<header><nav>Logo</nav></header>
+<main><section><div __ATTR__>查看详情</div></section></main>
+<footer>Copyright</footer>
+</body></html>"""
+
+    clean_html = base_html.replace("__ATTR__", 'class="card"')
+    inline_html = base_html.replace("__ATTR__", 'style="color:red"')
+
+    with tempfile.TemporaryDirectory() as td1:
+        with open(os.path.join(td1, "index.html"), "w") as f:
+            f.write(clean_html)
+        score_clean, _ = design_score(td1)
+
+    with tempfile.TemporaryDirectory() as td2:
+        with open(os.path.join(td2, "index.html"), "w") as f:
+            f.write(inline_html)
+        score_inline, _ = design_score(td2)
+
+    assert score_clean > score_inline, (
+        f"无内联样式应比有内联样式分数高: {score_clean} vs {score_inline}"
+    )

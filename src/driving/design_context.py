@@ -1653,6 +1653,59 @@ def check_empty_links(cwd: str) -> list[dict]:
     return violations
 
 
+def check_inline_styles(cwd: str) -> list[dict]:
+    """M57: 检测内联样式 style="..."（AI 应该用 CSS class 而非 inline style）。
+
+    内联样式是 AI 生成 UI 的常见破绽：
+    - 难以维护（无法全局修改）
+    - 违反关注点分离原则
+    - 无法利用 CSS 变量和媒体查询
+
+    注意：<style> 标签内的 CSS 不是内联样式，不报违规。
+    只检测 HTML 标签上的 style="..." 属性。
+    """
+    import os as _os
+    import re as _re
+
+    violations: list[dict] = []
+
+    for fname in _os.listdir(cwd) if _os.path.exists(cwd) else []:
+        if not fname.endswith(".html"):
+            continue
+        fpath = _os.path.join(cwd, fname)
+        if not _os.path.isfile(fpath):
+            continue
+        try:
+            content = open(fpath, "r", encoding="utf-8").read()
+        except Exception:
+            continue
+
+        # 先剥离 <style>...</style> 块，避免误报
+        stripped = _re.sub(
+            r"<style\b[^>]*>.*?</style>", "", content,
+            flags=_re.IGNORECASE | _re.DOTALL,
+        )
+
+        # 找所有 HTML 标签上的 style="..." 属性
+        # 匹配 <tag ... style="..." ...>
+        for match in _re.finditer(
+            r"<(\w+)\b[^>]*\bstyle\s*=\s*[\"'][^\"']*[\"'][^>]*>",
+            stripped, _re.IGNORECASE,
+        ):
+            tag_name = match.group(1)
+            # 忽略 <style> 标签本身（虽然已剥离，双保险）
+            if tag_name.lower() == "style":
+                continue
+            violations.append({
+                "rule": "inline_style",
+                "severity": "warning",
+                "file": fname,
+                "message": f"<{tag_name}> 使用内联样式 style=\"...\"（应改用 CSS class）",
+            })
+
+    return violations
+
+
 def auto_fix_design_issues(cwd: str) -> bool:
     """组合调用所有 auto-fix 函数，返回是否做过任何修改。"""
     changed1 = auto_fix_spacing_grid(cwd)
@@ -1924,6 +1977,12 @@ def lint_design_quality(cwd: str) -> list[dict]:
     except Exception:
         pass
 
+    # 12. M57: 内联样式检测
+    try:
+        violations.extend(check_inline_styles(cwd))
+    except Exception:
+        pass
+
     return violations
 
 
@@ -2067,6 +2126,11 @@ def design_score(cwd: str) -> "tuple[int, list[str]]":
     if "empty_link" in warning_rules:
         score -= 5
         notes.append("检测到空链接/无效href(-5)")
+
+    # 12. M57: 内联样式扣分（warning 级别，-5）
+    if "inline_style" in warning_rules:
+        score -= 5
+        notes.append("检测到内联样式style(-5)")
 
     score = max(0, score)
     if not notes:
