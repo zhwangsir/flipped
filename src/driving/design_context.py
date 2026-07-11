@@ -1847,6 +1847,90 @@ def auto_fix_console_log(cwd: str) -> bool:
     return changed
 
 
+def auto_fix_empty_links(cwd: str) -> bool:
+    """M60: 修复空链接/无效 href。
+
+    将 href="#" / href="javascript:void(0)" / href="" / href="#nonexistent"
+    的 <a> 标签转为 <span>（保留其他属性和内容），移除 href 属性。
+    这样 check_empty_links 不再报告违规（因为不再是 <a> 标签）。
+
+    缺少 href 的 <a> 也转为 <span>。
+    幂等：无空链接时返回 False 不修改。
+    """
+    import os as _os
+    import re as _re
+
+    changed = False
+    for fname in _os.listdir(cwd) if _os.path.exists(cwd) else []:
+        if not fname.endswith(".html"):
+            continue
+        fpath = _os.path.join(cwd, fname)
+        if not _os.path.isfile(fpath):
+            continue
+        try:
+            content = open(fpath, "r", encoding="utf-8").read()
+        except Exception:
+            continue
+
+        # 先检查是否有违规
+        violations = check_empty_links(_os.path.dirname(fpath))
+        has_violation = any(
+            v["file"] == fname and v["rule"] == "empty_link"
+            for v in violations
+        )
+        if not has_violation:
+            continue
+
+        # 提取所有 id 用于判断锚点是否有效
+        ids = set(_re.findall(r'\bid\s*=\s*["\']([^"\']+)["\']', content, _re.IGNORECASE))
+
+        def _is_bad_href(opening_tag: str) -> bool:
+            """判断 <a> 标签的 href 是否为空/无效。"""
+            href_match = _re.search(r'\bhref\s*=\s*["\']([^"\']*)["\']', opening_tag, _re.IGNORECASE)
+            if not href_match:
+                return True  # 无 href
+            href = href_match.group(1).strip()
+            if not href:
+                return True  # 空字符串
+            if href == "#":
+                return True  # 纯锚点
+            if href.startswith("#") and href[1:] and href[1:] not in ids:
+                return True  # 不存在的锚点
+            if href.lower().startswith("javascript:"):
+                return True  # javascript: 协议
+            return False
+
+        def _fix_link(m):
+            opening_tag = m.group(1)
+            inner_content = m.group(2)
+
+            if not _is_bad_href(opening_tag):
+                return m.group(0)  # 好链接，不改
+
+            # 将 <a> 转为 <span>，移除 href 属性
+            new_opening = _re.sub(r"<a\b", "<span", opening_tag, flags=_re.IGNORECASE)
+            new_opening = _re.sub(
+                r'\s*href\s*=\s*["\'][^"\']*["\']',
+                "",
+                new_opening,
+                flags=_re.IGNORECASE,
+            )
+            return new_opening + inner_content + "</span>"
+
+        new_content = _re.sub(
+            r"(<a\b[^>]*>)(.*?)(</a>)",
+            _fix_link,
+            content, flags=_re.IGNORECASE | _re.DOTALL,
+        )
+
+        if new_content != content:
+            with open(fpath, "w", encoding="utf-8") as f:
+                f.write(new_content)
+            changed = True
+
+    return changed
+
+
 def auto_fix_design_issues(cwd: str) -> bool:
     """组合调用所有 auto-fix 函数，返回是否做过任何修改。"""
     changed1 = auto_fix_spacing_grid(cwd)
@@ -1864,10 +1948,11 @@ def auto_fix_design_issues(cwd: str) -> bool:
     changed13 = auto_fix_scroll_animation(cwd)
     changed14 = auto_fix_placeholder_text(cwd)
     changed15 = auto_fix_console_log(cwd)
+    changed16 = auto_fix_empty_links(cwd)
     return (
         changed1 or changed2 or changed3 or changed4 or changed5
         or changed6 or changed7 or changed8 or changed9 or changed10 or changed11
-        or changed12 or changed13 or changed14 or changed15
+        or changed12 or changed13 or changed14 or changed15 or changed16
     )
 
 

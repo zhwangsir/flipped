@@ -3782,3 +3782,174 @@ def test_auto_fix_design_issues_includes_console_log():
             content = f.read()
 
     assert "console.log" not in content
+
+
+# ---------- M60: auto_fix_empty_links ----------
+
+
+def test_auto_fix_empty_links_hash():
+    """href='#' 的 <a> 应被转为 <span>，移除 href。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_empty_links, check_empty_links
+
+    html = """<html><head><meta name="viewport" content="width=device-width"></head>
+    <body><main id="main"><section>content</section></main>
+    <a href="#">Click here</a>
+    </body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        changed = auto_fix_empty_links(td)
+        with open(os.path.join(td, "index.html")) as f:
+            content = f.read()
+        violations = check_empty_links(td)
+
+    assert changed is True
+    assert "Click here" in content
+    assert "<span" in content
+    assert "<a " not in content and "<a>" not in content
+    link_violations = [v for v in violations if v["rule"] == "empty_link"]
+    assert link_violations == [], f"修复后不应有空链接: {link_violations}"
+
+
+def test_auto_fix_empty_links_javascript_void():
+    """href='javascript:void(0)' 应被转为 <span>。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_empty_links
+
+    html = """<html><head><meta name="viewport" content="width=device-width"></head>
+    <body><main><section>content</section></main>
+    <a href="javascript:void(0)">Button</a>
+    </body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        changed = auto_fix_empty_links(td)
+        with open(os.path.join(td, "index.html")) as f:
+            content = f.read()
+
+    assert changed is True
+    assert "Button" in content
+    assert "<span" in content
+    assert "javascript:void(0)" not in content
+
+
+def test_auto_fix_empty_links_preserves_valid_links():
+    """合法链接不应被修改。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_empty_links
+
+    html = """<html><head><meta name="viewport" content="width=device-width"></head>
+    <body><main id="home"><section>content</section></main>
+    <a href="/about">About</a>
+    <a href="https://example.com">External</a>
+    <a href="#home">Home</a>
+    <a href="mailto:test@test.com">Email</a>
+    </body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        changed = auto_fix_empty_links(td)
+
+    assert changed is False
+
+
+def test_auto_fix_empty_links_preserves_attributes():
+    """修复时保留 class/id 等其他属性。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_empty_links
+
+    html = """<html><head><meta name="viewport" content="width=device-width"></head>
+    <body><main><section>content</section></main>
+    <a href="#" class="btn btn-primary" id="cta">Click</a>
+    </body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        auto_fix_empty_links(td)
+        with open(os.path.join(td, "index.html")) as f:
+            content = f.read()
+
+    assert 'class="btn btn-primary"' in content
+    assert 'id="cta"' in content
+    assert "<span" in content
+
+
+def test_auto_fix_empty_links_no_change_if_clean():
+    """无空链接时不应修改。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_empty_links
+
+    html = """<html><head><meta name="viewport" content="width=device-width"></head>
+    <body><main id="home"><section>content</section></main>
+    <a href="/path">Link</a>
+    </body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        changed = auto_fix_empty_links(td)
+
+    assert changed is False
+
+
+def test_auto_fix_empty_links_empty_dir():
+    """空目录应返回 False。"""
+    import tempfile
+    from driving.design_context import auto_fix_empty_links
+
+    with tempfile.TemporaryDirectory() as td:
+        changed = auto_fix_empty_links(td)
+
+    assert changed is False
+
+
+def test_auto_fix_empty_links_idempotent():
+    """修复后再次运行不应再修改。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_empty_links
+
+    html = """<html><head><meta name="viewport" content="width=device-width"></head>
+    <body><main><section>content</section></main>
+    <a href="#">Click</a>
+    </body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        auto_fix_empty_links(td)
+        changed2 = auto_fix_empty_links(td)
+
+    assert changed2 is False
+
+
+def test_auto_fix_design_issues_includes_empty_links():
+    """auto_fix_design_issues 组合函数应包含 empty_links 修复。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_design_issues
+
+    html = """<html><head><meta name="viewport" content="width=device-width"></head>
+    <body><main><section>content</section></main>
+    <a href="#">Click</a>
+    </body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        auto_fix_design_issues(td)
+        with open(os.path.join(td, "index.html")) as f:
+            content = f.read()
+
+    assert "<span" in content
+    assert "<a href=\"#\">" not in content
