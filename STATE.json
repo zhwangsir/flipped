@@ -2,7 +2,7 @@
   "project": "flipped",
   "description": "接入本地 MLX 双模型(GLM-5.2 编排者 / Kimi-K2.7-Code 执行者)的 agentic 代码编辑器平台。fork Roo Code + 自定义驾驭层(强制验证/循环检测/上下文压缩/人工审批/子Agent/可观测性) + MCP 联网与外部能力。",
   "updated": "2026-07-11",
-  "current_milestone": "M57 内联样式检测 — style=属性检测（应改用CSS class）(695 passed)",
+  "current_milestone": "M58 console.log 调试残留检测 — script块内console.log检测 (704 passed)",
   "key_facts": {
     "dev_host": "Apple M5 Max, 128GB RAM, 1.1TB 可用磁盘 — 开发/控制节点，非模型宿主",
     "model_cluster": "exo 集群 @ http://100.64.201.37:52415 (内网, OpenAI 兼容)；公网 https://dgmt.top/exo (需 Bearer token)",
@@ -828,6 +828,18 @@
           "title": "check_inline_styles + lint/score 集成 + 8 测试",
           "status": "done",
           "note": "新增 check_inline_styles + <style>块剥离 + 标签 style= 属性检测 + lint_design_quality 集成 + design_score -5 扣分。8 测试覆盖：无 HTML / 有内联 / 无内联 / 多个内联 / 空目录 / 不误报style标签 / lint 集成 / score 对比。695 passed。"
+        }
+      }
+    },
+    "M58": {
+      "title": "console.log 调试残留检测 — script块内console.log检测",
+      "status": "done",
+      "note": "AI 生成代码常遗留 console.log 调试语句。新增 check_console_log(cwd)：只提取 <script>...</script> 块内容，在其中匹配 console.log( 调用。不检测文本内容中的 console.log 字样。集成到 lint_design_quality（第 20 维）+ design_score（-5 扣分）。9 个 TDD 测试。全量 704 passed（+9，无回归）。",
+      "tasks": {
+        "M58.1": {
+          "title": "check_console_log + lint/score 集成 + 9 测试",
+          "status": "done",
+          "note": "新增 check_console_log + script块提取 + console.log( 匹配 + lint_design_quality 集成 + design_score -5 扣分。9 测试覆盖：无 HTML / 有log / 无log / 多个log / 空目录 / 无script / 文本不误报 / lint 集成 / score 对比。704 passed。"
         }
       }
     }

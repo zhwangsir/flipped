@@ -3443,3 +3443,191 @@ section{animation:fadeInUp 0.8s ease-out both}
     assert score_clean > score_inline, (
         f"无内联样式应比有内联样式分数高: {score_clean} vs {score_inline}"
     )
+
+
+# ---------- M58: console.log 调试残留检测 ----------
+
+
+def test_check_console_log_no_html():
+    """无 HTML 文件时不应报违规。"""
+    import tempfile
+    from driving.design_context import check_console_log
+
+    with tempfile.TemporaryDirectory() as td:
+        violations = check_console_log(td)
+
+    assert violations == []
+
+
+def test_check_console_log_present():
+    """<script> 中有 console.log 应报违规。"""
+    import tempfile
+    import os
+    from driving.design_context import check_console_log
+
+    html = """<html><head><meta name="viewport" content="width=device-width"></head>
+    <body><main><section>content</section></main>
+    <script>console.log("debug");</script>
+    </body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        violations = check_console_log(td)
+
+    log_violations = [v for v in violations if v["rule"] == "console_log"]
+    assert len(log_violations) >= 1
+    assert log_violations[0]["severity"] == "warning"
+
+
+def test_check_console_log_absent():
+    """无 console.log 不应报违规。"""
+    import tempfile
+    import os
+    from driving.design_context import check_console_log
+
+    html = """<html><head><meta name="viewport" content="width=device-width"></head>
+    <body><main><section>content</section></main>
+    <script>document.querySelector("h1").textContent = "Hello";</script>
+    </body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        violations = check_console_log(td)
+
+    log_violations = [v for v in violations if v["rule"] == "console_log"]
+    assert log_violations == [], f"无 console.log 不应报违规: {log_violations}"
+
+
+def test_check_console_log_multiple():
+    """多个 console.log 应报多个违规。"""
+    import tempfile
+    import os
+    from driving.design_context import check_console_log
+
+    html = """<html><head><meta name="viewport" content="width=device-width"></head>
+    <body><main><section>content</section></main>
+    <script>
+    console.log("a");
+    console.log("b");
+    console.log("c");
+    </script>
+    </body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        violations = check_console_log(td)
+
+    log_violations = [v for v in violations if v["rule"] == "console_log"]
+    assert len(log_violations) >= 3
+
+
+def test_check_console_log_empty_dir():
+    """空目录应返回空列表。"""
+    import tempfile
+    from driving.design_context import check_console_log
+
+    with tempfile.TemporaryDirectory() as td:
+        violations = check_console_log(td)
+
+    assert violations == []
+
+
+def test_check_console_log_no_script():
+    """无 <script> 标签时不应报违规。"""
+    import tempfile
+    import os
+    from driving.design_context import check_console_log
+
+    html = """<html><head><meta name="viewport" content="width=device-width"></head>
+    <body><main><section>content</section></main></body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        violations = check_console_log(td)
+
+    log_violations = [v for v in violations if v["rule"] == "console_log"]
+    assert log_violations == []
+
+
+def test_check_console_log_not_in_text():
+    """文本内容中的 'console.log' 字样不应报违规（只在 script 块内检测）。"""
+    import tempfile
+    import os
+    from driving.design_context import check_console_log
+
+    html = """<html><head><meta name="viewport" content="width=device-width"></head>
+    <body><main><section><p>使用 console.log 调试</p></section></main></body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        violations = check_console_log(td)
+
+    log_violations = [v for v in violations if v["rule"] == "console_log"]
+    assert log_violations == [], f"文本中的 console.log 字样不应报违规: {log_violations}"
+
+
+def test_lint_design_quality_includes_console_log():
+    """lint_design_quality 应包含 console_log 规则。"""
+    import tempfile
+    import os
+    from driving.design_context import lint_design_quality
+
+    html = """<html><head><meta name="viewport" content="width=device-width"></head>
+    <body><main><section>content</section></main>
+    <script>console.log("debug");</script>
+    </body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        violations = lint_design_quality(td)
+
+    log_violations = [v for v in violations if v["rule"] == "console_log"]
+    assert len(log_violations) >= 1
+
+
+def test_design_score_penalizes_console_log():
+    """有 console.log 的 HTML 应比没有的分数低。"""
+    import tempfile
+    import os
+    from driving.design_context import design_score
+
+    base_html = """<!DOCTYPE html>
+<html lang="zh"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+:root { --color-bg: #0D0D12; --color-text: #F5F5F5; --color-accent: #0A84FF; }
+body { transition: opacity 0.3s ease; }
+:focus-visible { outline: 2px solid var(--color-accent); }
+button:hover{opacity:0.85}button:active{transform:scale(0.98)}button:focus{outline:2px solid blue}button:disabled{opacity:0.5}
+@media (max-width: 768px) { body { font-size: 14px; } }
+@keyframes fadeInUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
+section{animation:fadeInUp 0.8s ease-out both}
+</style></head><body>
+<header><nav>Logo</nav></header>
+<main><section>内容</section></main>
+<footer>Copyright</footer>
+__SCRIPT__
+</body></html>"""
+
+    clean_html = base_html.replace("__SCRIPT__", "")
+    debug_html = base_html.replace("__SCRIPT__", '<script>console.log("debug");</script>')
+
+    with tempfile.TemporaryDirectory() as td1:
+        with open(os.path.join(td1, "index.html"), "w") as f:
+            f.write(clean_html)
+        score_clean, _ = design_score(td1)
+
+    with tempfile.TemporaryDirectory() as td2:
+        with open(os.path.join(td2, "index.html"), "w") as f:
+            f.write(debug_html)
+        score_debug, _ = design_score(td2)
+
+    assert score_clean > score_debug, (
+        f"无 console.log 应比有 console.log 分数高: {score_clean} vs {score_debug}"
+    )

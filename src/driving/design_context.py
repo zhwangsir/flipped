@@ -1706,6 +1706,48 @@ def check_inline_styles(cwd: str) -> list[dict]:
     return violations
 
 
+def check_console_log(cwd: str) -> list[dict]:
+    """M58: 检测 <script> 块中的 console.log 调试残留。
+
+    AI 生成代码常遗留 console.log 调试语句，这是生产环境的破绽。
+    只检测 <script>...</script> 块内的 console.log，不检测文本内容。
+    """
+    import os as _os
+    import re as _re
+
+    violations: list[dict] = []
+
+    for fname in _os.listdir(cwd) if _os.path.exists(cwd) else []:
+        if not fname.endswith(".html"):
+            continue
+        fpath = _os.path.join(cwd, fname)
+        if not _os.path.isfile(fpath):
+            continue
+        try:
+            content = open(fpath, "r", encoding="utf-8").read()
+        except Exception:
+            continue
+
+        # 只提取 <script> 块内容
+        script_blocks = _re.findall(
+            r"<script\b[^>]*>(.*?)</script>",
+            content, _re.IGNORECASE | _re.DOTALL,
+        )
+
+        for block in script_blocks:
+            # 找所有 console.log 调用
+            logs = _re.findall(r"console\.log\s*\(", block)
+            for _ in logs:
+                violations.append({
+                    "rule": "console_log",
+                    "severity": "warning",
+                    "file": fname,
+                    "message": "<script> 中有 console.log 调试残留（生产环境应移除）",
+                })
+
+    return violations
+
+
 def auto_fix_design_issues(cwd: str) -> bool:
     """组合调用所有 auto-fix 函数，返回是否做过任何修改。"""
     changed1 = auto_fix_spacing_grid(cwd)
@@ -1983,6 +2025,12 @@ def lint_design_quality(cwd: str) -> list[dict]:
     except Exception:
         pass
 
+    # 13. M58: console.log 调试残留检测
+    try:
+        violations.extend(check_console_log(cwd))
+    except Exception:
+        pass
+
     return violations
 
 
@@ -2131,6 +2179,11 @@ def design_score(cwd: str) -> "tuple[int, list[str]]":
     if "inline_style" in warning_rules:
         score -= 5
         notes.append("检测到内联样式style(-5)")
+
+    # 13. M58: console.log 调试残留扣分（warning 级别，-5）
+    if "console_log" in warning_rules:
+        score -= 5
+        notes.append("检测到console.log调试残留(-5)")
 
     score = max(0, score)
     if not notes:
