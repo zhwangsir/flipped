@@ -2885,6 +2885,142 @@ def auto_fix_opacity(cwd: str) -> bool:
     return changed
 
 
+# ---------- M74: font-size 一致性 ----------
+
+_STANDARD_FONT_SIZES = (12, 14, 16, 18, 24, 30, 36, 48, 64, 96)
+
+
+def check_font_size_chaos(cwd: str) -> list[dict]:
+    """M74: 检测 font-size 一致性问题。
+
+    AI 生成 CSS 常见破绽：随机字号（13px/17px/23px/37px）无系统性 type scale。
+    标准集合（px）：{12, 14, 16, 18, 24, 30, 36, 48, 64, 96}（Major Third / Perfect Fourth）。
+
+    规则1: 非标准值报 warning。
+    规则2: 超过 8 个不同值报 warning（设计系统应有 ≤8 个字号层级）。
+    """
+    import os as _os
+    import re as _re
+
+    violations: list[dict] = []
+
+    if not _os.path.exists(cwd):
+        return violations
+
+    for fname in _os.listdir(cwd):
+        if not fname.endswith(".html"):
+            continue
+        fpath = _os.path.join(cwd, fname)
+        if not _os.path.isfile(fpath):
+            continue
+        try:
+            content = open(fpath, "r", encoding="utf-8").read()
+        except Exception:
+            continue
+
+        # 提取所有 font-size: Npx 值（排除 line-height 等其他属性）
+        size_matches = _re.findall(
+            r"font-size\s*:\s*(\d+)px", content, _re.IGNORECASE,
+        )
+        if not size_matches:
+            continue
+
+        values = [int(m) for m in size_matches]
+        distinct = sorted(set(values))
+
+        # 规则1: 非标准值
+        non_standard = [v for v in distinct if v not in _STANDARD_FONT_SIZES and v <= 200]
+        if non_standard:
+            violations.append({
+                "rule": "font_size_chaos",
+                "severity": "warning",
+                "file": fname,
+                "message": (
+                    f"非标准 font-size 值：{non_standard}px，"
+                    f"应使用 12/14/16/18/24/30/36/48/64/96 系统化 type scale"
+                ),
+            })
+
+        # 规则2: 超过 8 个不同值
+        if len(distinct) > 8:
+            violations.append({
+                "rule": "font_size_chaos",
+                "severity": "warning",
+                "file": fname,
+                "message": (
+                    f"font-size 有 {len(distinct)} 个不同值：{distinct}px，"
+                    f"应精简到 ≤8 个系统化字号层级"
+                ),
+            })
+
+    return violations
+
+
+def auto_fix_font_size(cwd: str) -> bool:
+    """M74: 规范化 font-size 值到标准 type scale {12,14,16,18,24,30,36,48,64,96}。"""
+    import os as _os
+    import re as _re
+
+    def _nearest_font_size(val: int) -> int:
+        """返回标准集合中最近的值（距离相等时取较大值）。"""
+        best = _STANDARD_FONT_SIZES[0]
+        best_dist = abs(best - val)
+        for s in _STANDARD_FONT_SIZES[1:]:
+            d = abs(s - val)
+            if d < best_dist or (d == best_dist and s > best):
+                best, best_dist = s, d
+        return best
+
+    def _is_standard(val: int) -> bool:
+        return val in _STANDARD_FONT_SIZES
+
+    if not _os.path.exists(cwd):
+        return False
+
+    changed = False
+    for fname in _os.listdir(cwd):
+        if not fname.endswith(".html"):
+            continue
+        fpath = _os.path.join(cwd, fname)
+        if not _os.path.isfile(fpath):
+            continue
+        try:
+            content = open(fpath, "r", encoding="utf-8").read()
+        except Exception:
+            continue
+
+        # 先检查是否有违规
+        violations = check_font_size_chaos(_os.path.dirname(fpath))
+        has_violation = any(
+            v["file"] == fname and v["rule"] == "font_size_chaos"
+            for v in violations
+        )
+        if not has_violation:
+            continue
+
+        # 替换非标准 font-size px 值
+        def _replace_font_size(m):
+            val = int(m.group(1))
+            if _is_standard(val):
+                return m.group(0)  # 已标准
+            std = _nearest_font_size(val)
+            return f"font-size: {std}px"
+
+        new_content = _re.sub(
+            r"font-size\s*:\s*(\d+)px",
+            _replace_font_size,
+            content,
+            flags=_re.IGNORECASE,
+        )
+
+        if new_content != content:
+            with open(fpath, "w", encoding="utf-8") as f:
+                f.write(new_content)
+            changed = True
+
+    return changed
+
+
 def auto_fix_design_issues(cwd: str) -> bool:
     """组合调用所有 auto-fix 函数，返回是否做过任何修改。"""
     changed1 = auto_fix_spacing_grid(cwd)
@@ -2910,11 +3046,13 @@ def auto_fix_design_issues(cwd: str) -> bool:
     changed21 = auto_fix_box_shadow(cwd)
     changed22 = auto_fix_transition(cwd)
     changed23 = auto_fix_opacity(cwd)
+    changed24 = auto_fix_font_size(cwd)
     return (
         changed1 or changed2 or changed3 or changed4 or changed5
         or changed6 or changed7 or changed8 or changed9 or changed10 or changed11
         or changed12 or changed13 or changed14 or changed15 or changed16 or changed17
         or changed18 or changed19 or changed20 or changed21 or changed22 or changed23
+        or changed24
     )
 
 
@@ -3208,6 +3346,12 @@ def lint_design_quality(cwd: str) -> list[dict]:
     except Exception:
         pass
 
+    # 19. M74: font-size 一致性检测
+    try:
+        violations.extend(check_font_size_chaos(cwd))
+    except Exception:
+        pass
+
     return violations
 
 
@@ -3386,6 +3530,11 @@ def design_score(cwd: str) -> "tuple[int, list[str]]":
     if "opacity_chaos" in warning_rules:
         score -= 5
         notes.append("检测到opacity不一致(-5)")
+
+    # 19. M74: font-size 一致性扣分（warning 级别，-5）
+    if "font_size_chaos" in warning_rules:
+        score -= 5
+        notes.append("检测到font-size不一致(-5)")
 
     score = max(0, score)
     if not notes:

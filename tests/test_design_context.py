@@ -5358,3 +5358,198 @@ def test_auto_fix_design_issues_includes_opacity():
         violations = check_opacity_chaos(td)
     o_v = [v for v in violations if v["rule"] == "opacity_chaos"]
     assert o_v == [], f"组合修复后不应有违规: {o_v}"
+
+
+# ---------- M74: font-size 一致性检测 + auto-fix ----------
+
+
+def test_check_font_size_chaos_no_html():
+    """没有 HTML 文件时应返回空列表。"""
+    import tempfile
+    import os
+    from driving.design_context import check_font_size_chaos
+    with tempfile.TemporaryDirectory() as td:
+        result = check_font_size_chaos(td)
+    assert result == []
+
+
+def test_check_font_size_chaos_non_standard():
+    """非标准 font-size 值应报 warning。"""
+    import tempfile
+    import os
+    from driving.design_context import check_font_size_chaos
+    html = """<html><head><style>
+    .a { font-size: 13px; }
+    .b { font-size: 17px; }
+    .c { font-size: 23px; }
+    </style></head><body>text</body></html>"""
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        violations = check_font_size_chaos(td)
+    fs_v = [v for v in violations if v["rule"] == "font_size_chaos"]
+    assert len(fs_v) > 0
+    assert fs_v[0]["severity"] == "warning"
+
+
+def test_check_font_size_chaos_clean():
+    """标准 font-size 值不应报违规。"""
+    import tempfile
+    import os
+    from driving.design_context import check_font_size_chaos
+    html = """<html><head><style>
+    .a { font-size: 12px; }
+    .b { font-size: 14px; }
+    .c { font-size: 16px; }
+    .d { font-size: 18px; }
+    .e { font-size: 24px; }
+    .f { font-size: 36px; }
+    .g { font-size: 48px; }
+    </style></head><body>text</body></html>"""
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        violations = check_font_size_chaos(td)
+    fs_v = [v for v in violations if v["rule"] == "font_size_chaos"]
+    assert fs_v == []
+
+
+def test_check_font_size_chaos_too_many_distinct():
+    """超过 8 个不同 font-size 值应报 warning。"""
+    import tempfile
+    import os
+    from driving.design_context import check_font_size_chaos
+    html = """<html><head><style>
+    .a { font-size: 12px; }
+    .b { font-size: 14px; }
+    .c { font-size: 16px; }
+    .d { font-size: 18px; }
+    .e { font-size: 24px; }
+    .f { font-size: 30px; }
+    .g { font-size: 36px; }
+    .h { font-size: 48px; }
+    .i { font-size: 64px; }
+    </style></head><body>text</body></html>"""
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        violations = check_font_size_chaos(td)
+    fs_v = [v for v in violations if v["rule"] == "font_size_chaos"]
+    assert len(fs_v) > 0
+    assert "9" in fs_v[0]["message"] or "不同" in fs_v[0]["message"]
+
+
+def test_check_font_size_chaos_empty_dir():
+    """空目录应返回空列表。"""
+    import tempfile
+    from driving.design_context import check_font_size_chaos
+    with tempfile.TemporaryDirectory() as td:
+        result = check_font_size_chaos(td)
+    assert result == []
+
+
+def test_lint_design_quality_includes_font_size():
+    """lint_design_quality 应包含 font_size_chaos 检测。"""
+    import tempfile
+    import os
+    from driving.design_context import lint_design_quality
+    html = """<html><head><style>
+    .a { font-size: 13px; }
+    </style></head><body>text</body></html>"""
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        violations = lint_design_quality(td)
+    fs_v = [v for v in violations if v["rule"] == "font_size_chaos"]
+    assert len(fs_v) > 0
+
+
+def test_auto_fix_font_size_normalizes():
+    """auto_fix_font_size 应将非标准值映射到最近标准值。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_font_size
+    html = """<html><head><style>
+    .a { font-size: 13px; }
+    .b { font-size: 17px; }
+    .c { font-size: 23px; }
+    </style></head><body>text</body></html>"""
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        changed = auto_fix_font_size(td)
+        assert changed is True
+        with open(os.path.join(td, "index.html"), "r") as f:
+            content = f.read()
+    # 13 -> 14 (距离1, 12和14等距, 取较大值14)
+    assert "14px" in content
+    # 17 -> 18 (距离1, 16和18等距, 取较大值18)
+    assert "18px" in content
+    # 23 -> 24 (距离1, 18和24不等距, 24最近)
+    assert "24px" in content
+    # 原始值不应残留
+    assert "13px" not in content
+    assert "17px" not in content
+    assert "23px" not in content
+
+
+def test_auto_fix_font_size_no_change_if_clean():
+    """已经是标准值时不应修改文件。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_font_size
+    html = """<html><head><style>
+    .a { font-size: 16px; }
+    .b { font-size: 24px; }
+    </style></head><body>text</body></html>"""
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        changed = auto_fix_font_size(td)
+        assert changed is False
+
+
+def test_auto_fix_font_size_empty_dir():
+    """空目录应返回 False。"""
+    import tempfile
+    from driving.design_context import auto_fix_font_size
+    with tempfile.TemporaryDirectory() as td:
+        changed = auto_fix_font_size(td)
+    assert changed is False
+
+
+def test_auto_fix_font_size_idempotent():
+    """多次调用 auto_fix_font_size 应幂等。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_font_size
+    html = """<html><head><style>
+    .a { font-size: 13px; }
+    .b { font-size: 37px; }
+    </style></head><body>text</body></html>"""
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        auto_fix_font_size(td)
+        changed2 = auto_fix_font_size(td)
+        assert changed2 is False
+
+
+def test_auto_fix_design_issues_includes_font_size():
+    """auto_fix_design_issues 组合函数应包含 font-size 修复。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_design_issues, check_font_size_chaos
+    html = """<html><head><meta name="viewport" content="width=device-width">
+    <style>
+    .a { font-size: 13px; }
+    .b { font-size: 23px; }
+    </style></head>
+    <body><main><section>content</section></main></body></html>"""
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        auto_fix_design_issues(td)
+        violations = check_font_size_chaos(td)
+    fs_v = [v for v in violations if v["rule"] == "font_size_chaos"]
+    assert fs_v == [], f"组合修复后不应有违规: {fs_v}"
