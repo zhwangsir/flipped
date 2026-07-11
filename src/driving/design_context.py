@@ -3302,6 +3302,146 @@ def auto_fix_font_weight(cwd: str) -> bool:
     return changed
 
 
+# ---------- M77: letter-spacing 一致性 ----------
+
+_STANDARD_LETTER_SPACINGS = (-0.05, -0.02, 0.0, 0.025, 0.05, 0.1)
+
+
+def check_letter_spacing_chaos(cwd: str) -> list[dict]:
+    """M77: 检测 letter-spacing 一致性问题。
+
+    AI 生成 CSS 常见破绽：随机字间距（0.03em/0.07em/-0.03em）无系统性。
+    标准集合（em）：{-0.05, -0.02, 0, 0.025, 0.05, 0.1}。
+
+    规则1: 非标准值报 warning。
+    规则2: 超过 5 个不同值报 warning。
+    """
+    import os as _os
+    import re as _re
+
+    violations: list[dict] = []
+
+    if not _os.path.exists(cwd):
+        return violations
+
+    for fname in _os.listdir(cwd):
+        if not fname.endswith(".html"):
+            continue
+        fpath = _os.path.join(cwd, fname)
+        if not _os.path.isfile(fpath):
+            continue
+        try:
+            content = open(fpath, "r", encoding="utf-8").read()
+        except Exception:
+            continue
+
+        # 只提取 em 单位的 letter-spacing（排除 normal 关键字）
+        ls_matches = _re.findall(
+            r"letter-spacing\s*:\s*(-?\d+(?:\.\d+)?)em",
+            content, _re.IGNORECASE,
+        )
+        if not ls_matches:
+            continue
+
+        values = [float(m) for m in ls_matches]
+        distinct = sorted(set(values))
+
+        # 规则1: 非标准值
+        non_standard = [
+            v for v in distinct
+            if not any(abs(v - s) < 1e-6 for s in _STANDARD_LETTER_SPACINGS)
+        ]
+        if non_standard:
+            violations.append({
+                "rule": "letter_spacing_chaos",
+                "severity": "warning",
+                "file": fname,
+                "message": (
+                    f"非标准 letter-spacing 值：{non_standard}em，"
+                    f"应使用 -0.05/-0.02/0/0.025/0.05/0.1 系统化字间距"
+                ),
+            })
+
+        # 规则2: 超过 6 个不同值
+        if len(distinct) > 6:
+            violations.append({
+                "rule": "letter_spacing_chaos",
+                "severity": "warning",
+                "file": fname,
+                "message": (
+                    f"letter-spacing 有 {len(distinct)} 个不同值：{distinct}em，"
+                    f"应精简到 ≤6 个系统化字间距"
+                ),
+            })
+
+    return violations
+
+
+def auto_fix_letter_spacing(cwd: str) -> bool:
+    """M77: 规范化 letter-spacing 值到标准集合 {-0.05,-0.02,0,0.025,0.05,0.1}em。"""
+    import os as _os
+    import re as _re
+
+    def _nearest_letter_spacing(val: float) -> float:
+        """返回标准集合中最近的值（距离相等时取较大值）。"""
+        best = _STANDARD_LETTER_SPACINGS[0]
+        best_dist = abs(best - val)
+        for s in _STANDARD_LETTER_SPACINGS[1:]:
+            d = abs(s - val)
+            if d < best_dist or (d == best_dist and s > best):
+                best, best_dist = s, d
+        return best
+
+    def _is_standard(val: float) -> bool:
+        return any(abs(val - s) < 1e-6 for s in _STANDARD_LETTER_SPACINGS)
+
+    if not _os.path.exists(cwd):
+        return False
+
+    changed = False
+    for fname in _os.listdir(cwd):
+        if not fname.endswith(".html"):
+            continue
+        fpath = _os.path.join(cwd, fname)
+        if not _os.path.isfile(fpath):
+            continue
+        try:
+            content = open(fpath, "r", encoding="utf-8").read()
+        except Exception:
+            continue
+
+        # 先检查是否有违规
+        violations = check_letter_spacing_chaos(_os.path.dirname(fpath))
+        has_violation = any(
+            v["file"] == fname and v["rule"] == "letter_spacing_chaos"
+            for v in violations
+        )
+        if not has_violation:
+            continue
+
+        # 替换非标准 letter-spacing 值（仅 em 单位）
+        def _replace_letter_spacing(m):
+            val = float(m.group(1))
+            if _is_standard(val):
+                return m.group(0)  # 已标准
+            std = _nearest_letter_spacing(val)
+            return f"letter-spacing: {std:g}em"
+
+        new_content = _re.sub(
+            r"letter-spacing\s*:\s*(-?\d+(?:\.\d+)?)em",
+            _replace_letter_spacing,
+            content,
+            flags=_re.IGNORECASE,
+        )
+
+        if new_content != content:
+            with open(fpath, "w", encoding="utf-8") as f:
+                f.write(new_content)
+            changed = True
+
+    return changed
+
+
 def auto_fix_design_issues(cwd: str) -> bool:
     """组合调用所有 auto-fix 函数，返回是否做过任何修改。"""
     changed1 = auto_fix_spacing_grid(cwd)
@@ -3330,12 +3470,13 @@ def auto_fix_design_issues(cwd: str) -> bool:
     changed24 = auto_fix_font_size(cwd)
     changed25 = auto_fix_line_height(cwd)
     changed26 = auto_fix_font_weight(cwd)
+    changed27 = auto_fix_letter_spacing(cwd)
     return (
         changed1 or changed2 or changed3 or changed4 or changed5
         or changed6 or changed7 or changed8 or changed9 or changed10 or changed11
         or changed12 or changed13 or changed14 or changed15 or changed16 or changed17
         or changed18 or changed19 or changed20 or changed21 or changed22 or changed23
-        or changed24 or changed25 or changed26
+        or changed24 or changed25 or changed26 or changed27
     )
 
 
@@ -3647,6 +3788,12 @@ def lint_design_quality(cwd: str) -> list[dict]:
     except Exception:
         pass
 
+    # 22. M77: letter-spacing 一致性检测
+    try:
+        violations.extend(check_letter_spacing_chaos(cwd))
+    except Exception:
+        pass
+
     return violations
 
 
@@ -3840,6 +3987,11 @@ def design_score(cwd: str) -> "tuple[int, list[str]]":
     if "font_weight_chaos" in warning_rules:
         score -= 5
         notes.append("检测到font-weight不一致(-5)")
+
+    # 22. M77: letter-spacing 一致性扣分（warning 级别，-5）
+    if "letter_spacing_chaos" in warning_rules:
+        score -= 5
+        notes.append("检测到letter-spacing不一致(-5)")
 
     score = max(0, score)
     if not notes:
