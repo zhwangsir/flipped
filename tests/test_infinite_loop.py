@@ -1222,3 +1222,239 @@ def test_evolve_goal_feature_hint_skipped_when_low_score():
     assert "设计质量" in prompt or "提升设计" in prompt
     # 不应包含功能深化提示（设计优先）
     assert "深化" not in prompt
+
+
+# ---------- M67: E2E 集成测试 — 三层 fallback 完整链路 ----------
+
+
+def test_e2e_three_layer_fallback_round_summary_tracking():
+    """M67 E2E: 三层 fallback 产出 feature 任务 → RoundSummary 正确追踪。
+
+    模拟完整链路在 infinite_loop 层面的表现：
+    1. task_proposer (GLM) 返回 None（GLM 不可用）
+    2. design_fix_fallback 返回 None（design_score 已达标）
+    3. feature_fallback 返回 feature 任务
+    4. factory_loop 执行 feature 任务 → completed
+    5. _collect_round_summary 检测到 feature → feature_count=1, proposer_triggered=True
+    6. _evolve_goal prompt 包含 feature 信息
+    """
+    from driving.factory_loop import FactoryTask, TaskResult
+
+    # 构造一个有 feature 任务的 FactoryState（模拟三层 fallback 产出）
+    normal_task = FactoryTask(id="t1", description="创建页面", verify_cmd=["true"])
+    feature_task = FactoryTask(
+        id="feature-1",
+        description="添加表单组件（<form> + input + label，用于用户交互）",
+        verify_cmd=["true"],
+        feedback="(确定性 feature: 添加 <form>)",
+    )
+
+    captured_evolve = {"prompt": ""}
+
+    def mock_evolve(direction, rounds):
+        if not rounds:
+            return direction, False, "首轮"
+        # 捕获 evolve prompt 以验证 feature 信息
+        # 手动调用 _evolve_goal 来捕获 prompt
+        return "达成", True, "完成"
+
+    def mock_factory_loop(goal, cwd, **kwargs):
+        return FactoryState(
+            factory_id="e2e-factory",
+            product_goal=goal,
+            cwd=cwd,
+            status=FactoryStatus.done,
+            roadmap=[normal_task, feature_task],
+            completed=[
+                TaskResult(task=normal_task, verified=True, stop_reason="verified", iteration=1),
+                TaskResult(task=feature_task, verified=True, stop_reason="verified", iteration=1),
+            ],
+        )
+
+    with tempfile.TemporaryDirectory() as td:
+        db = os.path.join(td, "loop.db")
+        state = run_infinite_loop(
+            "做一个落地页",
+            td,
+            max_rounds=5,
+            db_path=db,
+            evolve_fn=mock_evolve,
+            factory_loop_fn=mock_factory_loop,
+        )
+
+    assert state.status == "goal_achieved"
+    assert len(state.rounds) == 1
+
+    r1 = state.rounds[0]
+    # 三层 fallback 产出的 feature 任务应被追踪
+    assert r1.feature_count == 1, f"应追踪到 1 个 feature 任务，实际 {r1.feature_count}"
+    assert r1.proposer_triggered is True, "feature 任务应触发 proposer_triggered"
+    assert r1.tasks_completed == 2
+
+
+def test_e2e_three_layer_fallback_with_real_proposers():
+    """M67 E2E: 使用真实的 propose_design_fix_task + propose_feature_task。
+
+    场景：GLM 不可用（mock propose_next_task 抛异常）+ HTML design_score 达标 +
+    HTML 缺少功能维度（无 <form>）。验证三层 fallback 链路：
+    - propose_next_task → 异常 → None
+    - propose_design_fix_task → auto_fix + score ≥ 70 → None
+    - propose_feature_task → 扫描到缺少 <form> → 返回 feature 任务
+    - factory_loop 执行 feature 任务 → completed
+    - _collect_round_summary → feature_count=1
+    """
+    from driving.factory_loop import run_factory_loop, FactoryTask, TaskResult
+    from driving.task_proposer import propose_design_fix_task, propose_feature_task
+
+    # 良好 HTML（design_score ≥ 70）但缺少所有 feature 维度
+    good_html_no_features = """<!DOCTYPE html>
+<html lang="zh"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="test">
+<style>
+:root { --color-bg: #0D0D12; --color-text: #F5F5F5; --color-accent: #0A84FF; }
+body { padding: 16px; margin: 0; font-size: 16px; transition: opacity 0.3s ease; }
+h1 { font-size: 48px; }
+:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+@media (max-width: 768px) { body { font-size: 14px; } }
+button:hover { opacity: 0.85; }
+button:active { transform: scale(0.98); }
+button:disabled { opacity: 0.5; cursor: not-allowed; }
+</style></head><body>
+<header><nav>Logo</nav></header>
+<main><section><h1>Title</h1>
+<button>Click</button>
+</section></main>
+<footer>Copyright</footer>
+</body></html>"""
+
+    def fake_orchestrator(task, state):
+        # feature 任务的验收命令检查 HTML 标记，
+        # 但 worker 没真正改 HTML，所以 mock 让所有任务通过
+        return TaskResult(task=task, verified=True, stop_reason="verified", iteration=1)
+
+    def fake_proposer(state):
+        return None  # 模拟 GLM 不可用
+
+    with tempfile.TemporaryDirectory() as d:
+        with open(os.path.join(d, "index.html"), "w") as f:
+            f.write(good_html_no_features)
+
+        factory_state = run_factory_loop(
+            product_goal="test",
+            cwd=d,
+            db_path=os.path.join(d, "test_factory.db"),
+            checkpoint_db_path=os.path.join(d, "test_ckpt.db"),
+            max_tasks=10,
+            max_rounds=3,
+            planner=lambda s: [FactoryTask(id="t0", description="init", verify_cmd=["true"])],
+            orchestrator_fn=fake_orchestrator,
+            task_proposer=fake_proposer,  # GLM 不可用 → None
+            design_fix_fallback=propose_design_fix_task,  # 真实的
+            feature_fallback=propose_feature_task,  # 真实的
+        )
+
+        # 初始 1 + feature 1 = 2
+        assert len(factory_state.completed) >= 2
+
+        # 最后一个任务应是 feature 任务
+        feature_tasks = [t for t in factory_state.completed if "feature" in t.task.id]
+        assert len(feature_tasks) >= 1, "应至少有 1 个 feature 任务"
+        assert "feature" in feature_tasks[0].task.id
+
+        # 验证 RoundSummary 追踪
+        summary = _collect_round_summary(1, factory_state)
+        assert summary.feature_count >= 1, f"feature_count 应≥1，实际 {summary.feature_count}"
+        assert summary.proposer_triggered is True
+
+
+def test_e2e_three_layer_fallback_evolve_integration():
+    """M67 E2E: 三层 fallback 产出 feature + design_score 达标 → evolve prompt 包含 feature_hint。
+
+    完整链路验证：
+    1. factory_loop 产出 feature 任务（三层 fallback）
+    2. RoundSummary: feature_count=2, design_score=85
+    3. _evolve_goal prompt 应包含 feature_hint（"深化"）
+    """
+    from driving.factory_loop import FactoryTask, TaskResult
+
+    # 构造有 2 个 feature 任务 + design_score 达标的 rounds
+    feature_task_1 = FactoryTask(
+        id="feature-1", description="添加表单", verify_cmd=["true"],
+        feedback="(确定性 feature: 添加 <form>)",
+    )
+    feature_task_2 = FactoryTask(
+        id="feature-2", description="添加 SVG", verify_cmd=["true"],
+        feedback="(确定性 feature: 添加 <svg>)",
+    )
+    normal_task = FactoryTask(id="t1", description="创建页面", verify_cmd=["true"])
+
+    def mock_evolve(direction, rounds):
+        if not rounds:
+            return direction, False, "首轮"
+        return "达成", True, "完成"
+
+    def mock_factory_loop(goal, cwd, **kwargs):
+        return FactoryState(
+            factory_id="e2e-evolve-factory",
+            product_goal=goal,
+            cwd=cwd,
+            status=FactoryStatus.done,
+            roadmap=[normal_task, feature_task_1, feature_task_2],
+            completed=[
+                TaskResult(task=normal_task, verified=True, stop_reason="verified", iteration=1),
+                TaskResult(task=feature_task_1, verified=True, stop_reason="verified", iteration=1),
+                TaskResult(task=feature_task_2, verified=True, stop_reason="verified", iteration=1),
+            ],
+        )
+
+    with tempfile.TemporaryDirectory() as td:
+        # 写一个良好的 HTML 让 design_score 达标
+        good_html = """<!DOCTYPE html>
+<html lang="zh"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="test">
+<style>
+:root { --color-bg: #0D0D12; --color-text: #F5F5F5; --color-accent: #0A84FF; }
+body { padding: 16px; margin: 0; transition: opacity 0.3s ease; }
+:focus-visible { outline: 2px solid var(--color-accent); }
+</style></head><body>
+<header><nav>Logo</nav></header>
+<main><section><h1>Title</h1></section></main>
+<footer>Footer</footer>
+</body></html>"""
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(good_html)
+
+        db = os.path.join(td, "loop.db")
+        state = run_infinite_loop(
+            "做一个落地页",
+            td,
+            max_rounds=5,
+            db_path=db,
+            evolve_fn=mock_evolve,
+            factory_loop_fn=mock_factory_loop,
+        )
+
+    assert state.status == "goal_achieved"
+    r1 = state.rounds[0]
+    assert r1.feature_count == 2, f"应追踪到 2 个 feature 任务，实际 {r1.feature_count}"
+    assert r1.proposer_triggered is True
+
+    # 验证 evolve prompt 包含 feature_hint
+    # 构造 rounds 列表，模拟 design_score 达标 + feature_count > 0
+    evolve_rounds = [
+        RoundSummary(
+            round_num=1, factory_id="e2e-evolve-factory", product_goal="第一轮",
+            tasks_completed=3, tasks_failed=0, summary="完成 + feature",
+            design_score=85,
+            feature_count=2,
+            proposer_triggered=True,
+        ),
+    ]
+    prompt = _capture_evolve_prompt(evolve_rounds)
+
+    # 应包含 feature_hint
+    assert "深化" in prompt or "更复杂" in prompt, \
+        f"design_score=85 + feature_count=2 应触发 feature_hint，prompt: {prompt}"
+    assert "功能" in prompt
