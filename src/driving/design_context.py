@@ -3878,6 +3878,152 @@ def auto_fix_filter_blur(cwd: str) -> bool:
     return changed
 
 
+# ---------- M81: gap 一致性 ----------
+
+_STANDARD_GAPS = (0, 4, 8, 12, 16, 24, 32, 48, 64)
+
+_GAP_RE = r"\b(?:row-|column-)?gap\s*:\s*([^;]+)"
+
+
+def check_gap_chaos(cwd: str) -> list[dict]:
+    """M81: 检测 gap/row-gap/column-gap 一致性问题。
+
+    AI 生成 CSS 常见破绽：随机间距（7px/13px/18px）无系统性。
+    标准集合（px）：{0, 4, 8, 12, 16, 24, 32, 48, 64}（8px 网格系统）。
+
+    规则1: 非标准值报 warning。
+    规则2: 超过 9 个不同值报 warning。
+    """
+    import os as _os
+    import re as _re
+
+    violations: list[dict] = []
+
+    if not _os.path.exists(cwd):
+        return violations
+
+    for fname in _os.listdir(cwd):
+        if not fname.endswith(".html"):
+            continue
+        fpath = _os.path.join(cwd, fname)
+        if not _os.path.isfile(fpath):
+            continue
+        try:
+            content = open(fpath, "r", encoding="utf-8").read()
+        except Exception:
+            continue
+
+        gap_matches = _re.findall(_GAP_RE, content, _re.IGNORECASE)
+        if not gap_matches:
+            continue
+
+        # 从每个 gap 值中提取所有 Npx 数字
+        values: list[int] = []
+        for val_str in gap_matches:
+            px_matches = _re.findall(r"(\d+)px", val_str)
+            values.extend(int(m) for m in px_matches)
+
+        if not values:
+            continue
+
+        distinct = sorted(set(values))
+
+        # 规则1: 非标准值
+        non_standard = [v for v in distinct if v not in _STANDARD_GAPS]
+        if non_standard:
+            violations.append({
+                "rule": "gap_chaos",
+                "severity": "warning",
+                "file": fname,
+                "message": (
+                    f"非标准 gap 值：{non_standard}px，"
+                    f"应使用 0/4/8/12/16/24/32/48/64 系统化间距（8px 网格）"
+                ),
+            })
+
+        # 规则2: 超过 9 个不同值
+        if len(distinct) > 9:
+            violations.append({
+                "rule": "gap_chaos",
+                "severity": "warning",
+                "file": fname,
+                "message": (
+                    f"gap 有 {len(distinct)} 个不同值：{distinct}px，"
+                    f"应精简到 ≤9 个系统化间距"
+                ),
+            })
+
+    return violations
+
+
+def auto_fix_gap(cwd: str) -> bool:
+    """M81: 规范化 gap/row-gap/column-gap 值到标准集合 {0,4,8,12,16,24,32,48,64}px。"""
+    import os as _os
+    import re as _re
+
+    def _nearest_gap(val: int) -> int:
+        best = _STANDARD_GAPS[0]
+        best_dist = abs(best - val)
+        for s in _STANDARD_GAPS[1:]:
+            d = abs(s - val)
+            if d < best_dist or (d == best_dist and s > best):
+                best, best_dist = s, d
+        return best
+
+    def _is_standard(val: int) -> bool:
+        return val in _STANDARD_GAPS
+
+    if not _os.path.exists(cwd):
+        return False
+
+    changed = False
+    for fname in _os.listdir(cwd):
+        if not fname.endswith(".html"):
+            continue
+        fpath = _os.path.join(cwd, fname)
+        if not _os.path.isfile(fpath):
+            continue
+        try:
+            content = open(fpath, "r", encoding="utf-8").read()
+        except Exception:
+            continue
+
+        # 先检查是否有违规
+        violations = check_gap_chaos(_os.path.dirname(fpath))
+        has_violation = any(
+            v["file"] == fname and v["rule"] == "gap_chaos"
+            for v in violations
+        )
+        if not has_violation:
+            continue
+
+        # 替换 gap 声明中的非标准 px 值
+        def _replace_gap(m):
+            val_str = m.group(1)
+            def _replace_px(pm):
+                val = int(pm.group(1))
+                if _is_standard(val):
+                    return pm.group(0)
+                std = _nearest_gap(val)
+                return f"{std}px"
+            new_val = _re.sub(r"(\d+)px", _replace_px, val_str)
+            return f"{m.group(0)[:m.start(1) - m.start(0)]}{new_val}"
+
+        new_content = _re.sub(
+            _GAP_RE,
+            _replace_gap,
+            content,
+            flags=_re.IGNORECASE,
+        )
+
+        if new_content != content:
+            with open(fpath, "w", encoding="utf-8") as f:
+                f.write(new_content)
+            changed = True
+
+    return changed
+
+
 def auto_fix_design_issues(cwd: str) -> bool:
     """组合调用所有 auto-fix 函数，返回是否做过任何修改。"""
     changed1 = auto_fix_spacing_grid(cwd)
@@ -3910,13 +4056,14 @@ def auto_fix_design_issues(cwd: str) -> bool:
     changed28 = auto_fix_border_width(cwd)
     changed29 = auto_fix_animation_duration(cwd)
     changed30 = auto_fix_filter_blur(cwd)
+    changed31 = auto_fix_gap(cwd)
     return (
         changed1 or changed2 or changed3 or changed4 or changed5
         or changed6 or changed7 or changed8 or changed9 or changed10 or changed11
         or changed12 or changed13 or changed14 or changed15 or changed16 or changed17
         or changed18 or changed19 or changed20 or changed21 or changed22 or changed23
         or changed24 or changed25 or changed26 or changed27 or changed28 or changed29
-        or changed30
+        or changed30 or changed31
     )
 
 
@@ -4252,6 +4399,12 @@ def lint_design_quality(cwd: str) -> list[dict]:
     except Exception:
         pass
 
+    # 26. M81: gap/row-gap/column-gap 一致性检测
+    try:
+        violations.extend(check_gap_chaos(cwd))
+    except Exception:
+        pass
+
     return violations
 
 
@@ -4465,6 +4618,11 @@ def design_score(cwd: str) -> "tuple[int, list[str]]":
     if "filter_blur_chaos" in warning_rules:
         score -= 5
         notes.append("检测到filter-blur不一致(-5)")
+
+    # 26. M81: gap/row-gap/column-gap 一致性扣分（warning 级别，-5）
+    if "gap_chaos" in warning_rules:
+        score -= 5
+        notes.append("检测到gap不一致(-5)")
 
     score = max(0, score)
     if not notes:

@@ -6834,3 +6834,240 @@ def test_auto_fix_design_issues_includes_filter_blur():
         violations = check_filter_blur_chaos(td)
     fb_v = [v for v in violations if v["rule"] == "filter_blur_chaos"]
     assert fb_v == [], f"组合修复后不应有违规: {fb_v}"
+
+
+# ---------- M81: gap 一致性检测 + auto-fix ----------
+
+def test_check_gap_chaos_no_html():
+    """无 HTML 文件不应报违规。"""
+    import tempfile
+    import os
+    from driving.design_context import check_gap_chaos
+    with tempfile.TemporaryDirectory() as td:
+        violations = check_gap_chaos(td)
+    assert violations == []
+
+
+def test_check_gap_chaos_non_standard():
+    """非标准 gap 值应报 warning。"""
+    import tempfile
+    import os
+    from driving.design_context import check_gap_chaos
+    html = """<html><head><meta name="viewport" content="width=device-width">
+    <style>
+    .a { display: flex; gap: 7px; }
+    .b { display: grid; gap: 13px; }
+    </style></head>
+    <body><main><section>content</section></main></body></html>"""
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        violations = check_gap_chaos(td)
+    gap_v = [v for v in violations if v["rule"] == "gap_chaos"]
+    assert len(gap_v) >= 1
+    assert gap_v[0]["severity"] == "warning"
+
+
+def test_check_gap_chaos_clean():
+    """标准 gap 值不应报违规。"""
+    import tempfile
+    import os
+    from driving.design_context import check_gap_chaos
+    html = """<html><head><meta name="viewport" content="width=device-width">
+    <style>
+    .a { display: flex; gap: 8px; }
+    .b { display: grid; gap: 16px; }
+    .c { display: flex; gap: 24px; }
+    </style></head>
+    <body><main><section>content</section></main></body></html>"""
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        violations = check_gap_chaos(td)
+    gap_v = [v for v in violations if v["rule"] == "gap_chaos"]
+    assert gap_v == []
+
+
+def test_check_gap_chaos_shorthand_two_values():
+    """gap: 8px 12px 简写（row column）也应检测。"""
+    import tempfile
+    import os
+    from driving.design_context import check_gap_chaos
+    html = """<html><head><meta name="viewport" content="width=device-width">
+    <style>
+    .a { display: grid; gap: 7px 13px; }
+    </style></head>
+    <body><main><section>content</section></main></body></html>"""
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        violations = check_gap_chaos(td)
+    gap_v = [v for v in violations if v["rule"] == "gap_chaos"]
+    assert len(gap_v) >= 1
+
+
+def test_check_gap_chaos_row_gap_not_flagged_separately():
+    """row-gap/column-gap 属性也应检测。"""
+    import tempfile
+    import os
+    from driving.design_context import check_gap_chaos
+    html = """<html><head><meta name="viewport" content="width=device-width">
+    <style>
+    .a { display: flex; row-gap: 7px; column-gap: 13px; }
+    </style></head>
+    <body><main><section>content</section></main></body></html>"""
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        violations = check_gap_chaos(td)
+    gap_v = [v for v in violations if v["rule"] == "gap_chaos"]
+    assert len(gap_v) >= 1
+
+
+def test_check_gap_chaos_too_many_distinct():
+    """超过 9 个不同 gap 值应报 warning。"""
+    import tempfile
+    import os
+    from driving.design_context import check_gap_chaos
+    html = """<html><head><meta name="viewport" content="width=device-width">
+    <style>
+    .a { gap: 4px; }
+    .b { gap: 8px; }
+    .c { gap: 12px; }
+    .d { gap: 16px; }
+    .e { gap: 24px; }
+    .f { gap: 32px; }
+    .g { gap: 48px; }
+    .h { gap: 64px; }
+    .i { gap: 0px; }
+    .j { gap: 20px; }
+    </style></head>
+    <body><main><section>content</section></main></body></html>"""
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        violations = check_gap_chaos(td)
+    # 20px 非标准 + 10 个不同值 > 9
+    gap_v = [v for v in violations if v["rule"] == "gap_chaos"]
+    assert len(gap_v) >= 1
+
+
+def test_check_gap_chaos_empty_dir():
+    """空目录不应报违规。"""
+    import tempfile
+    from driving.design_context import check_gap_chaos
+    with tempfile.TemporaryDirectory() as td:
+        violations = check_gap_chaos(td)
+    assert violations == []
+
+
+def test_lint_design_quality_includes_gap():
+    """lint_design_quality 应包含 gap 检查。"""
+    import tempfile
+    import os
+    from driving.design_context import lint_design_quality
+    html = """<html><head><meta name="viewport" content="width=device-width">
+    <style>
+    .a { display: flex; gap: 7px; }
+    </style></head>
+    <body><main><section>content</section></main></body></html>"""
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        violations = lint_design_quality(td)
+    gap_v = [v for v in violations if v["rule"] == "gap_chaos"]
+    assert len(gap_v) >= 1
+
+
+def test_auto_fix_gap_normalizes():
+    """auto_fix_gap 应将非标准值映射到最近标准值。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_gap, check_gap_chaos
+    html = """<html><head><meta name="viewport" content="width=device-width">
+    <style>
+    .a { gap: 7px; }
+    .b { gap: 13px; }
+    .c { gap: 5px; }
+    </style></head>
+    <body><main><section>content</section></main></body></html>"""
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        changed = auto_fix_gap(td)
+        assert changed is True
+        content = open(os.path.join(td, "index.html")).read()
+        # 7 -> 8, 13 -> 12, 5 -> 4（距离相等取较大值 4）
+        assert "8px" in content
+        assert "12px" in content
+        assert "4px" in content
+        violations = check_gap_chaos(td)
+    gap_v = [v for v in violations if v["rule"] == "gap_chaos"]
+    assert gap_v == []
+
+
+def test_auto_fix_gap_no_change_if_clean():
+    """标准值不应修改。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_gap
+    html = """<html><head><meta name="viewport" content="width=device-width">
+    <style>
+    .a { gap: 8px; }
+    .b { gap: 16px; }
+    </style></head>
+    <body><main><section>content</section></main></body></html>"""
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        changed = auto_fix_gap(td)
+        assert changed is False
+
+
+def test_auto_fix_gap_empty_dir():
+    """空目录不应报错。"""
+    import tempfile
+    from driving.design_context import auto_fix_gap
+    with tempfile.TemporaryDirectory() as td:
+        changed = auto_fix_gap(td)
+    assert changed is False
+
+
+def test_auto_fix_gap_idempotent():
+    """二次调用不应再修改。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_gap, auto_fix_design_issues
+    html = """<html><head><meta name="viewport" content="width=device-width">
+    <style>
+    .a { gap: 7px; }
+    .b { gap: 13px; }
+    </style></head>
+    <body><main><section>content</section></main></body></html>"""
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        auto_fix_design_issues(td)
+        # 二次调用不应修改
+        changed2 = auto_fix_gap(td)
+        assert changed2 is False
+
+
+def test_auto_fix_design_issues_includes_gap():
+    """auto_fix_design_issues 组合函数应包含 gap 修复。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_design_issues, check_gap_chaos
+    html = """<html><head><meta name="viewport" content="width=device-width">
+    <style>
+    .a { gap: 7px; }
+    .b { gap: 13px; }
+    </style></head>
+    <body><main><section>content</section></main></body></html>"""
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        auto_fix_design_issues(td)
+        violations = check_gap_chaos(td)
+    gap_v = [v for v in violations if v["rule"] == "gap_chaos"]
+    assert gap_v == [], f"组合修复后不应有违规: {gap_v}"
