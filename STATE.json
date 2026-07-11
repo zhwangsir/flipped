@@ -2,7 +2,7 @@
   "project": "flipped",
   "description": "接入本地 MLX 双模型(GLM-5.2 编排者 / Kimi-K2.7-Code 执行者)的 agentic 代码编辑器平台。fork Roo Code + 自定义驾驭层(强制验证/循环检测/上下文压缩/人工审批/子Agent/可观测性) + MCP 联网与外部能力。",
   "updated": "2026-07-11",
-  "current_milestone": "M71 box-shadow elevation混乱检测+auto-fix (789 passed)",
+  "current_milestone": "M72 transition duration一致性检测+auto-fix (800 passed)",
   "key_facts": {
     "dev_host": "Apple M5 Max, 128GB RAM, 1.1TB 可用磁盘 — 开发/控制节点，非模型宿主",
     "model_cluster": "exo 集群 @ http://100.64.201.37:52415 (内网, OpenAI 兼容)；公网 https://dgmt.top/exo (需 Bearer token)",
@@ -996,6 +996,18 @@
           "title": "check_box_shadow_chaos + auto_fix_box_shadow + lint/score 集成",
           "status": "done",
           "note": "新增 check_box_shadow_chaos（非标准blur或>4个不同值→warning）+ auto_fix_box_shadow（映射到最近标准elevation）+ lint/score/auto_fix_design_issues 集成。11 TDD 测试。789 passed。"
+        }
+      }
+    },
+    "M72": {
+      "title": "transition duration 一致性检测 + auto-fix",
+      "status": "done",
+      "note": "AI 生成 CSS 常见破绽：随机过渡时长（0.25s/0.35s/0.45s）无系统性。新增 check_transition_chaos(cwd)：标准时长集合（ms）{0,150,200,300,500}，非标准值或>4个不同值报 warning。支持 s 和 ms 单位。新增 auto_fix_transition(cwd)：非标准值映射到最近标准值（距离相等取较大值），保留原单位。幂等。集成到 lint_design_quality（第24维）+ auto_fix_design_issues（第22组）+ design_score（-5）。11 TDD 测试全过。全量 800 passed（+11，无回归）。修复了与 M53 的 test_auto_fix_transition_empty_dir 命名冲突。设计质量系统：Lint 24 维、Auto-fix 22 组。",
+      "tasks": {
+        "M72.1": {
+          "title": "check_transition_chaos + auto_fix_transition + lint/score 集成",
+          "status": "done",
+          "note": "新增 check_transition_chaos（非标准duration或>4个不同值→warning）+ auto_fix_transition（映射到最近标准时长）+ lint/score/auto_fix_design_issues 集成。11 TDD 测试。800 passed。"
         }
       }
     }

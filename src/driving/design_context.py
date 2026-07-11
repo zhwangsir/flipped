@@ -2604,6 +2604,160 @@ def auto_fix_box_shadow(cwd: str) -> bool:
     return changed
 
 
+# ---------- M72: transition duration 一致性检测 + auto-fix ----------
+
+# 标准 transition 时长集合（ms）：fast=150, normal=200, slow=300, slower=500
+_STANDARD_TRANSITION_MS = (0, 150, 200, 300, 500)
+
+
+def _parse_duration_to_ms(num_str: str, unit: str) -> int:
+    """把时长值+单位转为毫秒整数。"""
+    val = float(num_str)
+    return int(val * 1000) if unit == "s" else int(val)
+
+
+def _ms_to_str(ms: int, unit: str) -> str:
+    """把毫秒值转回带单位的字符串。"""
+    if unit == "s":
+        return f"{ms / 1000:g}s"
+    return f"{ms}ms"
+
+
+def check_transition_chaos(cwd: str) -> list[dict]:
+    """M72: 检测 transition duration 一致性问题。
+
+    AI 生成 CSS 常见破绽：随机过渡时长（0.25s/0.35s/0.45s）无系统性。
+    标准时长集合（ms）：{0, 150, 200, 300, 500}（对应 instant/fast/normal/slow/slower）。
+    报 warning 当：
+    - 任意 duration 值不在标准集合中
+    - 或超过 4 个不同 duration 值
+    """
+    import os as _os
+    import re as _re
+
+    violations: list[dict] = []
+    for fname in _os.listdir(cwd) if _os.path.exists(cwd) else []:
+        if not fname.endswith(".html"):
+            continue
+        fpath = _os.path.join(cwd, fname)
+        if not _os.path.isfile(fpath):
+            continue
+        try:
+            content = open(fpath, "r", encoding="utf-8").read()
+        except Exception:
+            continue
+        # 匹配 transition: <value>; （不含 transition-duration 等子属性）
+        transition_matches = _re.findall(
+            r"\btransition\s*:\s*([^;]+)", content, _re.IGNORECASE,
+        )
+        if not transition_matches:
+            continue
+        durations: list[int] = []
+        for tval in transition_matches:
+            # 提取所有 duration 模式：数字 + s/ms
+            dur_matches = _re.findall(r"(\d+(?:\.\d+)?)(ms|s)\b", tval)
+            for num_str, unit in dur_matches:
+                durations.append(_parse_duration_to_ms(num_str, unit))
+        if not durations:
+            continue
+        distinct = sorted(set(durations))
+        non_standard = [d for d in distinct if d not in _STANDARD_TRANSITION_MS]
+        if non_standard:
+            violations.append({
+                "rule": "transition_chaos",
+                "severity": "warning",
+                "file": fname,
+                "message": f"非标准 transition duration：{non_standard}ms，应使用 0/150/200/300/500 系统化时长",
+            })
+            continue
+        if len(distinct) > 4:
+            violations.append({
+                "rule": "transition_chaos",
+                "severity": "warning",
+                "file": fname,
+                "message": f"transition 有 {len(distinct)} 个不同 duration：{distinct}ms，应精简到 ≤4 个系统化时长",
+            })
+    return violations
+
+
+def auto_fix_transition(cwd: str) -> bool:
+    """M72: 规范化 transition duration 到标准集合 {0,150,200,300,500}ms。
+
+    非标准值映射到最近标准值（距离相等取较大值），保留原单位（s/ms）。
+    幂等：标准值再次运行不修改。
+    """
+    import os as _os
+    import re as _re
+
+    def _nearest_duration(ms: int) -> int:
+        best = _STANDARD_TRANSITION_MS[0]
+        best_dist = abs(best - ms)
+        for s in _STANDARD_TRANSITION_MS[1:]:
+            d = abs(s - ms)
+            if d < best_dist or (d == best_dist and s > best):
+                best, best_dist = s, d
+        return best
+
+    changed = False
+    if not _os.path.exists(cwd):
+        return False
+
+    for fname in _os.listdir(cwd):
+        if not fname.endswith(".html"):
+            continue
+        fpath = _os.path.join(cwd, fname)
+        if not _os.path.isfile(fpath):
+            continue
+        try:
+            content = open(fpath, "r", encoding="utf-8").read()
+        except Exception:
+            continue
+
+        # 先检查是否有违规
+        violations = check_transition_chaos(_os.path.dirname(fpath))
+        has_violation = any(
+            v["file"] == fname and v["rule"] == "transition_chaos"
+            for v in violations
+        )
+        if not has_violation:
+            continue
+
+        # 在每个 transition: <value>; 块内替换非标准 duration
+        def _fix_transition_block(m):
+            prefix = m.group(1)  # "transition:" 部分
+            tval = m.group(2)    # transition 值
+
+            def _replace_dur(dm):
+                num_str = dm.group(1)
+                unit = dm.group(2)
+                ms = _parse_duration_to_ms(num_str, unit)
+                if ms in _STANDARD_TRANSITION_MS:
+                    return dm.group(0)  # 已标准
+                std_ms = _nearest_duration(ms)
+                return _ms_to_str(std_ms, unit)
+
+            new_tval = _re.sub(
+                r"(\d+(?:\.\d+)?)(ms|s)\b",
+                _replace_dur,
+                tval,
+            )
+            return prefix + new_tval
+
+        new_content = _re.sub(
+            r"(\btransition\s*:\s*)([^;]+)",
+            _fix_transition_block,
+            content,
+            flags=_re.IGNORECASE,
+        )
+
+        if new_content != content:
+            with open(fpath, "w", encoding="utf-8") as f:
+                f.write(new_content)
+            changed = True
+
+    return changed
+
+
 def auto_fix_design_issues(cwd: str) -> bool:
     """组合调用所有 auto-fix 函数，返回是否做过任何修改。"""
     changed1 = auto_fix_spacing_grid(cwd)
@@ -2627,11 +2781,12 @@ def auto_fix_design_issues(cwd: str) -> bool:
     changed19 = auto_fix_zindex(cwd)
     changed20 = auto_fix_border_radius(cwd)
     changed21 = auto_fix_box_shadow(cwd)
+    changed22 = auto_fix_transition(cwd)
     return (
         changed1 or changed2 or changed3 or changed4 or changed5
         or changed6 or changed7 or changed8 or changed9 or changed10 or changed11
         or changed12 or changed13 or changed14 or changed15 or changed16 or changed17
-        or changed18 or changed19 or changed20 or changed21
+        or changed18 or changed19 or changed20 or changed21 or changed22
     )
 
 
@@ -2913,6 +3068,12 @@ def lint_design_quality(cwd: str) -> list[dict]:
     except Exception:
         pass
 
+    # 17. M72: transition duration 一致性检测
+    try:
+        violations.extend(check_transition_chaos(cwd))
+    except Exception:
+        pass
+
     return violations
 
 
@@ -3081,6 +3242,11 @@ def design_score(cwd: str) -> "tuple[int, list[str]]":
     if "box_shadow_chaos" in warning_rules:
         score -= 5
         notes.append("检测到box-shadow elevation混乱(-5)")
+
+    # 17. M72: transition duration 一致性扣分（warning 级别，-5）
+    if "transition_chaos" in warning_rules:
+        score -= 5
+        notes.append("检测到transition duration不一致(-5)")
 
     score = max(0, score)
     if not notes:

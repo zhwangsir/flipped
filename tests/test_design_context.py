@@ -5027,3 +5027,176 @@ def test_auto_fix_design_issues_includes_box_shadow():
         violations = check_box_shadow_chaos(td)
     shadow_v = [v for v in violations if v["rule"] == "box_shadow_chaos"]
     assert shadow_v == [], f"组合修复后不应有违规: {shadow_v}"
+
+
+# ======================== M72: transition duration 一致性检测 + auto-fix ========================
+
+
+def test_check_transition_chaos_no_html():
+    """无 HTML 文件的目录返回空列表。"""
+    import tempfile
+    from driving.design_context import check_transition_chaos
+    with tempfile.TemporaryDirectory() as td:
+        assert check_transition_chaos(td) == []
+
+
+def test_check_transition_chaos_non_standard():
+    """非标准 transition duration 应报 warning。"""
+    import tempfile
+    import os
+    from driving.design_context import check_transition_chaos
+    html = """<html><head><style>
+    .a { transition: opacity 0.25s ease; }
+    .b { transition: transform 0.35s ease; }
+    </style></head><body><main><section>x</section></main></body></html>"""
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        violations = check_transition_chaos(td)
+    t_v = [v for v in violations if v["rule"] == "transition_chaos"]
+    assert len(t_v) >= 1
+    assert t_v[0]["severity"] == "warning"
+
+
+def test_check_transition_chaos_clean():
+    """标准 duration 不报违规。"""
+    import tempfile
+    import os
+    from driving.design_context import check_transition_chaos
+    html = """<html><head><style>
+    .a { transition: opacity 0.15s ease-out; }
+    .b { transition: transform 0.2s ease-out; }
+    .c { transition: all 0.3s ease-out; }
+    </style></head><body><main><section>x</section></main></body></html>"""
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        violations = check_transition_chaos(td)
+    t_v = [v for v in violations if v["rule"] == "transition_chaos"]
+    assert t_v == [], f"标准值不应报违规: {t_v}"
+
+
+def test_check_transition_chaos_ms_units():
+    """支持 ms 单位的 duration。"""
+    import tempfile
+    import os
+    from driving.design_context import check_transition_chaos
+    html = """<html><head><style>
+    .a { transition: opacity 150ms ease-out; }
+    .b { transition: transform 200ms ease-out; }
+    </style></head><body><main><section>x</section></main></body></html>"""
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        violations = check_transition_chaos(td)
+    t_v = [v for v in violations if v["rule"] == "transition_chaos"]
+    assert t_v == [], f"标准 ms 值不应报违规: {t_v}"
+
+
+def test_check_transition_chaos_empty_dir():
+    """空目录返回空列表。"""
+    import tempfile
+    from driving.design_context import check_transition_chaos
+    with tempfile.TemporaryDirectory() as td:
+        assert check_transition_chaos(td) == []
+
+
+def test_lint_design_quality_includes_transition():
+    """lint_design_quality 应包含 transition 检查。"""
+    import tempfile
+    import os
+    from driving.design_context import lint_design_quality
+    html = """<html><head><style>
+    .a { transition: opacity 0.25s ease; }
+    </style></head><body><main><section>x</section></main></body></html>"""
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        violations = lint_design_quality(td)
+    t_v = [v for v in violations if v["rule"] == "transition_chaos"]
+    assert len(t_v) >= 1, f"lint 应检测到 transition 违规: {violations}"
+
+
+def test_auto_fix_transition_normalizes():
+    """非标准 duration 应规范化到最近标准值。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_transition, check_transition_chaos
+    html = """<html><head><meta name="viewport" content="width=device-width">
+    <style>
+    .a { transition: opacity 0.25s ease; }
+    .b { transition: transform 0.35s ease; }
+    </style></head>
+    <body><main><section>content</section></main></body></html>"""
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        changed = auto_fix_transition(td)
+        content = open(os.path.join(td, "index.html"), "r").read()
+        violations = check_transition_chaos(td)
+    assert changed is True, "应报告已修改"
+    t_v = [v for v in violations if v["rule"] == "transition_chaos"]
+    assert t_v == [], f"修复后不应有违规: {t_v}"
+    # 0.25s → 0.2s or 0.3s, 0.35s → 0.3s
+    assert "0.2s" in content or "0.3s" in content, f"应有标准值: {content}"
+
+
+def test_auto_fix_transition_no_change_if_clean():
+    """标准 duration 不修改。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_transition
+    html = """<html><head><style>
+    .a { transition: opacity 0.15s ease-out; }
+    .b { transition: transform 0.3s ease-out; }
+    </style></head><body><main><section>x</section></main></body></html>"""
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        changed = auto_fix_transition(td)
+    assert changed is False, "标准值不应修改"
+
+
+def test_auto_fix_transition_chaos_empty_dir():
+    """空目录返回 False。"""
+    import tempfile
+    from driving.design_context import auto_fix_transition
+    with tempfile.TemporaryDirectory() as td:
+        assert auto_fix_transition(td) is False
+
+
+def test_auto_fix_transition_idempotent():
+    """二次运行不修改。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_transition
+    html = """<html><head><style>
+    .a { transition: opacity 0.25s ease; }
+    .b { transition: transform 0.35s ease; }
+    </style></head><body><main><section>x</section></main></body></html>"""
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        auto_fix_transition(td)
+        changed2 = auto_fix_transition(td)
+    assert changed2 is False, "二次运行不应修改"
+
+
+def test_auto_fix_design_issues_includes_transition():
+    """auto_fix_design_issues 组合函数应包含 transition 修复。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_design_issues, check_transition_chaos
+    html = """<html><head><meta name="viewport" content="width=device-width">
+    <style>
+    .a { transition: opacity 0.25s ease; }
+    .b { transition: transform 0.35s ease; }
+    </style></head>
+    <body><main><section>content</section></main></body></html>"""
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        auto_fix_design_issues(td)
+        violations = check_transition_chaos(td)
+    t_v = [v for v in violations if v["rule"] == "transition_chaos"]
+    assert t_v == [], f"组合修复后不应有违规: {t_v}"
