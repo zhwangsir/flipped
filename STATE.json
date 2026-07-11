@@ -2,7 +2,7 @@
   "project": "flipped",
   "description": "接入本地 MLX 双模型(GLM-5.2 编排者 / Kimi-K2.7-Code 执行者)的 agentic 代码编辑器平台。fork Roo Code + 自定义驾驭层(强制验证/循环检测/上下文压缩/人工审批/子Agent/可观测性) + MCP 联网与外部能力。",
   "updated": "2026-07-11",
-  "current_milestone": "M52 设计质量回归保护 — 新版本 design_score 低于旧版本时自动回退 (647 passed)",
+  "current_milestone": "M53 入场动画 lint + auto-fix — scroll-reveal/stagger fade-in 注入 (659 passed)",
   "key_facts": {
     "dev_host": "Apple M5 Max, 128GB RAM, 1.1TB 可用磁盘 — 开发/控制节点，非模型宿主",
     "model_cluster": "exo 集群 @ http://100.64.201.37:52415 (内网, OpenAI 兼容)；公网 https://dgmt.top/exo (需 Bearer token)",
@@ -768,6 +768,18 @@
           "title": "_check_design_regression + local_worker 回退集成 + 5 测试",
           "status": "done",
           "note": "新增 _check_design_regression + 旧内容备份 + 回归检测 + 自动回退 + 5 TDD 测试。647 passed。"
+        }
+      }
+    },
+    "M53": {
+      "title": "入场动画 lint + auto-fix — scroll-reveal/stagger fade-in 注入",
+      "status": "done",
+      "note": "AI 生成的页面常常是静态的，缺少入场动画。设计文档明确要求 'stagger fade-in' 和 'scroll reveal' 等专业动效。M53 新增 check_scroll_animation(cwd) lint 检查（启发式：有 @keyframes + 有 animation: + 有 opacity/transform 三者都满足才算合规）+ auto_fix_scroll_animation(cwd) auto-fix（注入克制的 @keyframes fadeInUp + section{animation:fadeInUp 0.8s ease-out both}，对齐用户偏好的克制呼吸式动效）。集成到 lint_design_quality（第 16 维 lint 规则）+ auto_fix_design_issues（第 13 个 auto-fix 函数）+ design_score（动画性能维度 10 分拆分为 animation_performance 5 分 + scroll_animation 5 分）。12 个 TDD 测试。全量 659 passed（+12，无回归）。",
+      "tasks": {
+        "M53.1": {
+          "title": "check_scroll_animation + auto_fix_scroll_animation + lint/score 集成 + 12 测试",
+          "status": "done",
+          "note": "新增 check_scroll_animation + auto_fix_scroll_animation + lint_design_quality 集成 + auto_fix_design_issues 集成 + design_score 动画性能维度拆分。更新 test_auto_fix_idempotent 的 good_html 以包含入场动画（反映新合规标准）。659 passed。"
         }
       }
     }

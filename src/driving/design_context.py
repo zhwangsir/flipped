@@ -1262,6 +1262,118 @@ def auto_fix_color_palette(cwd: str) -> bool:
     return changed
 
 
+# ---------- M53: 入场动画 lint + auto-fix（scroll-reveal / stagger fade-in） ----------
+
+
+def check_scroll_animation(cwd: str) -> list[dict]:
+    """检查 HTML 是否有入场动画（@keyframes + animation: + opacity/transform）。
+
+    AI 生成的页面常常是静态的，缺少入场动画。设计文档明确要求
+    "stagger fade-in with 100ms delay" 和 "scroll reveal" 等专业动效术语。
+    缺少入场动画 → warning。
+
+    检测策略（启发式，不解析嵌套花括号）：
+    1. 有 @keyframes 定义
+    2. 有元素使用 animation: 引用
+    3. CSS 中包含 opacity 或 transform（好动画用这些属性）
+    三者都满足才算"有入场动画"，否则报 violation。
+    """
+    import os as _os
+    import re as _re
+
+    violations: list[dict] = []
+
+    for fname in _os.listdir(cwd) if _os.path.exists(cwd) else []:
+        if not fname.endswith(".html"):
+            continue
+        fpath = _os.path.join(cwd, fname)
+        if not _os.path.isfile(fpath):
+            continue
+        try:
+            content = open(fpath, "r", encoding="utf-8").read()
+        except Exception:
+            continue
+
+        lower = content.lower()
+        has_keyframes = "@keyframes" in lower
+        has_animation = bool(_re.search(r"animation\s*:", content, _re.IGNORECASE))
+        has_good_props = "opacity" in lower or "transform" in lower
+
+        if not (has_keyframes and has_animation and has_good_props):
+            violations.append({
+                "rule": "scroll_animation",
+                "severity": "warning",
+                "file": fname,
+                "message": "缺少入场动画（@keyframes + animation: + opacity/transform）",
+            })
+
+    return violations
+
+
+def auto_fix_scroll_animation(cwd: str) -> bool:
+    """M53: 注入入场动画（如果缺少）。
+
+    克制的物理呼吸式动效（对齐用户偏好）：
+    - @keyframes fadeInUp: opacity 0→1 + translateY(20px→0)
+    - 应用于 main > *, section, article
+    - 0.8s ease-out both（克制，非快速闪烁）
+    """
+    import os as _os
+    import re as _re
+
+    _ANIM_CSS = (
+        "@keyframes fadeInUp{from{opacity:0;transform:translateY(20px)}"
+        "to{opacity:1;transform:translateY(0)}}"
+        "main>*,section,article{animation:fadeInUp 0.8s ease-out both}"
+    )
+
+    changed = False
+    for fname in _os.listdir(cwd) if _os.path.exists(cwd) else []:
+        if not fname.endswith(".html"):
+            continue
+        fpath = _os.path.join(cwd, fname)
+        if not _os.path.isfile(fpath):
+            continue
+        try:
+            content = open(fpath, "r", encoding="utf-8").read()
+        except Exception:
+            continue
+
+        # 检查是否已有入场动画
+        violations = check_scroll_animation(_os.path.dirname(fpath))
+        has_violation = any(
+            v["file"] == fname and v["rule"] == "scroll_animation"
+            for v in violations
+        )
+        if not has_violation:
+            continue  # 已有入场动画，跳过
+
+        lower = content.lower()
+        if "<style>" in lower:
+            # 在 </style> 前注入
+            content = _re.sub(
+                r"(</style>)",
+                _ANIM_CSS + r"\1",
+                content, count=1, flags=_re.IGNORECASE,
+            )
+        elif "</head>" in lower:
+            # 在 </head> 前注入 <style>
+            style_block = f"<style>{_ANIM_CSS}</style>"
+            content = _re.sub(
+                r"(</head>)",
+                style_block + r"\1",
+                content, count=1, flags=_re.IGNORECASE,
+            )
+        else:
+            continue  # 无 head 也无 style，跳过
+
+        with open(fpath, "w", encoding="utf-8") as f:
+            f.write(content)
+        changed = True
+
+    return changed
+
+
 def auto_fix_design_issues(cwd: str) -> bool:
     """组合调用所有 auto-fix 函数，返回是否做过任何修改。"""
     changed1 = auto_fix_spacing_grid(cwd)
@@ -1276,10 +1388,11 @@ def auto_fix_design_issues(cwd: str) -> bool:
     changed10 = auto_fix_aria_label(cwd)
     changed11 = auto_fix_form_label(cwd)
     changed12 = auto_fix_color_palette(cwd)
+    changed13 = auto_fix_scroll_animation(cwd)
     return (
         changed1 or changed2 or changed3 or changed4 or changed5
         or changed6 or changed7 or changed8 or changed9 or changed10 or changed11
-        or changed12
+        or changed12 or changed13
     )
 
 
@@ -1513,6 +1626,12 @@ def lint_design_quality(cwd: str) -> list[dict]:
     except Exception:
         pass
 
+    # 9. M53: 入场动画
+    try:
+        violations.extend(check_scroll_animation(cwd))
+    except Exception:
+        pass
+
     return violations
 
 
@@ -1614,11 +1733,15 @@ def design_score(cwd: str) -> "tuple[int, list[str]]":
         score += 0
         notes.append("交互组件缺少状态样式(-10)")
 
-    # 8. 动画性能 (10分)
-    if "animation_performance" not in warning_rules:
-        score += 10
-    else:
-        notes.append("动画性能待优化(-10)")
+    # 8. 动画性能 (10分) — M53: 含入场动画检查（5+5 分）
+    anim_score = 10
+    if "animation_performance" in warning_rules:
+        anim_score -= 5
+        notes.append("动画性能待优化(-5)")
+    if "scroll_animation" in warning_rules:
+        anim_score -= 5
+        notes.append("缺少入场动画(-5)")
+    score += max(0, anim_score)
 
     # 9. 设计一致性 (10分) — 检查 hex 颜色数量
     for fname in _os.listdir(cwd):

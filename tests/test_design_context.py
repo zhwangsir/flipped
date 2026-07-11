@@ -1185,6 +1185,8 @@ body { padding: 16px; margin: 0; font-size: 16px; transition: opacity 0.3s ease;
 h1 { font-size: 48px; }
 :focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
 @media (max-width: 768px) { body { font-size: 14px; } }
+@keyframes fadeInUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
+section{animation:fadeInUp 0.8s ease-out both}
 </style></head><body>
 <header><nav>Logo</nav></header>
 <main><section><h1>Title</h1></section></main>
@@ -2495,3 +2497,243 @@ body { margin: 0; }</style>
         design_colors = {c for c in hex_colors if c.upper() not in ("#000000", "#FFFFFF")}
 
     assert len(design_colors) <= 5, f"组合修复后应≤5色，实际{len(design_colors)}"
+
+
+# ---------- M53: 入场动画 lint + auto-fix（scroll-reveal / stagger fade-in） ----------
+
+
+def test_check_scroll_animation_no_html():
+    """无 HTML 文件时不应报违规。"""
+    import tempfile
+    from driving.design_context import check_scroll_animation
+
+    with tempfile.TemporaryDirectory() as td:
+        violations = check_scroll_animation(td)
+
+    assert violations == []
+
+
+def test_check_scroll_animation_missing():
+    """无 @keyframes 也无 animation: → 报 violation。"""
+    import tempfile
+    import os
+    from driving.design_context import check_scroll_animation
+
+    html = """<html><head><style>body{color:red}</style></head>
+    <body><p>no animation</p></body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        violations = check_scroll_animation(td)
+
+    scroll_violations = [v for v in violations if v["rule"] == "scroll_animation"]
+    assert len(scroll_violations) >= 1
+    assert scroll_violations[0]["severity"] == "warning"
+
+
+def test_check_scroll_animation_present():
+    """有 @keyframes 用 opacity/transform + 元素使用 animation: → 不报违规。"""
+    import tempfile
+    import os
+    from driving.design_context import check_scroll_animation
+
+    html = """<html><head><style>
+    @keyframes fadeInUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
+    section{animation:fadeInUp 0.8s ease-out both}
+    </style></head><body><section>content</section></body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        violations = check_scroll_animation(td)
+
+    scroll_violations = [v for v in violations if v["rule"] == "scroll_animation"]
+    assert scroll_violations == []
+
+
+def test_check_scroll_animation_keyframes_not_used():
+    """有 @keyframes 但无元素使用 animation: → 报违规（动画定义了但没生效）。"""
+    import tempfile
+    import os
+    from driving.design_context import check_scroll_animation
+
+    html = """<html><head><style>
+    @keyframes fadeInUp{from{opacity:0}to{opacity:1}}
+    body{color:red}
+    </style></head><body><p>no element uses animation</p></body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        violations = check_scroll_animation(td)
+
+    scroll_violations = [v for v in violations if v["rule"] == "scroll_animation"]
+    assert len(scroll_violations) >= 1
+
+
+def test_check_scroll_animation_empty_dir():
+    """空目录不应报错。"""
+    import tempfile
+    from driving.design_context import check_scroll_animation
+
+    with tempfile.TemporaryDirectory() as td:
+        violations = check_scroll_animation(td)
+
+    assert violations == []
+
+
+def test_auto_fix_scroll_animation_injects():
+    """无入场动画时应自动注入 @keyframes + animation。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_scroll_animation
+
+    html = """<html><head><style>body{color:red}</style></head>
+    <body><section>content</section></body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        changed = auto_fix_scroll_animation(td)
+        with open(os.path.join(td, "index.html")) as f:
+            content = f.read()
+
+    assert changed is True
+    assert "@keyframes" in content
+    assert "animation:" in content.lower() or "animation :" in content.lower()
+    # 注入的动画应使用 opacity 或 transform（性能友好）
+    assert "opacity" in content or "transform" in content
+
+
+def test_auto_fix_scroll_animation_skips_if_exists():
+    """已有入场动画时不修改。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_scroll_animation
+
+    html = """<html><head><style>
+    @keyframes fadeIn{from{opacity:0}to{opacity:1}}
+    section{animation:fadeIn 0.5s ease-out}
+    </style></head><body><section>content</section></body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        changed = auto_fix_scroll_animation(td)
+
+    assert changed is False
+
+
+def test_auto_fix_scroll_animation_empty_dir():
+    """空目录应返回 False。"""
+    import tempfile
+    from driving.design_context import auto_fix_scroll_animation
+
+    with tempfile.TemporaryDirectory() as td:
+        changed = auto_fix_scroll_animation(td)
+
+    assert changed is False
+
+
+def test_auto_fix_scroll_animation_injects_restrained():
+    """注入的动画应克制（0.8s ease-out，物理呼吸式，非快速闪烁）。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_scroll_animation
+
+    html = """<html><head><style>body{color:red}</style></head>
+    <body><section>content</section></body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        auto_fix_scroll_animation(td)
+        with open(os.path.join(td, "index.html")) as f:
+            content = f.read()
+
+    # 动画时长应 ≥ 0.5s（克制，非快速闪烁）
+    import re
+    durations = re.findall(r"animation[^;]*([\d.]+)s", content, re.IGNORECASE)
+    assert durations, "应有 animation 时长"
+    for d in durations:
+        assert float(d) >= 0.5, f"动画时长 {d}s 太快，应≥0.5s（克制呼吸式）"
+
+
+def test_auto_fix_design_issues_includes_scroll_animation():
+    """auto_fix_design_issues 组合函数应包含 scroll_animation 修复。"""
+    import tempfile
+    import os
+    from driving.design_context import auto_fix_design_issues
+
+    html = """<html><head><style>body{color:red}</style></head>
+    <body><section>content</section></body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        auto_fix_design_issues(td)
+        with open(os.path.join(td, "index.html")) as f:
+            content = f.read()
+
+    assert "@keyframes" in content
+    assert "animation:" in content.lower() or "animation :" in content.lower()
+
+
+def test_lint_design_quality_includes_scroll_animation():
+    """lint_design_quality 应包含 scroll_animation 规则检查。"""
+    import tempfile
+    import os
+    from driving.design_context import lint_design_quality
+
+    html = """<html><head><style>body{color:red}</style></head>
+    <body><section>content</section></body></html>"""
+
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "index.html"), "w") as f:
+            f.write(html)
+        violations = lint_design_quality(td)
+
+    scroll_violations = [v for v in violations if v["rule"] == "scroll_animation"]
+    assert len(scroll_violations) >= 1
+
+
+def test_design_score_penalizes_missing_scroll_animation():
+    """缺少入场动画的 HTML 应比有的分数低。"""
+    import tempfile
+    import os
+    from driving.design_context import design_score
+
+    base_html = """<!DOCTYPE html>
+<html lang="zh"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+:root { --color-bg: #0D0D12; --color-text: #F5F5F5; --color-accent: #0A84FF; }
+body { transition: opacity 0.3s ease; }
+:focus-visible { outline: 2px solid var(--color-accent); }
+button:hover{opacity:0.85}button:active{transform:scale(0.98)}button:focus{outline:2px solid blue}button:disabled{opacity:0.5}
+@media (max-width: 768px) { body { font-size: 14px; } }
+</style></head><body>
+<header><nav>Logo</nav></header>
+<main><section><h1>Title</h1></section></main>
+<footer>Copyright</footer>
+</body></html>"""
+
+    html_with_anim = base_html.replace(
+        "</style>",
+        "@keyframes fadeInUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}section{animation:fadeInUp 0.8s ease-out both}</style>",
+    )
+
+    with tempfile.TemporaryDirectory() as td1:
+        with open(os.path.join(td1, "index.html"), "w") as f:
+            f.write(base_html)
+        score_no_anim, _ = design_score(td1)
+
+    with tempfile.TemporaryDirectory() as td2:
+        with open(os.path.join(td2, "index.html"), "w") as f:
+            f.write(html_with_anim)
+        score_with_anim, _ = design_score(td2)
+
+    assert score_with_anim > score_no_anim, (
+        f"有入场动画应比无入场动画分数高: {score_with_anim} vs {score_no_anim}"
+    )
