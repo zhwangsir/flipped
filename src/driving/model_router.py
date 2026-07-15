@@ -17,7 +17,11 @@ DEFAULT_WORKER_PROXY_URL = "http://host.docker.internal:4000/v1"
 
 
 def _api_key() -> str | None:
-    return os.environ.get("EXO_API_KEY") or os.environ.get("LITELLM_MASTER_KEY")
+    # M89 关键修复:优先 LITELLM_MASTER_KEY。
+    # LiteLLM proxy(:4000)需要 master_key 鉴权;exo 直连不鉴权(接受任意 key)。
+    # 之前 EXO_API_KEY="dummy" 优先,导致 is_model_available 检查 proxy 时 400 鉴权失败,
+    # Worker 误判 proxy 不可用 → 走直连 exo → reasoning 未关 → 卡死。
+    return os.environ.get("LITELLM_MASTER_KEY") or os.environ.get("EXO_API_KEY")
 
 
 def _model_id_for_alias(alias: str) -> str:

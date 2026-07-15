@@ -118,6 +118,26 @@ def instrument_verifier(bus: EventBus, session_id: str, base: VerifierFn,
         bus.emit(session_id, EventType.message, Role.verify,
                  {"ok": ok, "text": "强制验收通过 ✓" if ok else "强制验收未过 ✗",
                   "command": " ".join(cmd), "output": (output or "")[-_VERIFY_OUTPUT_TAIL:]})
+        # M95: 失败时做 RCA 并 emit 结构化事件(fail-open,不影响主流程)
+        if not ok:
+            try:
+                from driving.rca import analyze_failure_with_memory, get_failure_counter
+                rca = analyze_failure_with_memory(
+                    stop_reason="verify_failed",
+                    summary=(output or "")[:500],
+                    verify_output=output or "",
+                )
+                bus.emit(session_id, EventType.rca, Role.overseer, {
+                    "cause": rca.cause.value,
+                    "confidence": rca.confidence,
+                    "detail": rca.detail,
+                    "fix_suggestion": rca.fix_suggestion,
+                    "history_hint": rca.history_hint,
+                    "related_rules": rca.related_rules,
+                    "failure_counter": {k.value: v for k, v in get_failure_counter().items()},
+                })
+            except Exception:
+                pass
         return ok, output
 
     return verifier

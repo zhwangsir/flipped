@@ -55,11 +55,14 @@ class SemanticVerdict:
 
 # ---------- 产物读取 ----------
 
-# UI 产物文件优先级
+# 产物文件优先级(前端 + 后端,M92.1 扩展)
 _ARTIFACT_PRIORITY = (
+    # 前端入口
     "index.html", "index.htm",
     "App.tsx", "App.jsx",
     "main.tsx", "main.jsx",
+    # 后端入口(M92.1 新增)
+    "main.py", "app.py", "server.py",
 )
 
 # 单文件读取上限（防止 prompt 过长触发 GLM reasoning 循环）
@@ -68,10 +71,11 @@ _MAX_TOTAL_BYTES = 6000
 
 
 def _read_artifacts(cwd: str | Path) -> str:
-    """读取 cwd 下的 UI 产物文件，拼接成 GLM 可读的文本。
+    """读取 cwd 下的产物文件，拼接成 GLM 可读的文本。
 
-    策略：优先 index.html，否则扫 *.html/*.tsx/.jsx。每文件截断到 _MAX_FILE_BYTES，
-    总计截断到 _MAX_TOTAL_BYTES。
+    M92.1: 扩展覆盖后端 Python 文件(main.py/app.py/server.py + glob *.py)。
+    策略：优先入口文件(前端+后端)，否则扫 *.html/*.tsx/*.jsx/*.py。每文件截断到
+    _MAX_FILE_BYTES，总计截断到 _MAX_TOTAL_BYTES。
     """
     cwd = Path(cwd)
     chunks: list[str] = []
@@ -89,9 +93,9 @@ def _read_artifacts(cwd: str | Path) -> str:
             if total >= _MAX_TOTAL_BYTES:
                 break
 
-    # 2. 兜底：扫其他 html/tsx/jsx
+    # 2. 兜底：扫其他 html/tsx/jsx/py(M92.1 新增 .py)
     if total < _MAX_TOTAL_BYTES:
-        for pattern in ("*.html", "*.htm", "*.tsx", "*.jsx"):
+        for pattern in ("*.html", "*.htm", "*.tsx", "*.jsx", "*.py"):
             for p in sorted(cwd.glob(pattern)):
                 if p.name in _ARTIFACT_PRIORITY:
                     continue
@@ -108,22 +112,31 @@ def _read_artifacts(cwd: str | Path) -> str:
 
 # ---------- GLM 语义验证调用 ----------
 
-_SEMANTIC_PROMPT_TEMPLATE = """你是 UI 代码监督验证者。下面是 worker(Kimi) 刚产出的代码产物。
+_SEMANTIC_PROMPT_TEMPLATE = """你是代码监督验证者。下面是 worker(Kimi) 刚产出的代码产物（可能是前端 HTML/TSX，也可能是后端 Python）。
 请评判以下维度，输出 JSON：
 
+前端维度（若产物是 HTML/TSX/JSX）：
 1. design_consistency: 设计系统是否一致（颜色/字体/间距是否符合规范）
 2. structure: HTML/组件结构是否完整（必要 section/语义标签）
 3. a11y_hints: 无障碍明显问题（缺 alt/lang/label/对比度）
 4. potential_bugs: 潜在 bug（未闭合标签/JS 错误/资源 404）
-5. severity: "ok" | "warning" | "blocker"
+
+后端维度（若产物是 Python/.py）：
+5. exception_handling: 异常处理是否完整（关键路径缺 try/except、未捕获的 ZeroDivisionError 等运行时异常、对外调用未处理失败）
+6. sql_injection_risk: SQL 注入风险（f-string/format 拼接 SQL、未参数化查询、用户输入直入 WHERE/INSERT）
+7. input_validation: 输入校验（API 入参未校验类型/范围、未鉴权、未限流）
+8. api_design: API 设计（REST 语义错误、状态码误用、缺错误响应）
+
+通用维度：
+9. severity: "ok" | "warning" | "blocker"
    - ok: 无明显问题
-   - warning: 有小问题但不阻断验收
-   - blocker: 严重缺陷（结构缺失/语法错误/设计系统完全偏离）
-6. issues: 问题列表（每条 ≤80 字）
-7. rationale: 一句话总结（≤100 字）
+   - warning: 有小问题但不阻断验收（如：缺异常处理但非安全关键路径）
+   - blocker: 严重缺陷（SQL 注入/结构缺失/语法错误/设计系统完全偏离/未鉴权的敏感接口）
+10. issues: 问题列表（每条 ≤80 字）
+11. rationale: 一句话总结（≤100 字）
 
 严格：只 blocker 级才算失败。小瑕疵算 warning。产物已通过确定性 verify_cmd 校验，
-你只需补充确定性检查发现不了的语义/设计/结构问题。
+你只需补充确定性检查发现不了的语义/设计/结构/安全问题。
 
 产物内容：
 {artifacts}
@@ -277,7 +290,7 @@ def make_glm_semantic_verifier(glm_alias: str = "architect", timeout: float = 12
 
     def _verify(cmd_list: list[str], cwd: str) -> SemanticVerdict:
         base_url, model = resolve_model_config(glm_alias)
-        api_key = os.environ.get("EXO_API_KEY") or os.environ.get("LITELLM_MASTER_KEY", "dummy")
+        api_key = os.environ.get("LITELLM_MASTER_KEY") or os.environ.get("EXO_API_KEY", "dummy")
         artifacts = _read_artifacts(cwd)
         return _call_glm_semantic(base_url, model, api_key, artifacts, timeout=timeout)
 
@@ -289,6 +302,7 @@ def make_parallel_verifier(
     glm_alias: str = "architect",
     glm_timeout: float = 120.0,
     max_workers: int = 2,
+    verdict_callback: Callable[["SemanticVerdict"], None] | None = None,
 ) -> VerifierFn:
     """构造双模型并行验证器。
 
@@ -329,6 +343,13 @@ def make_parallel_verifier(
                     severity="ok", checked=False,
                     skip_reason=f"GLM verifier crashed: {type(e).__name__}: {str(e)[:120]}",
                 )
+
+        # M95: GLM 真正执行了语义验证时,通过回调暴露 SemanticVerdict(供上层 emit 结构化事件)
+        if verdict_callback is not None and glm_verdict.checked:
+            try:
+                verdict_callback(glm_verdict)
+            except Exception:
+                pass  # 回调失败 fail-open,不影响验证主流程
 
         # 合并
         if not det_ok:

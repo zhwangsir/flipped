@@ -86,6 +86,15 @@ async def metrics() -> MetricsResponse:
     return MetricsResponse(**COLLECTOR.snapshot())
 
 
+# ---------- RCA 失败计数（M95） ----------
+
+@app.get(f"{API_PREFIX}/rca/failure_counter")
+async def get_failure_counter_endpoint() -> dict[str, Any]:
+    """返回 RCA 连续失败计数器(按根因分类)。"""
+    from driving.rca import get_failure_counter
+    return {"counter": {k.value: v for k, v in get_failure_counter().items()}}
+
+
 # ---------- MCP 服务器（M7.3 真实列表 + 开关） ----------
 
 @app.get(f"{API_PREFIX}/mcp/servers")
@@ -587,8 +596,12 @@ def _build_real_nodes(session_id: str, cwd: str, verify_cmd: list[str]) -> dict[
     """
     from driving.orchestrator import _safe_default_verifier
 
-    # F1d — 有真实命令时在沙盒内验收(cwd=沙盒路径天然成立);['true'] 保留 host 默认免无谓往返
-    base_verifier = _safe_default_verifier
+    # F1d — 有真实命令时在沙盒内验收(cwd=沙盒路径天然成立)。
+    # M89 修复:['true'](无验收命令)时用 no-op,避免 host verifier 在沙盒路径
+    # cwd(/projects/X,host 上不存在)上 subprocess.run 触发 FileNotFoundError。
+    def _noop_verifier(_cmd: list, _cwd: str) -> "tuple[bool, str]":
+        return True, "(skip) 无验收命令"
+    base_verifier = _noop_verifier
     if verify_cmd != ["true"]:
         from executor.sandbox_verify import make_sandbox_verifier
         from executor.openhands_worker import OpenHandsWorker
@@ -606,7 +619,10 @@ async def _run_orchestrator(session_id: str, task_id: str, req: TaskRequest) -> 
     """在后台线程运行 orchestrator，并持久化 checkpoint。"""
     from driving.orchestrator import drive_orchestrated
 
-    cfg = req.context.get("orchestrator") or {}
+    # orchestrator 字段可能是 bool(true/false,用于 _select_runner 判断)或 dict(详细配置)。
+    # 仅当为 dict 时当作配置,否则用空 dict 走默认值。修复 'bool' object has no attribute 'get'。
+    _raw_orch = req.context.get("orchestrator")
+    cfg = _raw_orch if isinstance(_raw_orch, dict) else {}
     goal = req.description
     # agent 工作目录 = 活动项目在沙盒里的路径(/projects/<名>);无项目回退 /workspace
     cwd = cfg.get("cwd") or ps.sandbox_cwd()
@@ -625,6 +641,7 @@ async def _run_orchestrator(session_id: str, task_id: str, req: TaskRequest) -> 
                 project_rules=project_rules, repo_map=repo_map,
                 thread_id=session_id, db_path=db_path,
                 require_approval=cfg.get("require_approval", False),
+                max_iterations=cfg.get("max_iterations", 30),
                 supervisor=sup, worker=work, overseer=over, verifier=ver,
             )
         else:
@@ -635,6 +652,7 @@ async def _run_orchestrator(session_id: str, task_id: str, req: TaskRequest) -> 
                 project_rules=project_rules, repo_map=repo_map,
                 thread_id=session_id, db_path=db_path,
                 require_approval=cfg.get("require_approval", False),
+                max_iterations=cfg.get("max_iterations", 30),
                 **nodes,
             )
         if final.get("verified"):

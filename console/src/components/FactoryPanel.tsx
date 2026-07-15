@@ -10,7 +10,7 @@
 import { useState } from "react";
 import { useApp } from "../store";
 import { formatWhen } from "../types";
-import type { FactoryDetail, FactoryTask, TaskResult, FactorySummary } from "../types";
+import type { FactoryDetail, FactoryTask, TaskResult, FactorySummary, FactoryRcaEntry } from "../types";
 import {
   IconFactory,
   IconPlus,
@@ -26,6 +26,7 @@ import {
   IconHourglass,
   IconChevronLeft,
   IconChevronDown,
+  IconShield,
 } from "../icons";
 
 const STATUS_LABELS: Record<string, string> = {
@@ -332,6 +333,135 @@ function FactoryDetailCard({
             ))}
           </div>
         </>
+      )}
+
+      {/* M100 — 工厂级 RCA 历史聚合折叠区 */}
+      <FactoryRcaHistorySection factoryId={detail.factory_id} />
+    </div>
+  );
+}
+
+/**
+ * M100 — 工厂级 RCA 历史聚合折叠区。
+ * 默认折叠;展开时显示 cause_stats chips + 时间线列表。
+ * 数据来源 store.factoryRcaHistory(selectFactory 时已预拉取),展开时再主动刷新一次。
+ */
+function FactoryRcaHistorySection({ factoryId }: { factoryId: string }) {
+  const { factoryRcaHistory, loadFactoryRcaHistory } = useApp();
+  const [expanded, setExpanded] = useState(false);
+
+  const entries = factoryRcaHistory?.rca_history ?? [];
+  const causeStats = factoryRcaHistory?.cause_stats ?? {};
+  const total = entries.length;
+  const causeKeys = Object.keys(causeStats).sort((a, b) => causeStats[b] - causeStats[a]);
+
+  const onToggle = () => {
+    const next = !expanded;
+    setExpanded(next);
+    // 展开时主动刷新一次,保证最新(fail-open)
+    if (next) loadFactoryRcaHistory(factoryId);
+  };
+
+  return (
+    <>
+      <button
+        className="fd-sec-h fd-rca-toggle"
+        onClick={onToggle}
+        aria-expanded={expanded}
+        type="button"
+      >
+        <IconShield size={14} />
+        <span>RCA 历史</span>
+        <span className="fd-rca-badge">{total}</span>
+        <span className="spacer" />
+        <span className={"fd-rca-chev" + (expanded ? " open" : "")}>
+          <IconChevronDown size={14} />
+        </span>
+      </button>
+      {expanded && (
+        <div className="fd-rca-body">
+          {/* 空态占位 */}
+          {total === 0 ? (
+            <div className="fd-rca-empty">暂无 RCA 历史(verify 未触发失败或未命中 RCA)</div>
+          ) : (
+            <>
+              {/* cause_stats chips */}
+              {causeKeys.length > 0 && (
+                <div className="fd-rca-chips">
+                  {causeKeys.map((k) => (
+                    <span key={k} className="counter-chip">
+                      {k} · {causeStats[k]}
+                    </span>
+                  ))}
+                </div>
+              )}
+              {/* 时间线列表(倒序,最新在上) */}
+              <div className="fd-rca-timeline">
+                {[...entries].reverse().map((e, i) => (
+                  <FactoryRcaRow key={`${e.timestamp}-${i}`} entry={e} index={entries.length - i} />
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+      )}
+    </>
+  );
+}
+
+/** M100 — 单条工厂级 RCA 历史项(可展开看 fix_suggestion / history_hint)。 */
+function FactoryRcaRow({
+  entry, index,
+}: {
+  entry: FactoryRcaEntry; index: number;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const hasDetail = !!(entry.fix_suggestion || entry.history_hint || entry.related_rules.length);
+  const pct = Math.round((entry.confidence || 0) * 100);
+
+  return (
+    <div
+      className={"fd-rca-item" + (expanded ? " expanded" : "")}
+      style={{ animationDelay: `${index * 40}ms` }}
+    >
+      <button
+        className="fd-rca-item-head"
+        onClick={() => hasDetail && setExpanded((v) => !v)}
+        type="button"
+      >
+        <span className={"fd-rca-cause " + entry.cause}>{entry.cause}</span>
+        <span className="fd-rca-conf" title="置信度">{pct}%</span>
+        {entry.task_index >= 0 && (
+          <span className="fd-rca-task" title="失败任务索引">#{entry.task_index}</span>
+        )}
+        <span className="fd-rca-time">{formatWhen(entry.timestamp)}</span>
+        {hasDetail && (
+          <span className={"fd-rca-chev" + (expanded ? " open" : "")}>
+            <IconChevronDown size={13} />
+          </span>
+        )}
+      </button>
+      {expanded && hasDetail && (
+        <div className="fd-rca-item-body">
+          {entry.fix_suggestion && (
+            <p className="fd-rca-fix">
+              <span className="fd-rca-label">建议</span>
+              {entry.fix_suggestion}
+            </p>
+          )}
+          {entry.history_hint && (
+            <p className="fd-rca-hint">
+              <span className="fd-rca-label">历史</span>
+              {entry.history_hint}
+            </p>
+          )}
+          {entry.related_rules.length > 0 && (
+            <p className="fd-rca-rules">
+              <span className="fd-rca-label">规则</span>
+              {entry.related_rules.join(", ")}
+            </p>
+          )}
+        </div>
       )}
     </div>
   );

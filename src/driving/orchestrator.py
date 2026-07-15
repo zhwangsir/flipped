@@ -78,13 +78,17 @@ class OrchestratorState(TypedDict, total=False):
     require_approval: bool
     approval_decision: str   # approved / rejected / auto
     worker_error: bool       # 执行器(cline)报错/上游模型不可用 → 快速失败
+    # M90 自动交替接力:worker_error 时切换备用模型重试一次,对齐用户核心理念
+    # "如果卡死了就让另外一个模型接力并释放上一个模型的内容开始监督"
+    relay_attempted: bool    # 本轮迭代是否已接力过(防无限接力,一次性标志)
+    worker_alias: str        # 当前 worker 模型别名(coder/architect),默认 coder
     signatures: list[str]
     last_obs: dict
     verdict: dict          # overseer 最近裁决
     feedback: str          # 回灌给 supervisor 的(验收失败/overseer 问题)
     verified: bool
     done: bool
-    stop_reason: str       # verified / overseer_abort / loop_detected / circuit_breaker
+    stop_reason: str       # verified / overseer_abort / loop_detected / circuit_breaker / worker_error / relay_exhausted
     history: list[dict]
     context_summary: dict | None
     max_context_tokens: int
@@ -112,7 +116,7 @@ def _make_llm(alias: str, temperature: float = 0, callbacks=None):
     import httpx
 
     base, model = resolve_model_config(alias)
-    key = os.environ.get("EXO_API_KEY") or os.environ.get("LITELLM_MASTER_KEY", "dummy")
+    key = os.environ.get("LITELLM_MASTER_KEY") or os.environ.get("EXO_API_KEY", "dummy")
     # 构造不走代理的 httpx client（内网模型端点必须直连）
     # trust_env=False 让 httpx 忽略系统代理配置(macOS System Preferences / env vars)
     # timeout=240: GLM-5.2-fp8 planner/evolve 偶发长 JSON 生成 90-180s，120s 误判超时。
@@ -329,7 +333,13 @@ def _direct_glm_tool_call(llm, schema_cls, prompt: str, *, max_retries: int = 1)
 
     base_url = getattr(llm, "openai_api_base", "") or getattr(llm, "base_url", "")
     model = getattr(llm, "model_name", "") or getattr(llm, "model", "")
-    api_key = getattr(llm, "openai_api_key", "") or "dummy"
+    # M89 Bug #13b: langchain ChatOpenAI 在 Pydantic v2 下 openai_api_key 是 private/property,
+    # getattr 读不到真实值返回 ""，fallback 到 "dummy" 被 LiteLLM 鉴权层 400 拒绝。
+    # 修复：优先从环境变量读（与 _make_llm 一致），llm 对象只作为最后兜底。
+    api_key = (os.environ.get("LITELLM_MASTER_KEY")
+               or os.environ.get("EXO_API_KEY")
+               or getattr(llm, "openai_api_key", "")
+               or "dummy")
     # 与 _make_llm 一致的超时：默认 240s，可用 FLIPPED_GLM_TIMEOUT 环境变量覆盖。
     _glm_timeout = float(os.environ.get("FLIPPED_GLM_TIMEOUT", "240"))
 
@@ -468,7 +478,7 @@ def make_openhands_worker(bus=None, session_id: str | None = None) -> WorkerFn:
         sid = session_id or f"orch-{uuid.uuid4().hex[:8]}"
         task_id = f"subtask-{uuid.uuid4().hex[:8]}"
         event_bus = bus if bus is not None else NullEventBus()
-        worker_base_url, worker_model_alias = resolve_worker_model_config()
+        worker_base_url, worker_model_alias = resolve_worker_model_config(state.get("worker_alias", "coder"))
         worker = OpenHandsWorker(
             session_id=sid,
             task_id=task_id,
@@ -708,7 +718,7 @@ def local_worker(state: OrchestratorState) -> dict:
     project_rules = state.get("project_rules", "")
     feedback = state.get("feedback", "")
 
-    base_url, model = resolve_worker_model_config("coder")
+    base_url, model = resolve_worker_model_config(state.get("worker_alias", "coder"))
     api_key = os.environ.get("EXO_API_KEY") or os.environ.get("LITELLM_MASTER_KEY", "dummy")
 
     # M11.1：截断 project_rules 和 feedback，防止 prompt 过长触发 reasoning 循环。
@@ -1080,6 +1090,10 @@ def _safe_default_verifier(cmd: list, cwd: str) -> "tuple[bool, str]":
         return False, f"command blocked: {reason}"
     if classify_risk(command_str) == "high":
         return False, "high-risk command requires approval"
+    # M89 防御:cwd 是沙盒路径(/projects/X)在 host 上不存在 → 回退 home,
+    # 避免 subprocess.run(cwd=...) 抛 FileNotFoundError。
+    if cwd and not os.path.isdir(cwd):
+        cwd = os.path.expanduser("~")
     import shlex
     import subprocess
     # M14 修复：bash -c "...$var..." 经 shell=True 执行时，外层 /bin/sh 会先展开 $var
@@ -1122,12 +1136,23 @@ def build_orchestrator(supervisor: SupervisorFn = default_supervisor,
             ok, output = verifier(state["verify_cmd"], state["cwd"])
         it = state.get("iteration", 0) + 1
         hist = state.get("history", []) + [{"step": "verify", "ok": ok, "iteration": it}]
-        upd = {"iteration": it, "verified": ok, "history": hist}
-        if ok:
+        # M89 修复:只在 supervisor believe_done=True AND verify 通过时才整体 verified。
+        # 否则 verify 通过仅代表当前子任务(或无验收命令)→ 回 supervisor 拆下一个子任务。
+        # 旧逻辑只看 ok → no-op verifier 总 True → 第一个子任务后就误判整体完成。
+        believe_done = state.get("believe_done", False)
+        verified = ok and believe_done
+        upd = {"iteration": it, "verified": verified, "history": hist}
+        if verified:
             upd["done"] = True
             upd["stop_reason"] = "verified"
-        else:
+        elif not ok:
             upd["feedback"] = (state.get("feedback", "") + f"\n验收命令退出非0:\n{output}").strip()
+        else:
+            # M89 修复:ok=True but believe_done=False → 当前子任务验证通过,但整体目标未达成。
+            # 必须给 supervisor 明确 feedback,否则它读到原 goal 会重新拆同样的子任务(死循环)。
+            last_sub = state.get("current_subtask", "")
+            upd["feedback"] = (state.get("feedback", "") +
+                f"\n子任务「{last_sub[:80]}」已完成且验证通过。请基于历史已完成的步骤,拆解下一个不同的子任务,不要重复已完成的内容。").strip()
         return upd
 
     def route_overseer(state: OrchestratorState) -> str:
@@ -1209,12 +1234,57 @@ def build_orchestrator(supervisor: SupervisorFn = default_supervisor,
         return {"done": True, "stop_reason": "worker_error"}
 
     def route_worker(state: OrchestratorState) -> str:
-        # 执行器报错(上游模型不可用等) → 快速失败，不进 overseer/verify 空转
-        return "worker_error" if state.get("worker_error") else "overseer"
+        # M90 自动交替接力:worker_error 时优先切换备用模型重试一次
+        # 已接力过(relay_attempted=True)则不再重试,直接终结避免无限接力
+        if state.get("worker_error"):
+            if state.get("relay_attempted"):
+                return "worker_error"
+            return "relay"
+        return "overseer"
+
+    # M90 relay 节点:切换 worker 模型 alias(coder↔architect)+ 清除 worker_error
+    # + 压缩上下文(释放上一个模型的内容,对齐"释放上一个模型的内容开始监督")
+    # 下一轮 worker 会用新 alias 重试同一子任务
+    def relay_node(state: OrchestratorState) -> dict:
+        current_alias = state.get("worker_alias", "coder")
+        new_alias = "architect" if current_alias == "coder" else "coder"
+        import sys as _sys
+        print(f"[M90 relay] worker {current_alias} 卡死,切换 {new_alias} 接力,清除 worker_error",
+              file=_sys.stderr, flush=True)
+        # 压缩 history 释放上一个模型的上下文(对齐用户理念)
+        history = state.get("history", [])
+        compressed: dict = {}
+        if history:
+            try:
+                result = compress_history(
+                    history,
+                    max_tokens=state.get("max_context_tokens", 10000),
+                    keep_recent=state.get("keep_recent", 4),
+                    summarizer=summarizer,
+                )
+                if result.get("compressed"):
+                    compressed = {"history": result["history"],
+                                  "context_summary": result.get("summary")}
+            except Exception as e:  # noqa: BLE001
+                print(f"[M90 relay] 压缩失败,保留原 history: {type(e).__name__}: {e}",
+                      file=_sys.stderr, flush=True)
+        update: dict = {
+            "worker_alias": new_alias,
+            "relay_attempted": True,
+            "worker_error": False,
+            "feedback": (state.get("feedback", "")
+                         + f"\n[M90 接力] {current_alias} 卡死,{new_alias} 接力重试该子任务。]").strip(),
+        }
+        if compressed:
+            update.update(compressed)
+        return update
 
     g.add_node("worker_error", mark_worker_error)
-    g.add_conditional_edges("worker", route_worker, {"overseer": "overseer", "worker_error": "worker_error"})
+    g.add_node("relay", relay_node)
+    g.add_conditional_edges("worker", route_worker,
+                            {"overseer": "overseer", "worker_error": "worker_error", "relay": "relay"})
     g.add_edge("worker_error", END)
+    g.add_edge("relay", "worker")  # 接力后回到 worker 用新 alias 重试
     g.add_conditional_edges("overseer", route_overseer,
                             {"verify": "verify", "replan": "compress", "abort": "abort"})
     g.add_conditional_edges("verify", route_verify,
@@ -1250,6 +1320,7 @@ def drive_orchestrated(goal: str, cwd: str, verify_cmd: list, *,
         "require_approval": require_approval, "worker_error": False,
         "iteration": 0, "signatures": [], "feedback": "", "verified": False,
         "done": False, "stop_reason": "", "history": [],
+        "relay_attempted": False, "worker_alias": "coder",
         "context_summary": None, "max_context_tokens": max_context_tokens,
         "keep_recent": keep_recent,
     }

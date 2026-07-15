@@ -224,14 +224,30 @@ class OpenHandsWorker:
             model_name = self.model_alias
             if self.base_url and "/v1" in self.base_url and not model_name.startswith("openai/"):
                 model_name = f"openai/{model_name}"
+            # M89 关键修复:LLM 鉴权 key 必须用 LITELLM_MASTER_KEY(走 proxy 时)或
+            # EXO_API_KEY(直连 exo 时),而非 self.api_key(那是 OpenHands agent-server key,
+            # 会被 LiteLLM 鉴权层 400 拒绝)。
+            llm_api_key = (os.environ.get("LITELLM_MASTER_KEY")
+                           or os.environ.get("EXO_API_KEY")
+                           or self.api_key)
             llm = LLM(
                 model=model_name,
                 base_url=self.base_url,
-                api_key=self.api_key,
-                timeout=300,
+                api_key=llm_api_key,
+                timeout=600,
                 num_retries=2,
                 drop_params=True,
                 native_tool_calling=True,
+                # M89 关键修复:
+                # 1) OpenHands LLM 类用 litellm_extra_body(不是 extra_body),后者被 Pydantic 静默忽略
+                # 2) reasoning_effort="none" 尽量减少 reasoning(Kimi 是 reasoning 模型无法完全关闭)
+                # 3) max_output_tokens=8000 让 Kimi 的 reasoning(约 75-500 tokens)+ content 都能放下
+                reasoning_effort="none",
+                max_output_tokens=8000,
+                litellm_extra_body={
+                    "enable_thinking": False,
+                    "chat_template_kwargs": {"enable_thinking": False},
+                },
             )
             agent_kwargs: dict[str, Any] = dict(
                 llm=llm, tools=self.tools, include_default_tools=["FinishTool", "ThinkTool"]

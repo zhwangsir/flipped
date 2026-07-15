@@ -198,3 +198,182 @@ def test_content_len_large():
     """content_len >= 50 时不触发 reasoning_overflow。"""
     r = analyze_failure(summary="SyntaxError", content_len=500)
     assert r.cause == RootCause.SYNTAX_ERROR
+
+
+# ---- M91.1 RCA + Gold Memory 语义检索集成 ----
+
+import tempfile
+
+from driving.gold_memory import query_similar_failures, record_task_result
+from driving.factory_loop import FactoryTask, FactoryState, TaskResult
+from driving.rca import analyze_failure_with_memory, reset_failure_counter
+
+
+def _make_task(desc: str = "实现登录页面", verify_cmd: list[str] | None = None) -> FactoryTask:
+    return FactoryTask(
+        id="t1", description=desc,
+        verify_cmd=verify_cmd or ["pytest", "tests/"],
+    )
+
+
+def _make_state() -> FactoryState:
+    return FactoryState(factory_id="f1", product_goal="G", cwd="/tmp", roadmap=[])
+
+
+def _make_result(task: FactoryTask, success: bool, stop_reason: str = "verified",
+                 summary: str = "") -> TaskResult:
+    return TaskResult(
+        task=task, verified=success, stop_reason=stop_reason,
+        iteration=1, summary=summary,
+    )
+
+
+def test_query_similar_failures_returns_only_failures():
+    """query_similar_failures 只返回失败记录,不含成功的。
+
+    Gold Memory 表 UNIQUE(task_signature, design_style, verify_cmd),
+    用相同 description(同签名)+ 不同 verify_cmd 创建多条记录。
+    测试环境无 sentence-transformers,走签名 fallback 精确匹配。
+    """
+    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
+        db = f.name
+    try:
+        state = _make_state()
+        desc = "实现登录页面"
+        # 1 成功(verify_cmd=npm test)
+        task_ok = _make_task(desc, ["npm", "test"])
+        record_task_result(task_ok, state, _make_result(task_ok, True, "verified", "ok"), db_path=db)
+        # 2 失败(不同 verify_cmd 避免 UNIQUE 覆盖)
+        task_f1 = _make_task(desc, ["pytest", "-x"])
+        task_f2 = _make_task(desc, ["make", "test"])
+        record_task_result(task_f1, state, _make_result(task_f1, False, "verify_failed", "assertion error"), db_path=db)
+        record_task_result(task_f2, state, _make_result(task_f2, False, "worker_error", "timeout"), db_path=db)
+
+        failures = query_similar_failures(desc, db_path=db, limit=5)
+        assert len(failures) == 2, f"应返回 2 条失败, 实 {len(failures)}"
+        assert all(not f.success for f in failures)
+        reasons = {f.stop_reason for f in failures}
+        assert "verify_failed" in reasons
+        assert "worker_error" in reasons
+    finally:
+        Path(db).unlink(missing_ok=True)
+
+
+def test_query_similar_failures_empty_db():
+    """空库返回空列表。"""
+    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
+        db = f.name
+    try:
+        failures = query_similar_failures("不存在的任务", db_path=db)
+        assert failures == []
+    finally:
+        Path(db).unlink(missing_ok=True)
+
+
+def test_analyze_failure_with_memory_enhances_hint():
+    """有历史失败时,RcaResult.history_hint 非空。"""
+    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
+        db = f.name
+    try:
+        task = _make_task("创建登录表单", ["pytest", "-x"])
+        state = _make_state()
+        # 记录一条历史失败:语法错误
+        record_task_result(
+            task, state,
+            _make_result(task, False, "verify_failed", "SyntaxError: unexpected indent"),
+            db_path=db,
+        )
+
+        r = analyze_failure_with_memory(
+            stop_reason="verify_failed",
+            summary="SyntaxError: unexpected indent (line 3)",
+            task_description="创建登录表单",
+            db_path=db,
+        )
+        assert r.cause == RootCause.SYNTAX_ERROR
+        assert r.history_hint, "有历史失败时 history_hint 应非空"
+        assert "SyntaxError" in r.history_hint or "语法" in r.history_hint
+    finally:
+        Path(db).unlink(missing_ok=True)
+
+
+def test_analyze_failure_with_memory_no_history():
+    """无历史失败时,history_hint 为空字符串。"""
+    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
+        db = f.name
+    try:
+        r = analyze_failure_with_memory(
+            stop_reason="verify_failed",
+            summary="AssertionError",
+            task_description="全新任务没有历史",
+            db_path=db,
+        )
+        assert r.cause == RootCause.VERIFY_MISMATCH
+        assert r.history_hint == ""
+    finally:
+        Path(db).unlink(missing_ok=True)
+
+
+def test_to_feedback_includes_history_hint():
+    """to_feedback 包含 history_hint。"""
+    r = RcaResult(
+        cause=RootCause.SYNTAX_ERROR,
+        confidence=0.85,
+        fix_suggestion="检查缩进",
+        history_hint="历史类似失败: SyntaxError (2次)",
+    )
+    fb = r.to_feedback()
+    assert "历史" in fb or "history" in fb.lower()
+
+
+# ---- M91.2 RCA 失败模式频率统计 ----
+
+from driving.rca import get_failure_counter
+
+
+def test_failure_counter_consecutive():
+    """连续同类失败计数递增。"""
+    reset_failure_counter()
+    analyze_failure(summary="SyntaxError: line 1")
+    analyze_failure(summary="SyntaxError: line 2")
+    analyze_failure(summary="SyntaxError: line 3")
+    assert get_failure_counter().get(RootCause.SYNTAX_ERROR, 0) == 3
+
+
+def test_failure_counter_reset_on_different_cause():
+    """不同根因重置计数。"""
+    reset_failure_counter()
+    analyze_failure(summary="SyntaxError")
+    analyze_failure(summary="SyntaxError")
+    assert get_failure_counter().get(RootCause.SYNTAX_ERROR, 0) == 2
+    analyze_failure(summary="ConnectionError: refused")  # 不同根因
+    assert get_failure_counter().get(RootCause.SYNTAX_ERROR, 0) == 0
+    assert get_failure_counter().get(RootCause.INFRA_FAILURE, 0) == 1
+
+
+def test_failure_counter_escalation():
+    """连续 3 次同类失败后,fix_suggestion 追加升级策略。"""
+    reset_failure_counter()
+    r1 = analyze_failure(summary="SyntaxError: line 1")
+    r2 = analyze_failure(summary="SyntaxError: line 2")
+    r3 = analyze_failure(summary="SyntaxError: line 3")
+    assert "换策略" in r3.fix_suggestion or "升级" in r3.fix_suggestion or "换模型" in r3.fix_suggestion, \
+        "连续 3 次应升级建议"
+    # 前 2 次不应有升级
+    assert "换策略" not in r1.fix_suggestion
+    assert "换策略" not in r2.fix_suggestion
+
+
+def test_failure_counter_reset_function():
+    """reset_failure_counter() 清空计数。"""
+    reset_failure_counter()
+    analyze_failure(summary="SyntaxError")
+    analyze_failure(summary="SyntaxError")
+    assert get_failure_counter().get(RootCause.SYNTAX_ERROR, 0) == 2
+    reset_failure_counter()
+    assert get_failure_counter() == {}
+
+
+if __name__ == "__main__":
+    import pytest
+    pytest.main([__file__, "-v"])

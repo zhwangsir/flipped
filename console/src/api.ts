@@ -1,5 +1,5 @@
 /** Console ↔ orchestration-api HTTP + WebSocket 客户端。 */
-import type { Session, ApiEvent, Metrics, McpServer, ProjectContext, Project, FileNode, BrowserRender, GitDiffFile, FactoryDetail, FactorySummary } from './types';
+import type { Session, ApiEvent, Metrics, McpServer, ProjectContext, Project, FileNode, BrowserRender, GitDiffFile, FactoryDetail, FactorySummary, FactoryRcaHistoryResponse, FailureCounterResponse } from './types';
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined) || 'http://127.0.0.1:8011';
 const API_PREFIX = '/api/v1';
@@ -104,6 +104,12 @@ export function toggleMcpServer(name: string, enabled: boolean): Promise<{ name:
   return api(`/mcp/servers/${encodeURIComponent(name)}/toggle?enabled=${enabled}`, { method: 'POST' });
 }
 
+// M95 — RCA 失败计数(后端 /rca/failure_counter 端点)
+
+export function fetchFailureCounter(): Promise<FailureCounterResponse> {
+  return api<FailureCounterResponse>('/rca/failure_counter');
+}
+
 // ---- Factory ----
 
 export function listFactories(): Promise<FactorySummary[]> {
@@ -127,6 +133,11 @@ export function resumeFactory(factoryId: string): Promise<FactoryDetail> {
 
 export function pauseFactory(factoryId: string): Promise<FactoryDetail> {
   return api<FactoryDetail>(`/factories/${encodeURIComponent(factoryId)}/pause`, { method: 'POST' });
+}
+
+// M100 — 工厂级 RCA 历史聚合视图
+export function fetchFactoryRcaHistory(factoryId: string): Promise<FactoryRcaHistoryResponse> {
+  return api<FactoryRcaHistoryResponse>(`/factories/${encodeURIComponent(factoryId)}/rca_history`);
 }
 
 export interface EventHandlers {

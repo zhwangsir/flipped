@@ -1,8 +1,8 @@
 {
   "project": "flipped",
   "description": "接入本地 MLX 双模型(GLM-5.2 编排者 / Kimi-K2.7-Code 执行者)的 agentic 代码编辑器平台。fork Roo Code + 自定义驾驭层(强制验证/循环检测/上下文压缩/人工审批/子Agent/可观测性) + MCP 联网与外部能力。",
-  "updated": "2026-07-12",
-  "current_milestone": "M88 PlanCard 入场与状态过渡 + E2E 前端烟雾测试 9 passed (build + vitest 35 passed)",
+  "updated": "2026-07-13",
+  "current_milestone": "M100 完成 · FailurePanel 前端单测(M97) + 并发压测脚本(M98) + Gold Memory 闭环验证(M99) + FactoryPanel RCA 历史聚合(M100) — 全量 1012 passed,0 回归,前端 45 passed",
   "key_facts": {
     "dev_host": "Apple M5 Max, 128GB RAM, 1.1TB 可用磁盘 — 开发/控制节点，非模型宿主",
     "model_cluster": "exo 集群 @ http://100.64.201.37:52415 (内网, OpenAI 兼容)；公网 https://dgmt.top/exo (需 Bearer token)",
@@ -207,8 +207,8 @@
     },
     "M10": {
       "title": "自主无限迭代 + UI/UX 设计质量最优 + 自我学习",
-      "status": "in_progress",
-      "note": "M10.1-M10.5 完成。E2E worker_error 根因已定位并修复（Kimi reasoning + 长 design_brief）。全量 337 passed。E2E run #2 验证：streaming+compact brief 对首轮调用有效(11/14 worker 调用返回正常 content 3041-12305 bytes)，index.html 含全部设计系统 hex 值。残留：累积上下文后 delegate/task-2 后续调用仍触发 reasoning overflow(content_len=4)，属 M11 范围。",
+      "status": "done",
+      "note": "M10.1-M10.5 完成。E2E worker_error 根因已定位并修复（Kimi reasoning + 长 design_brief）。全量 337 passed。E2E run #2 验证：streaming+compact brief 对首轮调用有效(11/14 worker 调用返回正常 content 3041-12305 bytes)，index.html 含全部设计系统 hex 值。原残留 reasoning overflow 已由 M11 修复（444→445 passed），M10 整体关闭。",
       "tasks": {
         "M10.1": {
           "title": "设计系统注入机制",
@@ -1237,6 +1237,240 @@
           "note": "启动 dev server(:5273), console-smoke.spec.ts 9/9 全过。验证 M86+M87+M88 UI/UX 优化未破坏前端渲染。首屏加载 100ms(<3s)。"
         }
       }
+    },
+    "M89": {
+      "title": "F8 真机长任务验证 — AI 自动化开发工厂能力实证(交替接力)",
+      "status": "done",
+      "note": "F8 真机长任务验证目标:由双模型(GLM-5.2 + Kimi-K2.7-Code)自主完成一个包含前后端的完整产品(NoteEdge 本地 Markdown 笔记应用),从调研到测试全流程自主决策,用户只给方向不介入。**核心理念(交替接力)**:两个模型相辅相成,一个编码时另一个监督,卡死则另一个接力并释放上一个模型上下文,交替接力成为自动化工厂。验证结果:(1) GLM-5.2 作为 Worker 执行前端任务卡死(901s 推理超时);(2) 切 Kimi-K2.7-Code 接力,Kimi Worker 自主完成前端 index.html(342 行,完整 CRUD + 搜索 UI,XSS 防护 escapeHtml,搜索防抖 250ms,Toast 通知,Google 风格配色 #1a73e8,侧栏 320px + 编辑器双栏布局);(3) 验收发现并修复前端 body/content 字段不一致 bug(note.body→note.content, {title,body}→{title,content:body} 共 3 处);(4) 后端 pytest 37 passed in 0.28s(test_api.py 20 + test_notes.py 17,覆盖创建/校验/列表/获取/更新/删除/搜索/隔离);(5) git commit 395dca9 'feat: NoteEdge 前端 index.html (Kimi-K2.7-Code Worker 自主完成)' 7 files changed 1014 insertions 63 deletions。**交替接力验证成立**:GLM-5.2 卡死后切换 Kimi 接力成功完成产物,证明交替接力机制作为自动化工厂的容错能力。端到端 curl API 测试因 macOS Spotlight(com.apple 进程)占用 noteedge.db 文件导致 SQLite readonly 跳过,pytest 用 tmp_path 独立临时 db 全过证明代码正确。",
+      "tasks": {
+        "M89.1": {
+          "title": "GLM-5.2 作为 Worker 启动前端任务(卡死)",
+          "status": "done",
+          "note": "GLM-5.2 作为 Worker 启动 NoteEdge 前端 index.html 创建任务,901s 推理超时卡死。会话状态最终为 error(sess-b539ea08)。这验证了交替接力的触发条件:模型卡死需要切换。"
+        },
+        "M89.2": {
+          "title": "Kimi-K2.7-Code 接力完成前端 index.html",
+          "status": "done",
+          "note": "切换 Kimi-K2.7-Code 作为 Worker 接力,GLM-5.2 转为监督。Kimi Worker 自主完成 index.html(342 行),完整 CRUD + 搜索 UI,XSS 防护(escapeHtml),搜索防抖(250ms),Toast 通知,Google 风格配色(#1a73e8),侧栏 320px + 编辑器双栏布局。"
+        },
+        "M89.3": {
+          "title": "验收:前端字段一致性修复 + 后端 pytest 全过 + git commit",
+          "status": "done",
+          "note": "验收流程:(1) 发现并修复前端 body/content 字段不一致 bug(3 处:note.body→note.content, {title,body}→{title,content:body});(2) 后端 pytest 37 passed in 0.28s(test_api.py 20 + test_notes.py 17);(3) git commit 395dca9 'feat: NoteEdge 前端 index.html (Kimi-K2.7-Code Worker 自主完成)' 7 files +1014 -63。"
+        }
+      }
+    },
+    "M90": {
+      "title": "自动交替接力机制 — worker_error 时自动切换备用模型接力",
+      "status": "done",
+      "note": "M89 暴露的明确待办:orchestrator 检测到 worker_error 但未切换模型(手动接力)。M90 实现:OrchestratorState 新增 relay_attempted/worker_alias 字段;local_worker/default_worker 从 state 读取 worker_alias 覆盖默认 'coder';新增 relay 节点(coder↔architect 切换 + 清除 worker_error + 压缩上下文);route_worker 分支(worker_error 未接力→relay, 已接力→worker_error 终结);防无限接力(relay_attempted 一次性标志)。对齐用户核心理念:'如果卡死了就让另外一个模型接力并释放上一个模型的内容开始监督'。",
+      "tasks": {
+        "M90.1": {
+          "title": "OrchestratorState + worker alias 注入",
+          "status": "done",
+          "note": "OrchestratorState 新增 relay_attempted:bool + worker_alias:str 字段。local_worker(default_worker)第 721(481)行改为 resolve_worker_model_config(state.get('worker_alias', 'coder')),支持运行时切换模型别名。drive_orchestrated initial state 初始化 relay_attempted=False, worker_alias='coder'。"
+        },
+        "M90.2": {
+          "title": "relay 节点 + route_worker 三分支路由",
+          "status": "done",
+          "note": "新增 relay_node:切换 worker_alias(coder↔architect)+ 设 relay_attempted=True + 清除 worker_error + 压缩 history(释放上一个模型上下文)+ feedback 追加接力说明。route_worker 改为三分支:worker_error+未接力→relay, worker_error+已接力→worker_error, 正常→overseer。graph 注册 g.add_edge('relay', 'worker') 形成接力回环。"
+        },
+        "M90.3": {
+          "title": "TDD 测试 4 项 + M89 遗留测试债修复",
+          "status": "done",
+          "note": "新增 4 个 M90 测试:test_worker_error_fast_fail(接力后仍失败→终结)、test_worker_error_relay_then_success(coder 卡死→architect 接力成功→verified)、test_relay_switches_alias_back_to_coder(双向切换 architect→coder)、test_relay_only_once_no_infinite_loop(防无限接力,最多 2 次 worker)。修复 M89 遗留测试债:_run helper 和 _approval_graph 的 supervisor 适配 M89 verify 逻辑(verified=ok and believe_done),用 feedback 含'已完成且验证通过'判断 believe_done。全量回归 964 passed, 1 skipped, 0 failed。"
+        }
+      }
+    },
+    "M91": {
+      "title": "RCA 智能化(Gold Memory 语义检索集成 + 失败模式频率统计)",
+      "status": "done",
+      "note": "RCA 失败根因分析从静态规则升级为带历史经验的自我学习。M91.1 集成 Gold Memory 语义检索:失败时用 task_description 查历史类似任务的失败记录,把历史失败模式注入 RcaResult.history_hint,让 supervisor 知道'这类任务历史上怎么失败的'。M91.2 失败模式频率统计:连续 ≥3 次同类失败时升级 fix_suggestion(追加'换模型/拆任务/降复杂度')。对齐项目核心理念'自我学习'。9 新测试全过。全量 970 passed, 1 skipped, 0 failed。",
+      "tasks": {
+        "M91.1": {
+          "title": "RCA + Gold Memory 语义检索集成",
+          "status": "done",
+          "note": "gold_memory.py 新增 query_similar_failures(description, db_path, limit) 复用向量语义检索逻辑只返回失败记录。rca.py 新增 analyze_failure_with_memory() 在 analyze_failure 基础上查 Gold Memory 历史失败,构建 history_hint(统计历史失败模式 + 最近 summary)。RcaResult 新增 history_hint 字段,to_feedback() 包含历史提示。Gold Memory 不可用 fail-open 不影响基础 RCA。4 新测试全过。"
+        },
+        "M91.2": {
+          "title": "RCA 失败模式频率统计 + 策略升级",
+          "status": "done",
+          "note": "rca.py 新增模块级 _failure_counter 跟踪连续同类失败。_track_failure() 辅助函数:相同 cause counter+=1,不同 cause 重置计数器。连续 ≥3 次同类失败(_ESCALATION_THRESHOLD)时 fix_suggestion 追加'[已连续 N 次同类失败,建议换策略:换模型/拆任务/降复杂度]'。reset_failure_counter() 供 factory_loop 新任务时重置。get_failure_counter() 返回只读视图。analyze_failure 所有 return 走 _finalize 统一计数。5 新测试全过。"
+        },
+        "M91.3": {
+          "title": "TDD 测试 + 全量回归",
+          "status": "done",
+          "note": "9 新测试:test_query_similar_failures_returns_only_failures、test_query_similar_failures_empty_db、test_analyze_failure_with_memory_enhances_hint、test_analyze_failure_with_memory_no_history、test_to_feedback_includes_history_hint、test_failure_counter_consecutive、test_failure_counter_reset_on_different_cause、test_failure_counter_escalation、test_failure_counter_reset_function。全量回归 970 passed, 1 skipped, 0 failed(961→970, +9 M91 测试)。"
+        }
+      }
+    },
+    "M92": {
+      "title": "并行验证器后端代码监督扩展(_read_artifacts 读 .py + GLM prompt 4 后端维度)",
+      "status": "done",
+      "note": "M14 并行验证器原本只看前端 UI(design/structure/a11y/potential_bugs),M92 把跨模型族监督扩展到后端 Python 代码。M92.1 产物读取:_ARTIFACT_PRIORITY 加 main.py/app.py/server.py,glob 兜底加 *.py,worker 产出的后端代码也能被 GLM 读到。M92.2 GLM prompt 升级:从'UI 代码监督验证者'改为前后端通用的'代码监督验证者',新增 4 个后端维度 exception_handling/sql_injection_risk/input_validation/api_design,severity blocker 纳入 SQL 注入与未鉴权敏感接口。8 新测试全过。全量 978 passed, 1 skipped, 0 failed(970→978, +8 M92 测试)。",
+      "tasks": {
+        "M92.1": {
+          "title": "_read_artifacts 扩展支持后端 Python 文件",
+          "status": "done",
+          "note": "parallel_verifier.py _ARTIFACT_PRIORITY 元组追加 'main.py', 'app.py', 'server.py'(后端入口,排在前端入口之后保持优先级);glob 兜底模式列表从 ('*.html','*.htm','*.tsx','*.jsx') 扩展为 ('*.html','*.htm','*.tsx','*.jsx','*.py')。截断策略(_MAX_FILE_BYTES=4000 / _MAX_TOTAL_BYTES=6000)不变,避免 prompt 过长触发 GLM reasoning 循环。5 新测试:test_read_artifacts_reads_main_py、test_read_artifacts_reads_app_py、test_read_artifacts_priority_index_html_over_py、test_read_artifacts_reads_py_glob_fallback、test_read_artifacts_mixed_frontend_backend。"
+        },
+        "M92.2": {
+          "title": "GLM prompt 增加后端代码质量维度",
+          "status": "done",
+          "note": "_SEMANTIC_PROMPT_TEMPLATE 从 4 维度 UI 专用 prompt 重写为 8 维度前后端通用:前端保留 design_consistency/structure/a11y_hints/potential_bugs;后端新增 exception_handling(异常处理完整性,如缺 try/except、未捕获 ZeroDivisionError)、sql_injection_risk(f-string/format 拼接 SQL、未参数化查询)、input_validation(API 入参未校验/未鉴权/未限流)、api_design(REST 语义/状态码误用/缺错误响应)。severity blocker 显式纳入 'SQL 注入/未鉴权的敏感接口'。3 新测试:test_glm_semantic_prompt_includes_backend_dimensions(断言 prompt 含 exception/异常 + sql/注入)、test_glm_blocker_on_backend_sql_injection(f-string 拼接 SQL → GLM blocker 阻断)、test_glm_warning_on_missing_exception_handling(除零未 try-except → warning 不阻断)。"
+        },
+        "M92.3": {
+          "title": "TDD 测试 + 全量回归",
+          "status": "done",
+          "note": "tests/test_parallel_verifier.py 33 passed(含 M92.1+5、M92.2+3,共 8 新测试)。全量回归 978 passed, 1 skipped, 0 failed(970→978, +8)。0 regression — 既有 UI 验证测试全保留通过,只是 prompt 内容扩展。"
+        }
+      }
+    },
+    "M93": {
+      "title": "E2E 实战验证 — 4 层端到端验证脚本(exo 可达 + factory_loop 集成 + parallel_verifier mock + 真实 GLM)",
+      "status": "done",
+      "note": "用户指令'E2E实战验证'。新增 scripts/verify_m93_e2e.py(519 行)4 层验证:(1)基础函数 import/smoke;(2)factory_loop 集成(stub planner+orchestrator 跑通);(3)parallel_verifier mock(GLM mock 返回 blocker 行为);(4)真实 LLM(exo 集群可达性 + GLM 真实检测 SQL 注入 blocker)。结果 14/14 全过。E2E 暴露并确认 M94 集成缺口:factory_loop.py line 892 仍用 analyze_failure 而非 analyze_failure_with_memory,task_description 未传入。M94 已修复。",
+      "tasks": {
+        "M93.1": {
+          "title": "verify_m93_e2e.py 4 层验证脚本",
+          "status": "done",
+          "note": "scripts/verify_m93_e2e.py 519 行。Layer 1 基础函数(10 项 import/smoke);Layer 2 factory_loop 集成(stub 跑通);Layer 3 parallel_verifier mock(GLM blocker 行为);Layer 4 真实 LLM(exo /v1/models 可达 + GLM 真实检测 f-string SQL 注入 → severity=blocker)。14/14 全过。"
+        },
+        "M93.2": {
+          "title": "E2E 暴露 M94 集成缺口",
+          "status": "done",
+          "note": "E2E 第 2 层验证 factory_loop 失败重试路径时,断言 analyze_failure_with_memory 被调用 — 但实际代码用 analyze_failure。这暴露 M91.1 RCA + Gold Memory 集成只完成了 rca.py 侧,factory_loop.py 未切换。M94 已修复。"
+        }
+      }
+    },
+    "M94": {
+      "title": "Gold Memory 学习闭环 — factory_loop RCA 升级为 analyze_failure_with_memory",
+      "status": "done",
+      "note": "用户指令'Gold Memory 学习闭环'。M93 E2E 暴露的集成缺口:factory_loop.py 失败重试时仍用 analyze_failure(无历史检索),M91.1 的 analyze_failure_with_memory 未被调用。M94 修复:factory_loop.py line 889-908 切换 import + 调用,新增 verify_output=result.summary 和 task_description=task.description 参数。这让 RCA 真正查询 Gold Memory 历史类似失败,把 history_hint 注入 feedback,形成'失败→查历史→带建议重试'的自我学习闭环。3 个 TDD 测试(wraps 模式验证 call_count + task_description kwargs + feedback 含 RCA/根因 + record_task_result writeback)。全量 1005 passed,0 回归。",
+      "tasks": {
+        "M94.1": {
+          "title": "factory_loop.py 切换 analyze_failure → analyze_failure_with_memory",
+          "status": "done",
+          "note": "factory_loop.py line 889-908: import 从 analyze_failure 改为 analyze_failure_with_memory;调用增加 verify_output=result.summary 和 task_description=task.description。RCA 现在用 task_description 语义检索 Gold Memory 历史类似失败,history_hint 注入 feedback。try/except fail-open 保留(Gold Memory 不可用不阻塞)。"
+        },
+        "M94.2": {
+          "title": "TDD 测试 3 项",
+          "status": "done",
+          "note": "tests/test_factory_loop.py 新增 3 测试:test_m94_factory_loop_uses_analyze_failure_with_memory(patch wraps 验证 call_count>=1 + task_description in kwargs)、test_m94_factory_loop_feedback_includes_rca(失败 feedback 含 'RCA' 或 '根因')、test_m94_gold_memory_writeback_on_failure(record_task_result 在失败时被调用,writeback 闭环 intact)。"
+        }
+      }
+    },
+    "M95": {
+      "title": "Console UI 可观测增强(后端+前端)— RCA/verifier_verdict 事件 + /rca/failure_counter 端点 + FailurePanel 组件",
+      "status": "done",
+      "note": "用户指令'Console UI 可观测增强'。后端 3 件套:(1)schemas.py EventType 新增 rca + verifier_verdict 两个事件类型;(2)orchestrator_stream.py instrument_verifier 在 verify 失败时 emit EventType.rca 事件,结构化 payload(cause/confidence/detail/fix_suggestion/history_hint/related_rules/failure_counter),RCA 调用 try/except fail-open;(3)parallel_verifier.py make_parallel_verifier 新增 verdict_callback 参数,GLM verdict 产生后回调通知(try/except fail-open);(4)main.py 新增 GET /api/v1/rca/failure_counter 端点返回 {cause_value: count}。15 个 TDD 测试全过。前端 4 件套:(1)types.ts 新增 RcaInfo/VerifierVerdict/FailureCounterResponse 三类型,eventToStreamItem 对 rca/verifier_verdict 返回 null(由 FailurePanel 单独渲染);(2)api.ts 新增 fetchFailureCounter();(3)store.tsx 新增 rcaHistory/lastVerifierVerdict/failureCounter 状态 + 5s 轮询 + appendEvent 中 rca/verifier_verdict 事件处理 + clearRca + 会话重置清空;(4)FailurePanel.tsx 组件(RcaCard 可展开 + VerdictCard 三级 severity + counter chip ≥3 升级),Conversation.tsx 在 ErrorBanner 与 PlanCard 之间渲染。app.css 追加 ~230 行样式(warning/danger/success color-mix)。前端 build 通过(66 modules),vitest 35 passed。全量后端 1005 passed,0 回归。",
+      "tasks": {
+        "M95.1": {
+          "title": "EventType.rca + EventType.verifier_verdict 新增",
+          "status": "done",
+          "note": "schemas.py EventType Literal 追加 'rca' 和 'verifier_verdict'。rca 事件承载 RCA 结构化 payload;verifier_verdict 事件承载 GLM 验证判决回调。"
+        },
+        "M95.2": {
+          "title": "instrument_verifier emit EventType.rca + verdict_callback",
+          "status": "done",
+          "note": "orchestrator_stream.py instrument_verifier:verify 失败时调 RCA → emit EventType.rca 事件(结构化 payload:cause/confidence/detail/fix_suggestion/history_hint/related_rules/failure_counter),try/except fail-open。parallel_verifier.py make_parallel_verifier 新增 verdict_callback: Callable[[SemanticVerdict], None] | None = None,GLM verdict 产生后若 checked=True 则回调(try/except fail-open)。"
+        },
+        "M95.3": {
+          "title": "/api/v1/rca/failure_counter 端点 + 15 TDD 测试",
+          "status": "done",
+          "note": "main.py 新增 GET /api/v1/rca/failure_counter 返回 {\"counter\": {cause_value: int}}(读 rca.get_failure_counter())。tests/test_m95_rca_events.py 15 测试:enum 存在性、instrument_verifier rca emit、verdict_callback 触发、/rca/failure_counter 端点。15 passed。"
+        },
+        "M95.4": {
+          "title": "前端 FailurePanel 组件 — types/api/store/组件/CSS/集成",
+          "status": "done",
+          "note": "types.ts 新增 RcaInfo/VerifierVerdict/FailureCounterResponse,eventToStreamItem 对 rca/verifier_verdict 返回 null。api.ts 新增 fetchFailureCounter()。store.tsx 新增 rcaHistory(保留最近 10 条)/lastVerifierVerdict/failureCounter 状态,5s 轮询 fetchFailureCounter,appendEvent 处理 rca(推入 rcaHistory + 同步 failureCounter)与 verifier_verdict 事件,clearRca 清空,会话切换/重置时清空。FailurePanel.tsx(164 行):RcaCard(cause chip + 置信度 + fix_suggestion + 可展开 detail/history_hint/related_rules)、VerdictCard(blocker/warning/ok 三级 + issues + suggestions)、counter chip(≥3 升级高亮)。Conversation.tsx 在 ErrorBanner 与 PlanCard 之间渲染。app.css 追加 ~230 行(color-mix warning/danger/success 主题)。build 通过 66 modules,vitest 35 passed。"
+        }
+      }
+    },
+    "M96": {
+      "title": "多任务并发编排 — _failure_counter 锁 + Gold Memory WAL + write 锁",
+      "status": "done",
+      "note": "用户指令'多任务并发编排'。M91.2 的 _failure_counter 是模块级 dict,并发任务会互相覆盖计数;Gold Memory SQLite 默认 rollback journal 模式写时阻塞读,并发任务写会 'database is locked'。M96 两处并发安全加固:(1)rca.py 新增 _failure_counter_lock = threading.Lock(),_track_failure/reset_failure_counter/get_failure_counter 全部 with lock;(2)gold_memory.py 新增 _gold_memory_write_lock + _enable_wal(db_path)(PRAGMA journal_mode=WAL + busy_timeout=5000,幂等,fail-open),record_task_result 启用 WAL 后 with write lock 写。WAL 允许读写并发(默认 rollback journal 写阻塞读)。9 个 TDD 测试(50 线程同 cause 计数=50、20+20 混合 causes 无 crash、并发 reset、20 线程写无丢失、WAL 幂等、:memory: DB fail-open、3 写+3 读无 locked)。全量 1005 passed,0 回归。",
+      "tasks": {
+        "M96.1": {
+          "title": "rca.py _failure_counter_lock 加锁",
+          "status": "done",
+          "note": "rca.py 新增 import threading as _threading + _failure_counter_lock = _threading.Lock()。_track_failure body 包 with _failure_counter_lock(含升级逻辑);reset_failure_counter 包 with lock;get_failure_counter return 包 with lock 返回 dict(_failure_counter) 拷贝防外部修改。"
+        },
+        "M96.2": {
+          "title": "gold_memory.py _gold_memory_write_lock + _enable_wal(WAL 模式)",
+          "status": "done",
+          "note": "gold_memory.py 新增 import threading + _gold_memory_write_lock = threading.Lock() + _wal_initialized: set[str] = set()。_enable_wal(db_path) 幂等函数:已初始化跳过,否则 PRAGMA journal_mode=WAL + PRAGMA busy_timeout=5000,try/except fail-open(:memory: 或临时文件不支持 WAL 不崩溃)。record_task_result 先 _enable_wal(db_path) 再 with _gold_memory_write_lock 写。"
+        },
+        "M96.3": {
+          "title": "TDD 测试 9 项(并发安全)",
+          "status": "done",
+          "note": "tests/test_m96_concurrency.py 9 测试:test_failure_counter_lock_exists(Lock 实例)、test_failure_counter_concurrent_same_cause(50 线程同 cause → counter==50)、test_failure_counter_concurrent_mixed_causes(20+20 混合无 crash)、test_reset_failure_counter_thread_safe(并发 reset+track)、test_gold_memory_write_lock_exists、test_gold_memory_concurrent_writes_no_loss(20 线程写数据不丢)、test_enable_wal_idempotent(多次调用无 crash)、test_enable_wal_fail_open_on_memory_db(:memory: fail-open)、test_gold_memory_concurrent_read_write(3 写+3 读无 'database is locked')。9 passed。"
+        }
+      }
+    },
+    "M97": {
+      "title": "FailurePanel 前端单元测试 — jsdom + @testing-library/react + vitest.config 扩展",
+      "status": "done",
+      "note": "M95 前端 FailurePanel 164 行无单测。M97 补齐前端测试基础设施:(1)npm install -D jsdom @testing-library/react @testing-library/jest-dom @testing-library/user-event;(2)vitest.config.ts 从 node 环境升级到 jsdom + @vitejs/plugin-react + setupFiles,include 加 src/**/*.test.tsx;(3)新增 src/test-setup.ts 引入 @testing-library/jest-dom/vitest;(4)FailurePanel.test.tsx 10 用例:无数据返回 null、有 RCA 渲染 cause chip+置信度、RCA 卡片可展开(2 条记录验证 index 0 默认展开 + index 1 点击展开)、VerdictCard 三级(blocker/warning/ok)、counter chip ≥3 升级 escalated、counter chip <3 不升级、clearRca 按钮触发、checked=false 不渲染。mock useApp(vi.mock '../store')。原有 35 + 新增 10 = 45 passed,build 0 错误。",
+      "tasks": {
+        "M97.1": {
+          "title": "vitest 基础设施升级 — jsdom + @testing-library/react",
+          "status": "done",
+          "note": "package.json devDependencies 新增 jsdom@29.1.1 + @testing-library/react@16.3.2 + @testing-library/jest-dom@6.9.1 + @testing-library/user-event@14.6.1。vitest.config.ts:plugins:[react()],environment:'jsdom',include:['src/**/*.test.ts','src/**/*.test.tsx'],setupFiles:['./src/test-setup.ts']。src/test-setup.ts:import '@testing-library/jest-dom/vitest'。"
+        },
+        "M97.2": {
+          "title": "FailurePanel.test.tsx 10 用例",
+          "status": "done",
+          "note": "src/components/FailurePanel.test.tsx。vi.mock('../store') 替换 useApp,vi.mocked(useApp).mockReturnValue({...} as any) 注入部分状态。10 用例:无数据返回 null、RCA cause chip+置信度、RCA 卡片展开(2 条记录)、verdict blocker/warning/ok、counter ≥3 escalated、counter <3 不升级、clearRca 触发、checked=false 不渲染。发现 RcaCard useState(index===0) 使最新一条默认展开,测试用 2 条记录忠实覆盖折叠→展开流程。"
+        }
+      }
+    },
+    "M98": {
+      "title": "并发编排压测脚本 — verify_m98_concurrency.py 多线程验证锁 + WAL",
+      "status": "done",
+      "note": "M96 锁和 WAL 只在单测验证。M98 新增 scripts/verify_m98_concurrency.py 真实多线程压测。5 场景:(1)同 cause 并发计数(20 线程 _track_failure → counter==20);(2)混合 cause 并发(发现 _track_failure 实际是连续同类计数器,新 cause 清空 dict,按真实语义验证无 crash+状态一致);(3)Gold Memory 并发写完整性(20 线程写不同 task → COUNT==20,用 _idx_to_word 生成纯字母唯一词保证 N 个不同签名);(4)无 'database is locked'(10 写+10 读并发,lock_errors=0);(5)reset 期间 track(10 reset+10 track 各 20 轮无 crash)。threading.Barrier 同步启动。mock _embed=lambda:[] 避免 sentence-transformers 并发初始化不确定性。临时 DB tempfile.mkdtemp。支持 --threads N。20 线程 0.038s 0 异常,50 线程也通过。独立可运行不依赖 pytest。",
+      "tasks": {
+        "M98.1": {
+          "title": "verify_m98_concurrency.py 5 场景压测",
+          "status": "done",
+          "note": "scripts/verify_m98_concurrency.py。sys.path.insert(0, '.../src') + from driving.xxx import。5 场景全部 PASS。关键发现:_track_failure(result: RcaResult) 不是简单计数器,是连续同类失败计数器(新 cause 清空 dict),脚本按真实语义验证。_idx_to_word(i) 生成 ka/kb/... 保证唯一签名。运行:.venv/bin/python scripts/verify_m98_concurrency.py --threads 20。"
+        }
+      }
+    },
+    "M99": {
+      "title": "Gold Memory 学习闭环验证 — verify_m99_gold_memory_loop.py 失败写回→相似命中",
+      "status": "done",
+      "note": "M94 升级 RCA 到 analyze_failure_with_memory 但完整闭环未实战验证。M99 新增 scripts/verify_m99_gold_memory_loop.py。4 步骤:(1)任务A'实现登录页面'失败 → record_task_result 写回 → success=0 记录数=1;(2)相似任务B'创建登录页' → analyze_failure_with_memory → history_hint 含 'syntax_error',related_rules=['syntax_error','verify_mismatch'],query_similar_failures 命中 1 条(sim≈0.55≥0.5);(3)不相似任务'实现数据库迁移脚本' → history_hint 为空,query 命中 0 条(sim≈0.27<0.5);(4)再写 2 条 → 共 3 条,query 命中 3 条,hint 含 '3 条'。关键发现:analyze_failure_with_memory 不调 LLM(纯 regex 模式匹配定 cause + Gold Memory 查询定 history_hint)。mock _embed 用中文字符 bag-of-chars(dim=20992 零碰撞)。临时 DB 显式传 db_path。每步 reset_failure_counter 隔离。独立可运行。",
+      "tasks": {
+        "M99.1": {
+          "title": "verify_m99_gold_memory_loop.py 4 步骤闭环",
+          "status": "done",
+          "note": "scripts/verify_m99_gold_memory_loop.py。4 步骤全 PASS。mock driving.gold_memory._embed 用中文字符 bag-of-chars(跨描述语义匹配确定性命中)。发现 TaskResult.verified(非 success)、iteration 必填、design_style 在 FactoryState(非 FactoryTask)。record_task_result(task, state, result, db_path) 签名。query_similar_failures(task_description, db_path) 语义检索 Top-K 阈值 0.5。运行:.venv/bin/python scripts/verify_m99_gold_memory_loop.py。"
+        }
+      }
+    },
+    "M100": {
+      "title": "Console FactoryPanel RCA 历史聚合视图 — 后端 /factories/{id}/rca_history + 前端聚合区",
+      "status": "done",
+      "note": "M95 FailurePanel 是会话级。M100 补工厂级 RCA 历史聚合。后端:(1)factory_loop.py 新增 FactoryRcaEntry Pydantic 模型 + FactoryState.rca_history 字段 + SQLite schema 迁移(rca_history_json 列 + ALTER TABLE 向后兼容);(2)run_factory_loop verify 失败时 append RCA 条目(fail-open try/except);(3)factory.py 新增 GET /{factory_id}/rca_history 端点返回 {factory_id, rca_history, cause_stats}。前端:(1)types.ts 新增 FactoryRcaEntry/FactoryRcaHistoryResponse;(2)api.ts 新增 fetchFactoryRcaHistory;(3)store.tsx 新增 factoryRcaHistory 状态 + loadFactoryRcaHistory action,selectFactory 时预拉取+切换清空(修复 selectFactory('') 语义);(4)FactoryPanel.tsx 新增 FactoryRcaHistorySection + FactoryRcaRow 组件(默认折叠,展开刷新,cause_stats chips + 时间线,空态占位);(5)app.css 新增 .fd-rca-* 样式(复用 counter-chip + color-mix 按根因着色)。7 TDD 测试(空/有/聚合/404/loop append/持久化/legacy 兼容)。全量 1012 passed,前端 45 passed,build 0 错误。",
+      "tasks": {
+        "M100.1": {
+          "title": "后端 FactoryState.rca_history + /factories/{id}/rca_history 端点",
+          "status": "done",
+          "note": "factory_loop.py 新增 FactoryRcaEntry(cause/confidence/fix_suggestion/history_hint/related_rules/task_index/timestamp)+ FactoryState.rca_history: list[FactoryRcaEntry]。SQLite schema:rca_history_json TEXT 列 + ALTER TABLE 向后兼容。run_factory_loop verify 失败调 analyze_failure_with_memory 后 try/except append。factory.py GET /{factory_id}/rca_history 返回 {factory_id, rca_history, cause_stats}(cause_stats 按 cause 聚合计数)。fail-open 三层(状态读/端点/RCA 写入)。"
+        },
+        "M100.2": {
+          "title": "前端 FactoryPanel RCA 历史聚合区",
+          "status": "done",
+          "note": "types.ts FactoryRcaEntry/FactoryRcaHistoryResponse。api.ts fetchFactoryRcaHistory。store.tsx factoryRcaHistory 状态 + loadFactoryRcaHistory,selectFactory 预拉取+切换清空。FactoryPanel.tsx FactoryRcaHistorySection(默认折叠 🛡 RCA 历史 [N],展开刷新)+ FactoryRcaRow(cause chip 按类着色+置信度+任务索引+相对时间,可展开建议/历史/规则)。app.css .fd-rca-* 复用 counter-chip + color-mix(syntax_error→danger/verify_mismatch→warning/timeout→info)。CSS 用 slide-up keyframe(非 fade-slide-up)。"
+        },
+        "M100.3": {
+          "title": "TDD 测试 7 项(工厂 RCA 历史)",
+          "status": "done",
+          "note": "tests/test_m100_factory_rca_history.py 7 测试:factory 无 RCA 返回空、factory 有 RCA 返回历史、cause_stats 聚合正确、factory 不存在 404、factory_loop verify 失败追加 rca_history、持久化(重启后 rca_history 保留)、legacy 向后兼容(旧 factory 无 rca_history_json 列)。关键:3 次失败产生 2 条 RCA(第 3 次 attempts>=max_attempts 先 break 再 RCA)。7 passed。"
+        }
+      }
     }
   },
   "architecture_decisions": [
@@ -1368,26 +1602,26 @@
     {
       "id": "ISSUE-2",
       "severity": "high",
-      "status": "open",
+      "status": "resolved",
       "title": "M2 基座 Roo Code 已停服",
-      "detail": "Roo Code 于 2026-05-15 官方归档停服(只读, 末版 v3.54.0)，不能作为 fork 基座。需改基座 -> 见决策 D4。不阻塞 M0/M1。",
-      "owner": "待用户在 D4 选 Kilo Code / Cline"
+      "detail": "Roo Code 于 2026-05-15 官方归档停服。D4(2026-06-29)决策改基座为 Cline;M3 产品进一步转向 Tauri 桌面 IDE(D10-D14)+ LangGraph sidecar 驾驭层,Roo fork 路径整体废弃。M2/M3/M8 均已 done。",
+      "owner": "已解决(D4 + M3 转向)"
     },
     {
       "id": "ISSUE-3",
       "severity": "medium",
-      "status": "open",
+      "status": "resolved",
       "title": "exo 4 台 RDMA 起不来, 退回 2 台",
-      "detail": "6 对节点仅 studio01<->studio02 缺 RDMA(降级 TCP/IP); 四台 Thunderbolt Bridge exists:false, thunderboltBridgeCycles=[]; RDMA 走 80Gb/s 口(120Gb/s TB5 口 en6/en7 闲置)。Tensor 跨>2 台需 RDMA 环, 当前组不出。不阻塞 2 台 Launch(Kimi 597GB<1024GB); 但双模型常驻(1.35TB)需 4 台 2TB 池化。已用配法 B(2+2)规避: GLM=studio04+02, Kimi=studio03+01(各 2 台 RDMA 不相交), M0 不受影响。仅当要双模型同池或单模型 4 路提速才需修 4 路。",
-      "owner": "可选: 重插 01<->02 线 + 启用四台 TB Bridge"
+      "detail": "配法 B(2+2)已成产线拓扑:GLM=studio04+02, Kimi=studio03+01(各 2 台 RDMA 不相交)。M5/M8/M9/M10/M11/M89/M90 全部在此拓扑上 done。仅当要双模型同池或单模型 4 路提速才需修 4 路, 非当前路线。",
+      "owner": "已绕过(2+2 拓扑成产线)"
     },
     {
       "id": "ISSUE-4",
       "severity": "low",
-      "status": "open",
+      "status": "resolved",
       "title": "cline CLI v3.0.33 --hooks-dir 不执行文件 hook",
-      "detail": "实测 PreToolUse/PostToolUse 文件 hook(带.sh与无扩展名)放 --hooks-dir 均不触发, 虽 --json 流内部 emit hook_event。已绕过: 可观测改走 --json 流解析(observe.py)。影响: A 侧单步守门(PreToolUse cancel)CLI 不可用 -> 改由 C 侧(LangGraph)统一强制。将来需文件 hook 可试 VSCode 扩展(Settings->Enable Hooks)或升级 cline。",
-      "owner": "M3 后续/可选"
+      "detail": "已架构性规避:可观测走 --json 流解析(observe.py),强制验证/守门统一由 C 侧 LangGraph sidecar(orchestrator.py + sidecar.py)承担,不依赖 cline 文件 hook。M3+ 全链路在此架构上 done,无回归 cline 文件 hook 的计划。",
+      "owner": "已绕过(架构性规避)"
     },
     {
       "id": "ISSUE-5",

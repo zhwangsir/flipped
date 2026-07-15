@@ -60,6 +60,22 @@ class TaskResult(BaseModel):
     recorded_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
 
+class FactoryRcaEntry(BaseModel):
+    """M100 — factory 级 RCA 历史条目。
+
+    每次 verify 失败触发 analyze_failure_with_memory 后,
+    把判定结果追加到 FactoryState.rca_history,供 FactoryPanel 详情页一站式查看。
+    """
+
+    cause: str = Field(description="根因分类(reasoning_overflow/syntax_error/...)")
+    confidence: float = Field(0.0, description="置信度 0.0-1.0")
+    fix_suggestion: str = ""
+    history_hint: str = ""
+    related_rules: list[str] = Field(default_factory=list)
+    task_index: int = Field(-1, description="失败任务在 roadmap 中的 0-based 索引,-1 表示未知")
+    timestamp: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+
+
 class FactoryState(BaseModel):
     factory_id: str
     product_goal: str
@@ -79,6 +95,8 @@ class FactoryState(BaseModel):
     # 让生成的 UI 代码遵循设计系统（具体 hex 值、字体、动效、组件状态、响应式、无障碍）
     design_style: str = "auto"
     design_context: str = ""
+    # M100 — factory 级 RCA 历史聚合(每次 verify 失败触发 RCA 后追加)
+    rca_history: list[FactoryRcaEntry] = Field(default_factory=list)
     created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     updated_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
@@ -189,6 +207,7 @@ CREATE TABLE IF NOT EXISTS factory_states (
     max_tasks INTEGER NOT NULL,
     design_style TEXT NOT NULL DEFAULT 'auto',
     design_context TEXT NOT NULL DEFAULT '',
+    rca_history_json TEXT NOT NULL DEFAULT '[]',
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 )
@@ -203,6 +222,9 @@ def _ensure_table(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE factory_states ADD COLUMN design_style TEXT NOT NULL DEFAULT 'auto'")
     if "design_context" not in cols:
         conn.execute("ALTER TABLE factory_states ADD COLUMN design_context TEXT NOT NULL DEFAULT ''")
+    # M100 迁移：给旧表加 rca_history_json 列(工厂级 RCA 历史聚合)
+    if "rca_history_json" not in cols:
+        conn.execute("ALTER TABLE factory_states ADD COLUMN rca_history_json TEXT NOT NULL DEFAULT '[]'")
 
 
 def _state_to_row(state: FactoryState) -> tuple:
@@ -220,12 +242,19 @@ def _state_to_row(state: FactoryState) -> tuple:
         state.max_tasks,
         state.design_style,
         state.design_context,
+        json.dumps([r.model_dump() for r in state.rca_history]),
         state.created_at,
         datetime.now(timezone.utc).isoformat(),
     )
 
 
 def _row_to_state(row: sqlite3.Row) -> FactoryState:
+    # M100 兼容旧表(无 rca_history_json 列时返回空列表)
+    rca_history_raw = row["rca_history_json"] if "rca_history_json" in row.keys() else "[]"
+    try:
+        rca_history = [FactoryRcaEntry(**r) for r in json.loads(rca_history_raw)]
+    except Exception:
+        rca_history = []
     return FactoryState(
         factory_id=row["factory_id"],
         product_goal=row["product_goal"],
@@ -240,6 +269,7 @@ def _row_to_state(row: sqlite3.Row) -> FactoryState:
         max_tasks=row["max_tasks"],
         design_style=row["design_style"],
         design_context=row["design_context"],
+        rca_history=rca_history,
         created_at=row["created_at"],
         updated_at=row["updated_at"],
     )
@@ -255,8 +285,8 @@ def save_factory_state(state: FactoryState, db_path: str) -> None:
             INSERT INTO factory_states (
                 factory_id, product_goal, cwd, status, roadmap_json, completed_json,
                 failed_json, current_task_id, context_summary, iteration_count,
-                max_tasks, design_style, design_context, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                max_tasks, design_style, design_context, rca_history_json, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(factory_id) DO UPDATE SET
                 product_goal=excluded.product_goal,
                 cwd=excluded.cwd,
@@ -270,6 +300,7 @@ def save_factory_state(state: FactoryState, db_path: str) -> None:
                 max_tasks=excluded.max_tasks,
                 design_style=excluded.design_style,
                 design_context=excluded.design_context,
+                rca_history_json=excluded.rca_history_json,
                 updated_at=excluded.updated_at
             """,
             _state_to_row(state),
@@ -886,18 +917,39 @@ def run_factory_loop(
                 if task.attempts >= task.max_attempts:
                     state.status = FactoryStatus.paused
                     break
-                # M12 RCA：自动分析失败根因，给 supervisor 精确修复建议（而非泛泛"失败了"）
+                # M12/M94 RCA：自动分析失败根因，给 supervisor 精确修复建议（而非泛泛"失败了"）
+                # M94: 从 analyze_failure 升级为 analyze_failure_with_memory,
+                # 查 Gold Memory 历史类似失败,形成自我学习闭环(M91.1 集成)。
+                # M100: 把 RCA 结果追加到 state.rca_history,供 FactoryPanel 详情页聚合查看。
                 try:
-                    from driving.rca import analyze_failure, enrich_feedback
-                    rca = analyze_failure(
+                    from driving.rca import analyze_failure_with_memory, enrich_feedback
+                    rca = analyze_failure_with_memory(
                         stop_reason=result.stop_reason,
                         summary=result.summary,
                         feedback=task.feedback,
+                        verify_output=result.summary,
+                        task_description=task.description,
                     )
                     task.feedback = enrich_feedback(
                         f"上次尝试失败({result.stop_reason}): {result.summary}",
                         rca,
                     )
+                    # M100 — 追加 RCA 历史条目(fail-open:任何异常都不阻塞主流程)
+                    try:
+                        task_index = next(
+                            (i for i, t in enumerate(state.roadmap) if t.id == task.id),
+                            -1,
+                        )
+                        state.rca_history.append(FactoryRcaEntry(
+                            cause=rca.cause.value,
+                            confidence=float(rca.confidence),
+                            fix_suggestion=rca.fix_suggestion,
+                            history_hint=rca.history_hint,
+                            related_rules=list(rca.related_rules),
+                            task_index=task_index,
+                        ))
+                    except Exception:
+                        pass  # RCA 历史写入失败不影响主循环
                 except Exception:
                     task.feedback = (
                         f"上次尝试失败({result.stop_reason}): {result.summary}"

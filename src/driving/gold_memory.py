@@ -21,6 +21,7 @@ import json
 import math
 import re
 import sqlite3
+import threading
 from collections import Counter
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -56,6 +57,29 @@ def _ensure_table(conn: sqlite3.Connection) -> None:
     cols = {row[1] for row in conn.execute("PRAGMA table_info(gold_memory)")}
     if "task_vector" not in cols:
         conn.execute("ALTER TABLE gold_memory ADD COLUMN task_vector TEXT NOT NULL DEFAULT ''")
+
+
+# M96: 并发安全 — 保护写操作的锁 + WAL 模式
+_gold_memory_write_lock = threading.Lock()
+_wal_initialized: set[str] = set()
+
+
+def _enable_wal(db_path: str) -> None:
+    """M96: 启用 SQLite WAL 模式 + busy_timeout,提升并发读写能力。
+
+    WAL(Write-Ahead Logging)允许读写并发(默认 rollback journal 模式下写会阻塞读)。
+    busy_timeout=5000ms 让写冲突时等待而非立即报 "database is locked"。
+    每个 db_path 只初始化一次(幂等)。
+    """
+    if db_path in _wal_initialized:
+        return
+    try:
+        with sqlite3.connect(db_path) as conn:
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.execute("PRAGMA busy_timeout=5000")
+        _wal_initialized.add(db_path)
+    except Exception:
+        pass  # 临时文件或内存 DB 可能不支持 WAL,fail-open
 
 
 # M11.2：模块级 embedding 单例（懒加载，避免每次调用都初始化模型）
@@ -149,39 +173,45 @@ def record_task_result(
     result: TaskResult,
     db_path: str = "data/gold_memory.db",
 ) -> None:
-    """记录一个任务结果到 Gold Memory。"""
+    """记录一个任务结果到 Gold Memory。
+
+    M96: 加锁保护写操作,防止并发任务的 "database is locked" 异常。
+    """
     sig = _signature(task.description)
     verify_cmd_str = " ".join(task.verify_cmd) if task.verify_cmd else "true"
     # M11.2：嵌入任务描述向量，用于语义检索
     vector = _embed(task.description[:500])
     vector_json = json.dumps(vector) if vector else ""
-    with sqlite3.connect(db_path) as conn:
-        _ensure_table(conn)
-        conn.execute(
-            """
-            INSERT INTO gold_memory (
-                task_signature, design_style, description, verify_cmd,
-                stop_reason, summary, success, created_at, task_vector
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(task_signature, design_style, verify_cmd) DO UPDATE SET
-                stop_reason=excluded.stop_reason,
-                summary=excluded.summary,
-                success=excluded.success,
-                created_at=excluded.created_at,
-                task_vector=excluded.task_vector
-            """,
-            (
-                sig,
-                state.design_style or "auto",
-                task.description[:500],
-                verify_cmd_str[:500],
-                result.stop_reason,
-                result.summary[:500],
-                1 if result.verified else 0,
-                datetime.now(timezone.utc).isoformat(),
-                vector_json,
-            ),
-        )
+    # M96: 启用 WAL + 加锁写
+    _enable_wal(db_path)
+    with _gold_memory_write_lock:
+        with sqlite3.connect(db_path) as conn:
+            _ensure_table(conn)
+            conn.execute(
+                """
+                INSERT INTO gold_memory (
+                    task_signature, design_style, description, verify_cmd,
+                    stop_reason, summary, success, created_at, task_vector
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(task_signature, design_style, verify_cmd) DO UPDATE SET
+                    stop_reason=excluded.stop_reason,
+                    summary=excluded.summary,
+                    success=excluded.success,
+                    created_at=excluded.created_at,
+                    task_vector=excluded.task_vector
+                """,
+                (
+                    sig,
+                    state.design_style or "auto",
+                    task.description[:500],
+                    verify_cmd_str[:500],
+                    result.stop_reason,
+                    result.summary[:500],
+                    1 if result.verified else 0,
+                    datetime.now(timezone.utc).isoformat(),
+                    vector_json,
+                ),
+            )
 
 
 def query_similar(
@@ -296,6 +326,77 @@ def clear_memory(db_path: str = "data/gold_memory.db") -> None:
     with sqlite3.connect(db_path) as conn:
         _ensure_table(conn)
         conn.execute("DELETE FROM gold_memory")
+
+
+def query_similar_failures(
+    description: str,
+    design_style: str = "auto",
+    db_path: str = "data/gold_memory.db",
+    limit: int = 5,
+) -> list[GoldEntry]:
+    """M91.1 查询相似任务的历史失败记录(只返回 success=0)。
+
+    复用 query_similar 的向量语义检索逻辑,但只返回失败记录。
+    RCA 用此函数查"类似任务历史上怎么失败的",增强根因分析的修复建议。
+
+    Returns:
+        list[GoldEntry],每条含 stop_reason/summary,按相似度降序。
+    """
+    sig = _signature(description)
+    query_vec = _embed(description[:500])
+
+    with sqlite3.connect(db_path) as conn:
+        _ensure_table(conn)
+        # 1. 语义检索:取所有带向量的失败行
+        if query_vec:
+            cur = conn.execute(
+                """
+                SELECT task_signature, design_style, description, verify_cmd,
+                       stop_reason, summary, success, created_at, task_vector
+                FROM gold_memory
+                WHERE success = 0 AND task_vector != ''
+                  AND (design_style = ? OR design_style = 'auto' OR ? = 'auto')
+                """,
+                (design_style, design_style),
+            )
+            all_rows = cur.fetchall()
+            scored = []
+            for r in all_rows:
+                try:
+                    stored_vec = json.loads(r[8])
+                except Exception:
+                    continue
+                sim = _cosine_similarity(query_vec, stored_vec)
+                if sim >= 0.5:
+                    scored.append((sim, r))
+            scored.sort(key=lambda x: x[0], reverse=True)
+            rows = [s[1] for s in scored[:limit]]
+        else:
+            rows = []
+
+        # 2. Fallback:签名精确匹配的失败记录
+        if not query_vec or not rows:
+            cur = conn.execute(
+                """
+                SELECT task_signature, design_style, description, verify_cmd,
+                       stop_reason, summary, success, created_at, task_vector
+                FROM gold_memory
+                WHERE success = 0 AND task_signature = ?
+                  AND (design_style = ? OR design_style = 'auto' OR ? = 'auto')
+                ORDER BY created_at DESC LIMIT ?
+                """,
+                (sig, design_style, design_style, limit),
+            )
+            rows = cur.fetchall()
+
+    return [
+        GoldEntry(
+            task_signature=r[0], design_style=r[1], description=r[2],
+            verify_cmd=r[3], stop_reason=r[4], summary=r[5],
+            success=bool(r[6]), created_at=r[7],
+        )
+        for r in rows
+    ]
 
 
 def stats(db_path: str = "data/gold_memory.db") -> dict[str, Any]:

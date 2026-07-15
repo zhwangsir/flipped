@@ -346,3 +346,129 @@ def test_parallel_deterministic_crash_fails(tmp_path):
             ok, msg = verifier([], str(tmp_path))
     assert ok is False
     assert "crashed" in msg
+
+
+# ---- M92.1 _read_artifacts 后端代码产物读取扩展 ----
+
+def test_read_artifacts_reads_main_py(tmp_path):
+    """M92.1: 读取后端 main.py。"""
+    (tmp_path / "main.py").write_text("from fastapi import FastAPI\napp = FastAPI()", encoding="utf-8")
+    out = _read_artifacts(tmp_path)
+    assert "=== main.py ===" in out
+    assert "FastAPI" in out
+
+
+def test_read_artifacts_reads_app_py(tmp_path):
+    """M92.1: 读取 app.py。"""
+    (tmp_path / "app.py").write_text("def hello(): return 'hi'", encoding="utf-8")
+    out = _read_artifacts(tmp_path)
+    assert "=== app.py ===" in out
+    assert "hello" in out
+
+
+def test_read_artifacts_priority_index_html_over_py(tmp_path):
+    """M92.1: index.html 优先级仍高于 .py 文件。"""
+    (tmp_path / "index.html").write_text("<html>frontend</html>", encoding="utf-8")
+    (tmp_path / "main.py").write_text("# backend", encoding="utf-8")
+    out = _read_artifacts(tmp_path)
+    assert "=== index.html ===" in out
+    assert "=== main.py ===" in out  # 两者都读,但 index.html 在前
+
+
+def test_read_artifacts_reads_py_glob_fallback(tmp_path):
+    """M92.1: 无入口文件时扫其他 .py 文件。"""
+    (tmp_path / "models.py").write_text("class User: pass", encoding="utf-8")
+    (tmp_path / "routes.py").write_text("def get(): pass", encoding="utf-8")
+    out = _read_artifacts(tmp_path)
+    assert "models.py" in out
+    assert "routes.py" in out
+
+
+def test_read_artifacts_mixed_frontend_backend(tmp_path):
+    """M92.1: 前后端混合产物都能读到。"""
+    (tmp_path / "index.html").write_text("<html>front</html>", encoding="utf-8")
+    (tmp_path / "main.py").write_text("app = FastAPI()", encoding="utf-8")
+    out = _read_artifacts(tmp_path)
+    assert "index.html" in out
+    assert "main.py" in out
+
+
+# ---- M92.2 GLM 语义验证后端代码质量维度 ----
+
+def test_glm_semantic_prompt_includes_backend_dimensions(tmp_path):
+    """M92.2: GLM prompt 包含后端代码质量维度(异常处理/SQL注入/输入校验)。"""
+    (tmp_path / "main.py").write_text("app = FastAPI()", encoding="utf-8")
+    captured_prompt = []
+
+    def fake_post(url, **kwargs):
+        captured_prompt.append(kwargs.get("json", {}).get("messages", [{}])[0].get("content", ""))
+        class R:
+            status_code = 200
+            def raise_for_status(self): pass
+            def json(self):
+                return {"choices": [{"message": {"content": '{"severity":"ok"}'}}]}
+        return R()
+
+    with patch("driving.parallel_verifier.resolve_model_config", return_value=("http://fake/v1", "fake")):
+        with patch("httpx.post", side_effect=fake_post):
+            v = make_glm_semantic_verifier(timeout=5)
+            v([], str(tmp_path))
+    assert captured_prompt, "应捕获到 GLM prompt"
+    prompt = captured_prompt[0]
+    # 后端代码质量维度应在 prompt 中
+    assert "exception" in prompt.lower() or "异常" in prompt
+    assert "sql" in prompt.lower() or "注入" in prompt
+
+
+def test_glm_blocker_on_backend_sql_injection(tmp_path):
+    """M92.2: GLM 检测到 SQL 注入 → blocker。"""
+    (tmp_path / "main.py").write_text(
+        "def query(user_input): cur.execute(f'SELECT * FROM users WHERE name={user_input}')",
+        encoding="utf-8",
+    )
+
+    def base_ok(cmd, cwd):
+        return True, "det: ok"
+
+    def fake_post(url, **kwargs):
+        class R:
+            status_code = 200
+            def raise_for_status(self): pass
+            def json(self):
+                return {"choices": [{"message": {"content": '{"severity":"blocker","issues":["SQL注入风险:f-string拼接SQL"]}'}}]}
+        return R()
+
+    with patch("driving.parallel_verifier.resolve_model_config", return_value=("http://fake/v1", "fake")):
+        with patch("httpx.post", side_effect=fake_post):
+            verifier = make_parallel_verifier(base_ok, glm_timeout=5)
+            ok, msg = verifier([], str(tmp_path))
+    assert ok is False, "SQL 注入应被 GLM blocker 阻断"
+    assert "SQL" in msg or "注入" in msg
+
+
+def test_glm_warning_on_missing_exception_handling(tmp_path):
+    """M92.2: GLM 检测到缺少异常处理 → warning(不阻断)。"""
+    (tmp_path / "main.py").write_text("def risky(): return 1/0", encoding="utf-8")
+
+    def base_ok(cmd, cwd):
+        return True, "det: ok"
+
+    def fake_post(url, **kwargs):
+        class R:
+            status_code = 200
+            def raise_for_status(self): pass
+            def json(self):
+                return {"choices": [{"message": {"content": '{"severity":"warning","issues":["缺少异常处理:除零未try-except"]}'}}]}
+        return R()
+
+    with patch("driving.parallel_verifier.resolve_model_config", return_value=("http://fake/v1", "fake")):
+        with patch("httpx.post", side_effect=fake_post):
+            verifier = make_parallel_verifier(base_ok, glm_timeout=5)
+            ok, msg = verifier([], str(tmp_path))
+    assert ok is True, "warning 不应阻断"
+    assert "异常" in msg or "warning" in msg.lower()
+
+
+if __name__ == "__main__":
+    import pytest
+    pytest.main([__file__, "-v"])

@@ -3,6 +3,7 @@ import { useApp } from '../store';
 import type { Role, StreamItem, ToolCall, ToolChild } from '../types';
 import { isTauri, pickFolder } from '../lib/native';
 import { PlanCard } from './PlanCard';
+import { FailurePanel } from './FailurePanel'; // M95 — RCA / verifier 判决可观测
 import {
   ToolIcon,
   IconSend,
@@ -648,6 +649,7 @@ export function Conversation() {
       <div className='stream'>
         <StatusBanner status={sessionStatus} progress={progress} />
         <ErrorBanner message={lastError} />
+        <FailurePanel />
         <PlanCard />
         {approvalPending && (
           <ApprovalCard

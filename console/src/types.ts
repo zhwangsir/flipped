@@ -85,6 +85,30 @@ export interface Metrics {
   context: Record<string, number>;
 }
 
+/** M95 — RCA 事件 payload(verify 失败时后端 emit EventType.rca)。 */
+export interface RcaInfo {
+  cause: string;              // 根因分类(reasoning_overflow/syntax_error/...)
+  confidence: number;         // 0.0-1.0
+  detail: string;
+  fix_suggestion: string;
+  history_hint: string;       // Gold Memory 历史类似失败提示
+  related_rules: string[];
+  failure_counter: Record<string, number>;  // 连续失败计数
+}
+
+/** M95 — verifier_verdict 事件 payload(GLM 验证判决回调)。 */
+export interface VerifierVerdict {
+  severity: 'blocker' | 'warning' | 'ok';
+  checked: boolean;
+  issues: string[];
+  suggestions: string[];
+}
+
+/** M95 — /rca/failure_counter 端点返回。 */
+export interface FailureCounterResponse {
+  counter: Record<string, number>;
+}
+
 /** 项目文件树节点（阶段② — 右侧「文件」）。 */
 export interface FileNode {
   name: string;
@@ -199,6 +223,24 @@ export interface FactorySummary {
   updated_at: string;
 }
 
+/** M100 — 工厂级 RCA 历史条目(对应后端 FactoryRcaEntry)。 */
+export interface FactoryRcaEntry {
+  cause: string;              // 根因分类(syntax_error/verify_mismatch/...)
+  confidence: number;         // 0.0-1.0
+  fix_suggestion: string;
+  history_hint: string;
+  related_rules: string[];
+  task_index: number;         // 失败任务在 roadmap 中的 0-based 索引,-1 表示未知
+  timestamp: string;          // ISO8601 UTC
+}
+
+/** M100 — /factories/{id}/rca_history 端点返回结构。 */
+export interface FactoryRcaHistoryResponse {
+  factory_id: string;
+  rca_history: FactoryRcaEntry[];
+  cause_stats: Record<string, number>;
+}
+
 /** orchestration-api 发过来的原始事件（与 src/api/schemas.py 对齐）。 */
 export interface ApiEvent {
   id: string;
@@ -247,6 +289,8 @@ export function eventToStreamItem(ev: ApiEvent): StreamItem | null {
     case 'checkpoint':
     case 'approval_request':
     case 'plan': // 计划清单单独渲染成卡片，不进消息流
+    case 'rca':              // M95 — RCA 由 FailurePanel 单独渲染
+    case 'verifier_verdict': // M95 — verifier 判决由 FailurePanel 单独渲染
       return null;
     default:
       return { id: ev.id, role, text: JSON.stringify(p) };

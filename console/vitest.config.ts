@@ -1,9 +1,12 @@
 import { defineConfig } from 'vitest/config';
+import react from '@vitejs/plugin-react';
 
-// 前端单测:纯逻辑用 node 环境(无需 jsdom),覆盖 src 下 *.test.ts。
+// 前端单测:jsdom 环境支持 React 组件渲染(.tsx),同时兼容原有纯逻辑 .test.ts。
 export default defineConfig({
+  plugins: [react()],
   test: {
-    environment: 'node',
-    include: ['src/**/*.test.ts'],
+    environment: 'jsdom',
+    include: ['src/**/*.test.ts', 'src/**/*.test.tsx'],
+    setupFiles: ['./src/test-setup.ts'],
   },
 });

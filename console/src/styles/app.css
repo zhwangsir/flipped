@@ -4356,9 +4356,415 @@ textarea:focus {
   .factory-list-card,
   .factory-create,
   .fd-task,
-  .fd-result {
+  .fd-result,
+  .fd-rca-item {
     animation: none;
     opacity: 1;
     transform: none;
+  }
+}
+
+/* ============================================================
+ * M100 — FactoryPanel:工厂级 RCA 历史聚合折叠区
+ * 复用 .counter-chip / .fd-sec-h 体系,色板用 --warning/--danger/--success
+ * ============================================================ */
+.fd-rca-toggle {
+  width: 100%;
+  background: transparent;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  text-align: left;
+  color: inherit;
+  font: inherit;
+}
+.fd-rca-toggle:hover {
+  color: var(--text-primary);
+}
+.fd-rca-toggle:hover svg {
+  color: var(--text-secondary);
+}
+.fd-rca-badge {
+  display: inline-flex;
+  align-items: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: 999px;
+  font-size: var(--text-xs);
+  font-family: var(--font-mono);
+  color: var(--warning);
+  background: color-mix(in oklab, var(--warning) 14%, var(--bg-elevated));
+  border: 1px solid color-mix(in oklab, var(--warning) 40%, var(--border-subtle));
+  font-weight: 600;
+}
+.fd-rca-chev {
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-faint);
+  transition: transform var(--dur-fast) var(--ease);
+  transform: rotate(-90deg);
+}
+.fd-rca-chev.open {
+  transform: rotate(0deg);
+}
+.fd-rca-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 8px;
+  animation: slide-up var(--dur) var(--ease-out-quart) both;
+}
+.fd-rca-empty {
+  padding: 18px;
+  text-align: center;
+  font-size: var(--text-sm);
+  color: var(--text-faint);
+  background: var(--bg-surface);
+  border: 1px dashed var(--border-subtle);
+  border-radius: var(--radius-sm);
+}
+.fd-rca-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 4px 0;
+}
+.fd-rca-timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.fd-rca-item {
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  animation: slide-up var(--dur-fast) var(--ease-out-quart) both;
+  transition: border-color var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease);
+}
+.fd-rca-item.expanded {
+  border-color: color-mix(in oklab, var(--warning) 30%, var(--border));
+  background: color-mix(in oklab, var(--warning) 4%, var(--bg-elevated));
+}
+.fd-rca-item-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  background: transparent;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+.fd-rca-cause {
+  font-size: var(--text-xs);
+  font-family: var(--font-mono);
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  background: color-mix(in oklab, var(--text-muted) 12%, transparent);
+  border: 1px solid var(--border-subtle);
+  flex: none;
+}
+/* 按根因着色:syntax_error→danger, verify_mismatch→warning, timeout→info, 其它默认 */
+.fd-rca-cause.syntax_error {
+  color: var(--danger);
+  background: color-mix(in oklab, var(--danger) 12%, transparent);
+  border-color: color-mix(in oklab, var(--danger) 36%, var(--border-subtle));
+}
+.fd-rca-cause.verify_mismatch {
+  color: var(--warning);
+  background: color-mix(in oklab, var(--warning) 14%, transparent);
+  border-color: color-mix(in oklab, var(--warning) 40%, var(--border-subtle));
+}
+.fd-rca-cause.timeout,
+.fd-rca-cause.reasoning_overflow {
+  color: var(--blue, var(--accent));
+  background: color-mix(in oklab, var(--blue, var(--accent)) 12%, transparent);
+  border-color: color-mix(in oklab, var(--blue, var(--accent)) 36%, var(--border-subtle));
+}
+.fd-rca-conf {
+  font-size: var(--text-xs);
+  font-family: var(--font-mono);
+  color: var(--text-muted);
+  flex: none;
+}
+.fd-rca-task {
+  font-size: var(--text-xs);
+  font-family: var(--font-mono);
+  color: var(--text-faint);
+  flex: none;
+}
+.fd-rca-time {
+  flex: 1;
+  font-size: var(--text-xs);
+  color: var(--text-faint);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.fd-rca-item-body {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-subtle);
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.fd-rca-item-body p {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  line-height: var(--leading-body);
+}
+.fd-rca-label {
+  display: inline-block;
+  min-width: 32px;
+  margin-right: 6px;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--text-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.fd-rca-fix {
+  color: var(--text-primary) !important;
+}
+
+/* ============================================================
+ * M95 — FailurePanel:RCA / verifier 判决可观测面板
+ * 无数据时不渲染;有数据时在 ErrorBanner 与 PlanCard 之间展示。
+ * ============================================================ */
+.failure-panel {
+  margin: 0 0 12px;
+  padding: 10px 12px 12px;
+  border-radius: var(--radius);
+  background: color-mix(in oklab, var(--warning) 5%, var(--bg-surface));
+  border: 1px solid color-mix(in oklab, var(--warning) 22%, var(--border-subtle));
+  box-shadow: var(--shadow-sm);
+  animation: slide-up var(--dur-fast) var(--ease-out-quart) both;
+}
+.failure-panel-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+  color: var(--warning);
+}
+.fp-title {
+  flex: 1;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text-primary);
+  letter-spacing: 0.01em;
+}
+.fp-clear {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-faint);
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+.fp-clear:hover {
+  background: color-mix(in oklab, var(--warning) 14%, transparent);
+  color: var(--text-secondary);
+}
+
+/* 连续失败计数 chip 行 */
+.fp-counter {
+  margin-bottom: 10px;
+}
+.fp-counter-label {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  margin-bottom: 6px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.fp-counter-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.counter-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: var(--text-xs);
+  font-family: var(--font-mono);
+  color: var(--text-secondary);
+  background: color-mix(in oklab, var(--text-muted) 12%, var(--bg-elevated));
+  border: 1px solid var(--border-subtle);
+  transition: background var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
+}
+.counter-chip.escalated {
+  color: var(--warning);
+  background: color-mix(in oklab, var(--warning) 14%, var(--bg-elevated));
+  border-color: color-mix(in oklab, var(--warning) 40%, var(--border-subtle));
+  font-weight: 600;
+}
+
+/* GLM 验证判决卡片 */
+.verdict-card {
+  margin-bottom: 10px;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-elevated);
+}
+.verdict-blocker {
+  border-color: color-mix(in oklab, var(--danger) 40%, var(--border-subtle));
+  background: color-mix(in oklab, var(--danger) 7%, var(--bg-elevated));
+}
+.verdict-warning {
+  border-color: color-mix(in oklab, var(--warning) 36%, var(--border-subtle));
+  background: color-mix(in oklab, var(--warning) 7%, var(--bg-elevated));
+}
+.verdict-ok {
+  border-color: color-mix(in oklab, var(--success) 36%, var(--border-subtle));
+  background: color-mix(in oklab, var(--success) 6%, var(--bg-elevated));
+}
+.verdict-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+.verdict-sev {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+.verdict-blocker .verdict-sev { color: var(--danger); }
+.verdict-warning .verdict-sev { color: var(--warning); }
+.verdict-ok .verdict-sev { color: var(--success); }
+.verdict-issues,
+.verdict-suggestions {
+  margin: 4px 0 0;
+  padding-left: 18px;
+  font-size: var(--text-xs);
+  line-height: var(--leading-body);
+}
+.verdict-issues li { color: var(--danger); }
+.verdict-suggestions li { color: var(--text-secondary); }
+.verdict-suggestions {
+  margin-top: 6px;
+}
+
+/* RCA 卡片列表 */
+.fp-rca-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.rca-item {
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+}
+.rca-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  background: transparent;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  color: inherit;
+  text-align: left;
+}
+.rca-head:disabled { cursor: default; }
+.rca-cause {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: color-mix(in oklab, var(--warning) 16%, transparent);
+  color: var(--warning);
+  border: 1px solid color-mix(in oklab, var(--warning) 32%, transparent);
+}
+.rca-conf {
+  font-size: var(--text-xs);
+  font-family: var(--font-mono);
+  color: var(--text-muted);
+}
+.rca-chev {
+  display: grid;
+  place-items: center;
+  margin-left: auto;
+  color: var(--text-faint);
+  transition: transform var(--dur-fast) var(--ease);
+}
+.rca-chev.open { transform: rotate(180deg); }
+
+.rca-fix {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin-top: 6px;
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  line-height: var(--leading-body);
+}
+.rca-fix svg { color: var(--accent); flex: none; margin-top: 2px; }
+
+.rca-detail {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--border-subtle);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.rca-detail-text {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  line-height: var(--leading-body);
+  white-space: pre-wrap;
+}
+.rca-history {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  line-height: var(--leading-body);
+}
+.rca-history svg { color: var(--success); flex: none; margin-top: 2px; }
+.rca-rules {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.rca-rule-chip {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: color-mix(in oklab, var(--text-muted) 14%, transparent);
+  color: var(--text-muted);
+  border: 1px solid var(--border-subtle);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .failure-panel,
+  .counter-chip,
+  .verdict-card,
+  .rca-item {
+    animation: none;
+    transition: none;
   }
 }

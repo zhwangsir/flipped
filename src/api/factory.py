@@ -14,6 +14,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from driving.factory_loop import (
+    FactoryRcaEntry,
     FactoryState,
     FactoryStatus,
     TaskResult,
@@ -198,6 +199,46 @@ async def get_factory_detail(factory_id: str) -> dict[str, Any]:
     if state is None:
         raise HTTPException(status_code=404, detail="factory not found")
     return state.model_dump(mode="json")
+
+
+@router.get("/{factory_id}/rca_history")
+async def get_factory_rca_history(factory_id: str) -> dict[str, Any]:
+    """M100 — 返回工厂级 RCA 历史聚合视图。
+
+    每次 verify 失败触发 analyze_failure_with_memory 后,
+    RCA 结果被追加到 FactoryState.rca_history。本端点返回完整历史 + cause_stats 分布。
+
+    fail-open 原则:任何异常都返回空列表,不阻塞 factory 主流程。
+
+    Returns:
+        {
+            "factory_id": "xxx",
+            "rca_history": [{cause, confidence, fix_suggestion, ...}],
+            "cause_stats": {"syntax_error": 2, "timeout": 1}
+        }
+    """
+    state = load_factory_state(factory_id, FACTORY_DB)
+    if state is None:
+        raise HTTPException(status_code=404, detail="factory not found")
+
+    # fail-open: rca_history 字段缺失或损坏时返回空列表
+    try:
+        rca_history = state.rca_history or []
+        entries = [r.model_dump(mode="json") for r in rca_history]
+    except Exception:
+        entries = []
+
+    # 聚合 cause_stats
+    cause_stats: dict[str, int] = {}
+    for entry in entries:
+        cause = str(entry.get("cause", "unknown"))
+        cause_stats[cause] = cause_stats.get(cause, 0) + 1
+
+    return {
+        "factory_id": factory_id,
+        "rca_history": entries,
+        "cause_stats": cause_stats,
+    }
 
 
 @router.post("/{factory_id}/resume", response_model=FactorySummary)

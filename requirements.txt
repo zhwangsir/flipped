@@ -1,6 +1,10 @@
-# flipped · Python 依赖（驾驭层 + LiteLLM 代理 + orchestration API + OpenHands SDK）。Python 3.12+。
+# flipped · Python 依赖（驾驭层 + orchestration API + OpenHands SDK + MCP/RAG）。Python 3.12+。
 # 装：uv pip install -r requirements.txt  （中国网络加 --index-url https://pypi.tuna.tsinghua.edu.cn/simple，D7）
-litellm[proxy]==1.84.1
+#
+# 说明：LiteLLM proxy(:4000) 已降为可选前置(ISSUE-5)。
+# 编排层默认经 FLIPPED_MODEL_BASE_URL 直连 exo；若需启 :4000 路由/降级/fallback，
+# 单独 `uv pip install litellm[proxy]==1.84.1` 后跑 scripts/start_proxy.sh。
+
 langgraph==1.2.6
 langgraph-checkpoint-sqlite==3.1.0
 langchain-openai==1.3.3
@@ -12,5 +16,5 @@ websockets==15.0.1
 openhands-ai==1.8.0
 
 # ---------- M4: MCP Server + RAG ----------
-mcp
+mcp==1.26.0
 chromadb>=1.5

@@ -625,3 +625,106 @@ def test_deterministic_roadmap_all_verify_cmds_check_content():
         assert t.verify_cmd, f"任务 {t.id} 缺少验收命令"
         assert t.verify_cmd[0] != "true", f"任务 {t.id} 验收命令不应是 true"
         assert "index.html" in t.verify_cmd[0], f"任务 {t.id} 验收命令应检查 index.html"
+
+
+# ---- M94 factory_loop RCA + Gold Memory 集成 ----
+
+def test_m94_factory_loop_uses_analyze_failure_with_memory(tmp_db, tmp_cwd):
+    """M94: factory_loop 失败时调用 analyze_failure_with_memory(非旧 analyze_failure)。
+
+    验证 M91.1 集成缺口已修复:RCA 查 Gold Memory 历史失败,形成学习闭环。
+    """
+    from driving.rca import reset_failure_counter, analyze_failure_with_memory
+
+    reset_failure_counter()
+
+    def fake_orchestrator(task: FactoryTask, state: FactoryState) -> TaskResult:
+        return TaskResult(
+            task=task, verified=False, stop_reason="verify_failed",
+            iteration=1, summary="assertion failed",
+        )
+
+    def stub_planner(state: FactoryState) -> list[FactoryTask]:
+        return [make_task("实现登录页面", verify_cmd=["false"])]
+
+    with patch("driving.rca.analyze_failure_with_memory",
+               wraps=analyze_failure_with_memory) as mock_rca:
+        run_factory_loop(
+            product_goal="build login",
+            cwd=tmp_cwd,
+            db_path=str(tmp_db),
+            planner=stub_planner,
+            orchestrator_fn=fake_orchestrator,
+            max_tasks=10,
+        )
+
+    # analyze_failure_with_memory 被调用(每次失败一次,3 次重试 = 3 次)
+    assert mock_rca.call_count >= 1, "factory_loop 失败时应调用 analyze_failure_with_memory"
+    # 关键:传了 task_description(M91.1 语义检索的钥匙)
+    first_call_kwargs = mock_rca.call_args_list[0].kwargs
+    assert "task_description" in first_call_kwargs, "应传 task_description 给 RCA"
+    assert first_call_kwargs["task_description"], "task_description 不应为空"
+
+
+def test_m94_factory_loop_feedback_includes_rca(tmp_db, tmp_cwd):
+    """M94: 失败后 task.feedback 含 RCA 根因信息(非泛泛'失败了')。"""
+    from driving.rca import reset_failure_counter
+
+    reset_failure_counter()
+
+    def fake_orchestrator(task: FactoryTask, state: FactoryState) -> TaskResult:
+        return TaskResult(
+            task=task, verified=False, stop_reason="verify_failed",
+            iteration=1, summary="SyntaxError: invalid syntax",
+        )
+
+    def stub_planner(state: FactoryState) -> list[FactoryTask]:
+        return [make_task("写一个 Python 函数", verify_cmd=["false"])]
+
+    result = run_factory_loop(
+        product_goal="build func",
+        cwd=tmp_cwd,
+        db_path=str(tmp_db),
+        planner=stub_planner,
+        orchestrator_fn=fake_orchestrator,
+        max_tasks=10,
+    )
+
+    # feedback 应含 RCA 根因(syntax_error 被 enrich_feedback 注入)
+    assert result.failed, "应有失败记录"
+    # 检查 roadmap 中的 task feedback(M94 后应含 RCA 信息)
+    failed_task = result.roadmap[0]
+    assert "RCA" in failed_task.feedback or "根因" in failed_task.feedback, \
+        f"feedback 应含 RCA 根因,实际: {failed_task.feedback[:200]}"
+
+
+def test_m94_gold_memory_writeback_on_failure(tmp_db, tmp_cwd):
+    """M94: 任务失败后写回 Gold Memory(写回闭环已存在,M94 验证它不被 RCA 升级破坏)。"""
+    from driving.rca import reset_failure_counter
+
+    reset_failure_counter()
+
+    record_calls = []
+
+    def fake_orchestrator(task: FactoryTask, state: FactoryState) -> TaskResult:
+        return TaskResult(
+            task=task, verified=False, stop_reason="verify_failed",
+            iteration=1, summary="fail",
+        )
+
+    def stub_planner(state: FactoryState) -> list[FactoryTask]:
+        return [make_task("测试任务", verify_cmd=["false"])]
+
+    with patch("driving.gold_memory.record_task_result",
+               side_effect=lambda *a, **kw: record_calls.append(a)):
+        run_factory_loop(
+            product_goal="test",
+            cwd=tmp_cwd,
+            db_path=str(tmp_db),
+            planner=stub_planner,
+            orchestrator_fn=fake_orchestrator,
+            max_tasks=10,
+        )
+
+    # 失败也应写回 Gold Memory(M10.4-D)
+    assert len(record_calls) >= 1, "失败时应写回 Gold Memory"

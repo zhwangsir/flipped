@@ -1,23 +1,32 @@
 # LiteLLM Proxy 配置 — flipped M0（决策 D1）
 # 链路: 客户端/编辑器 -> 本代理(:4000) -> exo 集群(:52415) -> {GLM-5.2, Kimi-K2.7-Code}
-# 别名: architect = GLM-5.2(编排者/架构师) ; coder = Kimi-K2.7-Code(执行者/码农)
+# 默认别名: architect = GLM-5.2(编排者/架构师) ; coder = Kimi-K2.7-Code(执行者/码农)
+# M89 交替接力: GLM-5.2 Worker 卡死,切 Kimi 接力
+# 当前轮次: architect=GLM-5.2(监督), coder=Kimi-K2.7-Code(接力执行)
 # 启动: litellm --config infra/litellm/config.yaml --port 4000
-# 来源: context7 核对 BerriAI/litellm v1.83.3-stable 官方文档
 
 model_list:
-  # 编排者/架构师 -> GLM-5.2 （注意 openai/ 前缀: 告诉 LiteLLM 走 OpenAI 兼容路由）
+  # M89 当前: architect(编排者) -> GLM-5.2-fp8(监督,关闭 reasoning)
   - model_name: architect
     litellm_params:
-      model: openai/mlx-community/GLM-5.2-fp8          # 用户改用 fp8 变体(2026-06-30); 必须与 exo /v1/models id 一致
-      api_base: http://100.64.201.37:52415/v1          # 必带 /v1 后缀
-      api_key: os.environ/EXO_API_KEY                  # 从环境变量读, 不硬编码
+      model: openai/mlx-community/GLM-5.2-fp8
+      api_base: http://100.64.201.37:52415/v1
+      api_key: os.environ/EXO_API_KEY
+      extra_body:
+        enable_thinking: false
+        chat_template_kwargs:
+          enable_thinking: false
 
-  # 执行者/码农 -> Kimi-K2.7-Code
+  # M89 当前: coder(执行者) -> Kimi-K2.7-Code-4bit(接力,关闭 reasoning)
   - model_name: coder
     litellm_params:
       model: openai/mlx-community/Kimi-K2.7-Code-4bit
       api_base: http://100.64.201.37:52415/v1
       api_key: os.environ/EXO_API_KEY
+      extra_body:
+        enable_thinking: false
+        chat_template_kwargs:
+          enable_thinking: false
 
 router_settings:
   # 双向降级: 某别名报错(429/500/超时)时路由到另一个 (key/value 必须是 model_name 别名)
@@ -33,4 +42,4 @@ litellm_settings:
 
 general_settings:
   master_key: os.environ/LITELLM_MASTER_KEY   # 代理对外鉴权; 所有请求需带 Authorization: Bearer
-  database_url: "postgresql://drt:local_validate_a225f3b04dd8ff43@localhost:5432/drt"  # 复用本地 drt-postgres; 避免 sqlite/prisma 下载卡死
+  # database_url: "postgresql://drt:local_validate_a225f3b04dd8ff43@localhost:5432/drt"  # M0.3 原 postgres; prisma binaries 丢失时注释掉走内存

@@ -21,6 +21,9 @@ import type {
   GitDiffFile,
   FactorySummary,
   FactoryDetail,
+  FactoryRcaHistoryResponse,
+  RcaInfo,
+  VerifierVerdict,
 } from './types';
 import { eventToStreamItem, detectServerUrl } from './types';
 import {
@@ -45,6 +48,8 @@ import {
   getFactoryDetail as apiGetFactoryDetail,
   resumeFactory as apiResumeFactory,
   pauseFactory as apiPauseFactory,
+  fetchFactoryRcaHistory as apiFetchFactoryRcaHistory,
+  fetchFailureCounter,
   connectEvents,
 } from './api';
 
@@ -126,6 +131,14 @@ interface AppState {
   selectFactory: (id: string) => void;
   resumeFactory: (id: string) => Promise<void>;
   pauseFactory: (id: string) => Promise<void>;
+  // M100 — 工厂级 RCA 历史聚合
+  factoryRcaHistory: FactoryRcaHistoryResponse | null;
+  loadFactoryRcaHistory: (id: string) => Promise<void>;
+  // M95 — RCA / verifier 可观测
+  rcaHistory: RcaInfo[];
+  lastVerifierVerdict: VerifierVerdict | null;
+  failureCounter: Record<string, number>;
+  clearRca: () => void;
 }
 
 const AppContext = createContext<AppState | null>(null);
@@ -172,6 +185,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [factories, setFactories] = useState<FactorySummary[]>([]);
   const [factoryDetail, setFactoryDetail] = useState<FactoryDetail | null>(null);
   const [factoryOpen, setFactoryOpen] = useState(false);
+  // M100 — 工厂级 RCA 历史聚合(选中工厂时拉取,切换工厂时清空)
+  const [factoryRcaHistory, setFactoryRcaHistory] = useState<FactoryRcaHistoryResponse | null>(null);
+  // M95 — RCA / verifier 可观测状态
+  const [rcaHistory, setRcaHistory] = useState<RcaInfo[]>([]);
+  const [lastVerifierVerdict, setLastVerifierVerdict] = useState<VerifierVerdict | null>(null);
+  const [failureCounter, setFailureCounter] = useState<Record<string, number>>({});
+  const clearRca = useCallback(() => {
+    setRcaHistory([]);
+    setLastVerifierVerdict(null);
+    setFailureCounter({});
+  }, []);
   const toggleTerminal = useCallback(() => setTerminalOpen((v) => !v), []);
   const prefillComposer = useCallback((text: string) => setComposerPrefill(text), []);
   const wsRef = useRef<{ close: () => void; send: (msg: unknown) => void } | null>(null);
@@ -425,6 +449,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return () => clearInterval(id);
   }, [refreshFactories]);
 
+  // M95 — 轮询 RCA 失败计数(让面板在没有 rca 事件时也能显示累计计数)
+  useEffect(() => {
+    const tick = () =>
+      fetchFailureCounter()
+        .then((r) => setFailureCounter(r.counter || {}))
+        .catch(() => {});
+    tick();
+    const id = setInterval(tick, 5000);
+    return () => clearInterval(id);
+  }, []);
+
   const createFactory = useCallback(async (productGoal: string, cwd: string, maxTasks = 10) => {
     const d = await apiCreateFactory(productGoal, cwd, maxTasks);
     setFactoryDetail(d);
@@ -434,10 +469,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [refreshFactories]);
 
   const selectFactory = useCallback((id: string) => {
+    // M100 — 切换工厂时清空旧的 RCA 历史(避免显示上一个工厂的统计)
+    setFactoryRcaHistory(null);
+    if (!id) {
+      setFactoryDetail(null);
+      return;
+    }
     apiGetFactoryDetail(id)
       .then(setFactoryDetail)
       .catch(() => setFactoryDetail(null));
     setFactoryOpen(true);
+    // 拉取工厂级 RCA 历史聚合(fail-open,失败时保持 null)
+    apiFetchFactoryRcaHistory(id)
+      .then(setFactoryRcaHistory)
+      .catch(() => setFactoryRcaHistory(null));
   }, []);
 
   const resumeFactory = useCallback(async (id: string) => {
@@ -448,6 +493,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const pauseFactory = useCallback(async (id: string) => {
     const d = await apiPauseFactory(id);
     setFactoryDetail(d);
+  }, []);
+
+  // M100 — 主动加载工厂级 RCA 历史聚合(供 FactoryPanel 展开折叠区时刷新)
+  const loadFactoryRcaHistory = useCallback(async (id: string) => {
+    try {
+      const r = await apiFetchFactoryRcaHistory(id);
+      setFactoryRcaHistory(r);
+    } catch {
+      // fail-open:加载失败保持原状态,不抛错打断 UI
+    }
   }, []);
 
   useEffect(() => {
@@ -464,6 +519,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setChangedFiles([]);
       setPlan(null);
       setDetectedServerUrl(null);
+      setRcaHistory([]);
+      setLastVerifierVerdict(null);
       return;
     }
 
@@ -480,6 +537,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setChangedFiles([]);
     setPlan(null);
     setDetectedServerUrl(null);
+    setRcaHistory([]);
+    setLastVerifierVerdict(null);
 
     const appendEvent = (ev: ApiEvent) => {
       // M6.1 — 从事件流派生 ContextPanel 的真实上下文数据
@@ -540,6 +599,34 @@ export function AppProvider({ children }: { children: ReactNode }) {
           action: ev.payload.action,
           reason: ev.payload.reason,
           risk: ev.payload.risk,
+        });
+        return;
+      }
+      // M95 — RCA 事件:推入 rcaHistory(保留最近 10 条)+ 同步 failureCounter
+      if (ev.type === 'rca') {
+        const info: RcaInfo = {
+          cause: String(ev.payload.cause || 'unknown'),
+          confidence: Number(ev.payload.confidence || 0),
+          detail: String(ev.payload.detail || ''),
+          fix_suggestion: String(ev.payload.fix_suggestion || ''),
+          history_hint: String(ev.payload.history_hint || ''),
+          related_rules: Array.isArray(ev.payload.related_rules) ? ev.payload.related_rules : [],
+          failure_counter:
+            (ev.payload.failure_counter as Record<string, number>) || {},
+        };
+        setRcaHistory((prev) => [...prev, info].slice(-10));
+        if (info.failure_counter && Object.keys(info.failure_counter).length > 0) {
+          setFailureCounter(info.failure_counter);
+        }
+        return;
+      }
+      // M95 — verifier_verdict 事件:更新最近一次 GLM 验证判决
+      if (ev.type === 'verifier_verdict') {
+        setLastVerifierVerdict({
+          severity: (ev.payload.severity as VerifierVerdict['severity']) || 'ok',
+          checked: !!ev.payload.checked,
+          issues: Array.isArray(ev.payload.issues) ? ev.payload.issues : [],
+          suggestions: Array.isArray(ev.payload.suggestions) ? ev.payload.suggestions : [],
         });
         return;
       }
@@ -700,6 +787,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
         selectFactory,
         resumeFactory,
         pauseFactory,
+        factoryRcaHistory,
+        loadFactoryRcaHistory,
+        rcaHistory,
+        lastVerifierVerdict,
+        failureCounter,
+        clearRca,
       }}
     >
       {children}

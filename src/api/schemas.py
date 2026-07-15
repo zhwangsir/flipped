@@ -21,6 +21,8 @@ class EventType(str, Enum):
     approval_request = "approval_request"
     approval_result = "approval_result"
     error = "error"
+    rca = "rca"                            # M95 失败根因分析结果
+    verifier_verdict = "verifier_verdict"  # M95 并行验证 SemanticVerdict
 
 
 class Role(str, Enum):
