@@ -1,4 +1,79 @@
-# M89 · F8 真机长任务验证 — AI 自动化开发工厂能力实证
+# M102 · Skill 沉淀系统 — Self-Improving Loop 核心第一步
+
+> Loop Engineering 核心：The swarm that ran your task yesterday should be smarter
+> than the one running it today. 每次成功任务都沉淀为可复用 Skill，下次同类任务
+> 直接加载而非从零摸索。
+
+## 1. 目标
+
+实现 Skill 沉淀系统：factory 任务通过后自动沉淀为 Skill；新 factory 创建时自动
+从 Skill Library 检索最相似的 Skill 并加载，让系统越跑越强。
+
+## 2. Skill 数据模型
+
+```
+Skill:
+  skill_id: str              # 唯一标识（hash of signature+style）
+  product_type: str          # 产品类型（landing_page/timer_app/note_app 等）
+  design_style: str          # 设计风格（film_atelier/minimalism/...）
+  description: str           # 任务描述（用于语义检索）
+  description_vector: list[float]  # 向量嵌入（语义检索）
+  verify_cmd: list[str]      # 验证命令（复用经过验证的验收标准）
+  design_brief: dict         # 设计简报快照（hex/字体/组件状态等关键参数）
+  worker_prompt_hints: list[str]  # worker 提示词增强项（从成功任务中提炼的有效约束）
+  constraints: list[str]     # 验证通过的硬规则（从 CONSTRAINTS 风格提炼）
+  success_count: int         # 成功次数
+  last_used: str             # 最近使用时间
+  created_at: str
+```
+
+存储：SQLite `skills` 表，`data/skills.db`。
+
+## 3. 核心功能
+
+1. **save_skill(task, state, result)** — 任务通过后自动沉淀 Skill
+2. **query_similar_skill(description, design_style)** — 语义检索最相似 Skill
+   - 复用 gold_memory 的 embedding + cosine similarity 逻辑
+   - 相似度阈值 0.6，取 Top-1
+3. **apply_skill_to_state(state, skill)** — 把 Skill 应用到 factory state
+   - 注入 design_brief（覆盖/增强默认）
+   - 注入 verify_cmd 模式（给 planner 参考）
+   - 注入 worker_prompt_hints 到 context_summary
+   - 注入 constraints 到 project_rules
+
+## 4. 集成点
+
+- **factory_loop 出口**：`result.verified == True` 时调 `save_skill`
+- **factory_loop 入口**：新 factory 创建时（planner 前）调 `query_similar_skill`
+  - 命中则 `apply_skill_to_state`，把 Skill 注入 state.design_context 和 state.context_summary
+  - 未命中则沿用默认行为（fail-open）
+
+## 5. 验收标准（DoD）
+
+1. `test_skill_registry.py` 全过，覆盖：
+   - save + query 语义命中
+   - apply_skill 正确注入 state
+   - 相似度不足时返回 None
+   - embedding 不可用时 fallback 到关键词签名
+   - 并发写入安全（WAL + 锁）
+   - 空 DB 查询返回 None
+2. factory_loop 集成测试：
+   - 验证通过后 Skill 被写入
+   - 新 factory 创建时自动加载相似 Skill
+3. 全量回归测试通过（1016+ tests）
+4. STATE.json M102=done
+5. git commit
+
+## 6. 实施步骤
+
+1. 写本 PLAN.md ✓
+2. 写 test_skill_registry.py（TDD，先红）
+3. 实现 src/driving/skill_registry.py
+4. 集成到 factory_loop.py（入口+出口）
+5. 跑测试 → 修 → 全绿
+6. 全量回归测试
+7. 更新 TEST_LOG.md + STATE.json
+8. git commit
 
 > 用户原话:"当前模型已经加载完成可以正常使用,你现在用这个平台监控两个模型跑一个超长的大型任务看看能否自主完成,一个包含前端后端的完整任务,你只给一个方向然后让这个平台开发一个新产品,从调研到测试全流程中间全部由它自行决策进行,并保持70%以内的上下文长度追求高质量产品,真正实现AI自动化开发工厂的能力"
 

@@ -766,6 +766,14 @@ def run_factory_loop(
             design_context=build_design_brief(design_style, product_type=product_goal),
         )
         state.roadmap = planner(state)
+        # M102: Skill 沉淀系统——新工厂自动加载最相似的历史 Skill（fail-open）
+        try:
+            from driving.skill_registry import apply_skill_to_state, query_similar_skill
+            skill = query_similar_skill(product_goal, design_style=design_style or "auto")
+            if skill is not None:
+                apply_skill_to_state(state, skill)
+        except Exception:
+            pass
         save_factory_state(state, db_path)
         _emit(bus, "factory_started", {"factory_id": state.factory_id, "roadmap_size": len(state.roadmap)})
     else:
@@ -880,6 +888,12 @@ def run_factory_loop(
                 try:
                     from driving.gold_memory import record_task_result
                     record_task_result(task, state, result)
+                except Exception:
+                    pass
+                # M102：沉淀为 Skill（Self-Improving Loop 核心）
+                try:
+                    from driving.skill_registry import save_skill
+                    save_skill(task, state, result)
                 except Exception:
                     pass
             else:

@@ -2,7 +2,7 @@
   "project": "flipped",
   "description": "接入本地 MLX 双模型(GLM-5.2 编排者 / Kimi-K2.7-Code 执行者)的 agentic 代码编辑器平台。fork Roo Code + 自定义驾驭层(强制验证/循环检测/上下文压缩/人工审批/子Agent/可观测性) + MCP 联网与外部能力。",
   "updated": "2026-07-13",
-  "current_milestone": "M100 完成 · FailurePanel 前端单测(M97) + 并发压测脚本(M98) + Gold Memory 闭环验证(M99) + FactoryPanel RCA 历史聚合(M100) — 全量 1012 passed,0 回归,前端 45 passed",
+  "current_milestone": "M102 完成 · Skill 沉淀系统(Self-Improving Loop 核心第一步) — save_skill/query_similar_skill/apply_skill_to_state + factory_loop 入口出口集成, 14 passed",
   "key_facts": {
     "dev_host": "Apple M5 Max, 128GB RAM, 1.1TB 可用磁盘 — 开发/控制节点，非模型宿主",
     "model_cluster": "exo 集群 @ http://100.64.201.37:52415 (内网, OpenAI 兼容)；公网 https://dgmt.top/exo (需 Bearer token)",
@@ -1486,6 +1486,33 @@
           "title": "重启后端加载新代码 + resume factory 端到端验证",
           "status": "done",
           "note": "杀掉旧后端(pid 33519 加载旧代码),用 PYTHONPATH=src FLIPPED_USE_LOCAL_WORKER=1 重启(pid 37852)。resume factory-3d39af52 后 local_worker 成功调 Kimi:finish=stop content_len=8686 time=114.2s。ConnectError 彻底解决。产物 index.html 9329 bytes,Film Atelier 风格。"
+        }
+      }
+    },
+    "M102": {
+      "title": "Skill 沉淀系统 — Self-Improving Loop 核心第一步",
+      "status": "done",
+      "note": "成功任务自动沉淀为 Skill(design_brief + verify_cmd + worker_prompt_hints + constraints),新工厂创建时自动检索最相似 Skill 并加载。SQLite 持久化 + WAL 模式 + 写锁, 与 gold_memory 共享 embedding/cosine/signature 基础设施。fail-open 设计:任何异常不阻塞 factory 主流程。14 tests passed, 全量 1006 passed(唯一失败 test_web_search 为外部 SearXNG 依赖问题)。",
+      "tasks": {
+        "M102.1": {
+          "title": "TDD: 写 test_skill_registry.py 14 个测试用例",
+          "status": "done",
+          "note": "覆盖:数据模型、save_skill(成功/失败/同签名累加/不同风格隔离)、query_similar_skill(空库/签名命中/无命中)、build_skill_from_result、apply_skill_to_state、并发安全、factory 集成。"
+        },
+        "M102.2": {
+          "title": "实现 skill_registry.py: Skill 数据模型 + save/query/apply",
+          "status": "done",
+          "note": "Skill dataclass 含 skill_id/product_type/design_style/description/verify_cmd/design_brief/worker_prompt_hints/constraints/success_count。复用 gold_memory 的 _embed/_cosine/_signature。SQLite WAL + 写锁并发安全。"
+        },
+        "M102.3": {
+          "title": "集成到 factory_loop 入口和出口",
+          "status": "done",
+          "note": "入口:新工厂创建后 query_similar_skill + apply_skill_to_state(更新 design_style/design_context/context_summary)。出口:任务 verified 后 save_skill 沉淀。均 fail-open 包裹。"
+        },
+        "M102.4": {
+          "title": "全量回归测试通过",
+          "status": "done",
+          "note": "14/14 skill_registry 测试通过。全量 1006 passed, 仅 test_web_search 因外部 SearXNG 失败(与 M102 无关)。"
         }
       }
     }

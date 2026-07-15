@@ -2374,3 +2374,45 @@ if os.environ.get("FLIPPED_USE_LOCAL_WORKER") == "1":
 2. **factory loop 无增量改进**: 每轮迭代从头生成,不在现有产物基础上修改。verify 失败后 feedback 未被有效利用。需实现"在现有 index.html 基础上补全 localStorage"的增量 worker 模式。
 3. **circuit_breaker 过早触发**: proposed-4 在 verify 失败后触发 circuit_breaker,而非继续尝试。需调整熔断阈值或区分"infra_failure"与"verify 失败"。
 4. **产物质量约束传递弱**: prompt 里的设计约束(localStorage/配色/粒子效果)未被 Kimi 完全遵守。需更强的约束传递机制(如 few-shot 示例 + 结构化 schema)。
+
+---
+
+## [2026-07-15] M102 · Skill 沉淀系统（Self-Improving Loop 核心第一步）
+
+### 目标
+构建 Skill 沉淀系统：成功任务自动沉淀为 Skill，新工厂创建时自动检索最相似的 Skill 并加载，实现系统越跑越强的自改进闭环。
+
+### TDD 测试用例（14 个）
+- 命令：`PYTHONPATH=src .venv/bin/python -m pytest tests/test_skill_registry.py -v`
+- 覆盖：数据模型默认值 / save_skill(成功/失败/同签名累加/不同风格隔离) / query_similar_skill(空库/签名命中/无命中) / build_skill_from_result / apply_skill_to_state(design_context注入/worker提示注入) / 并发安全(10线程) / factory 集成
+- 结果：**14 passed**
+
+### 实现
+- 新增 `src/driving/skill_registry.py` (~280行)
+  - `Skill` dataclass: skill_id / product_type / design_style / description / verify_cmd / design_brief / worker_prompt_hints / constraints / success_count / description_vector
+  - `save_skill()`: 任务 verified 后沉淀，同签名 success_count++，fail-open
+  - `query_similar_skill()`: embedding 语义检索 + 关键词签名 fallback，阈值 0.6
+  - `apply_skill_to_state()`: 更新 design_style / 合并 design_context / 注入 worker_prompt_hints 到 context_summary
+  - SQLite WAL + 写锁，与 gold_memory 共享 _embed/_cosine/_signature 基础设施
+- 修改 `src/driving/factory_loop.py`
+  - 入口（新工厂创建后）：query_similar_skill + apply_skill_to_state
+  - 出口（任务 verified 后）：save_skill 沉淀
+  - 均 fail-open 包裹，不影响主流程
+
+### 全量回归
+- 命令：`PYTHONPATH=src .venv/bin/python -m pytest tests/ -x --tb=short -q`
+- 结果：**1006 passed, 1 failed**
+- 失败用例：`tests/test_web_search.py::test_returns_results`（外部 SearXNG 服务问题，与 M102 无关）
+- 结论：M102 无回归
+
+### 设计要点
+1. **fail-open**: Skill 系统任何异常（embedding不可用 / DB锁 / 解析失败）均不阻塞 factory 主流程
+2. **复用基础设施**: 直接复用 gold_memory 的 embedding / cosine / signature 函数，不重复造轮子
+3. **SQLite WAL + 写锁**: 与 gold_memory 一致的并发安全模型，支持多线程并发写入
+4. **两级检索**: embedding 语义检索（主） + 关键词签名精确匹配（fallback）
+5. **轻量侵入**: factory_loop 只加 2 处共 ~15 行代码，均在 try/except 包裹内
+
+### 后续方向
+- M103: Skill 质量评估与淘汰（低 success_count / 长期不用的 Skill 自动归档）
+- M104: Skill 组合应用（多 Skill 叠加，如 landing_page + dark_mode + animation）
+- M105: 跨 factory Skill 复用统计面板
