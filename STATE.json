@@ -1471,6 +1471,23 @@
           "note": "tests/test_m100_factory_rca_history.py 7 测试:factory 无 RCA 返回空、factory 有 RCA 返回历史、cause_stats 聚合正确、factory 不存在 404、factory_loop verify 失败追加 rca_history、持久化(重启后 rca_history 保留)、legacy 向后兼容(旧 factory 无 rca_history_json 列)。关键:3 次失败产生 2 条 RCA(第 3 次 attempts>=max_attempts 先 break 再 RCA)。7 passed。"
         }
       }
+    },
+    "M101": {
+      "title": "UI 端到端实战验证(PomodoroEdge) — exo 真机环境 factory loop 全链路",
+      "status": "done",
+      "note": "exo 集群真机环境验证从 API 发起 factory → GLM 拆任务 → Kimi 生成代码 → 写文件 → verify 全流程。根因诊断:resolve_worker_model_config 在 LiteLLM proxy 健康时返回 host.docker.internal:4000(Docker-only 主机名),宿主机 local_worker 无法 DNS 解析 → ConnectError。修复:FLIPPED_USE_LOCAL_WORKER=1 时短路走 exo 直连。13 tests passed。端到端验证:factory-3d39af52(PomodoroEdge)3 次 local_worker 成功调 Kimi(8686+2426+5277 字符),index.html 生成(9329 bytes,Film Atelier 风格 #0D0D12)。verify 失败(缺 localStorage),factory done 0/5。实战暴露 4 个缺口:(1)Kimi reasoning overflow 未根治;(2)factory loop 无增量改进;(3)circuit_breaker 过早触发;(4)产物质量约束传递弱。",
+      "tasks": {
+        "M101.1": {
+          "title": "诊断 local_worker ConnectError 根因 + 防御性修复 model_router",
+          "status": "done",
+          "note": "根因:host.docker.internal 是 Docker-only 主机名,宿主机无法解析。修复:resolve_worker_model_config 开头检查 FLIPPED_USE_LOCAL_WORKER=1,直接返回 exo 直连跳过 LiteLLM proxy。TDD:test_resolve_worker_config_local_worker_bypasses_proxy 验证短路+不触发 httpx.get。13 passed。"
+        },
+        "M101.2": {
+          "title": "重启后端加载新代码 + resume factory 端到端验证",
+          "status": "done",
+          "note": "杀掉旧后端(pid 33519 加载旧代码),用 PYTHONPATH=src FLIPPED_USE_LOCAL_WORKER=1 重启(pid 37852)。resume factory-3d39af52 后 local_worker 成功调 Kimi:finish=stop content_len=8686 time=114.2s。ConnectError 彻底解决。产物 index.html 9329 bytes,Film Atelier 风格。"
+        }
+      }
     }
   },
   "architecture_decisions": [

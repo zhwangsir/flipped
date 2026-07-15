@@ -160,6 +160,27 @@ def test_resolve_worker_model_config_defaults_when_env_empty(mock_get, monkeypat
 
 
 @patch("driving.model_router.httpx.get")
+def test_resolve_worker_config_local_worker_bypasses_proxy(mock_get, monkeypatch):
+    """M101 防御性修复：FLIPPED_USE_LOCAL_WORKER=1 时直接走 exo 直连，
+    避免 host.docker.internal:4000 在宿主机无法 DNS 解析 → ConnectError。
+
+    回归场景：LiteLLM proxy :4000 健康且 model 可用时，若不短路，
+    会返回 host.docker.internal:4000 导致 local_worker ConnectError。
+    """
+    monkeypatch.setenv("FLIPPED_USE_LOCAL_WORKER", "1")
+    monkeypatch.setenv("LITELLM_BASE_URL", "http://proxy.test/v1")
+    monkeypatch.setenv("OPENHANDS_PROXY_BASE_URL", "http://host.docker.internal:4000/v1")
+    monkeypatch.setenv("FLIPPED_MODEL_BASE_URL", "http://direct.test/v1")
+    monkeypatch.setenv("OPENHANDS_MODEL", "coder")
+    monkeypatch.setenv("FLIPPED_CODER_MODEL", "mlx-community/Kimi-K2.7-Code-4bit")
+
+    base, model = resolve_worker_model_config("coder")
+    assert base == "http://direct.test/v1"  # 直连，不是 host.docker.internal
+    assert model == "mlx-community/Kimi-K2.7-Code-4bit"
+    mock_get.assert_not_called()
+
+
+@patch("driving.model_router.httpx.get")
 def test_resolve_worker_config_by_alias(mock_get, monkeypatch):
     """M7.1 — resolve_worker_model_config 按 alias 返回不同执行模型。"""
     mock_get.side_effect = Exception("down")  # 所有端点不健康 → 走直连回退

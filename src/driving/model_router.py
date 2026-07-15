@@ -91,12 +91,21 @@ def resolve_worker_model_config(alias: str = "coder") -> tuple[str, str]:
     The proxy is checked from the host perspective (localhost:4000) but the
     runtime URL returned for the worker points to the docker-host gateway so
     the OpenHands container can reach the LiteLLM proxy on the host.
+
+    M101 防御性修复：FLIPPED_USE_LOCAL_WORKER=1 时直接走 exo 直连，跳过 LiteLLM
+    proxy 检测。否则当 LiteLLM proxy 健康时会返回 host.docker.internal:4000
+    （Docker-only 主机名），宿主机 local_worker 无法 DNS 解析 → ConnectError。
     """
+    direct_url = os.environ.get("FLIPPED_MODEL_BASE_URL") or os.environ.get("OPENHANDS_BASE_URL") or DEFAULT_EXO_URL
+    direct_model = _model_id_for_alias(alias)
+
+    # local_worker 模式：直接走 exo 直连，避免 host.docker.internal 陷阱
+    if os.environ.get("FLIPPED_USE_LOCAL_WORKER") == "1":
+        return direct_url, direct_model
+
     proxy_health_url = os.environ.get("LITELLM_BASE_URL", DEFAULT_PROXY_URL)
     proxy_runtime_url = os.environ.get("OPENHANDS_PROXY_BASE_URL", DEFAULT_WORKER_PROXY_URL)
-    direct_url = os.environ.get("FLIPPED_MODEL_BASE_URL") or os.environ.get("OPENHANDS_BASE_URL") or DEFAULT_EXO_URL
     proxy_model = os.environ.get("OPENHANDS_MODEL", "coder") if alias == "coder" else alias
-    direct_model = _model_id_for_alias(alias)
 
     if is_endpoint_healthy(proxy_health_url) and is_model_available(proxy_health_url, proxy_model):
         return proxy_runtime_url, proxy_model

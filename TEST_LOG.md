@@ -2317,3 +2317,60 @@ GET /api/v1/factories/{factory_id}/rca_history
 - `analyze_failure_with_memory` 不调 LLM(纯 regex + Gold Memory 查询)
 - Gold Memory 语义检索阈值 0.5,相似任务 sim≈0.55 命中,不相似 sim≈0.27 不命中
 - 3 次 verify 失败产生 2 条 RCA(第 3 次 max_attempts 先 break)
+
+---
+
+## [2026-07-15] M101 · UI 端到端实战验证(PomodoroEdge)
+
+### 目标
+验证从 API 发起 factory 任务 → GLM 拆任务 → Kimi 生成代码 → 写文件 → verify 的完整端到端流程。
+exo 集群真机环境,非 mock。
+
+### 根因诊断与修复:host.docker.internal 陷阱
+
+**症状**: `local_worker` 调 Kimi 报 `ConnectError: [Errno 8] nodename nor servname provided`
+
+**根因**: `resolve_worker_model_config` 在 LiteLLM proxy(:4000)健康时会返回 `http://host.docker.internal:4000/v1`(Docker-only 主机名)。`host.docker.internal` 是 Docker Desktop 为容器提供的主机别名,**宿主机无法 DNS 解析**。当 `FLIPPED_USE_LOCAL_WORKER=1` 在宿主机直接跑 local_worker 时,httpx 尝试解析 `host.docker.internal` → `nodename nor servname provided`。
+
+**修复**: `src/driving/model_router.py` — `resolve_worker_model_config` 开头加短路:
+```python
+if os.environ.get("FLIPPED_USE_LOCAL_WORKER") == "1":
+    return direct_url, direct_model  # 直接走 exo,跳过 LiteLLM proxy 检测
+```
+
+**TDD 测试**: `tests/test_model_router.py::test_resolve_worker_config_local_worker_bypasses_proxy`
+- 验证 `FLIPPED_USE_LOCAL_WORKER=1` 时即使 LiteLLM proxy 健康+model 可用,也返回 exo 直连
+- 验证不触发任何 httpx.get 调用(完全短路)
+- 13 tests passed, 0 回归
+
+### 端到端验证结果
+
+**环境**: exo 集群直连 `http://100.64.201.37:52415/v1`
+- GLM-5.2-fp8 (architect) + Kimi-K2.7-Code-4bit (coder) 在线
+- LiteLLM proxy :4000 运行但 401 鉴权(is_endpoint_healthy=False → 自动走 exo 直连)
+- 后端 `PYTHONPATH=src FLIPPED_USE_LOCAL_WORKER=1 FLIPPED_MODEL_BASE_URL=http://100.64.201.37:52415/v1`
+
+**factory-3d39af52**: PomodoroEdge 番茄钟单页应用
+- total_tasks=6, iter=5
+- 3 次 local_worker 成功调用 Kimi:
+  1. `finish=stop content_len=8686 time=114.2s` → 写入 index.html (9329 bytes)
+  2. `finish=length content_len=2426 time=147.4s` → reasoning overflow,max_tokens 截断
+  3. `continuation content_len=5277 finish=stop continues_left=1` → continuation 机制续生成
+
+**产物**: `/Users/wangzhenyu/projects/flipped-demo/index.html` (9329 bytes)
+- ✅ 暗色背景 `#0D0D12` (Film Atelier 风格)
+- ✅ 番茄钟 25/5 循环结构
+- ✅ 任务列表 `<ul>` + `button`
+- ✅ aria-label 无障碍
+- ✅ 无外部依赖(无 http/https)
+- ⚠️ 缺 localStorage(verify 失败原因)
+- ⚠️ 配色单一(全 #d4a017,未达"配色不超5种"约束)
+
+**verify 结果**: FAIL(缺 localStorage) → factory done, 0 completed, 5 failed
+
+### 实战暴露的缺口(能力拓展方向)
+
+1. **Kimi reasoning overflow 未根治**: `enable_thinking=false` 仍偶发 reasoning tokens 占满 max_tokens。continuation 机制能补救但产物质量下降。需探索更可靠的 reasoning 抑制方式。
+2. **factory loop 无增量改进**: 每轮迭代从头生成,不在现有产物基础上修改。verify 失败后 feedback 未被有效利用。需实现"在现有 index.html 基础上补全 localStorage"的增量 worker 模式。
+3. **circuit_breaker 过早触发**: proposed-4 在 verify 失败后触发 circuit_breaker,而非继续尝试。需调整熔断阈值或区分"infra_failure"与"verify 失败"。
+4. **产物质量约束传递弱**: prompt 里的设计约束(localStorage/配色/粒子效果)未被 Kimi 完全遵守。需更强的约束传递机制(如 few-shot 示例 + 结构化 schema)。
