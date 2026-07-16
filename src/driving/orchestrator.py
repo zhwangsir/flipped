@@ -794,14 +794,14 @@ def local_worker(state: OrchestratorState) -> dict:
             + "用 ```html:index.html 格式输出完整代码，末尾 ```。只输出代码块。\n"
         )
 
-    # M10.5 根因修复：Kimi-K2.7-Code 在 exo 上即使传 enable_thinking=false，
-    # 仍会交错生成 reasoning_content（reasoning_tokens 占 max_tokens 的 60-90%）。
-    # 在 non-streaming 模式下，reasoning 先生成用光 max_tokens，content 几乎为空（len=2）。
-    # 解法：改用 streaming 模式，只收集 content deltas，忽略 reasoning_content deltas。
-    # 实测 streaming 能拿到完整 content（2899 bytes），non-streaming 只有 2 bytes。
+    # M131 质量优先配置（用户要求：不追求速度，不限制 max_tokens 和超时，只追求质量和完整）：
+    # - enable_thinking=True：开启深度推理，测试证明 reasoning ON 让 json_parser 从 0% → 100%
+    # - max_tokens 不传：让模型自然完成，不人为截断
+    # - timeout=1800s：30分钟，给复杂任务充足时间
+    # - streaming 模式保留（M10.5 修复：Kimi reasoning 模式下 streaming 更稳定）
     import json as _json
     import time as _time
-    _kimi_timeout = float(os.environ.get("FLIPPED_KIMI_TIMEOUT", "300"))
+    _kimi_timeout = float(os.environ.get("FLIPPED_KIMI_TIMEOUT", "1800"))
     _content_parts: list[str] = []
     finish = ""
     t0 = _time.monotonic()
@@ -813,10 +813,9 @@ def local_worker(state: OrchestratorState) -> dict:
             json={
                 "model": model,
                 "messages": [{"role": "user", "content": prompt}],
-                "max_tokens": 4096,
                 "temperature": 0.1,
-                "enable_thinking": False,
-                "chat_template_kwargs": {"enable_thinking": False},
+                "enable_thinking": True,
+                "chat_template_kwargs": {"enable_thinking": True},
                 "stream": True,
             },
             timeout=httpx.Timeout(_kimi_timeout, connect=10.0),
