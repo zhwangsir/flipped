@@ -35,6 +35,9 @@ CREATE TABLE IF NOT EXISTS skills (
     worker_prompt_hints TEXT NOT NULL DEFAULT '[]',
     constraints TEXT NOT NULL DEFAULT '[]',
     success_count INTEGER NOT NULL DEFAULT 0,
+    total_uses INTEGER NOT NULL DEFAULT 0,
+    avg_iterations REAL NOT NULL DEFAULT 0,
+    archived INTEGER NOT NULL DEFAULT 0,
     last_used TEXT NOT NULL DEFAULT '',
     created_at TEXT NOT NULL
 )
@@ -111,6 +114,9 @@ class Skill:
     worker_prompt_hints: list[str] = field(default_factory=list)
     constraints: list[str] = field(default_factory=list)
     success_count: int = 0
+    total_uses: int = 0
+    avg_iterations: float = 0.0
+    archived: bool = False
     last_used: str = ""
     created_at: str = ""
 
@@ -127,6 +133,9 @@ def _row_to_skill(row: sqlite3.Row) -> Skill:
         worker_prompt_hints=json.loads(row["worker_prompt_hints"]) if row["worker_prompt_hints"] else [],
         constraints=json.loads(row["constraints"]) if row["constraints"] else [],
         success_count=row["success_count"],
+        total_uses=row["total_uses"] if "total_uses" in row.keys() else 0,
+        avg_iterations=float(row["avg_iterations"]) if "avg_iterations" in row.keys() else 0.0,
+        archived=bool(row["archived"]) if "archived" in row.keys() else False,
         last_used=row["last_used"],
         created_at=row["created_at"],
     )
@@ -174,6 +183,8 @@ def build_skill_from_result(
         worker_prompt_hints=hints,
         constraints=constraints,
         success_count=1,
+        total_uses=1,
+        avg_iterations=float(result.iteration) if result.iteration else 1.0,
         last_used=now,
         created_at=now,
     )
@@ -226,10 +237,13 @@ def save_skill(
                         skill_id, product_type, design_style, description,
                         description_vector, verify_cmd, design_brief,
                         worker_prompt_hints, constraints, success_count,
+                        total_uses, avg_iterations, archived,
                         last_used, created_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT(skill_id) DO UPDATE SET
                         success_count = success_count + 1,
+                        total_uses = total_uses + 1,
+                        avg_iterations = (avg_iterations * total_uses + excluded.avg_iterations) / (total_uses + 1),
                         last_used = excluded.last_used,
                         description = excluded.description,
                         description_vector = excluded.description_vector
@@ -245,6 +259,9 @@ def save_skill(
                         hints_json,
                         constraints_json,
                         skill.success_count,
+                        skill.total_uses,
+                        skill.avg_iterations,
+                        0,
                         skill.last_used,
                         skill.created_at,
                     ),

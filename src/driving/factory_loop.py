@@ -623,6 +623,26 @@ def default_orchestrator_fn(task: FactoryTask, state: FactoryState) -> TaskResul
     ctx_tail = state.context_summary[-150:] if state.context_summary else "无"
     fb_short = task.feedback[:80] if task.feedback else "无"
 
+    # M106：自适应回路检测——根据任务复杂度动态调整 max_iterations 和 loop_threshold
+    try:
+        from driving.adaptive_loop import estimate_task_complexity, compute_dynamic_threshold
+        complexity_level, complexity_score = estimate_task_complexity(
+            task.description,
+            file_count=len(task.file_paths) if hasattr(task, 'file_paths') and task.file_paths else 1,
+        )
+        dynamic_loop_threshold = compute_dynamic_threshold(complexity_level)
+        # 复杂任务给更多迭代空间
+        if complexity_level.value == "complex":
+            adaptive_max_iter = 2
+        elif complexity_level.value == "medium":
+            adaptive_max_iter = 1
+        else:
+            adaptive_max_iter = 1
+    except Exception:
+        dynamic_loop_threshold = 3
+        adaptive_max_iter = 1
+        complexity_score = 50.0
+
     kwargs = dict(
         goal=task.description,
         cwd=state.cwd,
@@ -632,7 +652,8 @@ def default_orchestrator_fn(task: FactoryTask, state: FactoryState) -> TaskResul
             f"反馈：{fb_short}"
             + compact_design
         ),
-        max_iterations=1,
+        max_iterations=adaptive_max_iter,
+        loop_threshold=dynamic_loop_threshold,
         db_path="data/factory_checkpoints.db",
         thread_id=thread_id,
     )
@@ -766,12 +787,47 @@ def run_factory_loop(
             design_context=build_design_brief(design_style, product_type=product_goal),
         )
         state.roadmap = planner(state)
-        # M102: Skill 沉淀系统——新工厂自动加载最相似的历史 Skill（fail-open）
+        # M102/M104: Skill 沉淀系统——新工厂自动加载最相似的历史 Skill（fail-open）
+        # M104 升级：支持多 Skill 组合应用 + 自动淘汰低质量 Skill
         try:
-            from driving.skill_registry import apply_skill_to_state, query_similar_skill
-            skill = query_similar_skill(product_goal, design_style=design_style or "auto")
-            if skill is not None:
-                apply_skill_to_state(state, skill)
+            from driving.skill_evolution import (
+                find_related_skills,
+                apply_skills_to_state,
+                archive_low_quality_skills,
+            )
+            # 先自动清理低质量 Skill
+            try:
+                archive_low_quality_skills()
+            except Exception:
+                pass
+            skills = find_related_skills(product_goal, design_style=design_style or "auto", max_results=3)
+            if skills:
+                apply_skills_to_state(state, skills)
+            # M110: Skill 推荐系统——补充推荐 + 质量评分 + 热门排行（fail-open）
+            try:
+                from driving.skill_recommender import recommend_skills, get_trending_skills
+                recs = recommend_skills(
+                    product_goal, design_style=design_style or "auto", top_k=5
+                )
+                if recs:
+                    rec_text_parts = ["【可复用 Skill 推荐】"]
+                    for i, r in enumerate(recs[:3], 1):
+                        rec_text_parts.append(
+                            f"  {i}. {r.description[:50]} "
+                            f"(相关度 {r.relevance_score}, 质量 {r.quality_score})"
+                        )
+                    trending = get_trending_skills(limit=3)
+                    if trending:
+                        rec_text_parts.append("【热门 Skill 排行】")
+                        for i, t in enumerate(trending, 1):
+                            rec_text_parts.append(
+                                f"  {i}. {t['description'][:40]} "
+                                f"(成功率 {t['success_rate']}, {t['total_uses']}次)"
+                            )
+                    existing = state.context_summary or ""
+                    state.context_summary = (existing + "\n" + "\n".join(rec_text_parts)).strip()
+            except Exception:
+                pass
         except Exception:
             pass
         save_factory_state(state, db_path)
@@ -831,10 +887,67 @@ def run_factory_loop(
                 state.status = FactoryStatus.done
                 break
 
+            # M108: 任务分解——复杂任务自动拆成 3-5 个子任务（fail-open）
+            try:
+                from driving.task_decomposer import decompose_task, SubTask
+                decomp_result = decompose_task(
+                    task.description,
+                    file_count=len(task.artifacts) if task.artifacts else 3,
+                )
+                if decomp_result.should_decompose and len(decomp_result.subtasks) > 1:
+                    # 找到原任务在 roadmap 中的位置
+                    task_idx = None
+                    for i, t in enumerate(state.roadmap):
+                        if t.id == task.id:
+                            task_idx = i
+                            break
+                    if task_idx is not None:
+                        original_deps = task.depends_on
+                        subtask_models = []
+                        prev_id = None
+                        for st in decomp_result.subtasks:
+                            deps = list(original_deps)
+                            if prev_id is not None:
+                                deps.append(prev_id)
+                            st_model = FactoryTask(
+                                id=f"{task.id}-sub{st.order}",
+                                description=st.description,
+                                verify_cmd=st.verify_cmd,
+                                status=TaskStatus.pending,
+                                depends_on=deps,
+                            )
+                            subtask_models.append(st_model)
+                            prev_id = st_model.id
+                        # 替换原任务为子任务列表
+                        state.roadmap[task_idx:task_idx + 1] = subtask_models
+                        save_factory_state(state, db_path)
+                        _emit(bus, "task_decomposed", {
+                            "factory_id": state.factory_id,
+                            "original_task_id": task.id,
+                            "original_description": task.description,
+                            "subtask_count": len(subtask_models),
+                            "complexity_score": decomp_result.complexity_score,
+                        })
+                        continue  # 回到 while 顶部，_next_task 会返回第一个子任务
+            except Exception:
+                pass
+
             state.current_task_id = task.id
             task.status = TaskStatus.running
             task.attempts += 1
             state.iteration_count += 1
+            # M105: 任务开始前注入历史失败教训预警（fail-open）
+            try:
+                from driving.failure_kb import build_warning_from_history
+                warning = build_warning_from_history(
+                    task.description,
+                    state.design_style or "auto",
+                )
+                if warning:
+                    existing = state.context_summary or ""
+                    state.context_summary = (existing + "\n" + warning).strip()
+            except Exception:
+                pass
             save_factory_state(state, db_path)
             _emit(
                 bus,
@@ -896,6 +1009,17 @@ def run_factory_loop(
                     save_skill(task, state, result)
                 except Exception:
                     pass
+                # M104：记录 Skill 使用（成功），用于质量评估和进化
+                try:
+                    from driving.skill_evolution import record_skill_usage
+                    record_skill_usage(
+                        task.description,
+                        state.design_style or "auto",
+                        success=True,
+                        iterations=result.iteration,
+                    )
+                except Exception:
+                    pass
             else:
                 # M16: infra_failure 优雅暂停——集群不可用(ConnectTimeout/worker_error)
                 # 时立即暂停，不消耗重试次数。重试集群故障毫无意义，只会烧光 attempts → paused。
@@ -926,6 +1050,42 @@ def run_factory_loop(
                 try:
                     from driving.gold_memory import record_task_result
                     record_task_result(task, state, result)
+                except Exception:
+                    pass
+                # M104：记录 Skill 使用（失败），用于质量评估和进化
+                try:
+                    from driving.skill_evolution import record_skill_usage
+                    record_skill_usage(
+                        task.description,
+                        state.design_style or "auto",
+                        success=False,
+                        iterations=result.iteration,
+                    )
+                except Exception:
+                    pass
+                # M105：记录失败到知识库（Self-Improving Loop 失败侧闭环）
+                try:
+                    from driving.failure_kb import record_failure
+                    from driving.rca import analyze_failure
+                    try:
+                        rca_tmp = analyze_failure(
+                            stop_reason=result.stop_reason,
+                            summary=result.summary,
+                            feedback=task.feedback,
+                            verify_output=result.summary,
+                        )
+                        cause = rca_tmp.cause.value
+                    except Exception:
+                        cause = result.stop_reason or "unknown"
+                    record_failure(
+                        task.description,
+                        state.design_style or "auto",
+                        cause=cause,
+                        error_detail=result.summary[:500],
+                        stop_reason=result.stop_reason,
+                        iterations=result.iteration,
+                        resolved=False,
+                    )
                 except Exception:
                     pass
                 if task.attempts >= task.max_attempts:

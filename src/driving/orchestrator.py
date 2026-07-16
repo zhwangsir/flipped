@@ -741,13 +741,48 @@ def local_worker(state: OrchestratorState) -> dict:
         except Exception:
             pass
 
-    prompt = (
-        f"在 `{cwd}` 下完成：\n{_subtask_short}\n\n"
-        + (f"{_file_ctx}\n" if _file_ctx else "")
-        + (f"约束：{_rules_short}\n" if _rules_short else "")
-        + (f"反馈：{_feedback_short}\n" if _feedback_short else "")
-        + "用 ```html:index.html 格式输出完整代码，末尾 ```。只输出代码块。\n"
-    )
+    # M103: 增量修复模式 — verify 失败后基于现有产物精准修复而非重写
+    _incremental_mode = False
+    _iteration = state.get("iteration", 0)
+    _has_artifacts = bool(_old_html) or os.path.isfile(os.path.join(cwd, "index.html"))
+    try:
+        from driving.incremental_mode import (
+            IncrementalContext,
+            build_incremental_prompt,
+            should_use_incremental,
+        )
+        _incremental_mode = should_use_incremental(_iteration, _has_artifacts)
+    except Exception:
+        _incremental_mode = False
+
+    if _incremental_mode:
+        try:
+            _failure_output = state.get("feedback", "")[-500:] if state.get("feedback") else ""
+            _ctx = IncrementalContext(
+                cwd=cwd,
+                failure_output=_failure_output,
+                round_num=_iteration,
+                rca_cause=state.get("rca_cause", ""),
+                rca_suggestion=state.get("rca_suggestion", ""),
+            )
+            prompt = build_incremental_prompt(_ctx, _subtask_short)
+        except Exception:
+            _incremental_mode = False
+            prompt = (
+                f"在 `{cwd}` 下完成：\n{_subtask_short}\n\n"
+                + (f"{_file_ctx}\n" if _file_ctx else "")
+                + (f"约束：{_rules_short}\n" if _rules_short else "")
+                + (f"反馈：{_feedback_short}\n" if _feedback_short else "")
+                + "用 ```html:index.html 格式输出完整代码，末尾 ```。只输出代码块。\n"
+            )
+    else:
+        prompt = (
+            f"在 `{cwd}` 下完成：\n{_subtask_short}\n\n"
+            + (f"{_file_ctx}\n" if _file_ctx else "")
+            + (f"约束：{_rules_short}\n" if _rules_short else "")
+            + (f"反馈：{_feedback_short}\n" if _feedback_short else "")
+            + "用 ```html:index.html 格式输出完整代码，末尾 ```。只输出代码块。\n"
+        )
 
     # M10.5 根因修复：Kimi-K2.7-Code 在 exo 上即使传 enable_thinking=false，
     # 仍会交错生成 reasoning_content（reasoning_tokens 占 max_tokens 的 60-90%）。
