@@ -9,11 +9,12 @@ def _worker(**kw):
 
 
 def test_defaults_unchanged(monkeypatch):
+    """M131 质量优先：默认 timeout=3600s（1小时），max_iterations=200。"""
     monkeypatch.delenv("FLIPPED_WORKER_TIMEOUT", raising=False)
     monkeypatch.delenv("FLIPPED_WORKER_MAX_ITERATIONS", raising=False)
     w = _worker()
-    assert w.timeout == 1200.0
-    assert w.max_iterations == 50
+    assert w.timeout == 3600.0
+    assert w.max_iterations == 200
 
 
 def test_env_overrides(monkeypatch):

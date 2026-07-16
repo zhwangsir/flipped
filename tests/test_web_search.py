@@ -1,4 +1,8 @@
-"""web_search 单测（SearXNG 可达时跑真实网络；不可达时跳过）。"""
+"""web_search 单测 — DuckDuckGo 内置搜索，开箱即用。
+
+默认使用 DuckDuckGo 免费 API，无需 Docker、无需代理、无需配置。
+若配置了 SEARXNG_URL 环境变量则使用自托管 SearXNG。
+"""
 import os
 import sys
 
@@ -9,32 +13,19 @@ import pytest  # noqa: E402
 from tools.web_search import SearchError, format_for_llm, search  # noqa: E402
 
 
-def _searxng_available():
-    import socket
-    try:
-        with socket.create_connection(("127.0.0.1", 8080), timeout=1):
-            return True
-    except OSError:
-        return False
-
-
-SEARXNG_AVAILABLE = _searxng_available()
-
-
-@pytest.mark.skipif(not SEARXNG_AVAILABLE, reason="SearXNG not reachable in this sandbox")
-def test_returns_results():
-    # SearXNG 上游引擎(经 Clash)偶发抖动 -> 多 query 任一返回即通过(仍要求真实结果, 不放水)
-    r: list = []
-    for q in ("LangGraph", "Python programming language", "Wikipedia"):
-        r = search(q, max_results=3)
-        if r:
-            break
-    assert isinstance(r, list) and len(r) >= 1, "3 个 query 均无结果(SearXNG 引擎全抖?)"
-    assert all(x.get("url", "").startswith("http") for x in r), "每条结果须含 http URL"
-    assert all(x.get("title") for x in r), "每条结果须有标题"
+def test_search_returns_results():
+    """内置 DuckDuckGo 搜索应返回结果（开箱即用，无需外部服务）。"""
+    r = search("Python programming language", max_results=3)
+    assert isinstance(r, list), "搜索结果应为列表"
+    assert len(r) >= 1, "应至少返回 1 条结果"
+    for item in r:
+        assert "url" in item, "每条结果须含 url"
+        assert "title" in item, "每条结果须含 title"
+        assert item["url"].startswith("http"), f"URL 格式错误: {item['url']}"
 
 
 def test_empty_query_raises():
+    """空 query 应抛 SearchError。"""
     try:
         search("")
     except SearchError:
@@ -43,15 +34,20 @@ def test_empty_query_raises():
 
 
 def test_format_for_llm():
+    """format_for_llm 应正确格式化结果。"""
     out = format_for_llm([{"title": "T", "url": "https://x", "snippet": "s"}])
     assert "https://x" in out and "[1]" in out
 
 
+def test_search_with_timeout():
+    """超时参数应生效。"""
+    r = search("test", timeout=5)
+    assert isinstance(r, list)
+
+
 if __name__ == "__main__":
-    if SEARXNG_AVAILABLE:
-        test_returns_results()
-    else:
-        print("web_search: SearXNG 不可达，跳过 test_returns_results")
+    test_search_returns_results()
     test_empty_query_raises()
     test_format_for_llm()
+    test_search_with_timeout()
     print("web_search 单测: 全部通过 ✅")

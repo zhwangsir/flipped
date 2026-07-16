@@ -18,7 +18,7 @@ const MODE_LABEL: Record<string, string> = {
 
 /** Codex 顶栏：极度克制。左侧栏折叠钮 + 线程标题 + 模式芯片，右侧用量芯片 + 极小连接点 + 面板折叠钮。 */
 export function TopBar() {
-  const { toggleSidebar, toggleContext, selectedSessionId, sessions, connection, metrics, selectedMode } = useApp();
+  const { toggleSidebar, toggleContext, selectedSessionId, sessions, connection, metrics, selectedMode, setMobileSidebarOpen, setMobilePanelOpen } = useApp();
   const session = sessions.find((s) => s.id === selectedSessionId);
   const llm = metrics?.llm;
   const calls = llm?.total_calls ?? 0;
@@ -27,7 +27,14 @@ export function TopBar() {
     <header className="topbar">
       <button
         className="icon-btn ghost"
-        onClick={toggleSidebar}
+        onClick={() => {
+          // 移动端：打开抽屉；桌面端：折叠/展开
+          if (window.matchMedia("(max-width: 768px)").matches) {
+            setMobileSidebarOpen(true);
+          } else {
+            toggleSidebar();
+          }
+        }}
         aria-label="折叠侧栏"
         title="折叠 / 展开侧栏 (⌘B)"
       >
@@ -66,7 +73,14 @@ export function TopBar() {
         className="icon-btn ghost"
         aria-label="切换上下文面板"
         title="显示 / 隐藏右侧面板"
-        onClick={toggleContext}
+        onClick={() => {
+          // 移动端：打开底部面板；桌面端：切换面板
+          if (window.matchMedia("(max-width: 768px)").matches) {
+            setMobilePanelOpen(true);
+          } else {
+            toggleContext();
+          }
+        }}
       >
         <IconLayout size={16} />
       </button>

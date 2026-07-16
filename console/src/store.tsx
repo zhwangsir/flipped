@@ -134,11 +134,16 @@ interface AppState {
   // M100 — 工厂级 RCA 历史聚合
   factoryRcaHistory: FactoryRcaHistoryResponse | null;
   loadFactoryRcaHistory: (id: string) => Promise<void>;
-  // M95 — RCA / verifier 可观测
+  // M95 — RCA / verifier 可观测状态
   rcaHistory: RcaInfo[];
   lastVerifierVerdict: VerifierVerdict | null;
   failureCounter: Record<string, number>;
   clearRca: () => void;
+  // M131 — 移动端适配：抽屉式侧栏和上下文面板
+  mobileSidebarOpen: boolean;
+  setMobileSidebarOpen: (open: boolean) => void;
+  mobilePanelOpen: boolean;
+  setMobilePanelOpen: (open: boolean) => void;
 }
 
 const AppContext = createContext<AppState | null>(null);
@@ -191,6 +196,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [rcaHistory, setRcaHistory] = useState<RcaInfo[]>([]);
   const [lastVerifierVerdict, setLastVerifierVerdict] = useState<VerifierVerdict | null>(null);
   const [failureCounter, setFailureCounter] = useState<Record<string, number>>({});
+  // M131 — 移动端适配
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const [mobilePanelOpen, setMobilePanelOpen] = useState(false);
   const clearRca = useCallback(() => {
     setRcaHistory([]);
     setLastVerifierVerdict(null);
@@ -793,6 +801,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
         lastVerifierVerdict,
         failureCounter,
         clearRca,
+        mobileSidebarOpen,
+        setMobileSidebarOpen,
+        mobilePanelOpen,
+        setMobilePanelOpen,
       }}
     >
       {children}

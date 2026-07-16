@@ -728,3 +728,138 @@ def test_m94_gold_memory_writeback_on_failure(tmp_db, tmp_cwd):
 
     # 失败也应写回 Gold Memory(M10.4-D)
     assert len(record_calls) >= 1, "失败时应写回 Gold Memory"
+
+
+# ---- M130 AgentCLI 集成测试 ----
+
+def test_m130_factory_loop_creates_worktree_on_task_start(tmp_db, tmp_cwd):
+    """M130: 任务开始时 factory_loop 应调用 AgentCLI 创建 worktree。"""
+    from unittest.mock import MagicMock
+
+    cli_calls = []
+
+    def fake_orchestrator(task: FactoryTask, state: FactoryState) -> TaskResult:
+        return TaskResult(
+            task=task, verified=True, stop_reason="done",
+            iteration=1, summary="ok",
+        )
+
+    def stub_planner(state: FactoryState) -> list[FactoryTask]:
+        return [make_task("实现功能", verify_cmd=["true"])]
+
+    with patch("driving.agent_cli.AgentCLI") as MockCLI:
+        mock_cli = MagicMock()
+        mock_cli.worktree_create.return_value = MagicMock(success=True, output={"worktree_id": "wt-123"})
+        mock_cli.status_update.return_value = MagicMock(success=True)
+        mock_cli.worktree_merge.return_value = MagicMock(success=True)
+        mock_cli.worktree_remove.return_value = MagicMock(success=True)
+        MockCLI.return_value = mock_cli
+
+        result = run_factory_loop(
+            product_goal="build feature",
+            cwd=tmp_cwd,
+            db_path=str(tmp_db),
+            planner=stub_planner,
+            orchestrator_fn=fake_orchestrator,
+            max_tasks=1,
+        )
+
+    assert mock_cli.worktree_create.called, "任务开始时应调用 worktree_create"
+    assert mock_cli.status_update.called, "任务开始时应调用 status_update"
+    assert mock_cli.worktree_merge.called, "任务成功时应调用 worktree_merge"
+    assert mock_cli.worktree_remove.called, "任务结束时应调用 worktree_remove"
+    assert result.cli_stats["worktree_create"] == 1
+    assert result.cli_stats["worktree_merge"] == 1
+    assert result.cli_stats["worktree_remove"] == 1
+
+
+def test_m130_factory_loop_updates_status_on_failure(tmp_db, tmp_cwd):
+    """M130: 任务失败时 factory_loop 应更新 Agent 状态为 failed。"""
+    from unittest.mock import MagicMock
+
+    def fake_orchestrator(task: FactoryTask, state: FactoryState) -> TaskResult:
+        return TaskResult(
+            task=task, verified=False, stop_reason="verify_failed",
+            iteration=1, summary="fail",
+        )
+
+    def stub_planner(state: FactoryState) -> list[FactoryTask]:
+        return [make_task("失败任务", verify_cmd=["false"])]
+
+    with patch("driving.agent_cli.AgentCLI") as MockCLI:
+        mock_cli = MagicMock()
+        mock_cli.worktree_create.return_value = MagicMock(success=True, output={"worktree_id": "wt-123"})
+        mock_cli.status_update.return_value = MagicMock(success=True)
+        mock_cli.worktree_remove.return_value = MagicMock(success=True)
+        MockCLI.return_value = mock_cli
+
+        run_factory_loop(
+            product_goal="build fail",
+            cwd=tmp_cwd,
+            db_path=str(tmp_db),
+            planner=stub_planner,
+            orchestrator_fn=fake_orchestrator,
+            max_tasks=1,
+        )
+
+    calls = mock_cli.status_update.call_args_list
+    status_calls = [str(call.args[1]) for call in calls]
+    assert "failed" in status_calls, "任务失败时应更新状态为 failed"
+
+
+def test_m130_factory_loop_fan_out_mode(tmp_db, tmp_cwd):
+    """M130: Fan-out 模式下 factory_loop 应调用 fan_out 命令。"""
+    from unittest.mock import MagicMock
+
+    def stub_planner(state: FactoryState) -> list[FactoryTask]:
+        return [make_task("并行任务", verify_cmd=["true"])]
+
+    with patch("driving.agent_cli.AgentCLI") as MockCLI:
+        mock_cli = MagicMock()
+        mock_cli.worktree_create.return_value = MagicMock(success=True, output={"worktree_id": "wt-123"})
+        mock_cli.status_update.return_value = MagicMock(success=True)
+        mock_cli.fan_out.return_value = MagicMock(
+            success=True,
+            output={"winner": {"agent_id": "agent-1", "score": 0.95}},
+            message="Fan-out complete",
+        )
+        mock_cli.worktree_remove.return_value = MagicMock(success=True)
+        MockCLI.return_value = mock_cli
+
+        result = run_factory_loop(
+            product_goal="build parallel",
+            cwd=tmp_cwd,
+            db_path=str(tmp_db),
+            planner=stub_planner,
+            fan_out_mode=True,
+            max_tasks=1,
+        )
+
+    assert mock_cli.fan_out.called, "Fan-out 模式应调用 fan_out"
+    assert result.cli_stats["fan_out"] == 1
+    assert result.completed, "Fan-out 胜出应标记任务完成"
+
+
+def test_m130_factory_loop_cli_fail_open(tmp_db, tmp_cwd):
+    """M130: AgentCLI 导入失败或异常时 factory_loop 应继续运行(fail-open)。"""
+    def fake_orchestrator(task: FactoryTask, state: FactoryState) -> TaskResult:
+        return TaskResult(
+            task=task, verified=True, stop_reason="done",
+            iteration=1, summary="ok",
+        )
+
+    def stub_planner(state: FactoryState) -> list[FactoryTask]:
+        return [make_task("测试任务", verify_cmd=["true"])]
+
+    with patch("driving.agent_cli.AgentCLI", side_effect=ImportError("missing")):
+        result = run_factory_loop(
+            product_goal="build test",
+            cwd=tmp_cwd,
+            db_path=str(tmp_db),
+            planner=stub_planner,
+            orchestrator_fn=fake_orchestrator,
+            max_tasks=1,
+        )
+
+    assert result.status == FactoryStatus.done, "CLI 失败时工厂应正常完成"
+    assert result.completed, "任务应正常完成"

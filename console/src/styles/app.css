@@ -4768,3 +4768,399 @@ textarea:focus {
     transition: none;
   }
 }
+
+/* ============ M131 — 移动端适配（参考 Claude / ChatGPT / TRAE Work 移动端设计） ============
+   断点策略：
+   - ≤768px：平板/大手机 — 单栏布局，侧栏变抽屉，上下文面板底部弹出
+   - ≤480px：手机 — 进一步压缩间距字号，触控优化
+   设计参考：
+   - Claude 移动端：极简对话流 + 底部 composer + 滑动抽屉
+   - ChatGPT 移动端：底部 tabbar（对话/搜索/设置）+ 中央 FAB 新对话
+   - TRAE Work：全屏 overlay 面板 + 触控优先交互
+*/
+
+/* ---- 移动端遮罩层 ---- */
+.mobile-overlay {
+  display: none;
+}
+
+/* ---- 移动端底部导航栏 ---- */
+.mobile-tabbar {
+  display: none;
+}
+
+/* ============ 平板/大手机 (≤768px) ============ */
+@media (max-width: 768px) {
+  :root {
+    --topbar-h: 52px;
+    --sidebar-w: 280px;
+    --context-w: 100%;
+    --sp-5: 16px;
+    --sp-6: 20px;
+  }
+
+  /* Shell：隐藏三栏，改为单栏 */
+  .app {
+    height: 100dvh;
+    grid-template-rows: var(--topbar-h) 1fr auto;
+    grid-template-areas: "topbar" "body" "tabbar";
+  }
+  .body {
+    grid-template-columns: 1fr;
+    grid-template-areas: "conversation";
+    overflow: hidden;
+  }
+
+  /* 侧栏 → 抽屉式 overlay（从左滑入） */
+  .sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: 280px;
+    z-index: 50;
+    transform: translateX(-100%);
+    transition: transform var(--dur) var(--ease-out-quart);
+    box-shadow: var(--shadow-far);
+    background: var(--bg-sunken);
+  }
+  .app.mobile-sidebar-open .sidebar {
+    transform: translateX(0);
+  }
+
+  /* 对话区占满 */
+  .conversation {
+    grid-area: conversation;
+  }
+
+  /* 上下文面板 → 底部弹出 sheet（从下滑入） */
+  .context-panel {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 70dvh;
+    z-index: 50;
+    transform: translateY(100%);
+    transition: transform var(--dur) var(--ease-out-quart);
+    border-radius: 16px 16px 0 0;
+    box-shadow: var(--shadow-far);
+    background: var(--bg-sunken);
+    border-top: 1px solid var(--border);
+  }
+  .app.mobile-panel-open .context-panel {
+    transform: translateY(0);
+  }
+
+  /* 遮罩层 */
+  .mobile-overlay {
+    display: block;
+    position: fixed;
+    inset: 0;
+    background: oklch(0% 0 0 / 0.5);
+    z-index: 45;
+    animation: fade-in var(--dur-fast) var(--ease) both;
+    backdrop-filter: blur(2px);
+  }
+
+  /* 底部导航栏（ChatGPT 式：对话/FAB/面板/设置） */
+  .mobile-tabbar {
+    grid-area: tabbar;
+    display: flex;
+    align-items: center;
+    justify-content: space-around;
+    height: 56px;
+    padding: 0 12px;
+    padding-bottom: env(safe-area-inset-bottom, 0);
+    background: var(--bg-app);
+    border-top: 1px solid var(--border-subtle);
+    z-index: 40;
+  }
+  .tabbar-btn {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    min-width: 44px;
+    min-height: 44px;
+    padding: 4px 8px;
+    border: none;
+    background: transparent;
+    color: var(--text-muted);
+    font-size: 10px;
+    font-weight: 500;
+    transition: color var(--dur-fast) var(--ease);
+  }
+  .tabbar-btn:active {
+    transform: scale(0.92);
+  }
+  .tabbar-btn.active {
+    color: var(--text-primary);
+  }
+  /* 中央 FAB 按钮 */
+  .tabbar-fab {
+    width: 48px;
+    height: 48px;
+    min-width: 48px;
+    min-height: 48px;
+    border-radius: 50%;
+    background: var(--primary);
+    color: var(--on-primary);
+    align-items: center;
+    justify-content: center;
+    box-shadow: var(--shadow-md);
+    transition: transform var(--dur-fast) var(--ease-spring);
+  }
+  .tabbar-fab:active {
+    transform: scale(0.88);
+  }
+
+  /* TopBar 简化 */
+  .topbar {
+    padding: 0 12px;
+  }
+  .topbar-title {
+    max-width: 180px;
+  }
+  .topbar-mode {
+    display: none;
+  }
+  .topbar-usage {
+    display: none;
+  }
+
+  /* Composer 触控优化 */
+  .composer {
+    padding: var(--sp-2) var(--sp-3) var(--sp-3);
+    padding-bottom: calc(var(--sp-3) + env(safe-area-inset-bottom, 0px));
+  }
+  .composer-box {
+    min-height: 44px;
+    border-radius: 12px;
+  }
+  .composer textarea {
+    font-size: 16px; /* iOS 防缩放 */
+    line-height: 1.5;
+  }
+  .composer-bar {
+    gap: 6px;
+  }
+
+  /* 消息流间距压缩 */
+  .stream {
+    padding: var(--sp-3) var(--sp-3);
+  }
+  .turn {
+    margin-bottom: var(--sp-4);
+  }
+  .turn.user .turn-text {
+    max-width: 85%;
+    border-radius: 16px;
+    padding: 10px 14px;
+  }
+
+  /* 新线程居中布局 */
+  .center-new {
+    padding: 0 var(--sp-4) 6vh;
+  }
+  .new-thread {
+    max-width: 100%;
+    gap: 16px;
+  }
+  .empty-hero {
+    font-size: 24px;
+  }
+  .empty-sub {
+    font-size: var(--text-xs);
+  }
+  .empty-hints {
+    gap: 6px;
+  }
+  .empty-hint {
+    padding: 8px 12px;
+    font-size: var(--text-xs);
+  }
+
+  /* 工具调用卡 */
+  .tool-card {
+    border-radius: var(--radius-sm);
+  }
+
+  /* 启动器隐藏（移动端用底部 tabbar 替代） */
+  .launcher {
+    display: none;
+  }
+
+  /* 拖拽把手隐藏 */
+  .resize-handle {
+    display: none;
+  }
+
+  /* 命令面板全屏 */
+  .palette {
+    max-width: 100%;
+    border-radius: 0;
+  }
+
+  /* 设置页全屏 */
+  .settings {
+    max-width: 100%;
+  }
+
+  /* 终端抽屉全宽 */
+  .terminal-drawer {
+    max-width: 100%;
+  }
+
+  /* 工厂面板 Bento 网格 → 单列 */
+  .fd-bento {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ============ 手机 (≤480px) ============ */
+@media (max-width: 480px) {
+  :root {
+    --topbar-h: 48px;
+    --text-base: 14px;
+    --text-sm: 12px;
+    --text-xs: 11px;
+    --sp-4: 12px;
+    --sp-5: 14px;
+    --sp-6: 16px;
+  }
+
+  /* TopBar 极简 */
+  .topbar {
+    padding: 0 8px;
+    gap: 6px;
+  }
+  .topbar-title {
+    max-width: 140px;
+    font-size: var(--text-xs);
+  }
+  .topbar-brand {
+    font-size: var(--text-xs);
+  }
+
+  /* 消息流进一步压缩 */
+  .stream {
+    padding: var(--sp-2) var(--sp-2);
+  }
+  .turn-text {
+    font-size: var(--text-base);
+  }
+  .turn.user .turn-text {
+    max-width: 90%;
+    padding: 8px 12px;
+    border-radius: 14px;
+  }
+
+  /* Composer 最小化 */
+  .composer {
+    padding: var(--sp-1) var(--sp-2) var(--sp-2);
+  }
+  .composer-context {
+    gap: 6px;
+    padding: 6px 2px 0;
+    flex-wrap: wrap;
+  }
+  .composer-box {
+    min-height: 40px;
+    padding: 8px 12px;
+  }
+  .composer textarea {
+    font-size: 16px;
+  }
+
+  /* 空状态 */
+  .empty-hero {
+    font-size: 20px;
+  }
+  .empty-sub {
+    font-size: var(--text-xs);
+    max-width: 100%;
+  }
+  .empty-hints {
+    gap: 5px;
+  }
+  .empty-hint {
+    padding: 6px 10px;
+  }
+
+  /* 底部导航紧凑 */
+  .mobile-tabbar {
+    padding: 0 8px;
+  }
+  .tabbar-btn {
+    min-width: 40px;
+    padding: 2px 6px;
+  }
+  .tabbar-fab {
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  /* 侧栏抽屉窄一些 */
+  .sidebar {
+    width: 260px;
+  }
+
+  /* 上下文面板更高 */
+  .context-panel {
+    height: 75dvh;
+  }
+
+  /* 工具卡最小化 */
+  .tool-card {
+    margin-left: -4px;
+    margin-right: -4px;
+  }
+}
+
+/* ============ 横屏手机 (≤900px 且 ≤500px高) ============ */
+@media (max-width: 900px) and (max-height: 500px) {
+  :root {
+    --topbar-h: 40px;
+  }
+  .mobile-tabbar {
+    height: 44px;
+  }
+  .tabbar-btn {
+    min-height: 36px;
+  }
+  .tabbar-fab {
+    width: 40px;
+    height: 40px;
+    min-width: 40px;
+    min-height: 40px;
+  }
+  .context-panel {
+    height: 60dvh;
+  }
+}
+
+/* ============ 触控优化 (pointer: coarse) ============ */
+@media (pointer: coarse) {
+  /* 增大触控目标 */
+  .icon-btn {
+    min-width: 36px;
+    min-height: 36px;
+  }
+  .empty-hint {
+    padding: 10px 14px;
+  }
+  .tool-card {
+    min-height: 44px;
+  }
+  /* 禁用 hover 效果（触屏上 hover 会粘住） */
+  .empty-hint:hover {
+    transform: none;
+  }
+  .launcher-item:hover {
+    transform: none;
+  }
+}
+

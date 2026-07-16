@@ -12,6 +12,7 @@ import { Plugins } from "./components/Plugins";
 import { TerminalDrawer } from "./components/TerminalDrawer";
 import { FactoryPanel } from "./components/FactoryPanel";
 import { AppProvider, useApp } from "./store";
+import { IconPlus, IconSearch, IconGear, IconFactory } from "./icons";
 
 const SIDEBAR_MIN = 200;
 const SIDEBAR_MAX = 460;
@@ -36,7 +37,7 @@ function writeNum(key: string, v: number) {
 }
 
 function AppShell() {
-  const { sidebarCollapsed, showContext } = useApp();
+  const { sidebarCollapsed, showContext, mobileSidebarOpen, setMobileSidebarOpen, mobilePanelOpen, setMobilePanelOpen, createSession, setSettingsOpen } = useApp();
   const [sidebarW, setSidebarW] = useState(() => readNum("flipped-sidebar-w", 272));
   const [contextW, setContextW] = useState(() => readNum("flipped-context-w", 468));
 
@@ -56,7 +57,9 @@ function AppShell() {
       className={
         "app" +
         (sidebarCollapsed ? " sb-collapsed" : "") +
-        (ctxHidden ? " ctx-collapsed" : "")
+        (ctxHidden ? " ctx-collapsed" : "") +
+        (mobileSidebarOpen ? " mobile-sidebar-open" : "") +
+        (mobilePanelOpen ? " mobile-panel-open" : "")
       }
       style={style}
     >
@@ -78,6 +81,50 @@ function AppShell() {
           />
         )}
       </div>
+
+      {/* M131 — 移动端遮罩层 */}
+      {mobileSidebarOpen && (
+        <div className="mobile-overlay" onClick={() => setMobileSidebarOpen(false)} />
+      )}
+      {mobilePanelOpen && (
+        <div className="mobile-overlay" onClick={() => setMobilePanelOpen(false)} />
+      )}
+
+      {/* M131 — 移动端底部导航栏（参考 Claude/ChatGPT 移动端设计） */}
+      <nav className="mobile-tabbar">
+        <button
+          className="tabbar-btn"
+          onClick={() => setMobileSidebarOpen(true)}
+          aria-label="对话列表"
+        >
+          <IconSearch size={20} />
+          <span>对话</span>
+        </button>
+        <button
+          className="tabbar-btn tabbar-fab"
+          onClick={() => createSession()}
+          aria-label="新对话"
+        >
+          <IconPlus size={22} />
+        </button>
+        <button
+          className="tabbar-btn"
+          onClick={() => setMobilePanelOpen(true)}
+          aria-label="上下文面板"
+        >
+          <IconFactory size={20} />
+          <span>面板</span>
+        </button>
+        <button
+          className="tabbar-btn"
+          onClick={() => setSettingsOpen(true)}
+          aria-label="设置"
+        >
+          <IconGear size={20} />
+          <span>设置</span>
+        </button>
+      </nav>
+
       <TerminalDrawer />
       <CommandPalette />
       <Settings />

@@ -111,6 +111,12 @@ def _make_llm(alias: str, temperature: float = 0, callbacks=None):
 
     关键修复：langchain_openai 的 httpx 会自动走系统代理(macOS System Preferences)，
     导致对内网模型端点(100.64.x.x)的请求被代理 502。这里显式传 http_client 绕过。
+
+    M131 质量优先配置（用户要求：不追求速度，不限制 max_tokens 和超时，只追求质量和完整）：
+    - timeout 提到 1800s（30 分钟），不人为限制模型推理时间
+    - max_tokens 不传（让模型自然完成，不人为截断）
+    - reasoning 开启（enable_thinking=true，深度推理）
+    - Kimi 做 overseer 监督监控，防 GLM-5.2 卡死
     """
     from langchain_openai import ChatOpenAI
     import httpx
@@ -119,9 +125,8 @@ def _make_llm(alias: str, temperature: float = 0, callbacks=None):
     key = os.environ.get("LITELLM_MASTER_KEY") or os.environ.get("EXO_API_KEY", "dummy")
     # 构造不走代理的 httpx client（内网模型端点必须直连）
     # trust_env=False 让 httpx 忽略系统代理配置(macOS System Preferences / env vars)
-    # timeout=240: GLM-5.2-fp8 planner/evolve 偶发长 JSON 生成 90-180s，120s 误判超时。
-    # 240s 留余量；超 240s 大概率真卡死，快失败走 fallback。
-    _glm_timeout = float(os.environ.get("FLIPPED_GLM_TIMEOUT", "240"))
+    # M131: 质量优先，不限制超时。1800s（30分钟）只作为极端兜底防无限挂起。
+    _glm_timeout = float(os.environ.get("FLIPPED_GLM_TIMEOUT", "1800"))
     http_client = httpx.Client(
         timeout=httpx.Timeout(_glm_timeout, connect=10.0),
         trust_env=False,
@@ -132,6 +137,8 @@ def _make_llm(alias: str, temperature: float = 0, callbacks=None):
         # 禁用 openai SDK 内部重试（默认 max_retries=2 → 3 次请求 × 240s = 720s）
         # langchain 对 GLM 总是解析失败，SDK 重试纯浪费时间；失败立即走 _direct_glm_tool_call
         max_retries=0,
+        # M131 质量优先：不传 max_tokens，让模型自然完成
+        # enable_thinking 由 _direct_glm_tool_call 内部控制（reasoning_content 独立字段）
     )
 
 
@@ -315,13 +322,15 @@ def _direct_glm_tool_call(llm, schema_cls, prompt: str, *, max_retries: int = 1)
 
     绕过 langchain + 绕过 function calling，直接用纯文本模式让 GLM 输出 JSON。
 
+    **M131 质量优先配置**（用户要求：不追求速度，不限制 max_tokens 和超时，只追求质量和完整）：
+    - enable_thinking=True：开启深度推理，reasoning_content 是独立字段不占 content 预算
+    - max_tokens 不传：让模型自然完成，不人为截断
+    - timeout=1800s：30分钟极端兜底，防无限挂起
+    - Kimi overseer 在外层监控，防 GLM-5.2 真卡死
+
     **为什么不用 function calling**：
     1. langchain_openai 对 GLM/exo 的 tool_calls 格式解析有 bug（function 对象多了 id 字段）
-    2. GLM-5.2 关闭 reasoning 后即使传了 tools 也不走 tool_calls，而是把 JSON 放在 content 里
-    3. GLM-5.2 开 reasoning 模式时 reasoning tokens 占满 max_tokens，tool_calls 为空
-
-    **关闭 reasoning（关键）**：enable_thinking=false。reasoning 模式下 reasoning tokens
-    会占满 max_tokens，导致 content 为空。关闭后响应 <10s，max_tokens=2048 完全够用。
+    2. GLM-5.2 reasoning 模式下 tool_calls 可能不为空，但格式不稳定
 
     prompt 末尾追加 schema 的 JSON 格式说明，GLM 在 content 里输出 JSON，
     用 _parse_raw_response 解析。
@@ -340,8 +349,8 @@ def _direct_glm_tool_call(llm, schema_cls, prompt: str, *, max_retries: int = 1)
                or os.environ.get("EXO_API_KEY")
                or getattr(llm, "openai_api_key", "")
                or "dummy")
-    # 与 _make_llm 一致的超时：默认 240s，可用 FLIPPED_GLM_TIMEOUT 环境变量覆盖。
-    _glm_timeout = float(os.environ.get("FLIPPED_GLM_TIMEOUT", "240"))
+    # M131 质量优先：默认 1800s（30分钟），不人为限制模型推理时间
+    _glm_timeout = float(os.environ.get("FLIPPED_GLM_TIMEOUT", "1800"))
 
     schema_json = schema_cls.model_json_schema()
     # 在 prompt 末尾追加 schema 说明，让 GLM 输出 JSON
@@ -354,21 +363,22 @@ def _direct_glm_tool_call(llm, schema_cls, prompt: str, *, max_retries: int = 1)
     last_err: Exception | None = None
     for attempt in range(max_retries):
         try:
+            req_body = {
+                "model": model,
+                "messages": [{"role": "user", "content": full_prompt}],
+                # M131 质量优先：开启深度推理，reasoning_content 独立字段不占 content 预算
+                "enable_thinking": True,
+                "temperature": 0.1,
+            }
+            # 不传 max_tokens：让模型自然完成，不人为截断
+            # 若环境变量显式设置了则用环境变量值（调试用）
+            _env_max_tokens = os.environ.get("FLIPPED_GLM_MAX_TOKENS")
+            if _env_max_tokens:
+                req_body["max_tokens"] = int(_env_max_tokens)
             r = httpx.post(
                 f"{str(base_url).rstrip('/')}/chat/completions",
                 headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-                json={
-                    "model": model,
-                    "messages": [{"role": "user", "content": full_prompt}],
-                    # enable_thinking=false: 关闭 GLM-5.2 reasoning 模式。
-                    # reasoning 模式下 reasoning tokens 占满 max_tokens，content 为空。
-                    # 关闭后 reasoning_tokens=0，响应 <10s。
-                    # max_tokens=1500: GLM-5.2-fp8 在长输出(>1800 tokens)时会量化退化，
-                    # 尾部输出乱码(\0 0.0 0.0 等)。1500 tokens 足够输出 2-3 个任务的紧凑 JSON，
-                    # 又避免触发退化。planner 的 Roadmap schema 已限制 2-3 任务 + 60 字 description。
-                    "enable_thinking": False,
-                    "max_tokens": int(os.environ.get("FLIPPED_GLM_MAX_TOKENS", "1500")),
-                },
+                json=req_body,
                 timeout=httpx.Timeout(_glm_timeout, connect=10.0),
                 trust_env=False,
             )
@@ -1100,7 +1110,10 @@ def default_overseer(state: OrchestratorState) -> dict:
            "你是专属监督者：评估执行者这一步的【效率】(有无绕路/重复/低产)与【方向】(是否朝目标)。"
            "方向明显跑偏→replan；严重无望/危险→abort；正常→continue。")
     try:
-        v = _invoke_structured(_make_llm("architect", callbacks=[MetricsCallbackHandler()]), Verdict, msg)
+        # M131 模型分工：overseer 用 Kimi-K2.7-Code（监控者），不再复用 architect(GLM-5.2)。
+        # 用户要求：GLM-5.2 作为主模型(架构师/编排者)，K2.7-Code 作为监控和子模型。
+        # Kimi 工具调用快(2.6s)、监控判断快(13.8s)，适合实时监督；GLM-5.2 专注规划。
+        v = _invoke_structured(_make_llm("overseer", callbacks=[MetricsCallbackHandler()]), Verdict, msg)
         verdict = {"efficiency": v.efficiency, "direction": v.direction, "action": v.action,
                    "issues": v.issues, "rationale": v.rationale}
     except Exception as e:  # noqa: BLE001 监督失败 fail-open: 不阻塞，交给强制验证兜底

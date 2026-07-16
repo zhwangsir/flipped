@@ -26,9 +26,15 @@ def _api_key() -> str | None:
 
 def _model_id_for_alias(alias: str) -> str:
     env_map = {
-        # F8 实测:集群当前 LAUNCH 的是 fp8(DQ4plus-q8 无实例 404)——默认对齐现实
+        # M131 模型分工调整：GLM-5.2 为主模型（编排者/架构师），Kimi-K2.7-Code 为执行者/监控者
+        # GLM-5.2：1M 上下文、工具调用快(8s)，适合全局编排和任务分解
+        # Kimi-K2.7-Code：代码生成完整、工具调用更快(4.6s)、中文理解优秀，适合执行和监控
         "architect": os.environ.get("FLIPPED_ARCHITECT_MODEL", "mlx-community/GLM-5.2-fp8"),
         "coder": os.environ.get("FLIPPED_CODER_MODEL", "mlx-community/Kimi-K2.7-Code-4bit"),
+        # M131 新增角色别名
+        "supervisor": os.environ.get("FLIPPED_SUPERVISOR_MODEL", "mlx-community/Kimi-K2.7-Code-4bit"),
+        "overseer": os.environ.get("FLIPPED_OVERSEER_MODEL", "mlx-community/Kimi-K2.7-Code-4bit"),
+        "monitor": os.environ.get("FLIPPED_MONITOR_MODEL", "mlx-community/Kimi-K2.7-Code-4bit"),
     }
     return env_map.get(alias, alias)
 

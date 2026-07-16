@@ -97,6 +97,17 @@ class FactoryState(BaseModel):
     design_context: str = ""
     # M100 — factory 级 RCA 历史聚合(每次 verify 失败触发 RCA 后追加)
     rca_history: list[FactoryRcaEntry] = Field(default_factory=list)
+    # M130 — AgentCLI 集成：worktree 隔离 + Fan-out 模式
+    current_worktree_id: str | None = None
+    cli_enabled: bool = True
+    cli_stats: dict[str, int] = Field(default_factory=lambda: {
+        "worktree_create": 0,
+        "worktree_merge": 0,
+        "worktree_remove": 0,
+        "status_update": 0,
+        "snapshot": 0,
+        "fan_out": 0,
+    })
     created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     updated_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
@@ -208,6 +219,9 @@ CREATE TABLE IF NOT EXISTS factory_states (
     design_style TEXT NOT NULL DEFAULT 'auto',
     design_context TEXT NOT NULL DEFAULT '',
     rca_history_json TEXT NOT NULL DEFAULT '[]',
+    current_worktree_id TEXT,
+    cli_enabled INTEGER NOT NULL DEFAULT 1,
+    cli_stats_json TEXT NOT NULL DEFAULT '{}',
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 )
@@ -225,6 +239,13 @@ def _ensure_table(conn: sqlite3.Connection) -> None:
     # M100 迁移：给旧表加 rca_history_json 列(工厂级 RCA 历史聚合)
     if "rca_history_json" not in cols:
         conn.execute("ALTER TABLE factory_states ADD COLUMN rca_history_json TEXT NOT NULL DEFAULT '[]'")
+    # M130 迁移：给旧表加 cli 相关列
+    if "current_worktree_id" not in cols:
+        conn.execute("ALTER TABLE factory_states ADD COLUMN current_worktree_id TEXT")
+    if "cli_enabled" not in cols:
+        conn.execute("ALTER TABLE factory_states ADD COLUMN cli_enabled INTEGER NOT NULL DEFAULT 1")
+    if "cli_stats_json" not in cols:
+        conn.execute("ALTER TABLE factory_states ADD COLUMN cli_stats_json TEXT NOT NULL DEFAULT '{}'")
 
 
 def _state_to_row(state: FactoryState) -> tuple:
@@ -243,6 +264,9 @@ def _state_to_row(state: FactoryState) -> tuple:
         state.design_style,
         state.design_context,
         json.dumps([r.model_dump() for r in state.rca_history]),
+        state.current_worktree_id,
+        1 if state.cli_enabled else 0,
+        json.dumps(state.cli_stats),
         state.created_at,
         datetime.now(timezone.utc).isoformat(),
     )
@@ -255,6 +279,14 @@ def _row_to_state(row: sqlite3.Row) -> FactoryState:
         rca_history = [FactoryRcaEntry(**r) for r in json.loads(rca_history_raw)]
     except Exception:
         rca_history = []
+    # M130 兼容旧表(无 cli 相关列时使用默认值)
+    current_worktree_id = row["current_worktree_id"] if "current_worktree_id" in row.keys() else None
+    cli_enabled = bool(row["cli_enabled"]) if "cli_enabled" in row.keys() else True
+    cli_stats_raw = row["cli_stats_json"] if "cli_stats_json" in row.keys() else "{}"
+    try:
+        cli_stats = json.loads(cli_stats_raw)
+    except Exception:
+        cli_stats = {"worktree_create": 0, "worktree_merge": 0, "worktree_remove": 0, "status_update": 0, "snapshot": 0, "fan_out": 0}
     return FactoryState(
         factory_id=row["factory_id"],
         product_goal=row["product_goal"],
@@ -270,6 +302,9 @@ def _row_to_state(row: sqlite3.Row) -> FactoryState:
         design_style=row["design_style"],
         design_context=row["design_context"],
         rca_history=rca_history,
+        current_worktree_id=current_worktree_id,
+        cli_enabled=cli_enabled,
+        cli_stats=cli_stats,
         created_at=row["created_at"],
         updated_at=row["updated_at"],
     )
@@ -285,8 +320,9 @@ def save_factory_state(state: FactoryState, db_path: str) -> None:
             INSERT INTO factory_states (
                 factory_id, product_goal, cwd, status, roadmap_json, completed_json,
                 failed_json, current_task_id, context_summary, iteration_count,
-                max_tasks, design_style, design_context, rca_history_json, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                max_tasks, design_style, design_context, rca_history_json,
+                current_worktree_id, cli_enabled, cli_stats_json, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(factory_id) DO UPDATE SET
                 product_goal=excluded.product_goal,
                 cwd=excluded.cwd,
@@ -301,6 +337,9 @@ def save_factory_state(state: FactoryState, db_path: str) -> None:
                 design_style=excluded.design_style,
                 design_context=excluded.design_context,
                 rca_history_json=excluded.rca_history_json,
+                current_worktree_id=excluded.current_worktree_id,
+                cli_enabled=excluded.cli_enabled,
+                cli_stats_json=excluded.cli_stats_json,
                 updated_at=excluded.updated_at
             """,
             _state_to_row(state),
@@ -731,6 +770,7 @@ def run_factory_loop(
     event_bus=None,
     design_fix_fallback: "Callable[[FactoryState], FactoryTask | None] | None" = None,
     feature_fallback: "Callable[[FactoryState], FactoryTask | None] | None" = None,
+    fan_out_mode: bool = False,
 ) -> FactoryState:
     """启动/继续一个工厂循环；状态持久化到 db_path，支持崩溃恢复。
 
@@ -848,6 +888,15 @@ def run_factory_loop(
         save_factory_state(state, db_path)
         _emit(bus, "factory_resumed", {"factory_id": state.factory_id})
 
+    # M130: AgentCLI 集成——工厂循环自驱动 worktree/Fan-out
+    cli = None
+    if state.cli_enabled:
+        try:
+            from driving.agent_cli import AgentCLI
+            cli = AgentCLI(repo_path=cwd)
+        except Exception:
+            pass
+
     try:
         while (
             state.status == FactoryStatus.running
@@ -948,6 +997,19 @@ def run_factory_loop(
                     state.context_summary = (existing + "\n" + warning).strip()
             except Exception:
                 pass
+
+            # M130: CLI 集成——任务开始时创建 worktree + 更新状态
+            if cli is not None:
+                try:
+                    wt_result = cli.worktree_create(task.id)
+                    if wt_result.success and "worktree_id" in wt_result.output:
+                        state.current_worktree_id = wt_result.output["worktree_id"]
+                        state.cli_stats["worktree_create"] = state.cli_stats.get("worktree_create", 0) + 1
+                    cli.status_update(task.id, "active")
+                    state.cli_stats["status_update"] = state.cli_stats.get("status_update", 0) + 1
+                except Exception:
+                    pass
+
             save_factory_state(state, db_path)
             _emit(
                 bus,
@@ -960,16 +1022,47 @@ def run_factory_loop(
                 },
             )
 
-            try:
-                result = orchestrator_fn(task, state)
-            except Exception as e:  # noqa: BLE001
-                result = TaskResult(
-                    task=task,
-                    verified=False,
-                    stop_reason="orchestrator_exception",
-                    iteration=0,
-                    summary=str(e)[:500],
-                )
+            # M130: Fan-out 模式——多 Agent 并行执行 + 质量对比
+            if fan_out_mode and cli is not None:
+                try:
+                    fan_result = cli.fan_out(task.id)
+                    state.cli_stats["fan_out"] = state.cli_stats.get("fan_out", 0) + 1
+                    if fan_result.success and fan_result.output.get("winner"):
+                        winner = fan_result.output["winner"]
+                        result = TaskResult(
+                            task=task,
+                            verified=True,
+                            stop_reason="fan_out_winner",
+                            iteration=0,
+                            summary=f"Fan-out 胜出: {winner.get('agent_id', 'unknown')}, {fan_result.message}",
+                        )
+                    else:
+                        result = TaskResult(
+                            task=task,
+                            verified=False,
+                            stop_reason="fan_out_no_winner",
+                            iteration=0,
+                            summary=fan_result.message,
+                        )
+                except Exception as e:
+                    result = TaskResult(
+                        task=task,
+                        verified=False,
+                        stop_reason="fan_out_exception",
+                        iteration=0,
+                        summary=str(e)[:500],
+                    )
+            else:
+                try:
+                    result = orchestrator_fn(task, state)
+                except Exception as e:  # noqa: BLE001
+                    result = TaskResult(
+                        task=task,
+                        verified=False,
+                        stop_reason="orchestrator_exception",
+                        iteration=0,
+                        summary=str(e)[:500],
+                    )
 
             _emit(
                 bus,
@@ -985,6 +1078,18 @@ def run_factory_loop(
             if result.verified:
                 task.status = TaskStatus.done
                 state.completed.append(result)
+
+                # M130: CLI 集成——任务成功时合并 worktree + 更新状态
+                if cli is not None:
+                    try:
+                        if state.current_worktree_id:
+                            cli.worktree_merge(state.current_worktree_id)
+                            state.cli_stats["worktree_merge"] = state.cli_stats.get("worktree_merge", 0) + 1
+                        cli.status_update(task.id, "finished")
+                        state.cli_stats["status_update"] = state.cli_stats.get("status_update", 0) + 1
+                    except Exception:
+                        pass
+
                 state.context_summary += (
                     f"\n[{task.id}] {task.description}: done. artifacts={task.artifacts}"
                 )
@@ -1021,6 +1126,14 @@ def run_factory_loop(
                 except Exception:
                     pass
             else:
+                # M130: CLI 集成——任务失败时更新状态
+                if cli is not None:
+                    try:
+                        cli.status_update(task.id, "failed")
+                        state.cli_stats["status_update"] = state.cli_stats.get("status_update", 0) + 1
+                    except Exception:
+                        pass
+
                 # M16: infra_failure 优雅暂停——集群不可用(ConnectTimeout/worker_error)
                 # 时立即暂停，不消耗重试次数。重试集群故障毫无意义，只会烧光 attempts → paused。
                 if _is_infra_failure(result.stop_reason, result.summary):
@@ -1129,6 +1242,15 @@ def run_factory_loop(
                         f"上次尝试失败({result.stop_reason}): {result.summary}"
                     )
                 task.status = TaskStatus.pending
+
+            # M130: CLI 集成——任务结束后清理 worktree
+            if cli is not None and state.current_worktree_id:
+                try:
+                    cli.worktree_remove(state.current_worktree_id)
+                    state.cli_stats["worktree_remove"] = state.cli_stats.get("worktree_remove", 0) + 1
+                except Exception:
+                    pass
+                state.current_worktree_id = None
 
             state.current_task_id = None
             save_factory_state(state, db_path)

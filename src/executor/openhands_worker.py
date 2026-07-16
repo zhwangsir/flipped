@@ -94,12 +94,13 @@ class OpenHandsWorker:
         self.api_key = api_key or self._default_agent_api_key()
         self.tools = tools or self.DEFAULT_TOOLS
         self.mcp_config = mcp_config or {}
-        # F8 实测经验:两个可调旋钮。长任务(2h 连续开发)实测 600s 不够，默认提到 1200s；
-        # 卡死类子任务达迭代上限后由 orchestrator 分类回灌重拆——上限越小止损越快,
-        # 但太小会截断正常长任务。
+        # M131 质量优先（用户要求：不追求速度，只追求质量和完整）：
+        # - timeout 默认 3600s（1小时），给复杂任务充足时间
+        # - max_iterations 默认 200，让 agent 有足够迭代空间完成复杂任务
+        # - Kimi overseer 在外层监控，防真卡死（不靠 timeout 硬截断）
         self.timeout = timeout if timeout is not None else float(
-            os.environ.get("FLIPPED_WORKER_TIMEOUT", "1200"))
-        self.max_iterations = int(os.environ.get("FLIPPED_WORKER_MAX_ITERATIONS", "50"))
+            os.environ.get("FLIPPED_WORKER_TIMEOUT", "3600"))
+        self.max_iterations = int(os.environ.get("FLIPPED_WORKER_MAX_ITERATIONS", "200"))
         # F8 实测缺陷:orchestrator 模式下 worker 一跑完就把会话状态设 done,
         # 覆盖了还在继续的外层循环(overseer/verify/下一轮)。False=子任务模式,不碰会话状态。
         self.manage_session_status = manage_session_status
@@ -234,19 +235,20 @@ class OpenHandsWorker:
                 model=model_name,
                 base_url=self.base_url,
                 api_key=llm_api_key,
-                timeout=600,
+                # M131 质量优先：不限制超时（用户要求不追求速度，只追求质量和完整）
+                # 1800s（30分钟）作为极端兜底防无限挂起；Kimi overseer 在外层监控防真卡死
+                timeout=int(os.environ.get("FLIPPED_WORKER_LLM_TIMEOUT", "1800")),
                 num_retries=2,
                 drop_params=True,
                 native_tool_calling=True,
-                # M89 关键修复:
-                # 1) OpenHands LLM 类用 litellm_extra_body(不是 extra_body),后者被 Pydantic 静默忽略
-                # 2) reasoning_effort="none" 尽量减少 reasoning(Kimi 是 reasoning 模型无法完全关闭)
-                # 3) max_output_tokens=8000 让 Kimi 的 reasoning(约 75-500 tokens)+ content 都能放下
-                reasoning_effort="none",
-                max_output_tokens=8000,
+                # M131 质量优先配置（用户要求：不追求速度，只追求质量和完整）：
+                # - 开启 reasoning（enable_thinking=True）：深度推理显著提升代码质量
+                #   测试证明：Kimi json_parser 从 reasoning OFF 的 0% → reasoning ON 的 100%
+                # - 不限制 max_output_tokens：让模型自然完成，不人为截断
+                # - Kimi overseer 在外层监控，防卡死
                 litellm_extra_body={
-                    "enable_thinking": False,
-                    "chat_template_kwargs": {"enable_thinking": False},
+                    "enable_thinking": True,
+                    "chat_template_kwargs": {"enable_thinking": True},
                 },
             )
             agent_kwargs: dict[str, Any] = dict(

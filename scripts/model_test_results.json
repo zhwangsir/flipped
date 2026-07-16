@@ -1,0 +1,228 @@
+{
+  "GLM-5.2": {
+    "tests": [
+      {
+        "name": "qa",
+        "desc": "简单问答",
+        "passed": true,
+        "score": 1.0,
+        "latency": 2.293787956237793,
+        "details": "OK",
+        "tokens": {
+          "prompt": 20,
+          "completion": 3,
+          "reasoning": 0
+        },
+        "reasoning_ratio": 0.0,
+        "content_preview": "391",
+        "tool_calls": []
+      },
+      {
+        "name": "code",
+        "desc": "代码生成",
+        "passed": true,
+        "score": 2.0,
+        "latency": 24.098814964294434,
+        "details": "OK",
+        "tokens": {
+          "prompt": 35,
+          "completion": 147,
+          "reasoning": 0
+        },
+        "reasoning_ratio": 0.0,
+        "content_preview": "```python\ndef fib(n: int) -> int:\n    \"\"\"Return the nth Fibonacci number.\n    \n    Args:\n        n: The index of the Fibonacci number to return (0-bas",
+        "tool_calls": []
+      },
+      {
+        "name": "tool",
+        "desc": "工具调用",
+        "passed": true,
+        "score": 1.5,
+        "latency": 5.007030010223389,
+        "details": "OK",
+        "tokens": {
+          "prompt": 169,
+          "completion": 18,
+          "reasoning": 0
+        },
+        "reasoning_ratio": 0.0,
+        "content_preview": "",
+        "tool_calls": [
+          {
+            "id": "3bd63a08-b63b-4235-8b67-260f8caea1dd",
+            "index": 0,
+            "type": "function",
+            "function": {
+              "id": "3bd63a08-b63b-4235-8b67-260f8caea1dd",
+              "name": "web_search",
+              "arguments": "{\"query\": \"Python 3.13 release notes latest\"}"
+            }
+          }
+        ]
+      },
+      {
+        "name": "chinese",
+        "desc": "中文理解",
+        "passed": true,
+        "score": 1.0,
+        "latency": 94.55979585647583,
+        "details": "OK",
+        "tokens": {
+          "prompt": 24,
+          "completion": 612,
+          "reasoning": 0
+        },
+        "reasoning_ratio": 0.0,
+        "content_preview": "简单来说，**闭包** 是指一个函数能够“记住”并访问它被创建时的词法作用域（即它外部的变量），即使这个函数在该作用域之外被执行，依然可以访问那些变量。\n\n你可以把闭包想象成一个背着“背包”的函数。当内部函数被创建时，它会悄悄地把外部函数的变量打包放进自己的“背包”里。无论这个内部函数走到哪里（被传",
+        "tool_calls": []
+      },
+      {
+        "name": "architect",
+        "desc": "架构规划",
+        "passed": true,
+        "score": 2.0,
+        "latency": 59.08114409446716,
+        "details": "OK",
+        "tokens": {
+          "prompt": 38,
+          "completion": 377,
+          "reasoning": 0
+        },
+        "reasoning_ratio": 0.0,
+        "content_preview": "**Architecture Overview**\nAn event-driven, API Gateway-based microservices architecture.\n\n**Key Services & Responsibilities**\n*   **API Gateway:** Sin",
+        "tool_calls": []
+      },
+      {
+        "name": "long_ctx",
+        "desc": "长上下文",
+        "passed": false,
+        "score": 0.0,
+        "latency": 10.44832992553711,
+        "details": "missing: •",
+        "tokens": {
+          "prompt": 1267,
+          "completion": 34,
+          "reasoning": 0
+        },
+        "reasoning_ratio": 0.0,
+        "content_preview": "* Point 1: Lorem ipsum dolor sit amet.\n* Point 2: Lorem ipsum dolor sit amet.\n* Point 3: Lorem ipsum dolor sit amet.",
+        "tool_calls": []
+      }
+    ],
+    "total_score": 7.5,
+    "max_score": 8.5
+  },
+  "Kimi-K2.7-Code": {
+    "tests": [
+      {
+        "name": "qa",
+        "desc": "简单问答",
+        "passed": true,
+        "score": 1.0,
+        "latency": 3.925060987472534,
+        "details": "OK",
+        "tokens": {
+          "prompt": 22,
+          "completion": 37,
+          "reasoning": 0
+        },
+        "reasoning_ratio": 0.0,
+        "content_preview": "391",
+        "tool_calls": []
+      },
+      {
+        "name": "code",
+        "desc": "代码生成",
+        "passed": true,
+        "score": 2.0,
+        "latency": 12.010658025741577,
+        "details": "OK",
+        "tokens": {
+          "prompt": 38,
+          "completion": 324,
+          "reasoning": 0
+        },
+        "reasoning_ratio": 0.0,
+        "content_preview": "```python\ndef fib(n: int) -> int:\n    \"\"\"Return the nth Fibonacci number.\n\n    Args:\n        n: A non-negative integer index.\n\n    Returns:\n        Th",
+        "tool_calls": []
+      },
+      {
+        "name": "tool",
+        "desc": "工具调用",
+        "passed": true,
+        "score": 1.5,
+        "latency": 2.6151747703552246,
+        "details": "OK",
+        "tokens": {
+          "prompt": 66,
+          "completion": 56,
+          "reasoning": 0
+        },
+        "reasoning_ratio": 0.0,
+        "content_preview": "",
+        "tool_calls": [
+          {
+            "id": "functions.web_search:0",
+            "index": 0,
+            "type": "function",
+            "function": {
+              "id": "functions.web_search:0",
+              "name": "web_search",
+              "arguments": "{\"query\": \"Python 3.13 release notes latest\"}"
+            }
+          }
+        ]
+      },
+      {
+        "name": "chinese",
+        "desc": "中文理解",
+        "passed": true,
+        "score": 1.0,
+        "latency": 13.826885223388672,
+        "details": "OK",
+        "tokens": {
+          "prompt": 27,
+          "completion": 373,
+          "reasoning": 0
+        },
+        "reasoning_ratio": 0.0,
+        "content_preview": "**闭包（Closure）** 是指一个函数能够“记住”并访问它**词法作用域**（lexical scope）中的变量，即使这个外部函数已经执行完毕并返回。\n\n换句话说：当一个内部函数引用了外部函数的变量，并且这个内部函数被传递到外部使用（比如作为返回值、回调等），就形成了一个闭包。闭包让这些变量",
+        "tool_calls": []
+      },
+      {
+        "name": "architect",
+        "desc": "架构规划",
+        "passed": true,
+        "score": 2.0,
+        "latency": 40.49806523323059,
+        "details": "OK",
+        "tokens": {
+          "prompt": 40,
+          "completion": 1128,
+          "reasoning": 0
+        },
+        "reasoning_ratio": 0.0,
+        "content_preview": "E-commerce microservices platform uses an **API Gateway** as the unified entry point, handling authentication, SSL termination, routing, and rate limi",
+        "tool_calls": []
+      },
+      {
+        "name": "long_ctx",
+        "desc": "长上下文",
+        "passed": false,
+        "score": 0.0,
+        "latency": 12.659294366836548,
+        "details": "missing: •",
+        "tokens": {
+          "prompt": 2068,
+          "completion": 199,
+          "reasoning": 0
+        },
+        "reasoning_ratio": 0.0,
+        "content_preview": "- The document consists of ten numbered points (Point 1 through Point 10).\n- Each point contains repeated placeholder text (“Lorem ipsum dolor sit ame",
+        "tool_calls": []
+      }
+    ],
+    "total_score": 7.5,
+    "max_score": 8.5
+  }
+}
