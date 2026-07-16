@@ -18,7 +18,7 @@ function FileTreeNode({ node, depth, activePath, onOpen }: {
   if (node.type === 'dir') {
     return (
       <>
-        <button className="ft-row ft-dir" style={{ paddingLeft: pad }} onClick={() => setOpen((o) => !o)}>
+        <button className="ft-row ft-dir" style={{ paddingLeft: pad }} aria-expanded={open} onClick={() => setOpen((o) => !o)}>
           <span className={'ft-chev' + (open ? ' open' : '')}><IconChevronDown size={11} /></span>
           <IconFolder size={13} />
           <span className="ft-name">{node.name}</span>
@@ -430,7 +430,7 @@ export function ContextPanel() {
                           </button>
                         </div>
                         {commentLine === ln && (
-                          <div className="line-comment">
+                          <div className="line-comment" role="dialog" aria-label={`第 ${ln} 行评论`}>
                             <div className="line-comment-ref">{fileLabel}:{ln}</div>
                             <textarea
                               value={commentText}

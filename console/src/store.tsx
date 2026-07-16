@@ -171,7 +171,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [activeView, setActiveView] = useState('agent');
   const [contextTab, setContextTab] = useState<ContextTab>('files');
   const [sidebarTab, setSidebarTab] = useState<SidebarTab>('chats');
-  const [showContext, setShowContext] = useState(false);
+  const [showContext, setShowContext] = useState(true);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);

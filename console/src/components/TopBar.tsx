@@ -67,7 +67,8 @@ export function TopBar() {
       <span
         className={"topbar-conn dot " + connection}
         title={"WebSocket " + (CONN_LABEL[connection] || connection)}
-        aria-label={"WebSocket " + (CONN_LABEL[connection] || connection)}
+        role="status"
+        aria-label={"连接状态: " + (CONN_LABEL[connection] || connection)}
       />
       <button
         className="icon-btn ghost"

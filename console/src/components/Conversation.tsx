@@ -41,7 +41,7 @@ function StatusBanner({ status, progress }: { status: string | null; progress: n
   const isReview = status === 'review';
   const isError = status === 'error';
   return (
-    <div className={'status-banner ' + status} data-testid='status-banner'>
+    <div className={'status-banner ' + status} data-testid='status-banner' role='status' aria-live='polite'>
       <span className='sb-icon'>
         {isDone && <IconCheckCircle size={14} />}
         {isReview && <IconCircleAlert size={14} />}
@@ -66,7 +66,7 @@ function StatusBanner({ status, progress }: { status: string | null; progress: n
 function ErrorBanner({ message }: { message: string | null }) {
   if (!message) return null;
   return (
-    <div className='error-banner' data-testid='error-banner'>
+    <div className='error-banner' data-testid='error-banner' role='alert'>
       <IconCircleAlert size={14} />
       <span>{message}</span>
     </div>
@@ -80,7 +80,7 @@ function ApprovalCard({ info, onApprove, onReject, busy }: {
   busy: boolean;
 }) {
   return (
-    <div className='approval-card' data-testid='approval-card'>
+    <div className='approval-card' data-testid='approval-card' role='dialog' aria-modal='true' aria-label='任务审批'>
       <div className='approval-head'>
         <IconShield size={16} />
         <span className='approval-title'>人工审批请求</span>
@@ -198,6 +198,7 @@ function ToolRow({ tool }: { tool: ToolCall }) {
       <button
         type='button'
         className='tool-head'
+        aria-expanded={hasBody ? open : undefined}
         onClick={() => hasBody && setOpen((o) => !o)}
         disabled={!hasBody}
       >
@@ -370,14 +371,22 @@ export function Conversation() {
     }
   };
 
-  const handleApprove = () => {
+  const handleApprove = async () => {
     setApprovalBusy(true);
-    sendApproval('approve');
+    try {
+      await Promise.resolve(sendApproval('approve'));
+    } finally {
+      setApprovalBusy(false);
+    }
   };
 
-  const handleReject = () => {
+  const handleReject = async () => {
     setApprovalBusy(true);
-    sendApproval('reject');
+    try {
+      await Promise.resolve(sendApproval('reject'));
+    } finally {
+      setApprovalBusy(false);
+    }
   };
 
   const disabled = busy || approvalPending !== null;
@@ -409,12 +418,14 @@ export function Conversation() {
       <div className='composer'>
         <div className={'composer-box ' + (disabled ? 'disabled' : '')}>
           {mention !== null && mentionMatches.length > 0 && (
-            <div className='mention-menu'>
+            <div className='mention-menu' role='listbox'>
               <div className='mention-label'>项目文件</div>
               {mentionMatches.map((f, i) => (
                 <button
                   key={f}
                   className={'mention-item mono' + (i === mentionSel ? ' active' : '')}
+                  role='option'
+                  aria-selected={i === mentionSel}
                   onMouseMove={() => setMentionSel(i)}
                   onClick={() => pickMention(f)}
                 >
@@ -428,6 +439,7 @@ export function Conversation() {
             data-testid='composer-input'
             rows={2}
             placeholder='描述你想构建的东西，或问任何问题…'
+            aria-label='输入消息'
             value={text}
             disabled={disabled}
             onChange={(e) => onComposerChange(e.target.value, e.target.selectionStart)}
@@ -486,8 +498,9 @@ export function Conversation() {
                     <span className='pm-sub'>设定持续目标</span>
                   </button>
                   <button
-                    className='plus-menu-item'
+                    className={'plus-menu-item' + (selectedMode === 'plan' ? ' active' : '')}
                     role='menuitem'
+                    aria-pressed={selectedMode === 'plan'}
                     onClick={() => {
                       setMode('plan');
                       setPlusOpen(false);
@@ -510,7 +523,7 @@ export function Conversation() {
             </button>
             <span className='spacer' />
             {sessionStatus === 'running' && (
-              <button className='cbar-stop' onClick={() => cancelTask()} title='停止'>
+              <button className='cbar-stop' onClick={() => cancelTask()} disabled={busy} title='停止'>
                 <IconX size={13} /> 停止
               </button>
             )}

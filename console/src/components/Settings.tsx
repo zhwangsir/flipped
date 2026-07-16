@@ -14,7 +14,6 @@ import {
   IconArchive,
   IconShield,
   IconCheck,
-  IconChevronDown,
 } from '../icons';
 
 type NavId = 'general' | 'appearance' | 'config' | 'shortcuts' | 'mcp' | 'browser' | 'git' | 'archived';
@@ -85,6 +84,8 @@ export function Settings() {
   const { theme, toggle } = useTheme();
   const [nav, setNav] = useState<NavId>('general');
   const [workMode, setWorkMode] = useState(() => readPref('workmode', 'coding'));
+  const [fileOpenTarget, setFileOpenTarget] = useState(() => readPref('file-open-target', 'editor'));
+  const [language, setLanguage] = useState(() => readPref('language', 'auto'));
   const [perm, setPerm] = useState(() => ({
     def: readPref('perm-def', '1') === '1',
     auto: readPref('perm-auto', '1') === '1',
@@ -171,11 +172,33 @@ export function Settings() {
               <div className="set-rows">
                 <div className="set-row">
                   <div className="set-row-text"><b>默认文件打开目标</b><span>默认打开文件和文件夹的位置</span></div>
-                  <span className="set-select"><IconCode size={13} /> VS Code <IconChevronDown size={12} /></span>
+                  <select
+                    className="set-select set-select-native"
+                    value={fileOpenTarget}
+                    onChange={(e) => {
+                      setFileOpenTarget(e.target.value);
+                      writePref('file-open-target', e.target.value);
+                    }}
+                  >
+                    <option value="editor">编辑器</option>
+                    <option value="preview">预览</option>
+                    <option value="split">分屏</option>
+                  </select>
                 </div>
                 <div className="set-row">
                   <div className="set-row-text"><b>语言</b><span>应用 UI 语言</span></div>
-                  <span className="set-select">自动检测 <IconChevronDown size={12} /></span>
+                  <select
+                    className="set-select set-select-native"
+                    value={language}
+                    onChange={(e) => {
+                      setLanguage(e.target.value);
+                      writePref('language', e.target.value);
+                    }}
+                  >
+                    <option value="auto">自动检测</option>
+                    <option value="zh-CN">简体中文</option>
+                    <option value="en">English</option>
+                  </select>
                 </div>
               </div>
             </section>
@@ -281,7 +304,7 @@ export function Settings() {
               <div className="set-row">
                 <span className="set-row-ic"><IconShield size={15} /></span>
                 <div className="set-row-text"><b>渲染引擎</b><span>Playwright / Chromium(本地缓存)</span></div>
-                <span className="set-badge">已就绪</span>
+                <span className="set-badge ok"><IconCheck size={11} /> 已启用</span>
               </div>
             </section>
           </>
@@ -295,7 +318,7 @@ export function Settings() {
               <div className="set-row">
                 <span className="set-row-ic"><IconGit size={15} /></span>
                 <div className="set-row-text"><b>差异视图</b><span>git diff HEAD · Codex 配色</span></div>
-                <span className="set-badge">启用</span>
+                <span className="set-badge ok"><IconCheck size={11} /> 已启用</span>
               </div>
             </section>
           </>

@@ -104,7 +104,15 @@ export function Sidebar() {
     <div
       key={s.id}
       className={"thread" + (s.id === selectedSessionId ? " active" : "")}
+      role="button"
+      tabIndex={0}
       onClick={() => selectSession(s.id)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          selectSession(s.id);
+        }
+      }}
     >
       <span className={"dot " + s.status} />
       <span className="thread-title">{s.title}</span>
@@ -115,7 +123,7 @@ export function Sidebar() {
           e.stopPropagation();
           deleteSession(s.id);
         }}
-        aria-label="删除会话"
+        aria-label="删除对话"
       >
         <IconX size={11} />
       </button>
@@ -134,6 +142,7 @@ export function Sidebar() {
         >
           <button
             className="side-project-main"
+            aria-expanded={open}
             onClick={() => {
               if (g.host && !isActive) openProject(g.host).catch(() => {});
               toggleCollapse(g.name);
@@ -161,13 +170,21 @@ export function Sidebar() {
               className="side-proj-act"
               title="更多"
               aria-haspopup="menu"
+              aria-expanded={menuFor === g.name}
               onClick={() => setMenuFor((m) => (m === g.name ? null : g.name))}
             >
               <IconMore size={15} />
             </button>
             {menuFor === g.name && (
               <div className="proj-menu" role="menu">
-                <button className="proj-menu-item" onClick={() => setMenuFor(null)}>
+                <button
+                  className="proj-menu-item"
+                  onClick={() => {
+                    setMenuFor(null);
+                    // TODO: 接入 store 的置顶项目方法（目前 store 无对应 API）
+                    console.log("[proj-menu] 置顶项目", g.name);
+                  }}
+                >
                   <IconPin size={14} /> 置顶项目
                 </button>
                 <button
@@ -180,16 +197,50 @@ export function Sidebar() {
                 >
                   <IconFolder size={14} /> 在 Finder 中显示
                 </button>
-                <button className="proj-menu-item" onClick={() => setMenuFor(null)}>
+                <button
+                  className="proj-menu-item"
+                  onClick={() => {
+                    setMenuFor(null);
+                    // TODO: 接入工作树创建流程（需要 git worktree add 命令支持）
+                    console.log("[proj-menu] 创建永久工作树", g.name);
+                  }}
+                >
                   <IconGit size={14} /> 创建永久工作树
                 </button>
-                <button className="proj-menu-item" onClick={() => setMenuFor(null)}>
+                <button
+                  className="proj-menu-item"
+                  onClick={() => {
+                    const next = window.prompt("重命名项目", g.name);
+                    if (next && next.trim() && next.trim() !== g.name) {
+                      // TODO: 接入 store 的 renameProject 方法（目前 store 无对应 API）
+                      console.log("[proj-menu] 重命名项目", g.name, "→", next.trim());
+                    }
+                    setMenuFor(null);
+                  }}
+                >
                   <IconEdit size={14} /> 重命名项目
                 </button>
-                <button className="proj-menu-item" onClick={() => setMenuFor(null)}>
+                <button
+                  className="proj-menu-item"
+                  onClick={() => {
+                    if (window.confirm(`归档「${g.name}」下的对话并新建一个会话？`)) {
+                      createSession("新对话").catch(() => {});
+                    }
+                    setMenuFor(null);
+                  }}
+                >
                   <IconArchive size={14} /> 归档对话
                 </button>
-                <button className="proj-menu-item danger" onClick={() => setMenuFor(null)}>
+                <button
+                  className="proj-menu-item danger"
+                  onClick={() => {
+                    if (window.confirm(`确定移除项目「${g.name}」？（不会删除磁盘文件）`)) {
+                      // TODO: 接入 store 的 removeProject 方法（目前 store 无对应 API）
+                      console.log("[proj-menu] 移除项目", g.name);
+                    }
+                    setMenuFor(null);
+                  }}
+                >
                   <IconX size={14} /> 移除
                 </button>
               </div>
@@ -281,7 +332,13 @@ export function Sidebar() {
             </div>
           </>
         ) : (
-          <div className="side-empty tall">暂无已安排任务</div>
+          <div className="side-empty tall scheduled-empty">
+            <span className="scheduled-empty-icon">
+              <IconClock size={22} />
+            </span>
+            <span className="scheduled-empty-title">暂无已安排任务</span>
+            <span className="scheduled-empty-hint">在此处规划的任务将自动出现在这里</span>
+          </div>
         )}
       </div>
 
