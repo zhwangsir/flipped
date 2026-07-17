@@ -2959,3 +2959,29 @@ A 崩溃恢复（事件日志+幂等键）/ D ToolResult 结构化错误 / E 五
 - `pytest tests/`：**1513 passed, 3 failed** —— 仅 `test_factory_visual_regression.py` ×3（本地渲染服务未启动的环境依赖，干净 HEAD 上同样失败，先存缺陷，与 M136 无关）
 - `npx vitest run`：**57/57 passed**（6 文件，含 waitFor 9 单测 + 终端集成 3 用例）
 - `npx tsc --noEmit`：0 错误；`npm run build`：✓ built in 519ms
+
+---
+
+## M137 · SQLite 八库合并（2026-07-18）
+
+### 范围
+8 个默认 db 路径（factory / factory_checkpoints / checkpoints / delegate_checkpoints / failures / gold_memory / skills / infinite_loop）收敛为单一 `data/flipped.db`（env `FLIPPED_DB` 可覆盖）。三个并行流：W1 知识库 7 模块 / W2 saver+factory+api / W3 迁移脚本+测试。
+
+### 实现
+1. **统一入口** [db.py](src/driving/db.py)：`default_db_path()`（FLIPPED_DB env）+ `connect()`（WAL + busy_timeout=5000 + synchronous=NORMAL + temp_store=MEMORY + mmap 256MB，:memory: 跳 WAL，全 fail-open）。
+2. **W1**（failure_kb/repair_kb/gold_memory/rca/skill_registry/skill_evolution/skill_recommender）：默认值 `str = "data/xxx.db"` → `str | None = None` + 函数体收敛；`sqlite3.connect` → `connect()`。零 SQL/业务改动。
+3. **W2**（factory_loop/orchestrator/stuck_detector/infinite_loop/api main+factory）：saver 默认路径同样收敛；`FLIPPED_CHECKPOINT_DB`/`FLIPPED_FACTORY_DB` 专用 env 保留优先、fallback 到 FLIPPED_DB。thread_id 命名空间**保守未改取值**——盘点确认 `sess-*`（API会话）/ `factory-*-task-*` / `delegate-*` 三前缀天然互不重叠，共享 checkpoints/writes 表无冲突。infinite_loop per-round 派生库删除（factory_states 按 factory_id 主键隔离成立）。
+4. **W3** [migrate_db_merge.py](scripts/migrate_db_merge.py)：ATTACH → 取旧库建表 SQL（规范化补 IF NOT EXISTS）→ `INSERT OR IGNORE`（靠原表约束幂等）→ 行数校验 → 旧库连带 -wal/-shm 改名 `.bak-YYYYMMDD`；`--dry-run` 只读打印计划；schema 列不一致退化公共列合并；单库失败继续、退出码汇总。
+
+### 顺手修复的真实 bug
+- [failure_kb.py](src/driving/failure_kb.py) `get_all_failures` 调用本模块从未定义的 `_get_conn` → 恒返回 `[]`（`run_clustering_analysis` 因此恒无数据）。改用统一 `connect()` + row_factory，行为恢复。
+
+### 验证（实跑输出）
+- 定向：W1 知识库 101 passed + 周边 61 passed；W2 factory/orchestrator/stuck/infinite/api 121 passed + 18 文件 162 passed；W3 `test_db_merge.py` **5/5**（roundtrip / 幂等不翻倍 / 三 saver 共库 thread 隔离 / dry-run 无副作用 / .bak 改名含边车）
+- grep 审计：src/ 旧默认路径**零残留**
+- 全量 `pytest tests/`：**1518 passed, 3 failed**（仍仅先存环境依赖 test_factory_visual_regression×3）；`vitest` exit 0（57 用例，console 零改动）
+- **真实迁移实跑**：`migrate_db_merge.py` 对 data/ 迁移 **3164 行**（factory_states 13 / checkpoints 146 / writes 798 / failures 327 / gold_memory 1849→去重累计 1893 / skills 31；factory_events 旧库缺表正确跳过），5 旧库全部 `.bak-20260718`，`data/` 仅剩 `flipped.db`。迁移后 m10/db_merge/factory_loop/event_log 48 用例复测全绿。
+
+### 已知遗留
+- `tests/test_m10_integration.py` 硬编码 `data/gold_memory.db`（显式传参隔离，非默认路径）——运行时会在 data/ 重建该文件，功能无碍，后续可改 tmp 路径。
+- `run_factory_loop` 的 `checkpoint_db_path` 形参是死参（函数体未使用，真正写 checkpoint 在 orchestrator_fn 内）——保留签名兼容，后续里程碑可清理。

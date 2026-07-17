@@ -23,6 +23,7 @@ from typing import Any
 
 from driving.factory_loop import FactoryTask, FactoryState, TaskResult
 from driving.orchestrator import drive_orchestrated
+from driving.db import default_db_path
 
 
 @dataclass
@@ -131,6 +132,8 @@ def delegate_orchestrator(
     import uuid
 
     # 独立 thread_id，让子 Agent 有干净上下文（不复用主 Agent 的 checkpoint）
+    # M137：checkpoint 库已收敛为统一库，delegate 隔离由 "delegate-*" thread_id
+    # 命名空间承担（共享 checkpoints/writes 表，按 thread_id 过滤）。
     delegate_thread = f"delegate-{state.factory_id}-{task.id}-{uuid.uuid4().hex[:6]}"
 
     # 把所有失败原因拼接成 feedback
@@ -155,7 +158,7 @@ def delegate_orchestrator(
             f"{feedback}"
         ),
         max_iterations=4,
-        db_path="data/delegate_checkpoints.db",
+        db_path=default_db_path(),  # M137：统一库；隔离靠上面的 delegate-* thread_id
         thread_id=delegate_thread,
     )
     return TaskResult(

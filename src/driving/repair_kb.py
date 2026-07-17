@@ -17,6 +17,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from driving.auto_repair import RepairResult, RepairStrategy, RepairAction
+from driving.db import default_db_path
 from driving.errors import ErrorRecord, classify_exception
 
 
@@ -55,13 +56,14 @@ def save_repair_knowledge(
     task_description: str,
     repair_result: RepairResult,
     *,
-    db_path: str = "data/failures.db",
+    db_path: str | None = None,
 ) -> RepairKnowledge | None:
     """将修复结果沉淀到 failure_kb。
 
     成功的修复标记为 resolved + resolution；
     失败的修复标记为未解决，供后续任务规避。
     """
+    db_path = db_path or default_db_path()
     try:
         from driving.failure_kb import record_failure
 
@@ -119,7 +121,7 @@ def save_repair_knowledge(
 def get_repair_warnings(
     task_description: str,
     *,
-    db_path: str = "data/failures.db",
+    db_path: str | None = None,
     max_warnings: int = 5,
 ) -> list[dict[str, Any]]:
     """检索历史修复知识，返回预警列表。
@@ -136,6 +138,7 @@ def get_repair_warnings(
         ...
     ]
     """
+    db_path = db_path or default_db_path()
     try:
         from driving.failure_kb import query_similar_failures
 
@@ -167,10 +170,11 @@ def get_repair_warnings(
 def build_repair_warning_text(
     task_description: str,
     *,
-    db_path: str = "data/failures.db",
+    db_path: str | None = None,
     max_warnings: int = 3,
 ) -> str:
     """生成可注入到任务上下文的修复预警文本。"""
+    db_path = db_path or default_db_path()
     try:
         warnings = get_repair_warnings(
             task_description, db_path=db_path, max_warnings=max_warnings
@@ -217,8 +221,9 @@ class RepairKBStats:
         }
 
 
-def get_repair_kb_stats(*, db_path: str = "data/failures.db") -> RepairKBStats:
+def get_repair_kb_stats(*, db_path: str | None = None) -> RepairKBStats:
     """获取修复知识库统计。"""
+    db_path = db_path or default_db_path()
     try:
         from driving.failure_kb import get_failure_stats
 

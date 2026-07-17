@@ -64,3 +64,6 @@ desktop/release/
 
 # M7.3 MCP 运行时开关状态(首次运行自动生成种子)
 config/mcp_servers.json
+
+# M137 迁移备份(二进制, 不入库)
+data/*.bak-*

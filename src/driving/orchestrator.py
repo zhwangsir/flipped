@@ -20,6 +20,7 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.types import interrupt
 
 from driving.approval import APPROVE_WORDS, classify_risk
+from driving.db import default_db_path
 from driving.observe import run_and_observe
 from driving.sidecar import action_signature
 from metrics import MetricsCallbackHandler
@@ -1457,7 +1458,7 @@ def drive_orchestrated(goal: str, cwd: str, verify_cmd: list, *,
         return result
 
 
-def resume_orchestrated(thread_id: str, db_path: str = "data/checkpoints.db", *,
+def resume_orchestrated(thread_id: str, db_path: str | None = None, *,
                         supervisor: SupervisorFn = default_supervisor,
                         worker: WorkerFn = default_worker,
                         overseer: OverseerFn = default_overseer,
@@ -1469,8 +1470,13 @@ def resume_orchestrated(thread_id: str, db_path: str = "data/checkpoints.db", *,
 
     适用于：orchestration-api 崩溃重启后，扫描到 `status=running` 的会话，
     从持久化的 SqliteSaver 断点续跑。
+
+    thread_id 命名空间约定（M137 统一库后各 saver 共享 checkpoints/writes 表，靠前缀隔离）：
+    API 会话 "sess-*"、factory 任务 "factory-{id}-task-{id}"、delegate "delegate-*"。
     """
     from langgraph.checkpoint.sqlite import SqliteSaver
+
+    db_path = db_path or default_db_path()  # M137：默认统一库（env FLIPPED_DB 可覆盖）
 
     with SqliteSaver.from_conn_string(db_path) as cp:
         # 先确认数据库里真的有该 thread 的 checkpoint，避免 LangGraph 把空状态当成新 run

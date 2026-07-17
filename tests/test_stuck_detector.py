@@ -9,6 +9,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from driving.stuck_detector import StuckDetector, StuckSignal, delegate_orchestrator
 from driving.factory_loop import FactoryTask, FactoryState, TaskResult
+from driving.db import default_db_path
 
 
 def test_no_iterations_not_stuck():
@@ -100,8 +101,9 @@ def test_delegate_orchestrator_uses_independent_thread():
         assert "[delegate]" in result.summary
         # 验证 thread_id 是 delegate-* 前缀（独立于主 Agent）
         assert called["thread_id"].startswith("delegate-f1-t1-")
-        # 验证 db_path 也是独立的
-        assert "delegate_checkpoints" in called["db_path"]
+        # M137：checkpoint 库已收敛为统一库，delegate 隔离改由 delegate-* thread_id
+        # 命名空间保证（上文已断言），db_path 应指向统一库
+        assert called["db_path"] == default_db_path()
     finally:
         sd.drive_orchestrated = orig
 

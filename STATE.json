@@ -2,7 +2,7 @@
  "project": "flipped",
  "description": "接入本地 MLX 双模型(GLM-5.2 编排者 / Kimi-K2.7-Code 执行者)的 agentic 代码编辑器平台。fork Roo Code + 自定义驾驭层(强制验证/循环检测/上下文压缩/人工审批/子Agent/可观测性) + MCP 联网与外部能力。",
  "updated": "2026-07-18",
- "current_milestone": "M136 完成(A/B/C/D/E) · 崩溃恢复事件日志+幂等键 / ToolResult 结构化错误 / 五级权限管线 / OpenAPI 快照漂移治理 + WS ack + 零依赖 TS 契约生成 / 终端数据通路事件驱动测试。下一步 M137: SQLite 八库合并",
+ "current_milestone": "M137 完成 · SQLite 八库合并为单一 data/flipped.db(统一 db.py 入口 + WAL/busy_timeout 治理 + 迁移脚本 3164 行实迁 + .bak 备份); 顺手修复 failure_kb._get_conn 未定义致聚类恒空的真实 bug",
  "key_facts": {
   "dev_host": "Apple M5 Max, 128GB RAM, 1.1TB 可用磁盘 — 开发/控制节点，非模型宿主",
   "model_cluster": "exo 集群 @ http://100.64.201.37:52415 (内网, OpenAI 兼容)；公网 https://dgmt.top/exo (需 Bearer token)",
@@ -2389,6 +2389,33 @@
      "title": "waitFor 事件驱动等待助手 + 终端 WS 数据通路集成测试(真实 uvicorn+pty+@xterm/headless)",
      "status": "done",
      "note": "console/src/terminal/waitFor.ts 零轮询(text/regex/gone/stableMs,超时带屏面+raw 诊断)。9 单测 + 3 集成(400 行 marker 洪泛/UTF-8 中文 emoji 无替换字符/resize 40 列折行一致)。踩坑修复: FLIPPED_PROJECTS_DIR 指向不存在目录会致 pty spawn FileNotFoundError、WS accept 后静默 1006——beforeAll 先 mkdirSync，并把 shell 就绪等待从\"空屏面假通过\"改为必须出现非空白内容。"
+    }
+   }
+  },
+  "M137": {
+   "title": "SQLite 八库合并: 8 默认路径收敛单一 data/flipped.db + 统一 pragma/WAL 治理 + 迁移脚本",
+   "status": "done",
+   "note": "三并行流(W1 知识库 7 模块 / W2 saver+factory+api / W3 迁移脚本+测试)。全量 pytest 1518 passed(仅先存环境依赖 visual_regression×3) + vitest 57 全绿。真实迁移 3164 行, 5 旧库 .bak-20260718。",
+   "tasks": {
+    "M137.0_db_entry": {
+     "title": "统一存储入口 driving/db.py: default_db_path(FLIPPED_DB env) + connect(WAL/busy_timeout=5000/synchronous=NORMAL/temp_store/mmap 256MB, fail-open)",
+     "status": "done",
+     "note": ":memory: 自动跳 WAL。LangGraph SqliteSaver 自管连接仅共享文件路径。"
+    },
+    "M137.1_kb_modules": {
+     "title": "知识库 7 模块收敛: failure_kb/repair_kb/gold_memory/rca/skill_registry/skill_evolution/skill_recommender 默认值 None+函数体收敛, sqlite3.connect→connect()",
+     "status": "done",
+     "note": "零 SQL/业务改动; 定向 101 passed + 周边 61 passed。顺手修复 failure_kb.get_all_failures 调用未定义 _get_conn 恒返回[](聚类分析恒无数据)的预存 bug。"
+    },
+    "M137.2_saver_factory_api": {
+     "title": "saver/factory/api 收敛 + thread_id 命名空间盘点 + infinite_loop per-round 派生删除",
+     "status": "done",
+     "note": "FLIPPED_CHECKPOINT_DB/FLIPPED_FACTORY_DB 专用 env 保留优先 fallback FLIPPED_DB。thread_id 保守未改取值: sess-*/factory-*-task-*/delegate-* 三前缀天然不重叠。per-round 派生删除(factory_states 按 factory_id 隔离成立)。定向 121+162 passed。"
+    },
+    "M137.3_migrate_script": {
+     "title": "scripts/migrate_db_merge.py + tests/test_db_merge.py: ATTACH→INSERT OR IGNORE→行数校验→.bak 改名, dry-run, 幂等",
+     "status": "done",
+     "note": "5 用例全绿(roundtrip/幂等/saver 共库 thread 隔离/dry-run 无副作用/边车改名)。真实迁移 3164 行: factory_states 13/checkpoints 146/writes 798/failures 327/gold_memory 1849→1893/skills 31。游标未关+wal_checkpoint 隐式事务报 table locked——固定 COMMIT→wal_checkpoint→DETACH 顺序解决。"
     }
    }
   }

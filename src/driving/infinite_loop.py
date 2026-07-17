@@ -29,6 +29,7 @@ from driving.factory_loop import (
     FactoryStatus,
     run_factory_loop,
 )
+from driving.db import connect as _db_connect, default_db_path
 from driving.progress_notes import (
     init_progress,
     record_round,
@@ -280,7 +281,7 @@ def _ensure_loop_table(conn: sqlite3.Connection) -> None:
 
 def save_loop_state(state: InfiniteLoopState, db_path: str) -> None:
     """把无限循环状态写入 SQLite。"""
-    with sqlite3.connect(db_path) as conn:
+    with _db_connect(db_path) as conn:
         _ensure_loop_table(conn)
         conn.execute(
             """
@@ -313,7 +314,7 @@ def save_loop_state(state: InfiniteLoopState, db_path: str) -> None:
 
 def load_loop_state(loop_id: str, db_path: str) -> InfiniteLoopState | None:
     """从 SQLite 加载无限循环状态。"""
-    with sqlite3.connect(db_path) as conn:
+    with _db_connect(db_path) as conn:
         conn.row_factory = sqlite3.Row
         _ensure_loop_table(conn)
         cur = conn.execute(
@@ -363,9 +364,9 @@ def run_infinite_loop(
     loop_id: str | None = None,
     design_style: str = "auto",
     max_rounds: int = 10,
-    db_path: str = "data/infinite_loop.db",
-    factory_db_path: str = "data/factory.db",
-    factory_checkpoint_db_path: str = "data/factory_checkpoints.db",
+    db_path: str | None = None,
+    factory_db_path: str | None = None,
+    factory_checkpoint_db_path: str | None = None,
     evolve_fn: Callable[..., tuple[str, bool, str]] | None = None,
     factory_loop_fn: FactoryLoopFn | None = None,
     planner=None,
@@ -396,6 +397,10 @@ def run_infinite_loop(
     """
     evolve = evolve_fn or _evolve_goal
     factory_loop = factory_loop_fn or run_factory_loop
+    # M137：默认收敛到统一库（env FLIPPED_DB 可覆盖）；显式传参（如测试 tmp 路径）行为不变
+    db_path = db_path or default_db_path()
+    factory_db_path = factory_db_path or default_db_path()
+    factory_checkpoint_db_path = factory_checkpoint_db_path or default_db_path()
 
     # 加载已有状态（支持崩溃恢复）
     state = load_loop_state(loop_id, db_path) if loop_id else None
@@ -447,16 +452,15 @@ def run_infinite_loop(
             break
 
         # 执行本轮工厂循环
-        factory_db = factory_db_path.replace(".db", f"_{state.loop_id}_r{round_num}.db")
-        factory_ckpt_db = factory_checkpoint_db_path.replace(
-            ".db", f"_{state.loop_id}_r{round_num}.db"
-        )
+        # M137：统一库后不再派生 per-round 文件（原 {base}_{loop_id}_r{N}.db）。
+        # 轮次隔离由表内主键承担：factory_states 按 factory_id（每轮 run_factory_loop
+        # 生成新 factory-{uuid}），checkpoints 表按 thread_id 命名空间过滤。
         factory_state = factory_loop(
             goal,
             cwd,
             design_style=state.design_style,
-            db_path=factory_db,
-            checkpoint_db_path=factory_ckpt_db,
+            db_path=factory_db_path,
+            checkpoint_db_path=factory_checkpoint_db_path,
             planner=planner,
             orchestrator_fn=orchestrator_fn,
             event_bus=event_bus,

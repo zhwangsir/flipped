@@ -13,6 +13,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from driving.db import default_db_path
 from driving.skill_registry import (
     Skill,
     list_skills,
@@ -61,7 +62,7 @@ def recommend_skills(
     description: str,
     design_style: str = "auto",
     *,
-    db_path: str = "data/skills.db",
+    db_path: str | None = None,
     top_k: int = 5,
     relevance_weight: float = 0.6,
     quality_weight: float = 0.4,
@@ -70,6 +71,7 @@ def recommend_skills(
 
     不仅返回最相似的，还按"相关性 × 质量"综合排序，推荐真正好用的 Skill。
     """
+    db_path = db_path or default_db_path()
     try:
         skills = _load_all_skills(db_path)
         if not skills:
@@ -118,7 +120,7 @@ def discover_skill_combos(
     description: str,
     design_style: str = "auto",
     *,
-    db_path: str = "data/skills.db",
+    db_path: str | None = None,
     min_skills: int = 2,
     max_skills: int = 4,
 ) -> list[dict[str, Any]]:
@@ -127,6 +129,7 @@ def discover_skill_combos(
     基于任务描述和 Skill 关联网络，推荐 2-4 个 Skill 的组合，
     每个 Skill 覆盖任务的不同侧面。
     """
+    db_path = db_path or default_db_path()
     try:
         recs = recommend_skills(
             description, design_style, db_path=db_path, top_k=10
@@ -160,7 +163,7 @@ def discover_skill_combos(
 
 def build_association_network(
     *,
-    db_path: str = "data/skills.db",
+    db_path: str | None = None,
     min_similarity: float = 0.3,
 ) -> dict[str, Any]:
     """构建 Skill 关联网络（用于前端可视化）。
@@ -170,6 +173,7 @@ def build_association_network(
         "edges": [{"source": ..., "target": ..., "weight": ...}],
     }
     """
+    db_path = db_path or default_db_path()
     try:
         skills = _load_all_skills(db_path)
         if not skills:
@@ -209,10 +213,11 @@ def build_association_network(
 
 def get_trending_skills(
     *,
-    db_path: str = "data/skills.db",
+    db_path: str | None = None,
     limit: int = 10,
 ) -> list[dict[str, Any]]:
     """热门/高质量 Skill 排行榜。"""
+    db_path = db_path or default_db_path()
     try:
         skills = _load_all_skills(db_path)
         if not skills:

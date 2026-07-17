@@ -26,7 +26,8 @@ from .factory import router as factory_router
 
 MOCK_WORKER = os.environ.get("FLIPPED_MOCK_WORKER", "0") == "1"
 RUNNING_TASKS: dict[str, asyncio.Task] = {}  # M6.2 — 每会话运行中任务句柄，供取消
-FLIPPED_CHECKPOINT_DB = os.environ.get("FLIPPED_CHECKPOINT_DB", "data/checkpoints.db")
+# M137：默认值收敛为统一库（FLIPPED_DB）；FLIPPED_CHECKPOINT_DB 保留向后兼容
+FLIPPED_CHECKPOINT_DB = os.environ.get("FLIPPED_CHECKPOINT_DB") or os.environ.get("FLIPPED_DB", "data/flipped.db")
 
 API_PREFIX = "/api/v1"
 CONSOLE_ORIGIN = "http://127.0.0.1:5273"

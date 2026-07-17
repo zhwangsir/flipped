@@ -28,6 +28,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from driving.db import connect, default_db_path
 from driving.factory_loop import FactoryTask, FactoryState, TaskResult
 
 
@@ -74,7 +75,7 @@ def _enable_wal(db_path: str) -> None:
     if db_path in _wal_initialized:
         return
     try:
-        with sqlite3.connect(db_path) as conn:
+        with connect(db_path) as conn:
             conn.execute("PRAGMA journal_mode=WAL")
             conn.execute("PRAGMA busy_timeout=5000")
         _wal_initialized.add(db_path)
@@ -171,12 +172,13 @@ def record_task_result(
     task: FactoryTask,
     state: FactoryState,
     result: TaskResult,
-    db_path: str = "data/gold_memory.db",
+    db_path: str | None = None,
 ) -> None:
     """记录一个任务结果到 Gold Memory。
 
     M96: 加锁保护写操作,防止并发任务的 "database is locked" 异常。
     """
+    db_path = db_path or default_db_path()
     sig = _signature(task.description)
     verify_cmd_str = " ".join(task.verify_cmd) if task.verify_cmd else "true"
     # M11.2：嵌入任务描述向量，用于语义检索
@@ -185,7 +187,7 @@ def record_task_result(
     # M96: 启用 WAL + 加锁写
     _enable_wal(db_path)
     with _gold_memory_write_lock:
-        with sqlite3.connect(db_path) as conn:
+        with connect(db_path) as conn:
             _ensure_table(conn)
             conn.execute(
                 """
@@ -217,7 +219,7 @@ def record_task_result(
 def query_similar(
     description: str,
     design_style: str = "auto",
-    db_path: str = "data/gold_memory.db",
+    db_path: str | None = None,
     limit: int = 5,
 ) -> GoldQueryResult:
     """查询相似任务的历史经验。
@@ -227,10 +229,11 @@ def query_similar(
 
     返回该任务签名 + 设计风格下的成功率 + 推荐的 verify_cmd。
     """
+    db_path = db_path or default_db_path()
     sig = _signature(description)
     query_vec = _embed(description[:500])
 
-    with sqlite3.connect(db_path) as conn:
+    with connect(db_path) as conn:
         _ensure_table(conn)
         # 1. M11.2 语义检索：取所有带向量的行，计算余弦相似度
         if query_vec:
@@ -299,12 +302,13 @@ def query_similar(
     )
 
 
-def build_memory_hint(description: str, design_style: str = "auto", db_path: str = "data/gold_memory.db") -> str:
+def build_memory_hint(description: str, design_style: str = "auto", db_path: str | None = None) -> str:
     """生成给 planner 的经验提示。
 
     如果有类似任务的历史经验，返回一段提示让 planner 复用成功的 verify_cmd 模式。
     这让系统"越跑越快"——第一次摸索，第二次直接复用。
     """
+    db_path = db_path or default_db_path()
     result = query_similar(description, design_style, db_path)
     if not result.found or result.total_attempts == 0:
         return ""
@@ -321,9 +325,10 @@ def build_memory_hint(description: str, design_style: str = "auto", db_path: str
     return "\n".join(parts) + "\n"
 
 
-def clear_memory(db_path: str = "data/gold_memory.db") -> None:
+def clear_memory(db_path: str | None = None) -> None:
     """清空 Gold Memory（测试用）。"""
-    with sqlite3.connect(db_path) as conn:
+    db_path = db_path or default_db_path()
+    with connect(db_path) as conn:
         _ensure_table(conn)
         conn.execute("DELETE FROM gold_memory")
 
@@ -331,7 +336,7 @@ def clear_memory(db_path: str = "data/gold_memory.db") -> None:
 def query_similar_failures(
     description: str,
     design_style: str = "auto",
-    db_path: str = "data/gold_memory.db",
+    db_path: str | None = None,
     limit: int = 5,
 ) -> list[GoldEntry]:
     """M91.1 查询相似任务的历史失败记录(只返回 success=0)。
@@ -342,10 +347,11 @@ def query_similar_failures(
     Returns:
         list[GoldEntry],每条含 stop_reason/summary,按相似度降序。
     """
+    db_path = db_path or default_db_path()
     sig = _signature(description)
     query_vec = _embed(description[:500])
 
-    with sqlite3.connect(db_path) as conn:
+    with connect(db_path) as conn:
         _ensure_table(conn)
         # 1. 语义检索:取所有带向量的失败行
         if query_vec:
@@ -399,9 +405,10 @@ def query_similar_failures(
     ]
 
 
-def stats(db_path: str = "data/gold_memory.db") -> dict[str, Any]:
+def stats(db_path: str | None = None) -> dict[str, Any]:
     """返回 Gold Memory 统计信息。"""
-    with sqlite3.connect(db_path) as conn:
+    db_path = db_path or default_db_path()
+    with connect(db_path) as conn:
         _ensure_table(conn)
         cur = conn.execute("SELECT COUNT(*), SUM(success) FROM gold_memory")
         row = cur.fetchone()

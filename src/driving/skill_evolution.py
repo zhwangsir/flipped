@@ -11,12 +11,12 @@ fail-open: 任何异常都不阻塞主流程。
 from __future__ import annotations
 
 import json
-import sqlite3
 import threading
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 
+from driving.db import connect, default_db_path
 from driving.skill_registry import Skill, _signature
 
 
@@ -54,7 +54,7 @@ def _ensure_migration(db_path: str) -> None:
     if db_path in _migrated_dbs:
         return
     try:
-        with sqlite3.connect(db_path) as conn:
+        with connect(db_path) as conn:
             cols = [row[1] for row in conn.execute("PRAGMA table_info(skills)").fetchall()]
             if "total_uses" not in cols:
                 conn.execute("ALTER TABLE skills ADD COLUMN total_uses INTEGER NOT NULL DEFAULT 0")
@@ -126,18 +126,19 @@ def record_skill_usage(
     *,
     success: bool,
     iterations: int = 1,
-    db_path: str = "data/skills.db",
+    db_path: str | None = None,
 ) -> bool:
     """记录一次 Skill 使用，更新 total_uses / success_count / avg_iterations。
 
     找不到对应 Skill 时返回 False（fail-open）。
     """
+    db_path = db_path or default_db_path()
     try:
         _ensure_migration(db_path)
         sig = _signature(description, design_style)
         now = datetime.now(timezone.utc).isoformat()
         with _evo_lock:
-            with sqlite3.connect(db_path) as conn:
+            with connect(db_path) as conn:
                 row = conn.execute(
                     "SELECT total_uses, success_count, avg_iterations FROM skills WHERE skill_id = ?",
                     (sig,),
@@ -164,7 +165,7 @@ def record_skill_usage(
 
 
 def archive_low_quality_skills(
-    db_path: str = "data/skills.db",
+    db_path: str | None = None,
     *,
     min_uses: int = MIN_USES_FOR_QUALITY,
     threshold: float = LOW_QUALITY_THRESHOLD,
@@ -173,6 +174,7 @@ def archive_low_quality_skills(
 
     条件：total_uses >= min_uses AND quality_score < threshold AND archived = 0
     """
+    db_path = db_path or default_db_path()
     archived: list[str] = []
     try:
         _ensure_migration(db_path)
@@ -180,7 +182,7 @@ def archive_low_quality_skills(
         skills = [s for s in list_skills(db_path) if not s.archived]
         now = datetime.now(timezone.utc).isoformat()
         with _evo_lock:
-            with sqlite3.connect(db_path) as conn:
+            with connect(db_path) as conn:
                 for s in skills:
                     total = max(s.total_uses, s.success_count)
                     if total < min_uses:
@@ -201,7 +203,7 @@ def find_related_skills(
     description: str,
     design_style: str = "auto",
     *,
-    db_path: str = "data/skills.db",
+    db_path: str | None = None,
     max_results: int = 3,
     include_archived: bool = False,
 ) -> list[Skill]:
@@ -209,6 +211,7 @@ def find_related_skills(
 
     按质量分 + 相似度排序，返回 top N。
     """
+    db_path = db_path or default_db_path()
     try:
         from driving.skill_registry import query_similar_skill, list_skills
 

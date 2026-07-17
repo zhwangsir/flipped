@@ -25,6 +25,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
+from driving.db import default_db_path
+
 
 class RootCause(str, Enum):
     REASONING_OVERFLOW = "reasoning_overflow"
@@ -338,7 +340,7 @@ def analyze_failure_with_memory(
     content_len: int | None = None,
     extra: dict[str, Any] | None = None,
     task_description: str = "",
-    db_path: str = "data/gold_memory.db",
+    db_path: str | None = None,
 ) -> RcaResult:
     """带 Gold Memory 历史检索的失败分析。
 
@@ -353,6 +355,7 @@ def analyze_failure_with_memory(
     Returns:
         RcaResult,history_hint 字段含历史失败提示(无历史时为空)
     """
+    db_path = db_path or default_db_path()
     result = analyze_failure(
         stop_reason=stop_reason,
         summary=summary,

@@ -18,6 +18,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 
+from driving.db import connect, default_db_path
+
 
 _TABLE_SQL = """
 CREATE TABLE IF NOT EXISTS failures (
@@ -47,7 +49,7 @@ def _enable_wal(db_path: str) -> None:
     if db_path in _wal_initialized:
         return
     try:
-        with sqlite3.connect(db_path) as conn:
+        with connect(db_path) as conn:
             conn.execute("PRAGMA journal_mode=WAL")
             conn.execute("PRAGMA busy_timeout=5000")
         _wal_initialized.add(db_path)
@@ -143,9 +145,10 @@ def record_failure(
     iterations: int = 1,
     resolved: bool = False,
     resolution: str = "",
-    db_path: str = "data/failures.db",
+    db_path: str | None = None,
 ) -> FailureEntry | None:
     """记录一次失败到知识库。返回写入的条目，异常时返回 None（fail-open）。"""
+    db_path = db_path or default_db_path()
     try:
         fid = _signature(task_description, cause)
         vector = _embed(task_description)
@@ -154,7 +157,7 @@ def record_failure(
 
         _enable_wal(db_path)
         with _write_lock:
-            with sqlite3.connect(db_path) as conn:
+            with connect(db_path) as conn:
                 _ensure_table(conn)
                 conn.execute(
                     """
@@ -200,14 +203,15 @@ def query_similar_failures(
     description: str,
     design_style: str = "auto",
     *,
-    db_path: str = "data/failures.db",
+    db_path: str | None = None,
     max_results: int = 5,
     threshold: float = 0.4,
 ) -> list[FailureEntry]:
     """语义检索历史类似失败。空列表或异常时返回 []（fail-open）。"""
+    db_path = db_path or default_db_path()
     try:
         _enable_wal(db_path)
-        with sqlite3.connect(db_path) as conn:
+        with connect(db_path) as conn:
             conn.row_factory = sqlite3.Row
             _ensure_table(conn)
             rows = conn.execute(
@@ -243,14 +247,15 @@ def query_similar_failures(
 
 
 def get_failure_stats(
-    db_path: str = "data/failures.db",
+    db_path: str | None = None,
     *,
     limit: int = 10,
 ) -> FailureStats:
     """获取失败统计数据。异常时返回空统计（fail-open）。"""
+    db_path = db_path or default_db_path()
     try:
         _enable_wal(db_path)
-        with sqlite3.connect(db_path) as conn:
+        with connect(db_path) as conn:
             conn.row_factory = sqlite3.Row
             _ensure_table(conn)
 
@@ -289,13 +294,14 @@ def build_warning_from_history(
     description: str,
     design_style: str = "auto",
     *,
-    db_path: str = "data/failures.db",
+    db_path: str | None = None,
     max_warnings: int = 3,
 ) -> str:
     """从历史失败中构建预警文本，注入到 supervisor prompt。
 
     没有历史失败时返回空字符串。
     """
+    db_path = db_path or default_db_path()
     try:
         failures = query_similar_failures(
             description, design_style, db_path=db_path, max_results=max_warnings
@@ -318,40 +324,43 @@ def build_warning_from_history(
 
 def get_all_failures(
     *,
-    db_path: str = "data/failures.db",
+    db_path: str | None = None,
     limit: int = 1000,
     resolved: bool | None = None,
 ) -> list[FailureEntry]:
     """获取所有失败记录（用于聚类分析）。"""
+    db_path = db_path or default_db_path()
     try:
-        conn = _get_conn(db_path)
-        cursor = conn.cursor()
-        query = "SELECT * FROM failures"
-        conditions = []
-        params: list[Any] = []
-        if resolved is not None:
-            conditions.append("resolved = ?")
-            params.append(1 if resolved else 0)
-        if conditions:
-            query += " WHERE " + " AND ".join(conditions)
-        query += " ORDER BY created_at DESC LIMIT ?"
-        params.append(limit)
-        cursor.execute(query, params)
-        rows = cursor.fetchall()
-        return [_row_to_entry(row) for row in rows]
+        with connect(db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            query = "SELECT * FROM failures"
+            conditions = []
+            params: list[Any] = []
+            if resolved is not None:
+                conditions.append("resolved = ?")
+                params.append(1 if resolved else 0)
+            if conditions:
+                query += " WHERE " + " AND ".join(conditions)
+            query += " ORDER BY created_at DESC LIMIT ?"
+            params.append(limit)
+            cursor.execute(query, params)
+            rows = cursor.fetchall()
+            return [_row_to_entry(row) for row in rows]
     except Exception:
         return []
 
 
 def run_clustering_analysis(
     *,
-    db_path: str = "data/failures.db",
+    db_path: str | None = None,
     include_resolved: bool = False,
 ) -> dict[str, Any]:
     """运行失败聚类分析，返回完整的分析报告。
 
     M109 集成：一键获取聚类统计 + 系统性失败 + 改进建议。
     """
+    db_path = db_path or default_db_path()
     try:
         from driving.failure_clustering import (
             cluster_failures,

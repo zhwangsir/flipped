@@ -31,7 +31,8 @@ router = APIRouter(prefix="/api/v1/factories", tags=["factory"])
 # 运行中的工厂任务句柄（factory_id -> asyncio.Task）
 _RUNNING: dict[str, asyncio.Task] = {}
 
-FACTORY_DB = os.environ.get("FLIPPED_FACTORY_DB", "data/factory.db")
+# M137：默认值收敛为统一库（FLIPPED_DB）；FLIPPED_FACTORY_DB 保留向后兼容
+FACTORY_DB = os.environ.get("FLIPPED_FACTORY_DB") or os.environ.get("FLIPPED_DB", "data/flipped.db")
 
 
 # ---------- Schemas ----------

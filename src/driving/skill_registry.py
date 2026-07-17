@@ -19,6 +19,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 
+from driving.db import connect, default_db_path
 from driving.factory_loop import FactoryState, FactoryTask, TaskResult
 
 
@@ -55,7 +56,7 @@ def _enable_wal(db_path: str) -> None:
     if db_path in _wal_initialized:
         return
     try:
-        with sqlite3.connect(db_path) as conn:
+        with connect(db_path) as conn:
             conn.execute("PRAGMA journal_mode=WAL")
             conn.execute("PRAGMA busy_timeout=5000")
         _wal_initialized.add(db_path)
@@ -210,7 +211,7 @@ def save_skill(
     task: FactoryTask,
     state: FactoryState,
     result: TaskResult,
-    db_path: str = "data/skills.db",
+    db_path: str | None = None,
 ) -> Skill | None:
     """任务验证通过后沉淀为 Skill。失败则跳过。
 
@@ -219,6 +220,7 @@ def save_skill(
     if not result.verified:
         return None
 
+    db_path = db_path or default_db_path()
     try:
         skill = build_skill_from_result(task, state, result)
         vector_json = json.dumps(skill.description_vector) if skill.description_vector else ""
@@ -229,7 +231,7 @@ def save_skill(
 
         _enable_wal(db_path)
         with _skill_write_lock:
-            with sqlite3.connect(db_path) as conn:
+            with connect(db_path) as conn:
                 _ensure_table(conn)
                 conn.execute(
                     """
@@ -274,13 +276,14 @@ def save_skill(
 def query_similar_skill(
     description: str,
     design_style: str = "auto",
-    db_path: str = "data/skills.db",
+    db_path: str | None = None,
     threshold: float = 0.6,
 ) -> Skill | None:
     """语义检索最相似的 Skill。未命中或任何异常返回 None（fail-open）。"""
+    db_path = db_path or default_db_path()
     try:
         _enable_wal(db_path)
-        with sqlite3.connect(db_path) as conn:
+        with connect(db_path) as conn:
             conn.row_factory = sqlite3.Row
             _ensure_table(conn)
             rows = conn.execute(
@@ -326,7 +329,7 @@ def _touch_skill(skill_id: str, db_path: str) -> None:
     try:
         now = datetime.now(timezone.utc).isoformat()
         with _skill_write_lock:
-            with sqlite3.connect(db_path) as conn:
+            with connect(db_path) as conn:
                 conn.execute(
                     "UPDATE skills SET last_used = ? WHERE skill_id = ?",
                     (now, skill_id),
@@ -335,11 +338,12 @@ def _touch_skill(skill_id: str, db_path: str) -> None:
         pass
 
 
-def list_skills(db_path: str = "data/skills.db") -> list[Skill]:
+def list_skills(db_path: str | None = None) -> list[Skill]:
     """列出所有 Skill（按 success_count 降序）。"""
+    db_path = db_path or default_db_path()
     try:
         _enable_wal(db_path)
-        with sqlite3.connect(db_path) as conn:
+        with connect(db_path) as conn:
             conn.row_factory = sqlite3.Row
             _ensure_table(conn)
             rows = conn.execute(

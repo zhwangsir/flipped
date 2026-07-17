@@ -1,3 +1,85 @@
+# M137 · SQLite 八库合并（M136 拆出项）
+
+> 来源：M136 计划「SQLite 八库合并风险高，与事件表工作互相干扰，拆到 M137」。
+> 主题：8 个默认 db 路径收敛为单一 `data/flipped.db`（env `FLIPPED_DB` 可覆盖），消除连接碎片，统一 pragma/WAL/迁移治理。
+
+## 现状盘点（8 默认路径 → 表）
+
+| db | 表 | 使用方 |
+|---|---|---|
+| factory.db | factory_states, factory_events | factory_loop.py, api/factory.py |
+| factory_checkpoints.db | checkpoints, writes | factory_loop.py (SqliteSaver) |
+| checkpoints.db | checkpoints, writes | orchestrator.py, api/main.py |
+| delegate_checkpoints.db | checkpoints, writes | stuck_detector.py |
+| failures.db | failures | failure_kb.py, repair_kb.py |
+| gold_memory.db | gold_memory | gold_memory.py, rca.py |
+| skills.db | skills | skill_registry/evolution/recommender.py |
+| infinite_loop.db | infinite_loops | infinite_loop.py |
+
+磁盘现存 5 个（factory/factory_checkpoints/failures/gold_memory/skills），其余 3 个为运行时默认、尚未落盘。
+
+## 关键冲突与对策
+
+1. **三个 LangGraph saver 库表名相同**（checkpoints/writes）→ 合并后共享表，**thread_id 命名空间区分**（orch-* / factory_id / deleg-*），这是 LangGraph 官方支持的多 graph 共库用法。
+2. **写并发** → 单文件 + WAL + busy_timeout=5000，统一 `connect()` 入口施加。
+3. **表名冲突** → 八库表名互不相同（已核实），零改名合并。
+
+## 工作流划分
+
+| 流 | 子任务 | 独占文件 |
+|---|---|---|
+| 主代理先行 | M137.0 统一存储入口 `driving/db.py`（很小） | 新 `src/driving/db.py` |
+| W1 | M137.1 知识库类四模块默认值收敛 | failure_kb.py repair_kb.py gold_memory.py rca.py skill_registry.py skill_evolution.py skill_recommender.py |
+| W2 | M137.2 saver/factory/api 收敛 + thread_id 命名空间 | factory_loop.py orchestrator.py stuck_detector.py infinite_loop.py api/main.py api/factory.py |
+| W3 | M137.3 迁移脚本 + roundtrip 测试 | 新 scripts/migrate_db_merge.py 新 tests/test_db_merge.py |
+
+文档（STATE.json/TEST_LOG.md）主代理收尾统一写。
+
+## M137.0 · 统一存储入口
+
+`driving/db.py`：
+- `default_db_path() -> str`：`os.environ.get("FLIPPED_DB", "data/flipped.db")`
+- `connect(path=None)`：sqlite3.connect + `PRAGMA journal_mode=WAL`(内存库跳过) + `busy_timeout=5000` + synchronous=NORMAL + temp_store=MEMORY + mmap_size=256MB，fail-open。
+- 各模块 `db_path: str = "data/xxx.db"` 默认值改为 `db_path: str | None = None`，函数体内 `db_path = db_path or default_db_path()`。**测试注入 tmp 路径行为不变**。
+
+## M137.1 · 知识库类收敛（W1）
+
+- 上述 7 文件默认值收敛；`sqlite3.connect(...)` 换 `db.connect(db_path)`。
+- env 兼容：`FLIPPED_FAILURES_DB` 等既有专用 env 若存在则优先（先查代码里是否有，无则不加）。
+
+## M137.2 · saver/factory/api 收敛（W2）
+
+- factory_loop / orchestrator / stuck_detector 的 SqliteSaver.from_conn_string 默认路径收敛。
+- thread_id 命名空间约束落为常量：orchestrator resume 入口给 thread_id 加 `orch-` 前缀（仅默认路径，显式传入不破）；stuck_detector 子 agent 用 `deleg-{factory_id}`；factory 用 factory_id 本身。写入 DECISIONS 候选。
+- api/main.py `FLIPPED_CHECKPOINT_DB`、api/factory.py `FLIPPED_FACTORY_DB` env 保留但默认值指向 `FLIPPED_DB`（向后兼容优先读专用 env）。
+- infinite_loop.db → infinite_loops 表迁入。
+
+## M137.3 · 迁移脚本 + 验收（W3）
+
+`scripts/migrate_db_merge.py`：
+- 对现存旧库逐个 ATTACH → 逐表 `INSERT OR IGNORE`(含 factory_events 保留 seq) → 行数校验 → 旧库改名 `*.db.bak-YYYYMMDD`。
+- `--dry-run` 只打印计划；幂等可重跑。
+`tests/test_db_merge.py`：
+- 造 3 个含数据的临时旧库 → 迁移 → 断言目标库行数/关键内容一致、重复迁移不翻倍。
+- 三 saver 共库隔离性：同一 flipped.db 两个 thread_id 各写 checkpoint 互不可见。
+
+## 技术约束
+
+1. **向后兼容**：所有公开函数签名保留 `db_path` 参数；测试用 tmp 库不受影响；专用 env 优先于统一 env。
+2. **fail-open**：迁移/pragma 失败不崩主流程。
+3. **不引新依赖**。
+4. 红线：不准在迁移脚本里 DROP/DELETE 旧库数据，只改名备份。
+
+## 验收标准（M137 总）
+
+- [ ] 8 默认路径全部指向 data/flipped.db（grep 审计为零残留）
+- [ ] 迁移脚本 dry-run + 实跑 roundtrip 测试通过
+- [ ] 三 saver 共库 thread_id 隔离测试通过
+- [ ] 全量 pytest + vitest 零回归
+- [ ] STATE.json / TEST_LOG.md 更新
+
+---
+
 # M136 · 地基工程：契约与边界（Kimi/Grok 调研反哺）
 
 > 来源：Kimi Code × Grok Build × flipped 三方对比调研（2026-07-18）。

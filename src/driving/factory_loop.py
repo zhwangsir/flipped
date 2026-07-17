@@ -24,6 +24,7 @@ from driving.orchestrator import OrchestratorState, drive_orchestrated
 from driving.orchestrator import _invoke_structured, _make_llm  # noqa: WPS450
 from driving.design_context import build_design_brief, infer_style
 from driving.event_log import append_event, ensure_event_table, seen_idempotency_key
+from driving.db import connect as _db_connect, default_db_path
 
 
 class TaskStatus(str, Enum):
@@ -275,16 +276,6 @@ def _ensure_table(conn: sqlite3.Connection) -> None:
         pass
 
 
-def _apply_pragmas(conn: sqlite3.Connection) -> None:
-    """M136-A — SQLite pragma 加固：崩溃耐久性与读性能。fail-open。"""
-    try:
-        conn.execute("PRAGMA synchronous=NORMAL")
-        conn.execute("PRAGMA temp_store=MEMORY")
-        conn.execute("PRAGMA mmap_size=268435456")  # 256MB，加速大状态行读取
-    except Exception:  # noqa: BLE001
-        pass
-
-
 def _append_factory_event(
     db_path: str,
     factory_id: str,
@@ -294,8 +285,7 @@ def _append_factory_event(
 ) -> int | None:
     """M136-A — fail-open 追加事件：独立短连接，任何异常返回 None 不影响主流程。"""
     try:
-        with sqlite3.connect(db_path) as conn:
-            _apply_pragmas(conn)
+        with _db_connect(db_path) as conn:
             ensure_event_table(conn)
             return append_event(conn, factory_id, kind, payload, idempotency_key)
     except Exception:  # noqa: BLE001
@@ -305,8 +295,7 @@ def _append_factory_event(
 def _factory_event_seen(db_path: str, idempotency_key: str) -> bool:
     """M136-A — fail-open 查询幂等键：出错返回 False（退化为旧路径，副作用照常应用）。"""
     try:
-        with sqlite3.connect(db_path) as conn:
-            _apply_pragmas(conn)
+        with _db_connect(db_path) as conn:
             ensure_event_table(conn)
             return seen_idempotency_key(conn, idempotency_key)
     except Exception:  # noqa: BLE001
@@ -403,9 +392,8 @@ def _row_to_state(row: sqlite3.Row) -> FactoryState:
 
 def save_factory_state(state: FactoryState, db_path: str) -> None:
     """把工厂状态写入 SQLite；不存在则创建表。"""
-    with sqlite3.connect(db_path) as conn:
+    with _db_connect(db_path) as conn:
         conn.row_factory = sqlite3.Row
-        _apply_pragmas(conn)
         _ensure_table(conn)
         conn.execute(
             """
@@ -443,9 +431,8 @@ def save_factory_state(state: FactoryState, db_path: str) -> None:
 
 
 def load_factory_state(factory_id: str, db_path: str) -> FactoryState | None:
-    with sqlite3.connect(db_path) as conn:
+    with _db_connect(db_path) as conn:
         conn.row_factory = sqlite3.Row
-        _apply_pragmas(conn)
         _ensure_table(conn)
         cur = conn.execute(
             "SELECT * FROM factory_states WHERE factory_id = ?", (factory_id,)
@@ -455,8 +442,7 @@ def load_factory_state(factory_id: str, db_path: str) -> FactoryState | None:
 
 
 def list_factories(db_path: str) -> list[str]:
-    with sqlite3.connect(db_path) as conn:
-        _apply_pragmas(conn)
+    with _db_connect(db_path) as conn:
         _ensure_table(conn)
         cur = conn.execute("SELECT factory_id FROM factory_states ORDER BY updated_at DESC")
         return [r[0] for r in cur.fetchall()]
@@ -786,6 +772,9 @@ def default_orchestrator_fn(task: FactoryTask, state: FactoryState) -> TaskResul
             # delegate 失败时退回正常 orchestrator（避免完全卡死）
             pass
 
+    # thread_id 命名空间约定（M137 统一库后，各 saver 共享 checkpoints/writes 表，靠前缀隔离）：
+    #   factory 任务 → "factory-{id}-task-{id}"（本行）；delegate 子 Agent → "delegate-*"
+    #   （stuck_detector）；API 会话 → "sess-*"（api/main）。勿改取值，避免破坏已有 checkpoint。
     thread_id = f"{state.factory_id}-{task.id}"
 
     # 尝试构建 sandbox_verifier（在沙箱内验证）；失败则 fallback 到 host verifier
@@ -916,7 +905,8 @@ def default_orchestrator_fn(task: FactoryTask, state: FactoryState) -> TaskResul
         repo_map=state.repo_map_cache,
         max_iterations=adaptive_max_iter,
         loop_threshold=dynamic_loop_threshold,
-        db_path="data/factory_checkpoints.db",
+        # M137：checkpoint 库收敛为统一库；任务间隔离由 thread_id 命名空间承担
+        db_path=default_db_path(),
         thread_id=thread_id,
     )
     if verifier is not None:
@@ -982,8 +972,8 @@ def run_factory_loop(
     cwd: str,
     *,
     factory_id: str | None = None,
-    db_path: str = "data/factory.db",
-    checkpoint_db_path: str = "data/factory_checkpoints.db",
+    db_path: str | None = None,
+    checkpoint_db_path: str | None = None,
     max_tasks: int = 10,
     max_rounds: int = 5,
     design_style: str = "auto",
@@ -1010,6 +1000,9 @@ def run_factory_loop(
     planner = planner or default_planner
     orchestrator_fn = orchestrator_fn or default_orchestrator_fn
     bus = event_bus if event_bus is not None else NullEventBus()
+    # M137：默认收敛到统一库（env FLIPPED_DB 可覆盖）；显式传参（如测试 tmp 路径）行为不变
+    db_path = db_path or default_db_path()
+    checkpoint_db_path = checkpoint_db_path or default_db_path()
 
     # M42: 默认自动接入自主任务生成 + 确定性 design fix fallback
     # 调用方无需显式传入即可获得"无限迭代"能力
@@ -1535,10 +1528,11 @@ def run_factory_loop(
 
 def resume_factory_loop(
     factory_id: str,
-    db_path: str = "data/factory.db",
+    db_path: str | None = None,
     **kwargs,
 ) -> FactoryState | None:
     """从 SQLite 恢复工厂状态并继续运行。"""
+    db_path = db_path or default_db_path()  # M137：默认统一库
     state = load_factory_state(factory_id, db_path)
     if state is None:
         return None
