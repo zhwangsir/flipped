@@ -644,6 +644,26 @@ def default_orchestrator_fn(task: FactoryTask, state: FactoryState) -> TaskResul
                 verifier = combined_verifier(_base, state.design_style or "auto")
             # M19: 追加设计质量校验（error 级违规阻断，warning 级通过）
             verifier = _wrap_with_design_quality(verifier)
+            # M134.2: 视觉回归校验——UI 任务完成后自动截图对比基线,warning 级不阻断。
+            # opt-in: FLIPPED_USE_VISUAL_REGRESSION=1 启用(默认关,避免无 Playwright 环境噪音)。
+            # fail-open: import 失败或截图失败均退回原 verifier。
+            if os.environ.get("FLIPPED_USE_VISUAL_REGRESSION") == "1":
+                try:
+                    from driving.visual_regression import make_visual_verifier
+                    _visual = make_visual_verifier(
+                        threshold=float(os.environ.get("FLIPPED_VISUAL_THRESHOLD", "0.05"))
+                    )
+                    _prev = verifier
+
+                    def _with_visual(cmd_list, cwd, _p=_prev, _v=_visual):
+                        ok, msg = _p(cmd_list, cwd)
+                        v_ok, v_msg = _v(cmd_list, cwd)
+                        # 视觉回归是 warning 级:不阻断 verify,但把结果追加到反馈
+                        return ok, f"{msg}\n[visual] {v_msg}"
+
+                    verifier = _with_visual
+                except Exception:
+                    pass  # visual_regression 不可用时退回原 verifier
         except Exception:
             pass  # design-lint 不可用时退回 base verifier
 

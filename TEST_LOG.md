@@ -2,6 +2,26 @@
 
 > 命令 + 输出摘要 + 结论，追加写入（AGENTS.md §3）。
 
+## [2026-07-17] M134 · 孤岛模块接入主链路（repo_map + visual_regression）
+
+### M134.1 repo_map 注入 Supervisor kwargs
+- 命令：`.venv/bin/python -m pytest tests/test_factory_repo_map_injection.py -xvs`
+- 输出摘要：**4/4 通过** — 注入/fail-open/缓存复用/持久化 roundtrip 全验证。
+- 命令：`.venv/bin/python -m pytest tests/test_factory_loop.py tests/test_factory_repo_map_injection.py -q`
+- 输出摘要：**38/38 通过** — factory_loop 既有 34 测试无回归。
+- 结论：M134.1 ✅ — GLM 调度从此可见项目结构（技术栈/目录/关键文件），拆任务更贴合实际。
+
+### M134.2 visual_regression 接入 verifier 装配
+- 命令：`.venv/bin/python -m pytest tests/test_factory_visual_regression.py -xvs`
+- 输出摘要：**5/5 通过** — opt-in 注入/默认关闭/import fail-open/warning 级不阻断/非 UI 跳过 全验证。
+- 结论：M134.2 ✅ — UI 任务完成后自动截图对比基线（`FLIPPED_USE_VISUAL_REGRESSION=1` 启用）。
+
+### 全量回归
+- 命令：`.venv/bin/python -m pytest tests/ -q --tb=no`
+- 输出摘要：**1447 passed, 2 warnings in 108.87s** — 含 M134 新增 9 个测试，零失败。
+- 结论：M134 全部 ✅ — 两个孤岛模块通车，主链路无回归。
+
+
 ## [2026-06-29] M0 前置勘察（首次接管）
 
 ### 宿主机硬件核对
