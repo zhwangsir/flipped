@@ -23,6 +23,7 @@ from pydantic import BaseModel, Field
 from driving.orchestrator import OrchestratorState, drive_orchestrated
 from driving.orchestrator import _invoke_structured, _make_llm  # noqa: WPS450
 from driving.design_context import build_design_brief, infer_style
+from driving.event_log import append_event, ensure_event_table, seen_idempotency_key
 
 
 class TaskStatus(str, Enum):
@@ -267,6 +268,49 @@ def _ensure_table(conn: sqlite3.Connection) -> None:
     # M135-C 迁移：给旧表加 memory_json 列(分层记忆序列化 dict)
     if "memory_json" not in cols:
         conn.execute("ALTER TABLE factory_states ADD COLUMN memory_json TEXT NOT NULL DEFAULT '{}'")
+    # M136-A：事件日志表与主表同库同生共死（旧库自动补齐，fail-open 不阻塞旧路径）
+    try:
+        ensure_event_table(conn)
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _apply_pragmas(conn: sqlite3.Connection) -> None:
+    """M136-A — SQLite pragma 加固：崩溃耐久性与读性能。fail-open。"""
+    try:
+        conn.execute("PRAGMA synchronous=NORMAL")
+        conn.execute("PRAGMA temp_store=MEMORY")
+        conn.execute("PRAGMA mmap_size=268435456")  # 256MB，加速大状态行读取
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _append_factory_event(
+    db_path: str,
+    factory_id: str,
+    kind: str,
+    payload: dict,
+    idempotency_key: str | None = None,
+) -> int | None:
+    """M136-A — fail-open 追加事件：独立短连接，任何异常返回 None 不影响主流程。"""
+    try:
+        with sqlite3.connect(db_path) as conn:
+            _apply_pragmas(conn)
+            ensure_event_table(conn)
+            return append_event(conn, factory_id, kind, payload, idempotency_key)
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _factory_event_seen(db_path: str, idempotency_key: str) -> bool:
+    """M136-A — fail-open 查询幂等键：出错返回 False（退化为旧路径，副作用照常应用）。"""
+    try:
+        with sqlite3.connect(db_path) as conn:
+            _apply_pragmas(conn)
+            ensure_event_table(conn)
+            return seen_idempotency_key(conn, idempotency_key)
+    except Exception:  # noqa: BLE001
+        return False
 
 
 def _state_to_row(state: FactoryState) -> tuple:
@@ -361,6 +405,7 @@ def save_factory_state(state: FactoryState, db_path: str) -> None:
     """把工厂状态写入 SQLite；不存在则创建表。"""
     with sqlite3.connect(db_path) as conn:
         conn.row_factory = sqlite3.Row
+        _apply_pragmas(conn)
         _ensure_table(conn)
         conn.execute(
             """
@@ -400,6 +445,7 @@ def save_factory_state(state: FactoryState, db_path: str) -> None:
 def load_factory_state(factory_id: str, db_path: str) -> FactoryState | None:
     with sqlite3.connect(db_path) as conn:
         conn.row_factory = sqlite3.Row
+        _apply_pragmas(conn)
         _ensure_table(conn)
         cur = conn.execute(
             "SELECT * FROM factory_states WHERE factory_id = ?", (factory_id,)
@@ -410,6 +456,7 @@ def load_factory_state(factory_id: str, db_path: str) -> FactoryState | None:
 
 def list_factories(db_path: str) -> list[str]:
     with sqlite3.connect(db_path) as conn:
+        _apply_pragmas(conn)
         _ensure_table(conn)
         cur = conn.execute("SELECT factory_id FROM factory_states ORDER BY updated_at DESC")
         return [r[0] for r in cur.fetchall()]
@@ -1049,6 +1096,12 @@ def run_factory_loop(
         except Exception:
             pass
         save_factory_state(state, db_path)
+        # M136-A: 事件日志——factory_start（幂等键去重，崩溃重跑不重复记录）
+        _append_factory_event(
+            db_path, state.factory_id, "factory_start",
+            {"product_goal": product_goal, "roadmap_size": len(state.roadmap)},
+            idempotency_key=f"{state.factory_id}:factory_start",
+        )
         _emit(bus, "factory_started", {"factory_id": state.factory_id, "roadmap_size": len(state.roadmap)})
     else:
         if state.status == FactoryStatus.done:
@@ -1191,6 +1244,13 @@ def run_factory_loop(
                     pass
 
             save_factory_state(state, db_path)
+            # M136-A: 事件日志——task_start（幂等键去重，重试/崩溃重跑只记首次）
+            _append_factory_event(
+                db_path, state.factory_id, "task_start",
+                {"task_id": task.id, "attempt": task.attempts,
+                 "description": task.description[:200]},
+                idempotency_key=f"{state.factory_id}:{task.id}:start",
+            )
             _emit(
                 bus,
                 "task_started",
@@ -1244,6 +1304,13 @@ def run_factory_loop(
                         summary=str(e)[:500],
                     )
 
+            # M136-A: 事件日志——verify_result（每次尝试都记录，无幂等键）
+            _append_factory_event(
+                db_path, state.factory_id, "verify_result",
+                {"task_id": task.id, "verified": result.verified,
+                 "stop_reason": result.stop_reason, "iteration": result.iteration,
+                 "attempt": task.attempts},
+            )
             _emit(
                 bus,
                 "task_ended",
@@ -1257,61 +1324,73 @@ def run_factory_loop(
 
             if result.verified:
                 task.status = TaskStatus.done
-                state.completed.append(result)
+                # M136-A: 幂等完成——崩溃恢复重放同一 task 时（事件已记录），
+                # 跳过重复追加完成副作用（context_summary/memory/quality_history/外部记录器）。
+                done_key = f"{state.factory_id}:{task.id}:done"
+                completion_already_applied = _factory_event_seen(db_path, done_key)
+                if not completion_already_applied:
+                    state.completed.append(result)
 
-                # M130: CLI 集成——任务成功时合并 worktree + 更新状态
-                if cli is not None:
+                    # M130: CLI 集成——任务成功时合并 worktree + 更新状态
+                    if cli is not None:
+                        try:
+                            if state.current_worktree_id:
+                                cli.worktree_merge(state.current_worktree_id)
+                                state.cli_stats["worktree_merge"] = state.cli_stats.get("worktree_merge", 0) + 1
+                            cli.status_update(task.id, "finished")
+                            state.cli_stats["status_update"] = state.cli_stats.get("status_update", 0) + 1
+                        except Exception:
+                            pass
+
+                    state.context_summary += (
+                        f"\n[{task.id}] {task.description}: done. artifacts={task.artifacts}"
+                    )
+                    # M135-C: 双写到分层记忆——task 完成摘要是 supervisor 上下文的核心来源
+                    _record_to_memory(
+                        state,
+                        f"[{task.id}] {task.description}: done. artifacts={task.artifacts}",
+                    )
+                    # M10.4-B：记录到 FEATURE_CHECKLIST.json + PROGRESS.md（让无限迭代有长期记忆）
                     try:
-                        if state.current_worktree_id:
-                            cli.worktree_merge(state.current_worktree_id)
-                            state.cli_stats["worktree_merge"] = state.cli_stats.get("worktree_merge", 0) + 1
-                        cli.status_update(task.id, "finished")
-                        state.cli_stats["status_update"] = state.cli_stats.get("status_update", 0) + 1
+                        from driving.progress_notes import record_task_done
+                        record_task_done(
+                            state.cwd, task.id, task.description,
+                            summary=result.summary, round_num=None,
+                        )
+                    except Exception:
+                        pass  # 进展笔记写入失败不影响主循环
+                    # M10.4-D：记录到 Gold Memory（让系统越跑越快）
+                    try:
+                        from driving.gold_memory import record_task_result
+                        record_task_result(task, state, result)
                     except Exception:
                         pass
-
-                state.context_summary += (
-                    f"\n[{task.id}] {task.description}: done. artifacts={task.artifacts}"
+                    # M102：沉淀为 Skill（Self-Improving Loop 核心）
+                    try:
+                        from driving.skill_registry import save_skill
+                        save_skill(task, state, result)
+                    except Exception:
+                        pass
+                    # M104：记录 Skill 使用（成功），用于质量评估和进化
+                    try:
+                        from driving.skill_evolution import record_skill_usage
+                        record_skill_usage(
+                            task.description,
+                            state.design_style or "auto",
+                            success=True,
+                            iterations=result.iteration,
+                        )
+                    except Exception:
+                        pass
+                    # M135-B：质量打分——喂给前端 FactoryPanel 画趋势。fail-open:打分异常不阻塞。
+                    _record_quality_score(task, state)
+                # M136-A: 事件日志——task_done（副作用应用后记录；重放时 INSERT OR IGNORE 去重）
+                _append_factory_event(
+                    db_path, state.factory_id, "task_done",
+                    {"task_id": task.id, "stop_reason": result.stop_reason,
+                     "iteration": result.iteration},
+                    idempotency_key=done_key,
                 )
-                # M135-C: 双写到分层记忆——task 完成摘要是 supervisor 上下文的核心来源
-                _record_to_memory(
-                    state,
-                    f"[{task.id}] {task.description}: done. artifacts={task.artifacts}",
-                )
-                # M10.4-B：记录到 FEATURE_CHECKLIST.json + PROGRESS.md（让无限迭代有长期记忆）
-                try:
-                    from driving.progress_notes import record_task_done
-                    record_task_done(
-                        state.cwd, task.id, task.description,
-                        summary=result.summary, round_num=None,
-                    )
-                except Exception:
-                    pass  # 进展笔记写入失败不影响主循环
-                # M10.4-D：记录到 Gold Memory（让系统越跑越快）
-                try:
-                    from driving.gold_memory import record_task_result
-                    record_task_result(task, state, result)
-                except Exception:
-                    pass
-                # M102：沉淀为 Skill（Self-Improving Loop 核心）
-                try:
-                    from driving.skill_registry import save_skill
-                    save_skill(task, state, result)
-                except Exception:
-                    pass
-                # M104：记录 Skill 使用（成功），用于质量评估和进化
-                try:
-                    from driving.skill_evolution import record_skill_usage
-                    record_skill_usage(
-                        task.description,
-                        state.design_style or "auto",
-                        success=True,
-                        iterations=result.iteration,
-                    )
-                except Exception:
-                    pass
-                # M135-B：质量打分——喂给前端 FactoryPanel 画趋势。fail-open:打分异常不阻塞。
-                _record_quality_score(task, state)
             else:
                 # M130: CLI 集成——任务失败时更新状态
                 if cli is not None:

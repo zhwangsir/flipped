@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import sys
 from contextlib import asynccontextmanager
@@ -519,9 +520,23 @@ async def events_ws(websocket: WebSocket, session_id: str,
         # 重连回放
         if store.get(session_id):
             await bus.replay(session_id, websocket, last_event_id)
-        # 保持连接，接收客户端 pong / approval 结果
+        # 保持连接，接收客户端 ack / pong / approval 结果
         while True:
-            data = await websocket.receive_json()
+            message = await websocket.receive()
+            if message.get("type") == "websocket.disconnect":
+                raise WebSocketDisconnect(code=message.get("code", 1000))
+            raw = message.get("text")
+            if raw is None:  # 二进制帧：忽略，保持连接
+                continue
+            try:
+                data = json.loads(raw)
+            except (json.JSONDecodeError, ValueError):
+                continue  # 非 JSON 文本帧：忽略，不许崩掉事件循环
+            if not isinstance(data, dict):
+                continue
+            if data.get("type") == "ack":
+                await websocket.send_json({"type": "ack_ok", "last_event_id": data.get("last_event_id")})
+                continue
             await _handle_client_message(session_id, data)
     except WebSocketDisconnect:
         await bus.disconnect(session_id, websocket)

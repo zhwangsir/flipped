@@ -2,6 +2,36 @@
 
 > 命令 + 输出摘要 + 结论，追加写入（AGENTS.md §3）。
 
+## [2026-07-18] M136 · API 契约治理(B) + 终端数据通路测试(C)
+
+### M136-B1/B2 API 契约 pytest
+- 命令：`PYTHONPATH=src .venv/bin/python -m pytest tests/test_api_contract.py -v`
+- 输出摘要：**6/6 通过** — 快照漂移比对/response_model 覆盖/ack→ack_ok/未知 id 回执/垃圾帧容错/既有消息流回归。
+- 结论：B1+B2 ✅ — OpenAPI 契约变更必须显式登记（`FLIPPED_UPDATE_API_SNAPSHOT=1`），事件 WS 断点续传有回执。
+
+### M136-B3 零依赖 TS 契约生成
+- 命令：`FLIPPED_API_URL=http://127.0.0.1:8123 FLIPPED_API_TYPES_OUT=/tmp/fresh.d.ts node scripts/gen-api-types.mjs`（对实时 uvicorn）
+- 输出摘要：`schemas=14 paths=27`；`diff /tmp/fresh.d.ts console/src/api-types.d.ts` → **逐字节一致（无漂移）**。
+- 命令：`cd console && npx tsc --noEmit` → **零错误**。
+- 结论：B3 ✅ — 前端类型 = 后端实时契约，漂移可被验收脚本拦截。
+
+### M136-C 终端数据通路
+- 命令：`cd console && npx vitest run src/terminal/waitFor.test.ts src/terminal/terminal.ws.test.ts`
+- 输出摘要：**9/9 单测 + 3/3 集成通过** — 400 行 marker 洪泛全到达(816ms)、UTF-8 中文+emoji 无替换字符(508ms)、resize 40 列 stty size=10 40 且折行 5×40 一致(1.6s)。
+- 踩坑记录：`FLIPPED_PROJECTS_DIR` 指向不存在目录 → pty `Popen(cwd=...)` FileNotFoundError → WS accept 后静默 1006 零数据帧。修复：beforeAll `mkdirSync` 预建；shell 就绪等待从"空屏面 stableMs 假通过"改为必须出现 `\S` 非空白内容。
+- 结论：C ✅ — 从前端 WS 帧到真实 pty 字节流的整条数据通路有测试锁死。
+
+### 一键验收
+- 命令：`scripts/verify_milestone_136.sh`
+- 输出摘要：**全部 ✅ 通过，exit 0** — pytest 6/6 → waitFor 9/9 → WS 集成 3/3 → tsc 零错误 → codegen 实跑 + 提交版与实时契约比对无漂移。
+
+### 全量回归
+- 命令：`PYTHONPATH=src .venv/bin/python -m pytest tests/ -q`
+- 输出摘要：**1491 passed, 3 failed** — 3 个失败全部在 `tests/test_factory_visual_regression.py`（feedback=`ConnectError: [Errno 61] Connection refused`，a11y 校验链需本地渲染服务，本环境未起）。
+- 对照实验：干净 HEAD(701f657) git worktree 重跑该文件 → **同样 3 failed 2 passed**，与 M136 改动无关（M134.2 验收时该服务在线故 5/5）。属已知环境依赖缺陷，不掩盖、如实记录。
+- 命令：`cd console && npx vitest run` → **57/57 通过（6 文件）**。
+- 结论：M136(B/C) 全部 ✅。
+
 ## [2026-07-17] M135-B · 质量趋势前端可视化
 
 ### 后端打分与 API
@@ -2901,3 +2931,31 @@ Kimi 作为 overseer 监督 GLM-5.2，防卡死：
 - 全量 `pytest tests/`：**1463 passed**（+11，零回归）
 - `npx vitest run`：**45/45 passed**
 - `npx tsc --noEmit` + `npm run build`：0 错误，✓ built
+
+---
+
+## M136 · 地基工程：契约与边界（Kimi/Grok 调研反哺）（2026-07-18）
+
+### 范围
+A 崩溃恢复（事件日志+幂等键）/ D ToolResult 结构化错误 / E 五级权限管线 / B 契约治理 / C 终端数据通路测试。SQLite 八库合并拆到 M137。
+
+### M136-A · 崩溃恢复补全
+- 新 [event_log.py](src/driving/event_log.py)：append-only `factory_events` 表（factory_id/seq AUTOINCREMENT/ts/kind/payload_json/idempotency_key UNIQUE 允许 NULL）；`_ensure_event_table` 幂等迁移；`seen_idempotency_key` 供 resume 重放前查重。
+- [factory_loop.py](src/driving/factory_loop.py) 写入点：task 开始 / verify 结果 / task 完成，副作用前落盘；resume 路径命中幂等键跳过重复副作用。SQLite pragma 加固（synchronous=NORMAL / mmap_size / temp_store=MEMORY）。
+- 验证：`pytest tests/test_factory_event_log.py`：**6/6 passed**（崩溃演练：模拟中途崩溃 → resume → 断言副作用不重复、事件连续）。
+
+### M136-D · ToolResult 结构化错误
+- [orchestrator.py](src/driving/orchestrator.py) `_classify_error_meta`：失败结果携带 `retryable: bool` + `suggestion: str`（瞬时故障→可重试；语法/文件缺失/权限/验收断言→不可重试+修复建议；默认保守 False）。输出截断保留头+尾，中间 `[... truncated N chars ...]` 标记。fail-open 不影响现有文本消费路径。
+- 验证：`pytest tests/test_tool_result_structured.py`：**16/16 passed**。
+
+### M136-E · 五级权限管线
+- [approval.py](src/driving/approval.py)：`evaluate_permission` 纯函数管线 L1 hooks → L2 规则表（glob，deny>ask>allow）→ L3 项目级记忆授权（`.flipped/approvals.json`）→ L4 只读白名单 → L5 模式策略（default/dontAsk/plan），短路返回；`evaluate_command` 按 `&&`/`||`/`;`/`|` 链式拆分逐段评估（任一 deny 则整体 deny，任一 ask 则整体 ask）；`build_approval_graph` 契约不变，classify 节点额外记 `state["verdict"]`。
+- 验证：`pytest tests/test_approval_pipeline.py`：**25/25 passed**（L2 优先级 / 链式 `ls && rm -rf /`→deny / 记忆授权 roundtrip / 各模式策略）。
+
+### M136-B/C
+见 STATE.json M136 条目（B1 快照漂移 / B2 WS ack / B3 TS codegen / C 终端数据通路），`scripts/verify_milestone_136.sh` 一键验收通过。
+
+### 全量回归（收尾实跑）
+- `pytest tests/`：**1513 passed, 3 failed** —— 仅 `test_factory_visual_regression.py` ×3（本地渲染服务未启动的环境依赖，干净 HEAD 上同样失败，先存缺陷，与 M136 无关）
+- `npx vitest run`：**57/57 passed**（6 文件，含 waitFor 9 单测 + 终端集成 3 用例）
+- `npx tsc --noEmit`：0 错误；`npm run build`：✓ built in 519ms

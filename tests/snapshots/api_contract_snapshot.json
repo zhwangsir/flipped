@@ -1,0 +1,1557 @@
+{
+  "components": {
+    "schemas": {
+      "BrowserRenderRequest": {
+        "properties": {
+          "url": {
+            "description": "要渲染的目标 URL（仅 http/https）",
+            "minLength": 1,
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "url"
+        ],
+        "title": "BrowserRenderRequest",
+        "type": "object"
+      },
+      "CreateFactoryRequest": {
+        "properties": {
+          "cwd": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "工作目录（默认=活动项目沙盒路径）",
+            "title": "Cwd"
+          },
+          "max_tasks": {
+            "default": 10,
+            "description": "最大任务数",
+            "maximum": 100.0,
+            "minimum": 1.0,
+            "title": "Max Tasks",
+            "type": "integer"
+          },
+          "product_goal": {
+            "description": "高层产品目标",
+            "title": "Product Goal",
+            "type": "string"
+          }
+        },
+        "required": [
+          "product_goal"
+        ],
+        "title": "CreateFactoryRequest",
+        "type": "object"
+      },
+      "Event": {
+        "properties": {
+          "agent": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Role"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "parent_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Id"
+          },
+          "payload": {
+            "additionalProperties": true,
+            "title": "Payload",
+            "type": "object"
+          },
+          "session_id": {
+            "title": "Session Id",
+            "type": "string"
+          },
+          "type": {
+            "$ref": "#/components/schemas/EventType"
+          }
+        },
+        "required": [
+          "id",
+          "session_id",
+          "type"
+        ],
+        "title": "Event",
+        "type": "object"
+      },
+      "EventType": {
+        "enum": [
+          "message",
+          "tool_call",
+          "tool_result",
+          "file_change",
+          "terminal",
+          "browser",
+          "status",
+          "plan",
+          "checkpoint",
+          "approval_request",
+          "approval_result",
+          "error",
+          "rca",
+          "verifier_verdict"
+        ],
+        "title": "EventType",
+        "type": "string"
+      },
+      "FactorySummary": {
+        "properties": {
+          "completed": {
+            "title": "Completed",
+            "type": "integer"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "current_task_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Task Id"
+          },
+          "cwd": {
+            "title": "Cwd",
+            "type": "string"
+          },
+          "factory_id": {
+            "title": "Factory Id",
+            "type": "string"
+          },
+          "failed": {
+            "title": "Failed",
+            "type": "integer"
+          },
+          "iteration_count": {
+            "title": "Iteration Count",
+            "type": "integer"
+          },
+          "max_tasks": {
+            "title": "Max Tasks",
+            "type": "integer"
+          },
+          "product_goal": {
+            "title": "Product Goal",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "total_tasks": {
+            "title": "Total Tasks",
+            "type": "integer"
+          },
+          "updated_at": {
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "factory_id",
+          "product_goal",
+          "cwd",
+          "status",
+          "total_tasks",
+          "completed",
+          "failed",
+          "iteration_count",
+          "max_tasks",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "FactorySummary",
+        "type": "object"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "HealthResponse": {
+        "properties": {
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "proxy": {
+            "additionalProperties": true,
+            "title": "Proxy",
+            "type": "object"
+          }
+        },
+        "required": [
+          "ok",
+          "proxy"
+        ],
+        "title": "HealthResponse",
+        "type": "object"
+      },
+      "MetricsResponse": {
+        "description": "/metrics 端点返回的 LLM / 上下文性能指标。",
+        "properties": {
+          "context": {
+            "additionalProperties": true,
+            "title": "Context",
+            "type": "object"
+          },
+          "llm": {
+            "additionalProperties": true,
+            "title": "Llm",
+            "type": "object"
+          }
+        },
+        "title": "MetricsResponse",
+        "type": "object"
+      },
+      "Role": {
+        "enum": [
+          "user",
+          "supervisor",
+          "worker",
+          "overseer",
+          "verify",
+          "system"
+        ],
+        "title": "Role",
+        "type": "string"
+      },
+      "Session": {
+        "properties": {
+          "checkpoint_db_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Checkpoint Db Path"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "cwd": {
+            "default": "/workspace",
+            "title": "Cwd",
+            "type": "string"
+          },
+          "goal": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Goal"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "mode": {
+            "default": "agent",
+            "title": "Mode",
+            "type": "string"
+          },
+          "model": {
+            "default": "coder",
+            "title": "Model",
+            "type": "string"
+          },
+          "project": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project"
+          },
+          "project_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Name"
+          },
+          "status": {
+            "$ref": "#/components/schemas/SessionStatus"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "updated_at": {
+            "title": "Updated At",
+            "type": "string"
+          },
+          "verify_cmd": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Verify Cmd",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "status"
+        ],
+        "title": "Session",
+        "type": "object"
+      },
+      "SessionStatus": {
+        "enum": [
+          "idle",
+          "running",
+          "paused",
+          "done",
+          "review",
+          "error"
+        ],
+        "title": "SessionStatus",
+        "type": "string"
+      },
+      "TaskRequest": {
+        "properties": {
+          "context": {
+            "additionalProperties": true,
+            "description": "额外上下文，透传给执行器",
+            "title": "Context",
+            "type": "object"
+          },
+          "description": {
+            "description": "本次任务描述",
+            "minLength": 1,
+            "title": "Description",
+            "type": "string"
+          }
+        },
+        "required": [
+          "description"
+        ],
+        "title": "TaskRequest",
+        "type": "object"
+      },
+      "TaskResponse": {
+        "properties": {
+          "session_id": {
+            "title": "Session Id",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "task_id": {
+            "title": "Task Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "task_id",
+          "session_id",
+          "status"
+        ],
+        "title": "TaskResponse",
+        "type": "object"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "title": "flipped orchestration API",
+    "version": "0.2.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/v1/browser/render": {
+      "post": {
+        "description": "用真 Chromium 渲染 URL，返回截图 + 可点击 DOM 元素框。",
+        "operationId": "browser_render_api_v1_browser_render_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BrowserRenderRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Browser Render Api V1 Browser Render Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Browser Render"
+      }
+    },
+    "/api/v1/factories": {
+      "get": {
+        "description": "列出所有工厂（按更新时间倒序）。",
+        "operationId": "list_factories_endpoint_api_v1_factories_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/FactorySummary"
+                  },
+                  "title": "Response List Factories Endpoint Api V1 Factories Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Factories Endpoint",
+        "tags": [
+          "factory"
+        ]
+      },
+      "post": {
+        "description": "启动一个新的 24h 工厂循环。",
+        "operationId": "create_factory_api_v1_factories_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateFactoryRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FactorySummary"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Factory",
+        "tags": [
+          "factory"
+        ]
+      }
+    },
+    "/api/v1/factories/{factory_id}": {
+      "get": {
+        "description": "获取单个工厂的状态。",
+        "operationId": "get_factory_api_v1_factories__factory_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "factory_id",
+            "required": true,
+            "schema": {
+              "title": "Factory Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FactorySummary"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Factory",
+        "tags": [
+          "factory"
+        ]
+      }
+    },
+    "/api/v1/factories/{factory_id}/detail": {
+      "get": {
+        "description": "获取工厂完整状态（含 roadmap/completed/failed 详情）。",
+        "operationId": "get_factory_detail_api_v1_factories__factory_id__detail_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "factory_id",
+            "required": true,
+            "schema": {
+              "title": "Factory Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Factory Detail Api V1 Factories  Factory Id  Detail Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Factory Detail",
+        "tags": [
+          "factory"
+        ]
+      }
+    },
+    "/api/v1/factories/{factory_id}/pause": {
+      "post": {
+        "description": "暂停一个运行中的工厂（取消后台任务，状态保存为 paused）。",
+        "operationId": "pause_factory_api_v1_factories__factory_id__pause_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "factory_id",
+            "required": true,
+            "schema": {
+              "title": "Factory Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FactorySummary"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Pause Factory",
+        "tags": [
+          "factory"
+        ]
+      }
+    },
+    "/api/v1/factories/{factory_id}/quality-trend": {
+      "get": {
+        "description": "M135-B — 返回工厂质量趋势视图,前端 FactoryPanel 画曲线。\n\n每次 task 完成(verified=True)时,grade_quality 打分被追加到 FactoryState.quality_history。\n本端点返回趋势分析(direction/delta/latest_grade) + 完整历史(前端画迷你曲线)。\n\nfail-open 原则:任何异常都返回空历史 + insufficient_data,不阻塞 factory 主流程。\n\nReturns:\n    {\n        \"factory_id\": \"xxx\",\n        \"trend\": {\"direction\": \"improving\", \"delta\": 5.2, \"latest_grade\": \"A\", ...},\n        \"history\": [{\"task_id\": \"t1\", \"timestamp\": \"...\", \"score\": {...}}]\n    }",
+        "operationId": "get_factory_quality_trend_api_v1_factories__factory_id__quality_trend_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "factory_id",
+            "required": true,
+            "schema": {
+              "title": "Factory Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Factory Quality Trend Api V1 Factories  Factory Id  Quality Trend Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Factory Quality Trend",
+        "tags": [
+          "factory"
+        ]
+      }
+    },
+    "/api/v1/factories/{factory_id}/rca_history": {
+      "get": {
+        "description": "M100 — 返回工厂级 RCA 历史聚合视图。\n\n每次 verify 失败触发 analyze_failure_with_memory 后,\nRCA 结果被追加到 FactoryState.rca_history。本端点返回完整历史 + cause_stats 分布。\n\nfail-open 原则:任何异常都返回空列表,不阻塞 factory 主流程。\n\nReturns:\n    {\n        \"factory_id\": \"xxx\",\n        \"rca_history\": [{cause, confidence, fix_suggestion, ...}],\n        \"cause_stats\": {\"syntax_error\": 2, \"timeout\": 1}\n    }",
+        "operationId": "get_factory_rca_history_api_v1_factories__factory_id__rca_history_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "factory_id",
+            "required": true,
+            "schema": {
+              "title": "Factory Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Factory Rca History Api V1 Factories  Factory Id  Rca History Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Factory Rca History",
+        "tags": [
+          "factory"
+        ]
+      }
+    },
+    "/api/v1/factories/{factory_id}/resume": {
+      "post": {
+        "description": "恢复一个暂停/崩溃的工厂。",
+        "operationId": "resume_factory_api_v1_factories__factory_id__resume_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "factory_id",
+            "required": true,
+            "schema": {
+              "title": "Factory Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FactorySummary"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Resume Factory",
+        "tags": [
+          "factory"
+        ]
+      }
+    },
+    "/api/v1/health": {
+      "get": {
+        "operationId": "health_api_v1_health_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Health"
+      }
+    },
+    "/api/v1/mcp/servers": {
+      "get": {
+        "operationId": "get_mcp_servers_api_v1_mcp_servers_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "title": "Response Get Mcp Servers Api V1 Mcp Servers Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Mcp Servers"
+      }
+    },
+    "/api/v1/mcp/servers/{name}/toggle": {
+      "post": {
+        "operationId": "toggle_mcp_server_api_v1_mcp_servers__name__toggle_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "enabled",
+            "required": true,
+            "schema": {
+              "title": "Enabled",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Toggle Mcp Server Api V1 Mcp Servers  Name  Toggle Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Toggle Mcp Server"
+      }
+    },
+    "/api/v1/metrics": {
+      "get": {
+        "operationId": "metrics_api_v1_metrics_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MetricsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Metrics"
+      }
+    },
+    "/api/v1/project/context": {
+      "get": {
+        "description": "返回活动项目(名/host路径/沙盒路径) + git 分支;无项目 project=None。",
+        "operationId": "project_context_api_v1_project_context_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Project Context Api V1 Project Context Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Project Context"
+      }
+    },
+    "/api/v1/project/diff": {
+      "get": {
+        "description": "工作区真实 git 变更（相对 HEAD），供右侧「变更/审查」渲染真 +/- diff。",
+        "operationId": "project_diff_api_v1_project_diff_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Project Diff Api V1 Project Diff Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Project Diff"
+      }
+    },
+    "/api/v1/project/file": {
+      "get": {
+        "description": "读取项目内单个文本文件（点击文件树 → 载入编辑器）。含路径穿越防护。",
+        "operationId": "project_file_api_v1_project_file_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "path",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Path",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Project File Api V1 Project File Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Project File"
+      }
+    },
+    "/api/v1/project/files": {
+      "get": {
+        "description": "项目文件树（供右侧「文件」浏览器）。无活动项目返回空树 + needs_project。",
+        "operationId": "project_files_api_v1_project_files_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Project Files Api V1 Project Files Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Project Files"
+      }
+    },
+    "/api/v1/project/open": {
+      "post": {
+        "description": "打开/导入项目为活动项目。\n\n- 路径已在 ~/projects 下 → 直接设为活动;\n- 外部文件夹 → 拷进 ~/projects/<basename> 再设为活动(沙盒经 /projects 挂载才可访问)。\n  拷贝保留 .git(审查需要),排除 node_modules 等重依赖/构建产物。",
+        "operationId": "project_open_api_v1_project_open_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Req",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Project Open Api V1 Project Open Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Project Open"
+      }
+    },
+    "/api/v1/project/reveal": {
+      "post": {
+        "description": "在系统文件管理器中显示项目根目录（侧栏项目「⋯」菜单）。仅 macOS。",
+        "operationId": "project_reveal_api_v1_project_reveal_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Project Reveal Api V1 Project Reveal Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Project Reveal"
+      }
+    },
+    "/api/v1/project/verify": {
+      "get": {
+        "description": "探测活动项目的验收命令(自主模式据此自我验证)。无项目 → detected=False。",
+        "operationId": "project_verify_api_v1_project_verify_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Project Verify Api V1 Project Verify Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Project Verify"
+      }
+    },
+    "/api/v1/projects": {
+      "get": {
+        "description": "列出项目主目录(~/projects)下的项目 + 当前活动项目。",
+        "operationId": "list_projects_endpoint_api_v1_projects_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response List Projects Endpoint Api V1 Projects Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Projects Endpoint"
+      },
+      "post": {
+        "description": "在项目主目录下新建空白项目文件夹并设为活动项目。",
+        "operationId": "create_project_api_v1_projects_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Req",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Create Project Api V1 Projects Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Project"
+      }
+    },
+    "/api/v1/rca/failure_counter": {
+      "get": {
+        "description": "返回 RCA 连续失败计数器(按根因分类)。",
+        "operationId": "get_failure_counter_endpoint_api_v1_rca_failure_counter_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Failure Counter Endpoint Api V1 Rca Failure Counter Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Failure Counter Endpoint"
+      }
+    },
+    "/api/v1/sessions": {
+      "get": {
+        "operationId": "list_sessions_api_v1_sessions_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/Session"
+                  },
+                  "title": "Response List Sessions Api V1 Sessions Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Sessions"
+      },
+      "post": {
+        "operationId": "create_session_api_v1_sessions_post",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "title",
+            "required": false,
+            "schema": {
+              "default": "新任务",
+              "title": "Title",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "mode",
+            "required": false,
+            "schema": {
+              "default": "agent",
+              "title": "Mode",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Session"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Session"
+      }
+    },
+    "/api/v1/sessions/{session_id}": {
+      "delete": {
+        "description": "删除会话及其事件;若正在运行先取消其任务。",
+        "operationId": "delete_session_api_v1_sessions__session_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Delete Session Api V1 Sessions  Session Id  Delete",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Session"
+      },
+      "get": {
+        "operationId": "get_session_api_v1_sessions__session_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Session"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Session"
+      }
+    },
+    "/api/v1/sessions/{session_id}/cancel": {
+      "post": {
+        "description": "取消会话运行中的任务:cancel asyncio 任务 + 状态回 idle + emit。",
+        "operationId": "cancel_session_api_v1_sessions__session_id__cancel_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Session"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Cancel Session"
+      }
+    },
+    "/api/v1/sessions/{session_id}/events": {
+      "get": {
+        "description": "REST 事件历史(回放/调试用),WebSocket 之外的兜底。",
+        "operationId": "get_events_api_v1_sessions__session_id__events_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "after_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "After Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/Event"
+                  },
+                  "title": "Response Get Events Api V1 Sessions  Session Id  Events Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Events"
+      }
+    },
+    "/api/v1/sessions/{session_id}/resume": {
+      "post": {
+        "description": "从持久化的 LangGraph checkpoint 恢复并继续运行 orchestrator 会话。",
+        "operationId": "resume_session_api_v1_sessions__session_id__resume_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Session"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Resume Session"
+      }
+    },
+    "/api/v1/sessions/{session_id}/tasks": {
+      "post": {
+        "operationId": "create_task_api_v1_sessions__session_id__tasks_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TaskRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Task"
+      }
+    }
+  }
+}

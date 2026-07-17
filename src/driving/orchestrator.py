@@ -1129,6 +1129,65 @@ def _overseer_ret(state: OrchestratorState, verdict: dict) -> dict:
     return upd
 
 
+# ---------- M136-D · 结构化工具错误 + 输出截断 ----------
+
+# 瞬时故障特征（同一操作稍后重试可能成功，无需改代码）
+_TRANSIENT_ERROR_PATTERNS = (
+    "timeout", "timed out", "connection", "rate limit", "ratelimit",
+    "429", "502", "503", "temporary", "temporarily", "busy", "unavailable",
+)
+
+
+def _classify_tool_error(msg: str) -> dict:
+    """把工具/验收失败消息分类为结构化错误（借鉴 Grok proto：retryable + suggestion）。
+
+    retryable=True  → 瞬时故障（超时/连接/限流/5xx/繁忙），原样重试即可。
+    retryable=False → 确定性故障（语法错误/文件不存在/权限/验收断言失败），
+                      附带可执行修复建议，必须修复后重试。
+    默认：retryable=False + 通用建议（宁可误判为不可重试，避免无效空转）。
+    """
+    text = (msg or "").lower()
+    if any(p in text for p in _TRANSIENT_ERROR_PATTERNS):
+        return {"retryable": True,
+                "suggestion": "瞬时故障（超时/连接/限流/服务暂不可用），稍后原样重试即可，无需改代码"}
+    if "syntaxerror" in text or "syntax error" in text:
+        return {"retryable": False,
+                "suggestion": "代码存在语法错误，先按报错行号修复语法，再重新运行验收"}
+    if "no such file" in text or "file not found" in text or "not found" in text or "找不到" in text:
+        return {"retryable": False,
+                "suggestion": "文件不存在，检查路径是否正确、文件是否已生成，必要时先创建缺失文件"}
+    if "permission denied" in text or "权限" in text:
+        return {"retryable": False,
+                "suggestion": "权限不足，检查文件/目录权限，或换用有权限的路径"}
+    if "验收命令退出非0" in text or "verify" in text or "assert" in text or "failed" in text:
+        return {"retryable": False,
+                "suggestion": "验收命令失败，阅读失败的测试/断言输出，针对失败点做最小修复后重新验收"}
+    return {"retryable": False,
+            "suggestion": "未分类错误，阅读完整输出定位根因后做最小修复"}
+
+
+def _trim_output(text: str, budget: int = 4000) -> str:
+    """截断超长工具/验收输出，保留头+尾，中间用 [... truncated N chars ...] 标记。
+
+    长 subprocess 输出直接进 prompt 会挤爆上下文（M11.1 Kimi reasoning overflow 教训）。
+    头保留命令开头（看出跑的是什么），尾保留结尾（错误/断言通常在末尾）。
+    保证返回值长度 ≤ budget（marker 占位按最大位数预扣）。
+    """
+    if not text or len(text) <= budget:
+        return text
+    marker_tpl = "\n[... truncated {n} chars ...]\n"
+    # 用最大位数（原文长度）估算 marker 占位，保证最终总长 ≤ budget
+    marker_max = len(marker_tpl.format(n=len(text)))
+    if marker_max >= budget:
+        return text[:budget]
+    keep = budget - marker_max
+    head = keep // 2
+    tail = keep - head
+    omitted = len(text) - head - tail
+    marker = marker_tpl.format(n=omitted)
+    return text[:head] + marker + text[len(text) - tail:]
+
+
 def _safe_default_verifier(cmd: list, cwd: str) -> "tuple[bool, str]":
     from driving.approval import classify_risk
     command_str = " ".join(cmd)
@@ -1193,7 +1252,18 @@ def build_orchestrator(supervisor: SupervisorFn = default_supervisor,
             upd["done"] = True
             upd["stop_reason"] = "verified"
         elif not ok:
-            upd["feedback"] = (state.get("feedback", "") + f"\n验收命令退出非0:\n{output}").strip()
+            # M136-D：截断超长输出（防挤爆下一轮 prompt）+ 追加结构化错误元数据。
+            # 集成点选择：verify 失败反馈是 worker/verify 失败回灌 LLM 的主路径；
+            # 以 [error_meta] 机器可读后缀行追加，不破坏既有字符串消费者
+            # （"验收命令退出非0" 前缀原样保留）。
+            trimmed_output = _trim_output(output)
+            meta = _classify_tool_error(output)
+            upd["feedback"] = (
+                state.get("feedback", "")
+                + f"\n验收命令退出非0:\n{trimmed_output}"
+                + f"\n[error_meta] retryable={str(meta['retryable']).lower()} "
+                  f"suggestion={meta['suggestion']}"
+            ).strip()
         else:
             # M89 修复:ok=True but believe_done=False → 当前子任务验证通过,但整体目标未达成。
             # 必须给 supervisor 明确 feedback,否则它读到原 goal 会重新拆同样的子任务(死循环)。

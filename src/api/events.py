@@ -1,4 +1,23 @@
-"""按会话维度的 WebSocket 事件总线。"""
+"""按会话维度的 WebSocket 事件总线。
+
+线协议（M136-B2 记录的既有事实 + 新增 ack）：
+
+事件 WS ``/api/v1/sessions/{session_id}/events``：
+- 连接后服务端先回放历史事件（重连可带 ``?last_event_id=`` 从断点续传），
+  随后实时推送 ``Event`` JSON（见 schemas.Event）。
+- 客户端 → 服务端帧（JSON）：
+    - ``{"type": "ack", "last_event_id": <str>}``
+      断点续传确认：服务端回 ``{"type": "ack_ok", "last_event_id": <str>}``（M136 新增）。
+    - ``{"type": "ping"}``                    心跳，忽略。
+    - ``{"type": "approval_result", ...}``    人工审批结果，转为 approval_result 事件。
+    - 其它 type                               按用户消息事件转发（既有行为）。
+  非 JSON 文本帧静默忽略，不会断开连接。
+- 服务端 → 客户端控制帧：``ack_ok``（对 ack 的回执，不进事件历史）。
+
+终端 WS ``/api/v1/terminal``（见 terminal.py）：
+- 客户端 → 服务端：``{"d": "<input>"}`` 写入 pty；``{"r": [cols, rows]}`` 调整窗口。
+- 服务端 → 客户端：pty 原始输出文本帧（xterm.js 直接渲染）。
+"""
 from __future__ import annotations
 
 import asyncio
