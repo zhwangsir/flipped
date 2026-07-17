@@ -4614,6 +4614,192 @@ select.set-select-native option {
 }
 
 /* ============================================================
+ * M135-B — FactoryPanel 质量趋势折叠区
+ * 趋势方向 badge + 最新评级 + 迷你 bar chart + 维度明细
+ * ============================================================ */
+.fd-quality-toggle {
+  width: 100%;
+  background: transparent;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  text-align: left;
+  color: inherit;
+  font: inherit;
+}
+.fd-quality-toggle:hover {
+  color: var(--text-primary);
+}
+.fd-quality-toggle:hover svg {
+  color: var(--text-secondary);
+}
+.fd-quality-badge {
+  display: inline-flex;
+  align-items: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: 999px;
+  font-size: var(--text-xs);
+  font-family: var(--font-mono);
+  color: var(--accent);
+  background: color-mix(in oklab, var(--accent) 14%, var(--bg-elevated));
+  border: 1px solid color-mix(in oklab, var(--accent) 40%, var(--border-subtle));
+  font-weight: 600;
+}
+.fd-quality-grade {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 4px;
+  font-size: var(--text-xs);
+  font-family: var(--font-mono);
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+.fd-quality-grade.grade-s {
+  color: #ffd700;
+  background: color-mix(in oklab, #ffd700 16%, var(--bg-elevated));
+  border: 1px solid color-mix(in oklab, #ffd700 45%, var(--border-subtle));
+}
+.fd-quality-grade.grade-a {
+  color: var(--success);
+  background: color-mix(in oklab, var(--success) 14%, var(--bg-elevated));
+  border: 1px solid color-mix(in oklab, var(--success) 40%, var(--border-subtle));
+}
+.fd-quality-grade.grade-b {
+  color: var(--accent);
+  background: color-mix(in oklab, var(--accent) 14%, var(--bg-elevated));
+  border: 1px solid color-mix(in oklab, var(--accent) 40%, var(--border-subtle));
+}
+.fd-quality-grade.grade-c {
+  color: var(--text-muted);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+}
+.fd-quality-chev {
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-faint);
+  transition: transform var(--dur-fast) var(--ease);
+  transform: rotate(-90deg);
+}
+.fd-quality-chev.open {
+  transform: rotate(0deg);
+}
+.fd-quality-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 8px;
+  animation: slide-up var(--dur) var(--ease-out-quart) both;
+}
+.fd-quality-empty {
+  padding: 18px;
+  text-align: center;
+  font-size: var(--text-sm);
+  color: var(--text-faint);
+  background: var(--bg-surface);
+  border: 1px dashed var(--border-subtle);
+  border-radius: var(--radius-sm);
+}
+.fd-quality-summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.fd-quality-direction {
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+.fd-quality-direction.improving {
+  color: var(--success);
+}
+.fd-quality-direction.stable {
+  color: var(--accent);
+}
+.fd-quality-direction.degrading {
+  color: var(--warning);
+}
+.fd-quality-direction.muted {
+  color: var(--text-muted);
+}
+.fd-quality-delta {
+  font-size: var(--text-xs);
+  font-family: var(--font-mono);
+  color: var(--text-secondary);
+}
+.fd-quality-overall {
+  font-size: var(--text-xs);
+  color: var(--text-faint);
+}
+.fd-quality-chart {
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  height: 48px;
+  padding: 6px 8px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+.fd-quality-bar {
+  flex: 1;
+  min-width: 3px;
+  border-radius: 2px 2px 0 0;
+  transition: opacity var(--dur-fast) var(--ease);
+}
+.fd-quality-bar:hover {
+  opacity: 0.75;
+}
+.fd-quality-bar.grade-s {
+  background: linear-gradient(to top, #ffd700, #ffed4e);
+}
+.fd-quality-bar.grade-a {
+  background: linear-gradient(to top, var(--success), color-mix(in oklab, var(--success) 70%, #fff));
+}
+.fd-quality-bar.grade-b {
+  background: linear-gradient(to top, var(--accent), color-mix(in oklab, var(--accent) 70%, #fff));
+}
+.fd-quality-bar.grade-c {
+  background: var(--text-faint);
+}
+.fd-quality-dims {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.fd-quality-dim {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: 999px;
+  font-size: var(--text-xs);
+}
+.fd-quality-dim-label {
+  color: var(--text-faint);
+}
+.fd-quality-dim-val {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+.fd-quality-dim-val.high {
+  color: var(--success);
+}
+.fd-quality-dim-val.low {
+  color: var(--warning);
+}
+
+/* ============================================================
  * M95 — FailurePanel:RCA / verifier 判决可观测面板
  * 无数据时不渲染;有数据时在 ErrorBanner 与 PlanCard 之间展示。
  * ============================================================ */

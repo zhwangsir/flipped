@@ -27,6 +27,7 @@ import {
   IconChevronLeft,
   IconChevronDown,
   IconShield,
+  IconSparkle,
 } from "../icons";
 
 const STATUS_LABELS: Record<string, string> = {
@@ -337,6 +338,9 @@ function FactoryDetailCard({
 
       {/* M100 — 工厂级 RCA 历史聚合折叠区 */}
       <FactoryRcaHistorySection factoryId={detail.factory_id} />
+
+      {/* M135-B — 工厂质量趋势折叠区 */}
+      <FactoryQualityTrendSection factoryId={detail.factory_id} />
     </div>
   );
 }
@@ -562,5 +566,123 @@ function ResultRow({
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * M135-B — 工厂质量趋势折叠区。
+ * 默认折叠;展开时显示趋势方向 badge + 最新评级 + 历史分数迷你曲线(纯 CSS bar chart)。
+ * 数据来源 store.factoryQualityTrend(selectFactory 时已预拉取),展开时再主动刷新一次。
+ */
+function FactoryQualityTrendSection({ factoryId }: { factoryId: string }) {
+  const { factoryQualityTrend, loadFactoryQualityTrend } = useApp();
+  const [expanded, setExpanded] = useState(false);
+
+  const trend = factoryQualityTrend?.trend;
+  const history = factoryQualityTrend?.history ?? [];
+  const total = history.length;
+
+  const onToggle = () => {
+    const next = !expanded;
+    setExpanded(next);
+    // 展开时主动刷新一次,保证最新(fail-open)
+    if (next) loadFactoryQualityTrend(factoryId);
+  };
+
+  // 趋势方向 → 中文 + 样式类
+  const directionMeta: Record<string, { label: string; cls: string }> = {
+    improving: { label: "持续提升", cls: "improving" },
+    stable: { label: "保持稳定", cls: "stable" },
+    degrading: { label: "有所下降", cls: "degrading" },
+    insufficient_data: { label: "数据不足", cls: "muted" },
+    unknown: { label: "未知", cls: "muted" },
+  };
+  const dirMeta = directionMeta[trend?.direction ?? "insufficient_data"] ?? directionMeta.insufficient_data;
+
+  return (
+    <>
+      <button
+        className="fd-sec-h fd-quality-toggle"
+        onClick={onToggle}
+        aria-expanded={expanded}
+        type="button"
+      >
+        <IconSparkle size={14} />
+        <span>质量趋势</span>
+        <span className="fd-quality-badge">{total}</span>
+        {trend?.latest_grade && (
+          <span className={"fd-quality-grade grade-" + trend.latest_grade.toLowerCase()}>
+            {trend.latest_grade}
+          </span>
+        )}
+        <span className="spacer" />
+        <span className={"fd-quality-chev" + (expanded ? " open" : "")}>
+          <IconChevronDown size={14} />
+        </span>
+      </button>
+      {expanded && (
+        <div className="fd-quality-body">
+          {/* 空态占位 */}
+          {total === 0 ? (
+            <div className="fd-quality-empty">暂无质量数据(task 完成后自动打分)</div>
+          ) : (
+            <>
+              {/* 趋势概要 */}
+              <div className="fd-quality-summary">
+                <span className={"fd-quality-direction " + dirMeta.cls}>{dirMeta.label}</span>
+                {trend?.delta !== undefined && trend.delta !== 0 && (
+                  <span className="fd-quality-delta">
+                    {trend.delta > 0 ? "+" : ""}{trend.delta.toFixed(1)} 分
+                  </span>
+                )}
+                {trend?.latest_overall !== undefined && (
+                  <span className="fd-quality-overall">最新 {trend.latest_overall.toFixed(0)} 分</span>
+                )}
+              </div>
+              {/* 迷你曲线(纯 CSS bar chart,最近 20 条) */}
+              <div className="fd-quality-chart" role="img" aria-label="质量分数趋势图">
+                {history.slice(-20).map((entry, i) => {
+                  const score = entry.score?.overall ?? 0;
+                  const height = Math.max(4, Math.min(100, score));
+                  const grade = entry.score?.grade ?? "C";
+                  return (
+                    <div
+                      key={`${entry.task_id}-${i}`}
+                      className={"fd-quality-bar grade-" + grade.toLowerCase()}
+                      style={{ height: `${height}%` }}
+                      title={`${entry.task_id}: ${score.toFixed(0)} 分 (${grade})`}
+                    />
+                  );
+                })}
+              </div>
+              {/* 维度明细(最新一条) */}
+              {history.length > 0 && (() => {
+                const latest = history[history.length - 1]?.score;
+                if (!latest) return null;
+                const dims: Array<[string, number]> = [
+                  ["功能", latest.functionality],
+                  ["代码", latest.code_quality],
+                  ["设计", latest.design],
+                  ["可维护", latest.maintainability],
+                  ["性能", latest.performance],
+                ];
+                return (
+                  <div className="fd-quality-dims">
+                    {dims.map(([label, val]) => (
+                      <div key={label} className="fd-quality-dim">
+                        <span className="fd-quality-dim-label">{label}</span>
+                        <span className={"fd-quality-dim-val" + (val >= 85 ? " high" : val < 70 ? " low" : "")}>
+                          {val.toFixed(0)}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
+            </>
+          )}
+        </div>
+      )}
+    </>
   );
 }

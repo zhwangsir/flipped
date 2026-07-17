@@ -22,6 +22,7 @@ import type {
   FactorySummary,
   FactoryDetail,
   FactoryRcaHistoryResponse,
+  QualityTrendResponse,
   RcaInfo,
   VerifierVerdict,
 } from './types';
@@ -49,6 +50,7 @@ import {
   resumeFactory as apiResumeFactory,
   pauseFactory as apiPauseFactory,
   fetchFactoryRcaHistory as apiFetchFactoryRcaHistory,
+  fetchFactoryQualityTrend as apiFetchFactoryQualityTrend,
   fetchFailureCounter,
   connectEvents,
 } from './api';
@@ -135,6 +137,9 @@ interface AppState {
   // M100 — 工厂级 RCA 历史聚合
   factoryRcaHistory: FactoryRcaHistoryResponse | null;
   loadFactoryRcaHistory: (id: string) => Promise<void>;
+  // M135-B — 工厂质量趋势
+  factoryQualityTrend: QualityTrendResponse | null;
+  loadFactoryQualityTrend: (id: string) => Promise<void>;
   // M95 — RCA / verifier 可观测状态
   rcaHistory: RcaInfo[];
   lastVerifierVerdict: VerifierVerdict | null;
@@ -193,6 +198,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [factoryOpen, setFactoryOpen] = useState(false);
   // M100 — 工厂级 RCA 历史聚合(选中工厂时拉取,切换工厂时清空)
   const [factoryRcaHistory, setFactoryRcaHistory] = useState<FactoryRcaHistoryResponse | null>(null);
+  // M135-B — 工厂质量趋势(选中工厂时拉取,切换工厂时清空)
+  const [factoryQualityTrend, setFactoryQualityTrend] = useState<QualityTrendResponse | null>(null);
   // M95 — RCA / verifier 可观测状态
   const [rcaHistory, setRcaHistory] = useState<RcaInfo[]>([]);
   const [lastVerifierVerdict, setLastVerifierVerdict] = useState<VerifierVerdict | null>(null);
@@ -505,6 +512,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const selectFactory = useCallback((id: string) => {
     // M100 — 切换工厂时清空旧的 RCA 历史(避免显示上一个工厂的统计)
     setFactoryRcaHistory(null);
+    // M135-B — 切换工厂时清空旧的质量趋势
+    setFactoryQualityTrend(null);
     if (!id) {
       setFactoryDetail(null);
       return;
@@ -517,6 +526,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
     apiFetchFactoryRcaHistory(id)
       .then(setFactoryRcaHistory)
       .catch(() => setFactoryRcaHistory(null));
+    // M135-B — 拉取工厂质量趋势(fail-open)
+    apiFetchFactoryQualityTrend(id)
+      .then(setFactoryQualityTrend)
+      .catch(() => setFactoryQualityTrend(null));
   }, []);
 
   const resumeFactory = useCallback(async (id: string) => {
@@ -534,6 +547,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
     try {
       const r = await apiFetchFactoryRcaHistory(id);
       setFactoryRcaHistory(r);
+    } catch {
+      // fail-open:加载失败保持原状态,不抛错打断 UI
+    }
+  }, []);
+
+  // M135-B — 主动加载工厂质量趋势(供 FactoryPanel 展开折叠区时刷新)
+  const loadFactoryQualityTrend = useCallback(async (id: string) => {
+    try {
+      const r = await apiFetchFactoryQualityTrend(id);
+      setFactoryQualityTrend(r);
     } catch {
       // fail-open:加载失败保持原状态,不抛错打断 UI
     }
@@ -824,6 +847,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         pauseFactory,
         factoryRcaHistory,
         loadFactoryRcaHistory,
+        factoryQualityTrend,
+        loadFactoryQualityTrend,
         rcaHistory,
         lastVerifierVerdict,
         failureCounter,

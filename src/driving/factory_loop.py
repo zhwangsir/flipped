@@ -101,6 +101,10 @@ class FactoryState(BaseModel):
     # M134.1 — repo_map 缓存:同一 factory 内 cwd 不变,只在首个 task 扫一次项目结构,
     # 后续 task 直接复用,避免每个 task 重扫文件系统。空串 = 尚未扫描。
     repo_map_cache: str = ""
+    # M135-B — 质量趋势历史:task 完成时调 grade_quality 打分追加,前端 FactoryPanel 画趋势。
+    # 每条 = {"task_id": str, "timestamp": str, "score": dict(QualityScore asdict)}。
+    # fail-open:打分异常不追加,不阻塞主流程。
+    quality_history: list[dict] = Field(default_factory=list)
     # M130 — AgentCLI 集成：worktree 隔离 + Fan-out 模式
     current_worktree_id: str | None = None
     cli_enabled: bool = True
@@ -253,6 +257,9 @@ def _ensure_table(conn: sqlite3.Connection) -> None:
     # M134.1 迁移：给旧表加 repo_map_cache 列(项目结构概览缓存)
     if "repo_map_cache" not in cols:
         conn.execute("ALTER TABLE factory_states ADD COLUMN repo_map_cache TEXT NOT NULL DEFAULT ''")
+    # M135-B 迁移：给旧表加 quality_history_json 列(质量趋势历史)
+    if "quality_history_json" not in cols:
+        conn.execute("ALTER TABLE factory_states ADD COLUMN quality_history_json TEXT NOT NULL DEFAULT '[]'")
 
 
 def _state_to_row(state: FactoryState) -> tuple:
@@ -275,6 +282,7 @@ def _state_to_row(state: FactoryState) -> tuple:
         1 if state.cli_enabled else 0,
         json.dumps(state.cli_stats),
         state.repo_map_cache,
+        json.dumps(state.quality_history),
         state.created_at,
         datetime.now(timezone.utc).isoformat(),
     )
@@ -297,6 +305,14 @@ def _row_to_state(row: sqlite3.Row) -> FactoryState:
         cli_stats = {"worktree_create": 0, "worktree_merge": 0, "worktree_remove": 0, "status_update": 0, "snapshot": 0, "fan_out": 0}
     # M134.1 兼容旧表(无 repo_map_cache 列时返回空串)
     repo_map_cache = row["repo_map_cache"] if "repo_map_cache" in row.keys() else ""
+    # M135-B 兼容旧表(无 quality_history_json 列时返回空列表)
+    if "quality_history_json" in row.keys():
+        try:
+            quality_history = json.loads(row["quality_history_json"])
+        except Exception:
+            quality_history = []
+    else:
+        quality_history = []
     return FactoryState(
         factory_id=row["factory_id"],
         product_goal=row["product_goal"],
@@ -313,6 +329,7 @@ def _row_to_state(row: sqlite3.Row) -> FactoryState:
         design_context=row["design_context"],
         rca_history=rca_history,
         repo_map_cache=repo_map_cache,
+        quality_history=quality_history,
         current_worktree_id=current_worktree_id,
         cli_enabled=cli_enabled,
         cli_stats=cli_stats,
@@ -332,8 +349,9 @@ def save_factory_state(state: FactoryState, db_path: str) -> None:
                 factory_id, product_goal, cwd, status, roadmap_json, completed_json,
                 failed_json, current_task_id, context_summary, iteration_count,
                 max_tasks, design_style, design_context, rca_history_json,
-                current_worktree_id, cli_enabled, cli_stats_json, repo_map_cache, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                current_worktree_id, cli_enabled, cli_stats_json, repo_map_cache,
+                quality_history_json, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(factory_id) DO UPDATE SET
                 product_goal=excluded.product_goal,
                 cwd=excluded.cwd,
@@ -352,6 +370,7 @@ def save_factory_state(state: FactoryState, db_path: str) -> None:
                 cli_enabled=excluded.cli_enabled,
                 cli_stats_json=excluded.cli_stats_json,
                 repo_map_cache=excluded.repo_map_cache,
+                quality_history_json=excluded.quality_history_json,
                 updated_at=excluded.updated_at
             """,
             _state_to_row(state),
@@ -580,6 +599,35 @@ def _looks_like_ui_task(task: FactoryTask, state: FactoryState) -> bool:
         "ui", "ux", "design", "theme", "styling",
     )
     return any(kw in text for kw in ui_keywords)
+
+
+def _record_quality_score(task: FactoryTask, state: FactoryState) -> None:
+    """M135-B — task 完成时质量打分,追加到 state.quality_history。
+
+    数据源:
+    - design = design_score(cwd) (M36 已有,0-100)
+    - functionality = 85.0 (verified=True 才进这分支)
+    - 其余维度默认 60 (缺数据,后续可接 lint/性能测试)
+
+    fail-open:打分异常不追加记录,不阻塞主流程。
+    """
+    try:
+        from dataclasses import asdict as _asdict
+        from driving.quality_grading import grade_quality
+        from driving.design_context import design_score as _design_score
+        _ds, _ = _design_score(state.cwd)
+        _metrics = {
+            "functionality": 85.0,
+            "design": float(_ds),
+        }
+        _qscore = grade_quality(_metrics)
+        state.quality_history.append({
+            "task_id": task.id,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "score": _asdict(_qscore),
+        })
+    except Exception:
+        pass
 
 
 def default_orchestrator_fn(task: FactoryTask, state: FactoryState) -> TaskResult:
@@ -1168,6 +1216,8 @@ def run_factory_loop(
                     )
                 except Exception:
                     pass
+                # M135-B：质量打分——喂给前端 FactoryPanel 画趋势。fail-open:打分异常不阻塞。
+                _record_quality_score(task, state)
             else:
                 # M130: CLI 集成——任务失败时更新状态
                 if cli is not None:

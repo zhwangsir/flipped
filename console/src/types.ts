@@ -241,6 +241,33 @@ export interface FactoryRcaHistoryResponse {
   cause_stats: Record<string, number>;
 }
 
+// M135-B — 工厂质量趋势视图(前端 FactoryPanel 画迷你曲线)
+export interface QualityTrendResponse {
+  factory_id: string;
+  trend: {
+    direction: 'improving' | 'stable' | 'degrading' | 'insufficient_data' | 'unknown';
+    improvement_rate?: number;
+    delta?: number;
+    message?: string;
+    samples?: number;
+    latest_overall?: number;
+    latest_grade?: 'S' | 'A' | 'B' | 'C';
+  };
+  history: Array<{
+    task_id: string;
+    timestamp: string;
+    score: {
+      functionality: number;
+      code_quality: number;
+      design: number;
+      maintainability: number;
+      performance: number;
+      grade: 'S' | 'A' | 'B' | 'C';
+      overall: number;
+    };
+  }>;
+}
+
 /** orchestration-api 发过来的原始事件（与 src/api/schemas.py 对齐）。 */
 export interface ApiEvent {
   id: string;

@@ -2,6 +2,26 @@
 
 > 命令 + 输出摘要 + 结论，追加写入（AGENTS.md §3）。
 
+## [2026-07-17] M135-B · 质量趋势前端可视化
+
+### 后端打分与 API
+- 命令：`.venv/bin/python -m pytest tests/test_factory_quality_trend.py -xvs`
+- 输出摘要：**5/5 通过** — 打分追加/fail-open/持久化 roundtrip/API 空数据/API 有数据 全验证。
+- 结论：M135-B 后端 ✅ — task 完成自动打分，API 返回趋势方向+完整历史。
+
+### 前端组件
+- 命令：`cd console && npx tsc --noEmit`
+- 输出摘要：**零错误**。
+- 命令：`cd console && npx vitest run`
+- 输出摘要：**45/45 通过** — 无回归。
+- 结论：M135-B 前端 ✅ — FactoryPanel 质量趋势折叠区（badge+评级+迷你曲线+维度明细）。
+
+### 全量回归
+- 命令：`.venv/bin/python -m pytest tests/ -q --tb=no`
+- 输出摘要：**1452 passed, 2 warnings in 211.41s** — 含 M135-B 新增 5 个测试，零失败。
+- 结论：M135-B 全部 ✅ — 质量数据从后端打分到前端可视化全链路通车。
+
+
 ## [2026-07-17] M134 · 孤岛模块接入主链路（repo_map + visual_regression）
 
 ### M134.1 repo_map 注入 Supervisor kwargs

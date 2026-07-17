@@ -1,5 +1,5 @@
 /** Console ↔ orchestration-api HTTP + WebSocket 客户端。 */
-import type { Session, ApiEvent, Metrics, McpServer, ProjectContext, Project, FileNode, BrowserRender, GitDiffFile, FactoryDetail, FactorySummary, FactoryRcaHistoryResponse, FailureCounterResponse } from './types';
+import type { Session, ApiEvent, Metrics, McpServer, ProjectContext, Project, FileNode, BrowserRender, GitDiffFile, FactoryDetail, FactorySummary, FactoryRcaHistoryResponse, FailureCounterResponse, QualityTrendResponse } from './types';
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined) || 'http://127.0.0.1:8011';
 const API_PREFIX = '/api/v1';
@@ -138,6 +138,12 @@ export function pauseFactory(factoryId: string): Promise<FactoryDetail> {
 // M100 — 工厂级 RCA 历史聚合视图
 export function fetchFactoryRcaHistory(factoryId: string): Promise<FactoryRcaHistoryResponse> {
   return api<FactoryRcaHistoryResponse>(`/factories/${encodeURIComponent(factoryId)}/rca_history`);
+}
+
+// M135-B — 工厂质量趋势视图(前端 FactoryPanel 画迷你曲线)
+// 类型定义在 ./types 的 QualityTrendResponse
+export function fetchFactoryQualityTrend(factoryId: string): Promise<QualityTrendResponse> {
+  return api<QualityTrendResponse>(`/factories/${encodeURIComponent(factoryId)}/quality-trend`);
 }
 
 export interface EventHandlers {

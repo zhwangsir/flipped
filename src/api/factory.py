@@ -241,6 +241,57 @@ async def get_factory_rca_history(factory_id: str) -> dict[str, Any]:
     }
 
 
+@router.get("/{factory_id}/quality-trend")
+async def get_factory_quality_trend(factory_id: str) -> dict[str, Any]:
+    """M135-B — 返回工厂质量趋势视图,前端 FactoryPanel 画曲线。
+
+    每次 task 完成(verified=True)时,grade_quality 打分被追加到 FactoryState.quality_history。
+    本端点返回趋势分析(direction/delta/latest_grade) + 完整历史(前端画迷你曲线)。
+
+    fail-open 原则:任何异常都返回空历史 + insufficient_data,不阻塞 factory 主流程。
+
+    Returns:
+        {
+            "factory_id": "xxx",
+            "trend": {"direction": "improving", "delta": 5.2, "latest_grade": "A", ...},
+            "history": [{"task_id": "t1", "timestamp": "...", "score": {...}}]
+        }
+    """
+    state = load_factory_state(factory_id, FACTORY_DB)
+    if state is None:
+        raise HTTPException(status_code=404, detail="factory not found")
+
+    # fail-open: quality_history 字段缺失或损坏时返回空列表
+    try:
+        history = state.quality_history or []
+    except Exception:
+        history = []
+
+    # 趋势分析:把 dict 转回 QualityScore 给 get_quality_trend 消费
+    try:
+        from driving.quality_grading import QualityScore, get_quality_trend
+        scores = []
+        for entry in history:
+            try:
+                score_dict = entry.get("score", {})
+                # QualityScore 是 dataclass,从 dict 重建(grade 字段是 str,要转回 enum)
+                from driving.quality_grading import QualityGrade
+                if "grade" in score_dict and isinstance(score_dict["grade"], str):
+                    score_dict["grade"] = QualityGrade(score_dict["grade"])
+                scores.append(QualityScore(**score_dict))
+            except Exception:
+                continue  # 单条损坏跳过,不影响整体
+        trend = get_quality_trend(scores)
+    except Exception:
+        trend = {"direction": "unknown", "improvement_rate": 0.0, "message": "趋势分析异常"}
+
+    return {
+        "factory_id": factory_id,
+        "trend": trend,
+        "history": history,
+    }
+
+
 @router.post("/{factory_id}/resume", response_model=FactorySummary)
 async def resume_factory(factory_id: str) -> FactorySummary:
     """恢复一个暂停/崩溃的工厂。"""
