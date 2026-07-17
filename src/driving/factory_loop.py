@@ -15,6 +15,7 @@ import sqlite3
 import uuid
 from datetime import datetime, timezone
 from enum import Enum
+from pathlib import Path
 from typing import Callable
 
 from pydantic import BaseModel, Field
@@ -97,6 +98,9 @@ class FactoryState(BaseModel):
     design_context: str = ""
     # M100 — factory 级 RCA 历史聚合(每次 verify 失败触发 RCA 后追加)
     rca_history: list[FactoryRcaEntry] = Field(default_factory=list)
+    # M134.1 — repo_map 缓存:同一 factory 内 cwd 不变,只在首个 task 扫一次项目结构,
+    # 后续 task 直接复用,避免每个 task 重扫文件系统。空串 = 尚未扫描。
+    repo_map_cache: str = ""
     # M130 — AgentCLI 集成：worktree 隔离 + Fan-out 模式
     current_worktree_id: str | None = None
     cli_enabled: bool = True
@@ -246,6 +250,9 @@ def _ensure_table(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE factory_states ADD COLUMN cli_enabled INTEGER NOT NULL DEFAULT 1")
     if "cli_stats_json" not in cols:
         conn.execute("ALTER TABLE factory_states ADD COLUMN cli_stats_json TEXT NOT NULL DEFAULT '{}'")
+    # M134.1 迁移：给旧表加 repo_map_cache 列(项目结构概览缓存)
+    if "repo_map_cache" not in cols:
+        conn.execute("ALTER TABLE factory_states ADD COLUMN repo_map_cache TEXT NOT NULL DEFAULT ''")
 
 
 def _state_to_row(state: FactoryState) -> tuple:
@@ -267,6 +274,7 @@ def _state_to_row(state: FactoryState) -> tuple:
         state.current_worktree_id,
         1 if state.cli_enabled else 0,
         json.dumps(state.cli_stats),
+        state.repo_map_cache,
         state.created_at,
         datetime.now(timezone.utc).isoformat(),
     )
@@ -287,6 +295,8 @@ def _row_to_state(row: sqlite3.Row) -> FactoryState:
         cli_stats = json.loads(cli_stats_raw)
     except Exception:
         cli_stats = {"worktree_create": 0, "worktree_merge": 0, "worktree_remove": 0, "status_update": 0, "snapshot": 0, "fan_out": 0}
+    # M134.1 兼容旧表(无 repo_map_cache 列时返回空串)
+    repo_map_cache = row["repo_map_cache"] if "repo_map_cache" in row.keys() else ""
     return FactoryState(
         factory_id=row["factory_id"],
         product_goal=row["product_goal"],
@@ -302,6 +312,7 @@ def _row_to_state(row: sqlite3.Row) -> FactoryState:
         design_style=row["design_style"],
         design_context=row["design_context"],
         rca_history=rca_history,
+        repo_map_cache=repo_map_cache,
         current_worktree_id=current_worktree_id,
         cli_enabled=cli_enabled,
         cli_stats=cli_stats,
@@ -321,8 +332,8 @@ def save_factory_state(state: FactoryState, db_path: str) -> None:
                 factory_id, product_goal, cwd, status, roadmap_json, completed_json,
                 failed_json, current_task_id, context_summary, iteration_count,
                 max_tasks, design_style, design_context, rca_history_json,
-                current_worktree_id, cli_enabled, cli_stats_json, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                current_worktree_id, cli_enabled, cli_stats_json, repo_map_cache, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(factory_id) DO UPDATE SET
                 product_goal=excluded.product_goal,
                 cwd=excluded.cwd,
@@ -340,6 +351,7 @@ def save_factory_state(state: FactoryState, db_path: str) -> None:
                 current_worktree_id=excluded.current_worktree_id,
                 cli_enabled=excluded.cli_enabled,
                 cli_stats_json=excluded.cli_stats_json,
+                repo_map_cache=excluded.repo_map_cache,
                 updated_at=excluded.updated_at
             """,
             _state_to_row(state),
@@ -682,6 +694,16 @@ def default_orchestrator_fn(task: FactoryTask, state: FactoryState) -> TaskResul
         adaptive_max_iter = 1
         complexity_score = 50.0
 
+    # M134.1 — repo_map 注入 Supervisor:让 GLM 调度看见项目结构(技术栈/目录/关键文件),
+    # 拆出的子任务更贴合项目实际、不重造已有模块。同一 factory 内 cwd 不变,扫一次后缓存。
+    # fail-open:repo_map 模块异常不阻塞任务,退化为空串(与 M103-M107 自改进模块一致)。
+    if not state.repo_map_cache:
+        try:
+            from driving.repo_map import build_repo_map
+            state.repo_map_cache = build_repo_map(Path(state.cwd))
+        except Exception:
+            state.repo_map_cache = ""
+
     kwargs = dict(
         goal=task.description,
         cwd=state.cwd,
@@ -691,6 +713,7 @@ def default_orchestrator_fn(task: FactoryTask, state: FactoryState) -> TaskResul
             f"反馈：{fb_short}"
             + compact_design
         ),
+        repo_map=state.repo_map_cache,
         max_iterations=adaptive_max_iter,
         loop_threshold=dynamic_loop_threshold,
         db_path="data/factory_checkpoints.db",

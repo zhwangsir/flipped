@@ -1,109 +1,77 @@
-# M103-M107 · Loop Engineering 深化 — 五层自改进闭环
+# M134 · 孤岛模块接入主链路 — repo_map + visual_regression
 
-> 目标：把当前的"线性循环"升级为"自改进闭环"——系统不仅完成任务，
-> 还从每次成功与失败中学习，越跑越强、越跑越稳、越跑越高效。
+> 背景：M133 完成 UI/UX 深度修复与全量 E2E 绿。盘点发现 ~10 个模块"建好了没通车"，
+> 本里程碑把 ROI 最高的两个接入主链路：**repo_map**（喂给 Supervisor，让 GLM 调度看见项目结构）
+> 和 **visual_regression**（叠加进 factory verify，让 UI 任务有视觉校验）。
+> 两者接口已存在，属于"接线"而非"新建"，风险低、见效快。
 
-## 当前架构盘点
+## 当前状态盘点
 
-### 已有能力
-- **L1 任务循环**：orchestrator 内 Supervisor→Worker→Overseer→Verify 四层
-- **L2 工厂循环**：factory_loop 多任务 roadmap 执行 + task_proposer 自主生成
-- **L3 无限循环**：infinite_loop 多轮产品演进（GLM 产品演进者）
-- **Gold Memory**：成功/失败任务记录 + 语义检索（M11/M96）
-- **RCA 根因分析**：11 类失败模式自动归因 + 修复建议（M12/M94）
-- **Skill 沉淀**：成功任务自动沉淀为 Skill，新工厂自动加载（M102）
+### 已就位（无需改动）
+- `driving/repo_map.py:build_repo_map(root)` — 纯函数，把项目压成 ≤2500 字符结构概览
+- `driving/visual_regression.py:make_visual_verifier(threshold)` — 标准 verifier 签名 `(cmd_list, cwd) -> (bool, str)`
+- `driving/orchestrator.py:OrchestratorState.repo_map` — TypedDict 字段已声明（L71）
+- `driving/orchestrator.py:drive_orchestrated(..., repo_map="")` — 参数已接受（L1349）并写入 state（L1365）
+- `driving/orchestrator.py:_build_supervisor_prompt` — 已消费 `state["repo_map"]`（L424-425）
+- `tests/test_repo_map.py` / `tests/test_visual_regression.py` — 模块自身测试已绿
 
-### 核心缺口（按价值排序）
-1. **verify 失败后全量重写**：失败了从头生成，不在现有产物上修复 → 浪费 token + 产物质量倒退
-2. **Skill 只有"存"和"取"，没有"进化"**：没有质量评估、没有淘汰、不能组合
-3. **失败知识不沉淀**：RCA 只是临时用，失败模式没有形成知识库
-4. **回路检测是静态阈值**：loop_threshold=3 一刀切，不会根据任务复杂度自适应
-5. **自改进闭环不完整**：成功→Skill→复用 这条链路通了，但失败→学习→避免再犯 这条链断了
+### 缺口（本次要补）
+1. `factory_loop._run_single_task` 构造 kwargs 时**没传 `repo_map`** → Supervisor 永远拿不到项目结构
+2. `factory_loop` 的 verifier 装配（L622-650）只叠加了 design/a11y/parallel，**没叠加 visual_regression**
 
 ## 里程碑计划
 
-### M103 · 增量改进模式（最高价值）
-**目标**：verify 失败后，基于现有产物做精准修复，而非从头重写
+### M134.1 · repo_map 接入 factory_loop
+**改动点**：`src/driving/factory_loop.py` 的 `_run_single_task`（L685-698 kwargs 构造处）
 
-**实现要点**：
-- 在 orchestrator 的 worker 前增加"现有产物扫描"节点
-- worker prompt 中注入当前文件内容 + 失败 diff + RCA 分析
-- 模式切换：首次生成 = 全量生成 / verify 失败后 = 增量修复
-- 增加 `incremental_mode` 状态标记，控制 worker 行为
-- 限制修复轮次（最多 3 次增量修复，仍失败则 fallback 全量重写）
-
-**验收**：
-- 给定一个有已知 bug 的 HTML 文件，worker 能在 2 轮内修复并通过 verify
-- 增量修复的 token 消耗 < 全量重写的 60%
-- 全量测试通过
-
-### M104 · Skill 进化系统
-**目标**：Skill 不只是存和取，还要有质量评估、自动淘汰、组合应用
-
-**实现要点**：
-- Skill 质量评分：success_rate（成功次数/总使用次数）+ avg_iterations（平均迭代数）
-- 自动淘汰：success_rate < 30% 且 使用次数 > 5 的 Skill 自动归档
-- Skill 组合：一个工厂可同时加载多个相关 Skill（如 landing_page + dark_mode + animation）
-- Skill 版本化：每次使用后根据结果更新质量分，形成进化曲线
-- Skill 管理 API：list / get / archive / promote
+**实现**：
+- 在 kwargs 构造前调用 `build_repo_map(Path(state.cwd))`
+- 结果传入 `kwargs["repo_map"]`
+- 加 try/except fail-open（repo_map 失败不阻塞任务）
+- 缓存：同一 factory 内 cwd 不变，避免每个 task 重扫——用 `state` 上的私有属性缓存
 
 **验收**：
-- 低质量 Skill 能被自动识别并归档
-- 多 Skill 组合应用时 design_context 正确合并
-- 10+ 测试用例通过
+- 新增 `tests/test_factory_repo_map_injection.py`
+  - mock `build_repo_map` 返回固定串，断言 `drive_orchestrated` 收到的 kwargs 含 `repo_map`
+  - `build_repo_map` 抛异常时任务仍能跑（fail-open）
+  - 同一 factory 第二次调用时不重复调用 `build_repo_map`（缓存生效）
+- 全量 pytest 无回归
 
-### M105 · 失败知识沉淀（RCA Knowledge Base）
-**目标**：失败模式形成知识库，下次遇到同类问题自动预警 + 注入规避策略
+### M134.2 · visual_regression 接入 factory_loop verifier
+**改动点**：`src/driving/factory_loop.py` 的 verifier 装配段（L622-650 UI 任务分支内）
 
-**实现要点**：
-- 新增 `failure_kb.py`：失败知识库（RCA 结果 + 修复效果 + 规避策略）
-- 每次失败后记录：根因类型、错误详情、尝试的修复、最终是否解决、解决耗时
-- 任务启动前预检：扫描 Gold Memory 历史类似失败，给 supervisor 注入"历史教训"
-- Top 失败模式统计面板数据（给前端用）
-- 与 RCA 模块联动：analyze_failure_with_memory 升级为查知识库
-
-**验收**：
-- 失败自动写入知识库
-- 新任务启动时能检索到历史同类失败并注入提示
-- 知识库查询 API 可用
-- 8+ 测试用例通过
-
-### M106 · 自适应回路检测
-**目标**：根据任务复杂度动态调整 loop_threshold，避免"简单任务熔断太松、复杂任务熔断太紧"
-
-**实现要点**：
-- 任务复杂度评估：基于描述长度、文件数、依赖数估算复杂度
-- 动态 loop_threshold：简单任务=2 / 中等=3 / 复杂=5
-- 渐进式熔断：第 N 次循环不是直接 abort，而是先触发"策略调整"（换 worker 温度 / 精简 prompt / 换模型）
-- 回路检测升级：不只看动作签名，还要看"是否有实质进展"（文件变化 / verify 输出变化）
+**实现**：
+- 仅在 `_looks_like_ui_task` 分支内追加 `make_visual_verifier()` 组合
+- 用 `FLIPPED_USE_VISUAL_REGRESSION=1` 环境变量 opt-in（默认关，避免无 Playwright 的环境噪音）
+- 组合顺序：base → design_lint → a11y → design_quality → **visual_regression**（warning 级，不阻断）
+- fail-open：import 失败或截图失败均退回原 verifier
 
 **验收**：
-- 简单任务和复杂任务的 loop_threshold 不同
-- 有进展的循环不会被误熔断
-- 无进展的循环能及时检测
-- 6+ 测试用例通过
+- 新增 `tests/test_factory_visual_regression.py`
+  - 设置 `FLIPPED_USE_VISUAL_REGRESSION=1` + UI 任务时，断言 verifier 被 visual_regression 包装
+  - 未设置环境变量时，verifier 不含 visual_regression
+  - import 失败时退回原 verifier（fail-open）
+- 全量 pytest 无回归
 
-### M107 · 集成验证 + 端到端实战
-**目标**：所有 M103-M106 功能集成后，跑一次完整端到端实战验证
-
-**验收**：
-- 全量测试通过（无回归）
-- 端到端跑一个真实任务（如"修复 PomodoroEdge 的 localStorage 功能"）
-- 验证增量修复模式能生效
-- 验证 Skill 能被正确加载和使用
-- 验证失败知识能正确沉淀和检索
-- 更新 TEST_LOG.md + STATE.json
+### M134.3 · 集成验证 + 文档
+- 跑一次真实 factory 任务（如"做一个 landing page"），观察：
+  - supervisor 首轮 prompt 是否包含"项目结构"段
+  - UI 任务 verify 阶段是否触发视觉校验（截图保存到 `data/visual_baseline/`）
+- 更新 `TEST_LOG.md`：记录两次接入的测试证据
+- 更新 `STATE.json`：M134 标 done
+- git commit
 
 ## 技术约束
 
-1. **fail-open 原则**：所有自改进模块异常时都不阻塞主流程
-2. **可观测性**：每个关键决策都有事件输出（event_bus emit）
-3. **TDD 先行**：每个里程碑先写测试再写实现
-4. **最小侵入**：尽量通过新增节点/模块实现，不破坏现有架构
-5. **数据持久化**：所有知识/技能都存 SQLite，WAL + 写锁保证并发安全
+1. **fail-open 原则**：两个接入点都必须 try/except，模块异常不阻塞主流程（与 M103-M107 一致）
+2. **opt-in 默认关**：visual_regression 走环境变量开关，避免影响现有 79 个 E2E
+3. **不改 orchestrator**：`OrchestratorState` / `drive_orchestrated` 接口已就位，本次只改 factory_loop
+4. **小步提交**：M134.1 和 M134.2 各自独立 commit，可独立回滚
 
-## 执行顺序
+## 风险与缓解
 
-M103 → M104 → M105 → M106 → M107
-
-（按价值从高到低，每个里程碑独立可验证）
+| 风险 | 概率 | 缓解 |
+|---|---|---|
+| repo_map 输出过长污染 prompt | 低 | 模块自身已 cap 在 2500 字符；Supervisor prompt 已有截断 |
+| visual_regression 依赖 Playwright 在非 UI 环境报错 | 中 | opt-in 开关 + fail-open 双重保护 |
+| 缓存导致跨项目串味 | 低 | 缓存 key 用 `state.cwd`，项目切换自动失效 |
