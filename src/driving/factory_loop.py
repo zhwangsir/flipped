@@ -105,6 +105,10 @@ class FactoryState(BaseModel):
     # 每条 = {"task_id": str, "timestamp": str, "score": dict(QualityScore asdict)}。
     # fail-open:打分异常不追加,不阻塞主流程。
     quality_history: list[dict] = Field(default_factory=list)
+    # M135-C — 分层记忆(HierarchicalMemory 序列化 dict),替换 context_summary 的
+    # 150 字符截断。写入时与 context_summary 双写(旧 factory 兼容);读取时
+    # memory 非空则优先用分层记忆构造 supervisor 上下文,否则 fallback 截断。
+    memory_data: dict = Field(default_factory=dict)
     # M130 — AgentCLI 集成：worktree 隔离 + Fan-out 模式
     current_worktree_id: str | None = None
     cli_enabled: bool = True
@@ -260,6 +264,9 @@ def _ensure_table(conn: sqlite3.Connection) -> None:
     # M135-B 迁移：给旧表加 quality_history_json 列(质量趋势历史)
     if "quality_history_json" not in cols:
         conn.execute("ALTER TABLE factory_states ADD COLUMN quality_history_json TEXT NOT NULL DEFAULT '[]'")
+    # M135-C 迁移：给旧表加 memory_json 列(分层记忆序列化 dict)
+    if "memory_json" not in cols:
+        conn.execute("ALTER TABLE factory_states ADD COLUMN memory_json TEXT NOT NULL DEFAULT '{}'")
 
 
 def _state_to_row(state: FactoryState) -> tuple:
@@ -283,6 +290,7 @@ def _state_to_row(state: FactoryState) -> tuple:
         json.dumps(state.cli_stats),
         state.repo_map_cache,
         json.dumps(state.quality_history),
+        json.dumps(state.memory_data),
         state.created_at,
         datetime.now(timezone.utc).isoformat(),
     )
@@ -313,6 +321,16 @@ def _row_to_state(row: sqlite3.Row) -> FactoryState:
             quality_history = []
     else:
         quality_history = []
+    # M135-C 兼容旧表(无 memory_json 列时返回空 dict → fallback 到 context_summary 路径)
+    if "memory_json" in row.keys():
+        try:
+            memory_data = json.loads(row["memory_json"])
+            if not isinstance(memory_data, dict):
+                memory_data = {}
+        except Exception:
+            memory_data = {}
+    else:
+        memory_data = {}
     return FactoryState(
         factory_id=row["factory_id"],
         product_goal=row["product_goal"],
@@ -330,6 +348,7 @@ def _row_to_state(row: sqlite3.Row) -> FactoryState:
         rca_history=rca_history,
         repo_map_cache=repo_map_cache,
         quality_history=quality_history,
+        memory_data=memory_data,
         current_worktree_id=current_worktree_id,
         cli_enabled=cli_enabled,
         cli_stats=cli_stats,
@@ -350,8 +369,8 @@ def save_factory_state(state: FactoryState, db_path: str) -> None:
                 failed_json, current_task_id, context_summary, iteration_count,
                 max_tasks, design_style, design_context, rca_history_json,
                 current_worktree_id, cli_enabled, cli_stats_json, repo_map_cache,
-                quality_history_json, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                quality_history_json, memory_json, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(factory_id) DO UPDATE SET
                 product_goal=excluded.product_goal,
                 cwd=excluded.cwd,
@@ -371,6 +390,7 @@ def save_factory_state(state: FactoryState, db_path: str) -> None:
                 cli_stats_json=excluded.cli_stats_json,
                 repo_map_cache=excluded.repo_map_cache,
                 quality_history_json=excluded.quality_history_json,
+                memory_json=excluded.memory_json,
                 updated_at=excluded.updated_at
             """,
             _state_to_row(state),
@@ -630,6 +650,70 @@ def _record_quality_score(task: FactoryTask, state: FactoryState) -> None:
         pass
 
 
+# ---------- M135-C · 分层记忆钩子 ----------
+
+# supervisor 上下文总预算(字符)。M11.1 教训:prompt 超 ~1400 字符会触发 Kimi
+# reasoning overflow;旧路径只有 150 字符,新路径放宽到 600(信息量 ×4,仍远离阈值)。
+_CTX_BUDGET = 600
+
+
+def _record_to_memory(state: FactoryState, content: str) -> None:
+    """M135-C — 往分层记忆写入一条 working 记忆,并序列化回 state.memory_data。
+
+    与 context_summary 双写:context_summary 保留(旧 factory/旧读取路径兼容),
+    memory 提供分层(working/recent/long_term)+ 自动压缩 + 语义检索能力。
+    fail-open:任何异常不阻塞主流程。
+    """
+    try:
+        from driving.memory_hierarchy import (
+            HierarchicalMemory,
+            MemoryLevel,
+            memory_from_dict,
+            memory_to_dict,
+        )
+        mem = memory_from_dict(state.memory_data)
+        if mem is None:
+            mem = HierarchicalMemory()
+        mem.add(content, level=MemoryLevel.working)
+        state.memory_data = memory_to_dict(mem)
+    except Exception:
+        pass
+
+
+def _build_ctx_tail(state: FactoryState, task_description: str) -> str:
+    """M135-C — 用分层记忆构造 supervisor 上下文,替换 150 字符截断。
+
+    结构(总预算 _CTX_BUDGET=600 字符):
+    - 最近 3 条 working 记忆(完整任务摘要,每条 ≤100 字符)
+    - 与当前任务语义相关的 top 2 历史经验(去重后,每条 ≤80 字符)
+
+    fallback:memory 为空/损坏时退回旧路径(context_summary 尾 150 字符),
+    保证旧 factory 行为完全不变。
+    """
+    try:
+        from driving.memory_hierarchy import memory_from_dict
+        mem = memory_from_dict(state.memory_data)
+        if mem is not None and (mem.working or mem.recent):
+            parts: list[str] = []
+            # 最近 3 条:working 优先,空则 recent 兜底
+            recent_items = mem.working[-3:] if mem.working else mem.recent[-3:]
+            seen_ids = {it.id for it in recent_items}
+            for it in recent_items:
+                if it.content:
+                    parts.append(it.content[:100])
+            # 语义检索 top 2(全层级,含 recent 压缩摘要),按 id 去重
+            for it in mem.search(task_description, top_k=2):
+                if it.id not in seen_ids and it.content:
+                    parts.append(it.content[:80])
+                    seen_ids.add(it.id)
+            text = " | ".join(parts)
+            if text:
+                return text[:_CTX_BUDGET]
+    except Exception:
+        pass
+    return state.context_summary[-150:] if state.context_summary else "无"
+
+
 def default_orchestrator_fn(task: FactoryTask, state: FactoryState) -> TaskResult:
     """默认用 drive_orchestrated 执行一个工厂任务；每个任务独立 thread_id/checkpoint。
 
@@ -738,8 +822,9 @@ def default_orchestrator_fn(task: FactoryTask, state: FactoryState) -> TaskResul
     # M11.1：截断累积上下文，防止 prompt 过长触发 Kimi reasoning 循环。
     # context_summary 随轮次增长（每完成一个 task 追加一行），不截断时
     # 第 2 轮 task-2 的 prompt 会超 1400 字符 → reasoning overflow (content_len=4)。
-    # 只保留最近 150 字符 + feedback 截断到 80 字符，让 prompt 始终 < 400 字符。
-    ctx_tail = state.context_summary[-150:] if state.context_summary else "无"
+    # M135-C：改用分层记忆构造(最近 3 条完整摘要 + 语义检索 top 2,预算 600 字符);
+    # memory 为空时 fallback 到旧的 150 字符截断,旧 factory 行为不变。
+    ctx_tail = _build_ctx_tail(state, task.description)
     fb_short = task.feedback[:80] if task.feedback else "无"
 
     # M106：自适应回路检测——根据任务复杂度动态调整 max_iterations 和 loop_threshold
@@ -957,6 +1042,8 @@ def run_factory_loop(
                             )
                     existing = state.context_summary or ""
                     state.context_summary = (existing + "\n" + "\n".join(rec_text_parts)).strip()
+                    # M135-C: 双写到分层记忆(working 层),让 supervisor 上下文构造能检索到
+                    _record_to_memory(state, "\n".join(rec_text_parts))
             except Exception:
                 pass
         except Exception:
@@ -1086,6 +1173,8 @@ def run_factory_loop(
                 if warning:
                     existing = state.context_summary or ""
                     state.context_summary = (existing + "\n" + warning).strip()
+                    # M135-C: 双写到分层记忆,失败教训进入可检索的 working 层
+                    _record_to_memory(state, warning)
             except Exception:
                 pass
 
@@ -1183,6 +1272,11 @@ def run_factory_loop(
 
                 state.context_summary += (
                     f"\n[{task.id}] {task.description}: done. artifacts={task.artifacts}"
+                )
+                # M135-C: 双写到分层记忆——task 完成摘要是 supervisor 上下文的核心来源
+                _record_to_memory(
+                    state,
+                    f"[{task.id}] {task.description}: done. artifacts={task.artifacts}",
                 )
                 # M10.4-B：记录到 FEATURE_CHECKLIST.json + PROGRESS.md（让无限迭代有长期记忆）
                 try:

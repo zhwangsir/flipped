@@ -181,3 +181,67 @@ class HierarchicalMemory:
             }
         except Exception:
             return {"working": 0, "recent": 0, "long_term": 0}
+
+
+# ---------- M135-C · 序列化(FactoryState 持久化到 SQLite) ----------
+
+
+def memory_to_dict(mem: HierarchicalMemory) -> dict[str, Any]:
+    """把 HierarchicalMemory 序列化为 JSON-safe dict。
+
+    embedding 一并保留(无 embedding 模型时本来就是空列表,不占体积),
+    避免加载后 search 时逐条重算 embedding 的开销。
+    fail-open:异常返回空 dict,调用方按"无记忆"处理。
+    """
+    try:
+        from dataclasses import asdict
+
+        def _ser(item: MemoryItem) -> dict[str, Any]:
+            d = asdict(item)
+            d["level"] = item.level.value  # enum → str,JSON 可序列化
+            return d
+
+        return {
+            "working": [_ser(it) for it in mem.working],
+            "recent": [_ser(it) for it in mem.recent],
+            "long_term_refs": [dict(r) for r in mem.long_term_refs],
+            "max_working": mem.max_working,
+            "max_recent": mem.max_recent,
+        }
+    except Exception:
+        return {}
+
+
+def memory_from_dict(data: dict[str, Any] | None) -> HierarchicalMemory | None:
+    """从 dict 重建 HierarchicalMemory。
+
+    空数据/损坏数据返回 None —— 调用方据此 fallback 到旧 context_summary 路径,
+    保证旧 factory(只有 context_summary 字符串)行为不变。
+    """
+    try:
+        if not data or not isinstance(data, dict):
+            return None
+
+        def _item(d: dict[str, Any]) -> MemoryItem:
+            return MemoryItem(
+                id=str(d.get("id", "")),
+                content=str(d.get("content", "")),
+                level=MemoryLevel(d.get("level", "working")),
+                metadata=d.get("metadata") if isinstance(d.get("metadata"), dict) else {},
+                embedding=d.get("embedding") if isinstance(d.get("embedding"), list) else [],
+                created_at=str(d.get("created_at", "")),
+                access_count=int(d.get("access_count", 0)),
+            )
+
+        mem = HierarchicalMemory(
+            max_working=int(data.get("max_working", 20)),
+            max_recent=int(data.get("max_recent", 50)),
+        )
+        mem.working = [_item(d) for d in data.get("working", []) if isinstance(d, dict)]
+        mem.recent = [_item(d) for d in data.get("recent", []) if isinstance(d, dict)]
+        mem.long_term_refs = [
+            r for r in data.get("long_term_refs", []) if isinstance(r, dict)
+        ]
+        return mem
+    except Exception:
+        return None

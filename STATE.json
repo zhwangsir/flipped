@@ -2,7 +2,7 @@
   "project": "flipped",
   "description": "接入本地 MLX 双模型(GLM-5.2 编排者 / Kimi-K2.7-Code 执行者)的 agentic 代码编辑器平台。fork Roo Code + 自定义驾驭层(强制验证/循环检测/上下文压缩/人工审批/子Agent/可观测性) + MCP 联网与外部能力。",
   "updated": "2026-07-17",
-  "current_milestone": "M135-B 质量趋势前端可视化完成 · task 完成自动打分 + API 趋势分析 + FactoryPanel 迷你曲线 · 全量 1452 pytest 绿",
+  "current_milestone": "M135 完成 · B质量趋势(打分+API+前端曲线) + C分层记忆替换150字符截断(三处双写+_build_ctx_tail,预算600) · 全量 1463 pytest 绿",
   "key_facts": {
     "dev_host": "Apple M5 Max, 128GB RAM, 1.1TB 可用磁盘 — 开发/控制节点，非模型宿主",
     "model_cluster": "exo 集群 @ http://100.64.201.37:52415 (内网, OpenAI 兼容)；公网 https://dgmt.top/exo (需 Bearer token)",
@@ -2330,6 +2330,23 @@
         "M133.9_regression": {
           "title": "回归: tsc 0 错 / vitest 45/45 / vite build 通过 / E2E 全量 79/79",
           "status": "done"
+        }
+      }
+    },
+    "M135": {
+      "title": "质量趋势前端可视化(B) + memory_hierarchy 替换 context_summary(C)",
+      "status": "done",
+      "note": "用户定方向:先 B 后 C。把孤岛模块 quality_grading / memory_hierarchy 接入 factory_loop 主流程。",
+      "tasks": {
+        "M135-B_quality_trend": {
+          "title": "质量趋势: task 完成时 grade_quality 打分→quality_history; API /quality-trend; FactoryPanel 迷你曲线",
+          "status": "done",
+          "note": "commit fddd4a6。_record_quality_score 钩子(functionality=85/design=design_score/其余默认60); 前端纯 CSS bar chart。5 单测 + 全量 1452 passed"
+        },
+        "M135-C_memory_hierarchy": {
+          "title": "分层记忆替换 150 字符截断: _record_to_memory 三处双写 + _build_ctx_tail 构造 supervisor 上下文",
+          "status": "done",
+          "note": "memory_to_dict/memory_from_dict 序列化(embedding 保留); FactoryState.memory_data + memory_json 列迁移; 写入点=Skill推荐/失败预警/task完成; ctx_tail=最近3条working(各≤100)+语义检索top2(去重,各≤80),预算600字符(M11.1 阈值1400); memory 空/损坏 fallback 旧150截断。11 单测 + 全量 1463 passed"
         }
       }
     }

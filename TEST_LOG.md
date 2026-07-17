@@ -2878,3 +2878,26 @@ Kimi 作为 overseer 监督 GLM-5.2，防卡死：
 ### 遗留（如实记录）
 - 权限体系：后端无 API，UI 已撤下；待后端实现后再恢复并接线。
 - i18n：无语言设施，UI 已撤下；当前界面仅简体中文。
+
+---
+
+## M135-C · memory_hierarchy 替换 context_summary（分层记忆构造 supervisor 上下文）
+
+### 背景
+旧路径 `ctx_tail = state.context_summary[-150:]`（[factory_loop.py](src/driving/factory_loop.py)）——150 字符截断，长任务上下文丢光。M111 的 `HierarchicalMemory`（working/recent/long_term 三级 + 自动压缩 + 语义检索）此前是孤岛模块，未接入主流程。
+
+### 实现
+1. **序列化助手**（[memory_hierarchy.py](src/driving/memory_hierarchy.py)）：`memory_to_dict` / `memory_from_dict`——embedding 一并保留（无模型时本为空列表不占体积），损坏数据返回 None 供 fallback 判定。
+2. **FactoryState.memory_data 字段 + SQLite `memory_json` 列**（含 `_ensure_table` 迁移，旧表兼容）。
+3. **三处写入点双写**（context_summary 保留兼容旧路径 + memory add working 层）：
+   - factory 启动时 Skill 推荐（L1046）
+   - task 开始前失败预警（L1177，failure_kb 教训进入可检索记忆）
+   - task 完成摘要（L1277，supervisor 上下文核心来源）
+4. **读取点替换**：`_build_ctx_tail(state, task.description)`——memory 非空时返回「最近 3 条 working（各≤100字符）+ 语义检索 top 2（去重,各≤80字符）」，总预算 `_CTX_BUDGET=600`（信息量 ×4，仍远离 M11.1 的 1400 字符 reasoning overflow 阈值）；memory 空/损坏时 fallback 旧 150 截断，旧 factory 行为不变。
+
+### 验证（实跑输出）
+- `pytest tests/test_factory_memory_hierarchy.py`：**11/11 passed**
+  - 双写追加 / 累加 roundtrip / 最近 3 条入 ctx / fallback 两条路径 / 持久化 roundtrip / working 压缩到 recent 后持久化 / 损坏 fail-open / 预算上限
+- 全量 `pytest tests/`：**1463 passed**（+11，零回归）
+- `npx vitest run`：**45/45 passed**
+- `npx tsc --noEmit` + `npm run build`：0 错误，✓ built
