@@ -74,6 +74,7 @@ interface AppState {
   metrics: Metrics | null;
   mcpServers: McpServer[];
   toggleMcpServer: (name: string, enabled: boolean) => Promise<void>;
+  refreshMcpServers: () => void;
   selectedModel: string;
   setModel: (m: string) => void;
   selectedMode: string;
@@ -246,12 +247,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  // M7.3 — 拉取真实 MCP 服务器列表
-  useEffect(() => {
+  // M7.3 — 拉取真实 MCP 服务器列表(Plugins 页「刷新」按钮复用)
+  const refreshMcpServers = useCallback(() => {
     getMcpServers()
       .then(setMcpServers)
       .catch(() => {});
   }, []);
+  useEffect(() => {
+    refreshMcpServers();
+  }, [refreshMcpServers]);
 
   // M9 — 选中工厂时轮询详情
   useEffect(() => {
@@ -367,25 +371,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  // Stage 3/4 — Codex 快捷键：⌘B 折叠侧栏 / ⌘K 命令面板
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      const meta = e.metaKey || e.ctrlKey;
-      if (meta && e.key.toLowerCase() === 'b') {
-        e.preventDefault();
-        setSidebarCollapsed((v) => !v);
-      } else if (meta && e.key.toLowerCase() === 'k') {
-        e.preventDefault();
-        setPaletteOpen((v) => !v);
-      } else if (meta && e.key.toLowerCase() === 'j') {
-        e.preventDefault();
-        setTerminalOpen((v) => !v);
-      }
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, []);
-
   const toggleMcpServer = useCallback(async (name: string, enabled: boolean) => {
     // 乐观更新，失败回滚
     setMcpServers((prev) => prev.map((s) => (s.name === name ? { ...s, enabled } : s)));
@@ -424,6 +409,47 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const setModel = useCallback((m: string) => setSelectedModel(m), []);
   const setMode = useCallback((m: string) => setSelectedMode(m), []);
+
+  // Stage 3/4 — Codex 快捷键：⌘B 折叠侧栏 / ⌘K 命令面板 / ⌘J 终端 / ⌘, 设置
+  // E2E 补齐(此前宣传未绑定)：⌘N 新对话 / ⌘P 搜索文件 / ⌘T 浏览器 / ⌃⇧G 审查 / ⌘1-9 切换会话
+  // 注：必须放在 createSession/selectSession 声明之后(deps 引用，避免 TDZ)。
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const meta = e.metaKey || e.ctrlKey;
+      if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === 'g') {
+        e.preventDefault();
+        openContext('diff');
+      } else if (meta && e.key.toLowerCase() === 'b') {
+        e.preventDefault();
+        setSidebarCollapsed((v) => !v);
+      } else if (meta && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setPaletteOpen((v) => !v);
+      } else if (meta && e.key.toLowerCase() === 'j') {
+        e.preventDefault();
+        setTerminalOpen((v) => !v);
+      } else if (meta && e.key === ',') {
+        // 命令面板/设置页宣传的 ⌘, —— 此前漏绑，E2E 发现后补齐
+        e.preventDefault();
+        setSettingsOpen((v) => !v);
+      } else if (meta && e.key.toLowerCase() === 'n') {
+        e.preventDefault();
+        createSession('新对话');
+      } else if (meta && e.key.toLowerCase() === 'p') {
+        e.preventDefault();
+        openContext('files');
+      } else if (meta && e.key.toLowerCase() === 't') {
+        e.preventDefault();
+        openContext('browser');
+      } else if (meta && /^[1-9]$/.test(e.key)) {
+        e.preventDefault();
+        const s = sessions[Number(e.key) - 1];
+        if (s) selectSession(s.id);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [sessions, createSession, openContext, selectSession]);
 
   const sendTask = useCallback(
     async (description: string) => {
@@ -738,6 +764,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         metrics,
         mcpServers,
         toggleMcpServer,
+        refreshMcpServers,
         selectedModel,
         setModel,
         selectedMode,

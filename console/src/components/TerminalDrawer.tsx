@@ -6,7 +6,12 @@ import { PtyTerminal } from './PtyTerminal';
 export function TerminalDrawer() {
   const { terminalOpen, toggleTerminal } = useApp();
   return (
-    <div className={'term-drawer' + (terminalOpen ? ' open' : '')} aria-hidden={!terminalOpen}>
+    // inert: 关闭时禁用内部焦点+读屏(替代 aria-hidden,修复 axe aria-hidden-focus)
+    // @types/react 18.3 未含 inert JSX 属性,用 ref + toggleAttribute 设置
+    <div
+      className={'term-drawer' + (terminalOpen ? ' open' : '')}
+      ref={(el) => el?.toggleAttribute('inert', !terminalOpen)}
+    >
       <div className="term-drawer-head">
         <span className="term-drawer-title">
           <IconTerminal size={13} /> 终端 <span className="mono">pty · zsh</span>

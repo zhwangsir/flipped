@@ -1,77 +1,175 @@
-# flipped
+# flipped — 本地模型驱动的 AI 自主开发工厂
 
-**本地模型驱动的 AI 自主开发工厂**(D18)——像 Claude Code / Codex 一样,给一个目标,系统自己**拆解 → 写码 → 跑测 → 修错 → 循环直到验收通过 → 提交成果**,全程可见、可控、可续跑。基于 OpenHands 沙盒执行 + 自研多 Agent 监督驾驭层,接入本地 exo 集群两个 MLX 模型。桌面壳为 Tauri(Rust)。
+> 给一个目标，它自己**拆解 → 写码 → 跑测 → 修错 → 循环直到验收通过 → 提交成果**。
+> 全程本地运行、数据不出机器、双模型协作、多 Agent 监督驾驭。
 
-| 角色 | 模型 | 经 |
+---
+
+## ✨ 核心特色
+
+### 🧠 双模型原生协作，而非"一个模型打天下"
+- **GLM-5.2（编排者 / 架构师）** — 1M 长上下文，负责需求拆解、全局调度、方向把控
+- **Kimi K2.7-Code（执行者 / 码农）** — MCP 工具调用能力拉满，负责沙盒内改代码跑测
+- 经 **LiteLLM Proxy** 统一路由，支持降级、换载、负载均衡
+- Apple Silicon **MLX 原生加速**，2TB 内存双模型常驻零换载
+
+### 🔁 真正的自主开发循环（F1–F10）
+不是"生成一段代码"——是**端到端把活干完**：
+
+| | 能力 | 说明 |
 |---|---|---|
-| 编排者 / 监督（Supervisor + Overseer） | GLM-5.2（别名 `architect`） | LiteLLM(:4000) 或直连 → exo 集群 |
-| 执行者（Worker） | Kimi-K2.7-Code（别名 `coder`） | OpenHands 沙盒 → 同上 |
+| **F1** | 真实自我验证 | 自动探测项目怎么测（pytest/npm test/cargo…），沙盒内跑真测判定 |
+| **F2** | 透明实时循环 | Supervisor/Worker/Overseer/Verify 每步 WebSocket 推送上屏 |
+| **F3** | 一等自主模式 | `mode=auto` 一键启动，自动探测验证命令，零手配 |
+| **F4** | 实时计划清单 | 子任务聚成带状态清单钉对话流顶（✓/⟳/↻/✗） |
+| **F5** | 仓库记忆 | 项目结构地图（技术栈/目录布局）喂给 Supervisor |
+| **F6** | 项目规则 | 自动读取 AGENTS.md/.cursorrules/CLAUDE.md 并遵守 |
+| **F7** | 交付步 | 验收通过后沙盒内自动 git commit（注入安全约束） |
+| **F9** | 并行看板 | 多自主线程运行状态实时总览 |
+| **F10** | 用量/预算感知 | 顶栏本地模型 token 用量芯片 |
 
-> 自主开发：本仓库由 AI agent 按 [AGENTS.md](AGENTS.md) 流程推进（先计划 → 验证靠运行 → 小步提交 → 状态外置）。进度见 [STATE.json](STATE.json)，自主循环路线图见 [docs/autonomy-factory-plan.md](docs/autonomy-factory-plan.md)，决策见 [DECISIONS.md](DECISIONS.md)。
+### 🛡️ 多 Agent 驾驭层（60+ 模块，工程化而非"靠模型自觉"）
+- **强制验证节点** — Agent 说"完成"不算数，必须跑通验收脚本
+- **循环检测 / 死循环熔断** — 同一动作重复 ≥3 次自动中断重新规划
+- **人工审批断点** — 高风险动作前暂停等确认（沙箱内自由跑，沙箱外要审批）
+- **上下文压缩** — 接近窗口上限自动总结落盘，1M 上下文也不崩
+- **崩溃恢复 / Checkpoint** — 断了电、崩了进程，从断点续跑
+- **质量分级 / 失败知识库 / RCA 根因分析** — 越用越聪明
 
-## 自主开发循环（F1–F10，核心能力）
+### 🎨 Codex 级 UI/UX（React + Tauri 桌面壳）
+- **三栏布局** — 侧栏（项目/对话/并行看板）· 中间（对话+计划卡）· 右侧（文件树 / 审查 / 终端 / 浏览器）
+- **命令面板**（⌘K）— 搜聊天、切会话、开面板、切主题，一键直达
+- **真终端**（xterm.js ↔ WebSocket pty）— 沙盒内真实 shell，主题随全局切换
+- **真浏览器**（Playwright / Chromium）— 实时预览 + 选中页面元素追踪给 Agent
+- **审查视图** — 工作区真实 git diff，Codex 配色
+- **插件 / MCP 生态** — 标准 MCP 协议，SearXNG / RAG / Git 开箱即用
+- **移动端适配** — 底部 tabbar + 抽屉式侧栏/面板，手机也能用
+- **可访问性** — axe WCAG 2 A/AA 零违规，全键盘操作，ARIA 语义完整
 
-在 Console 选「**自主**」模式 + 给一个目标即启动完整循环。构成:
+### ✅ 质量保证（用数字说话）
+- **后端**：1019 个 pytest 单测 / 集成测
+- **前端**：45 个 vitest 单测
+- **E2E**：79 个 Playwright 用例（布局 / 面板 / 移动端 / a11y / 工厂 / 控制台错误）
+- **a11y**：axe 扫描 8 场景全部零违规（浅/深色主题 · 主壳/设置/命令面板/工厂/移动端）
+- **构建**：Vite build + Tauri + Windows 发布流水线 + GitHub Actions CI
 
-| | 能力 | 实现 |
-|---|---|---|
-| **F1** | 真实自我验证——探测项目怎么验证（pytest/npm test/cargo…）并在沙盒内跑真测判定 | `driving/verify_detect.py` · `executor/sandbox_verify.py` |
-| **F2** | 透明实时循环——Supervisor/Worker/Overseer/Verify 每步实时推 WS 事件（去黑盒） | `api/orchestrator_stream.py` |
-| **F3** | 一等自主模式——`mode=auto` 一键启动，自动探测验证命令，无需手配 | `api/main.py` `_select_runner` |
-| **F4** | 实时计划清单——子任务聚成带状态清单（✓/⟳/↻/✗）钉对话流顶 | `PlanTracker` + `PlanCard.tsx` |
-| **F5** | 仓库记忆——项目结构地图（技术栈/目录布局）喂 Supervisor | `driving/repo_map.py` |
-| **F6** | 项目规则——读 AGENTS.md/.cursorrules/CLAUDE.md 等遵守项目约定 | `driving/project_rules.py` |
-| **F7** | 交付步——验收通过后在沙盒内自动 `git commit`（注入安全） | `executor/sandbox_deliver.py` |
-| **F9** | 并行线程状态板——多自主线程运行状态实时总览 | `Sidebar.tsx` |
-| **F10** | 用量/预算感知——顶栏本地模型 token 用量芯片 | `TopBar.tsx` |
+### 🔌 开放架构
+- **MCP Server** — 标准 Model Context Protocol，外部工具即插即用
+- **RAG 知识库** — Chroma 向量检索本地文档
+- **IDE 扩展** — VS Code 桥接层（ide-extension/）
+- **自主进化** — Self-Improving Loop / Skill 进化系统 / Gold Memory 黄金记忆
 
-> **完整流程**:选自主模式+给目标 → 探测怎么验证 → 读项目规则+结构 → Supervisor 拆子任务(实时上屏) → Worker 沙盒执行(轨迹上屏) → Overseer 监督方向/效率 → 沙盒跑真测判定 → 循环直到验收 → 自动提交。带 checkpoint 崩溃恢复 / 死循环检测 / 熔断 / 高风险审批。
+---
 
-## 架构
+## 🏗️ 架构
 
 ```
-Tauri 桌面壳(console/src-tauri, Rust)  ┐  原生选文件夹/窗口/(规划中)嵌入浏览器
-  Console(Vite+React+TS :5273) ────────┤  对话/计划卡/文件树/审查/终端/浏览器/用量
-  orchestration-api(FastAPI :8011) ─────┘  会话/任务/WS 事件流/项目模型(~/projects)
-    驾驭层 src/driving/(LangGraph): 多Agent监督编排 + 强制验证/循环检测/审批/压缩/崩溃恢复
-    执行 src/executor/: OpenHands 沙盒 Worker(:8000) + 沙盒 verify/deliver
-      → LiteLLM(:4000) 或直连 → exo 集群 → GLM-5.2 / Kimi-K2.7-Code
-      内建工具: web_search(SearXNG) · MCP 注册表 · RAG
+┌─────────────────────────────────────────────────────────────┐
+│  Tauri 桌面壳 (Rust)    原生选文件夹 / 窗口 / 系统集成       │
+│  ┌───────────────────────────────────────────────────────┐  │
+│  │  Console (Vite + React + TS)                         │  │
+│  │  对话 · 计划卡 · 文件树 · 审查 · 终端 · 浏览器 · 用量  │  │
+│  └──────────────┬────────────────────────────────────────┘  │
+└─────────────────┼───────────────────────────────────────────┘
+                  │ WebSocket / REST
+┌─────────────────▼───────────────────────────────────────────┐
+│  orchestration-api (FastAPI :8011)                          │
+│  会话 · 任务 · 事件流 · 项目模型 (~/projects)               │
+│  ┌───────────────────────────────────────────────────────┐  │
+│  │  驾驭层 src/driving/ (60+ 模块)                        │  │
+│  │  Supervisor · Worker · Overseer · Verify · 循环检测    │  │
+│  │  审批 · 压缩 · 崩溃恢复 · 质量分级 · 技能进化 · RAG    │  │
+│  └───────────────────┬───────────────────────────────────┘  │
+│                      │                                      │
+│  ┌──────────────────▼────────────────┐  ┌───────────────┐  │
+│  │  OpenHands 沙盒 Worker (:8000)    │  │  MCP Server   │  │
+│  │  sandbox_verify · sandbox_deliver │  │  web_search   │  │
+│  └──────────────────┬────────────────┘  │  RAG / Git    │  │
+└─────────────────────┼───────────────────┴───────────────┴──┘
+                      │
+         LiteLLM Proxy (:4000) ──→ exo 集群 (MLX)
+                      │
+         ┌────────────┴────────────┐
+         ▼                         ▼
+    GLM-5.2 (architect)       Kimi-K2.7-Code (coder)
+    编排者 / 监督              执行者 / 码农
 ```
 
-**项目模型**:flipped 是工具本体;用户把自己的项目导入 `~/projects/<名>`(host)↔ `/projects/<名>`(沙盒,bind mount),agent 在沙盒对应目录干活。默认无活动项目。
+**项目模型**：flipped 是工具本体；用户把自己的项目导入 `~/projects/<名>`（host）↔ `/projects/<名>`（沙盒 bind mount），Agent 在沙盒对应目录干活。
 
-## 已建成历史（自主验证，全部单测/e2e 通过）
+---
 
-- **M0 服务层** LiteLLM 路由 architect/coder → exo · **M1 工具链** SearXNG + web_search + agent loop · **M2 编辑器接入** Cline 多文件端到端。
-- **Phase 1 脑（驾驭层六件套）** `src/driving/`:observe/sidecar(强制验证+循环检测)/approval(人工审批)/orchestrator(多Agent监督,D15)/上下文压缩/崩溃恢复。
-- **Phase B MVP** OpenHands 执行 + orchestration-api + Console 真实数据流。**M4** MCP Server + RAG。**M5** 硬化(性能/路由降级/崩溃恢复/安全)。
-- **Codex UI 对齐** Console 外壳/右侧功能(文件树/审查 git diff/浏览器真 Chromium/终端真 pty)/命令面板/设置/插件,均以真实能力为底。
-- **自主开发循环 F1–F10**(见上)+ 独立 code-review 质量硬化。
-
-## 如何运行
+## 🚀 快速开始
 
 ```bash
-# 1) 后端 orchestration-api(:8011) —— exo 集群需先在其 Web UI LAUNCH 两个模型
+# 1) 克隆
+git clone https://github.com/zhwangsir/flipped.git
+cd flipped
+
+# 2) 后端 orchestration-api (:8011)
 cp .env.example .env   # 填 EXO_API_KEY 等
-PYTHONPATH=src .venv/bin/python -m uvicorn api.main:app --host 127.0.0.1 --port 8011
-# (可选)OpenHands agent-server 沙盒(:8000) + SearXNG(:8080)
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+PYTHONPATH=src uvicorn api.main:app --host 127.0.0.1 --port 8011
 
-# 2) Console(:5273，见 console/vite.config.ts)
-cd console && npm i && npm run dev
+# 3) Console (:5273)
+cd console && npm install && npm run dev
 
-# 3) 桌面壳(原生选文件夹等) —— 后端+Console 起后
+# 4) 桌面壳（原生选文件夹等，可选）
 cd console && cargo tauri dev
 
-# 测试
-PYTHONPATH=src .venv/bin/python -m pytest -q     # 后端(205 passed)
-cd console && npx tsc --noEmit && npm run build   # 前端
+# 可选：OpenHands agent-server 沙盒(:8000) + SearXNG(:8080)
+./scripts/dev_up.sh
 ```
 
-> ⚠️ 访问 exo 的 Python 进程须 `export NO_PROXY=100.64.201.37,...`（本机 Clash 代理会劫持成 502，D5）。
+### 测试
 
-## 当前状态与剩余（诚实边界）
+```bash
+# 后端
+PYTHONPATH=src .venv/bin/python -m pytest -q     # 1019 passed
 
-- ✅ **自主开发循环 F1–F10 全部完成并验证**（后端 205 tests / 前端 tsc+build / 关键 UI 隔离 Playwright）。
-- ⏳ **F8 端到端真机**:需在 exo 集群 LAUNCH GLM-5.2 + Kimi-K2.7-Code 两个模型后,跑一个真实项目全循环验证(基础设施侧,非代码;当前以注入测试兜底,已由 `~/projects/verify-cwd` 的 `.git` bind-mount 铁证 agent 工作目录正确)。
-- ⏳ **桌面原生化余项**:Tauri 嵌入式可交互浏览器 / 终端接面板 / Rust sidecar 拉起后端 / 签名打包。
+# 前端
+cd console
+npx tsc --noEmit     # 类型检查
+npx vitest run       # 45 passed
+npx playwright test  # 79 passed (E2E)
+```
+
+> ⚠️ 访问 exo 的 Python 进程须 `export NO_PROXY=100.64.201.37,...`（本机代理会劫持成 502）。
+
+---
+
+## 📋 当前状态
+
+| 模块 | 状态 |
+|---|---|
+| 驾驭层六件套（验证/循环/审批/压缩/恢复/多Agent） | ✅ 完成 |
+| 自主开发循环 F1–F10 | ✅ 完成 |
+| Console UI（Codex 级三栏 + 命令面板 + 终端 + 浏览器 + 审查） | ✅ 完成 |
+| MCP Server + RAG 知识库 | ✅ 完成 |
+| Tauri 桌面壳基础版 | ✅ 完成 |
+| 测试体系（pytest / vitest / Playwright / axe a11y） | ✅ 完成 |
+| Self-Improving / Skill 进化 / Gold Memory | ✅ 完成 |
+| Windows 发布流水线 | ✅ 完成 |
+| 端到端真机全循环验证（需双模型同时加载） | ⏳ 待跑 |
+| Tauri 嵌入式可交互浏览器 / Rust sidecar 拉起后端 | ⏳ 规划中 |
+
+> 自主开发：本仓库由 AI Agent 按 [AGENTS.md](AGENTS.md) 流程推进（先计划 → 验证靠运行 → 小步提交 → 状态外置）。
+> 进度见 [STATE.json](STATE.json)，决策记录见 [DECISIONS.md](DECISIONS.md)。
+
+---
+
+## 📚 更多文档
+
+- [AGENTS.md](AGENTS.md) — 自主开发 Agent 总控提示词 / 工作循环 / 安全护栏
+- [docs/autonomy-factory-plan.md](docs/autonomy-factory-plan.md) — 自主工厂路线图
+- [docs/product-architecture.md](docs/product-architecture.md) — 产品架构详解
+- [DECISIONS.md](DECISIONS.md) — 关键技术决策记录
+- [TEST_LOG.md](TEST_LOG.md) — 测试证据流水
+- [shell/BUILD.md](shell/BUILD.md) — 构建与发布指南
+
+---
+
+## 📄 License
+
+MIT

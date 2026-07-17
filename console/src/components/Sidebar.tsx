@@ -52,14 +52,21 @@ export function Sidebar() {
   const moreRef = useRef<HTMLDivElement>(null);
   const activeName = projectContext?.project || null;
 
-  // 项目「⋯」菜单点外部关闭
+  // 项目「⋯」菜单点外部 / Escape 关闭
   useEffect(() => {
     if (!menuFor) return;
     const onDown = (e: MouseEvent) => {
       if (!moreRef.current?.contains(e.target as Node)) setMenuFor(null);
     };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setMenuFor(null);
+    };
     document.addEventListener("mousedown", onDown);
-    return () => document.removeEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
   }, [menuFor]);
 
   // F9 — 并行看板:跨项目汇总所有运行中线程

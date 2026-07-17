@@ -13,6 +13,7 @@ import {
   IconChat,
   IconGear,
   IconX,
+  IconRefresh,
 } from '../icons';
 
 interface Cap {
@@ -37,7 +38,7 @@ const CAPS: Cap[] = [
 ];
 
 export function Plugins() {
-  const { pluginsOpen, setPluginsOpen, mcpServers, toggleMcpServer, prefillComposer } = useApp();
+  const { pluginsOpen, setPluginsOpen, mcpServers, toggleMcpServer, prefillComposer, refreshMcpServers, setSettingsOpen } = useApp();
   const [tab, setTab] = useState<'plugins' | 'skills'>('plugins');
   const [q, setQ] = useState('');
 
@@ -61,8 +62,8 @@ export function Plugins() {
           <button className={'plugins-tab' + (tab === 'skills' ? ' active' : '')} onClick={() => setTab('skills')}>技能</button>
         </div>
         <span className="spacer" />
-        <button className="icon-btn ghost" title="刷新"><IconSearch size={15} /></button>
-        <button className="icon-btn ghost" title="设置"><IconGear size={15} /></button>
+        <button className="icon-btn ghost" title="刷新 MCP 服务器" onClick={() => refreshMcpServers()}><IconRefresh size={15} /></button>
+        <button className="icon-btn ghost" title="设置" onClick={() => { setPluginsOpen(false); setSettingsOpen(true); }}><IconGear size={15} /></button>
         <button className="icon-btn ghost" onClick={() => setPluginsOpen(false)} aria-label="关闭"><IconX size={16} /></button>
       </header>
 

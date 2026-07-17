@@ -53,6 +53,15 @@ export function PtyTerminal({ active, className }: PtyTerminalProps) {
   const unlistenRef = useRef<(() => void) | null>(null);
   const readyRef = useRef(false);
 
+  // 主题热切换：全局 data-theme 变化时同步 xterm 配色(此前仅创建时取一次，切主题后终端颜色不更新)
+  useEffect(() => {
+    const obs = new MutationObserver(() => {
+      if (termRef.current) termRef.current.options.theme = pickTheme();
+    });
+    obs.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+    return () => obs.disconnect();
+  }, []);
+
   // 创建终端。创建成功后保持实例，隐藏时仅停止渲染，不销毁 shell 会话。
   useEffect(() => {
     if (!active || termRef.current || !holderRef.current) return;

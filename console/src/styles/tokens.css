@@ -71,8 +71,8 @@
 
   --text-primary: oklch(94.5% 0.002 70);   /* ~#ededed */
   --text-secondary: oklch(68% 0.003 70);   /* ~#9a9a9a */
-  --text-muted: oklch(53% 0.004 70);       /* ~#6d6d6d */
-  --text-faint: oklch(52% 0.004 70);
+  --text-muted: oklch(67% 0.004 70);       /* ~#979797 · WCAG AA ≥4.5:1 on --bg-elevated(a11y 修复) */
+  --text-faint: oklch(67% 0.004 70);       /* ~#979797 · WCAG AA 达标(a11y 修复) */
 
   /* "accent" = monochrome active emphasis (near-white), NOT a brand color */
   --accent: oklch(86% 0.002 70);
@@ -84,7 +84,7 @@
 
   /* functional colors (semantic only) */
   --blue: oklch(62% 0.19 262);      /* links / update / focus  ~#2f6bff */
-  --orange: oklch(68% 0.15 55);     /* sandbox / access warning ~#e07a2f */
+  --orange: oklch(71% 0.14 55);     /* sandbox / access warning · WCAG AA on --bg-elevated(a11y 修复) */
   --purple: oklch(72% 0.13 295);    /* account avatar          ~#a78bfa */
   --focus-ring: 0 0 0 3px color-mix(in oklab, var(--text-primary) 8%, transparent);
   --focus-border: color-mix(in oklab, var(--text-primary) 22%, var(--border-strong));
@@ -100,7 +100,7 @@
 
   --success: oklch(68% 0.17 150);   /* diff add / passed  ~#3fb950 */
   --danger: oklch(63% 0.2 25);      /* diff del / error   ~#f85149 */
-  --warning: oklch(68% 0.15 55);    /* = orange */
+  --warning: oklch(71% 0.14 55);    /* = orange(a11y 同步) */
   --info: oklch(62% 0.19 262);      /* = blue */
   --diff-add-text: oklch(78% 0.15 150);
   --diff-del-text: oklch(74% 0.16 25);
@@ -142,9 +142,9 @@
   --border-strong: oklch(84% 0.006 85);
 
   --text-primary: oklch(25% 0.004 85);   /* ~#1a1a1a */
-  --text-secondary: oklch(53% 0.004 85); /* ~#6f6f6f */
-  --text-muted: oklch(55% 0.004 85);     /* ~#6a6a67 */
-  --text-faint: oklch(78% 0.004 85);
+  --text-secondary: oklch(50% 0.004 85); /* ~#666 · WCAG AA 达标(a11y 修复,原 53% 边界) */
+  --text-muted: oklch(52% 0.004 85);     /* ~#6c6c6c · WCAG AA ≥4.5:1 on --bg-sunken(a11y 修复) */
+  --text-faint: oklch(52% 0.004 85);     /* WCAG AA ≥4.5:1 on --bg-sunken(a11y 修复) */
 
   --accent: oklch(30% 0.004 85);         /* near-black active emphasis */
   --accent-hi: oklch(20% 0.004 85);
@@ -154,7 +154,7 @@
   --accent-on: oklch(100% 0 0);
 
   --blue: oklch(52% 0.22 262);
-  --orange: oklch(58% 0.16 50);
+  --orange: oklch(50% 0.15 50);          /* WCAG AA ≥4.5:1 on white(a11y 修复,原 58% 仅 ~3.9) */
   --purple: oklch(58% 0.16 295);
   --focus-ring: 0 0 0 3px color-mix(in oklab, var(--text-primary) 8%, transparent);
   --focus-border: color-mix(in oklab, var(--text-primary) 22%, var(--border-strong));
@@ -169,7 +169,7 @@
 
   --success: oklch(56% 0.16 150);
   --danger: oklch(55% 0.21 25);
-  --warning: oklch(58% 0.16 50);
+  --warning: oklch(50% 0.15 50);    /* = orange(a11y 同步加深) */
   --info: oklch(52% 0.22 262);
   --diff-add-text: oklch(48% 0.16 150);
   --diff-del-text: oklch(52% 0.21 25);

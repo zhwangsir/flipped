@@ -166,64 +166,66 @@ body.resizing {
 .app.sb-collapsed .sidebar {
   border-right: none;
 }
-/* R6/R16 — 右侧列:面板隐藏时收窄成启动器列(非 0,始终保留 surface 入口) */
+/* R6/R16 — 右侧列:面板隐藏时收窄成窄图标栏(非 0,始终保留 surface 入口) */
 .app.ctx-collapsed {
-  --context-w: 344px;
+  --context-w: 52px;
 }
 
-/* R16 — 右侧启动器(占右栏,垂直居中;对齐真机 Codex 的 审查/终端/浏览器/文件) */
+/* 右侧窄图标栏(贴右缘,垂直居中;hover 左弹标签,对齐 Codex/VS Code 工具条) */
 .launcher {
-  grid-area: auto;
   display: flex;
   flex-direction: column;
+  align-items: center;
   justify-content: center;
-  gap: 10px;
-  padding: 0 22px;
+  gap: 6px;
+  padding: 0;
   min-width: 0;
-  overflow: hidden;
+  overflow: visible; /* tooltip 需溢出栏外 */
   border-left: 1px solid var(--border-subtle);
+  background: var(--bg-sunken);
 }
 .launcher-item {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 13px;
-  padding: 14px 18px;
-  border-radius: 14px;
-  background: var(--bg-surface);
-  border: 1px solid var(--border-subtle);
-  color: var(--text-secondary);
-  font-size: var(--text-base);
-  transition: background var(--dur) var(--ease-out-quart), color var(--dur) var(--ease-out-quart),
-    border-color var(--dur) var(--ease-out-quart), transform var(--dur-fast) var(--ease-spring),
-    box-shadow var(--dur) var(--ease-out-quart);
-  box-shadow: var(--shadow-sm);
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  color: var(--text-muted);
+  transition: background var(--dur-fast) var(--ease-out-quart), color var(--dur-fast) var(--ease-out-quart),
+    transform var(--dur-fast) var(--ease-spring);
 }
 .launcher-item:hover {
   background: var(--bg-hover);
-  border-color: var(--border);
   color: var(--text-primary);
-  transform: translateY(-1px);
-  box-shadow: var(--shadow-mid);
 }
 .launcher-item:active {
-  transform: translateY(0) scale(0.98);
+  transform: scale(0.92);
 }
-.launcher-item > span {
-  flex: 1;
-  text-align: left;
-}
-.launcher-item > svg {
-  color: var(--text-muted);
-  flex: none;
-}
-.launcher-item kbd {
-  color: var(--text-faint);
+/* hover 左弹标签(名称 + 快捷键) */
+.launcher-item::before {
+  content: attr(data-label);
+  position: absolute;
+  right: calc(100% + 10px);
+  top: 50%;
+  transform: translateY(-50%) translateX(4px);
+  padding: 5px 10px;
+  border-radius: 8px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  box-shadow: var(--shadow-mid);
+  color: var(--text-primary);
   font-size: var(--text-xs);
-  font-family: var(--font-mono);
-  flex: none;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--dur-fast) var(--ease-out-quart), transform var(--dur-fast) var(--ease-out-quart);
 }
-.launcher-item:hover > svg {
-  color: var(--text-secondary);
+.launcher-item:hover::before,
+.launcher-item:focus-visible::before {
+  opacity: 1;
+  transform: translateY(-50%) translateX(0);
 }
 
 /* ---- Codex 侧栏：全局文字导航 ---- */
@@ -338,7 +340,7 @@ body.resizing {
 .srr-proj {
   flex: 0 0 auto;
   font-size: var(--text-xs);
-  color: var(--text-muted);
+  color: var(--text-secondary);
 }
 .side-project {
   display: flex;

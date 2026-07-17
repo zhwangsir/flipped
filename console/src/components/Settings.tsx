@@ -60,9 +60,9 @@ function writePref(key: string, val: string) {
   }
 }
 
-function Toggle({ on, onChange }: { on: boolean; onChange: (v: boolean) => void }) {
+function Toggle({ on, onChange, label }: { on: boolean; onChange: (v: boolean) => void; label: string }) {
   return (
-    <button className={'set-toggle' + (on ? ' on' : '')} onClick={() => onChange(!on)} aria-pressed={on}>
+    <button className={'set-toggle' + (on ? ' on' : '')} onClick={() => onChange(!on)} aria-pressed={on} aria-label={label}>
       <span className="set-toggle-knob" />
     </button>
   );
@@ -77,6 +77,7 @@ const SHORTCUTS: [string, string][] = [
   ['打开浏览器标签页', '⌘T'],
   ['打开审查选项卡', '⌃⇧G'],
   ['设置', '⌘,'],
+  ['切换到对话 1–9', '⌘1-9'],
 ];
 
 export function Settings() {
@@ -85,16 +86,6 @@ export function Settings() {
   const [nav, setNav] = useState<NavId>('general');
   const [workMode, setWorkMode] = useState(() => readPref('workmode', 'coding'));
   const [fileOpenTarget, setFileOpenTarget] = useState(() => readPref('file-open-target', 'editor'));
-  const [language, setLanguage] = useState(() => readPref('language', 'auto'));
-  const [perm, setPerm] = useState(() => ({
-    def: readPref('perm-def', '1') === '1',
-    auto: readPref('perm-auto', '1') === '1',
-    full: readPref('perm-full', '1') === '1',
-  }));
-  const setPermKey = (k: 'def' | 'auto' | 'full', v: boolean) => {
-    setPerm((p) => ({ ...p, [k]: v }));
-    writePref('perm-' + k, v ? '1' : '0');
-  };
 
   if (!settingsOpen) return null;
 
@@ -149,31 +140,13 @@ export function Settings() {
             </section>
 
             <section className="settings-sec">
-              <div className="settings-sec-h">权限</div>
-              <div className="set-rows">
-                {[
-                  ['def', '默认权限', '默认情况下，flipped 可读取并编辑其工作区中的文件。必要时可请求额外访问权限。', perm.def],
-                  ['auto', '自动审核', 'flipped 会自动审核额外访问权限请求。自动审核可能会出错。', perm.auto],
-                  ['full', '完全访问权限', '无需批准即可编辑电脑上任何文件并运行联网命令。显著增加数据丢失/泄露风险。', perm.full],
-                ].map(([k, t, d, v]) => (
-                  <div className="set-row" key={k as string}>
-                    <div className="set-row-text">
-                      <b>{t as string}</b>
-                      <span>{d as string}</span>
-                    </div>
-                    <Toggle on={v as boolean} onChange={(nv) => setPermKey(k as 'def' | 'auto' | 'full', nv)} />
-                  </div>
-                ))}
-              </div>
-            </section>
-
-            <section className="settings-sec">
               <div className="settings-sec-h">常规</div>
               <div className="set-rows">
                 <div className="set-row">
                   <div className="set-row-text"><b>默认文件打开目标</b><span>默认打开文件和文件夹的位置</span></div>
                   <select
                     className="set-select set-select-native"
+                    aria-label="默认文件打开目标"
                     value={fileOpenTarget}
                     onChange={(e) => {
                       setFileOpenTarget(e.target.value);
@@ -183,21 +156,6 @@ export function Settings() {
                     <option value="editor">编辑器</option>
                     <option value="preview">预览</option>
                     <option value="split">分屏</option>
-                  </select>
-                </div>
-                <div className="set-row">
-                  <div className="set-row-text"><b>语言</b><span>应用 UI 语言</span></div>
-                  <select
-                    className="set-select set-select-native"
-                    value={language}
-                    onChange={(e) => {
-                      setLanguage(e.target.value);
-                      writePref('language', e.target.value);
-                    }}
-                  >
-                    <option value="auto">自动检测</option>
-                    <option value="zh-CN">简体中文</option>
-                    <option value="en">English</option>
                   </select>
                 </div>
               </div>
@@ -270,7 +228,7 @@ export function Settings() {
                       <b>{s.name} <span className="set-badge">{s.transport}</span></b>
                       <span>{s.description} · {s.tool_count} 工具</span>
                     </div>
-                    <Toggle on={s.enabled} onChange={(v) => toggleMcpServer(s.name, v)} />
+                    <Toggle on={s.enabled} onChange={(v) => toggleMcpServer(s.name, v)} label={`${s.name} 开关`} />
                   </div>
                 ))}
               </div>

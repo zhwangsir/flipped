@@ -2753,3 +2753,88 @@ Kimi 作为 overseer 监督 GLM-5.2，防卡死：
 - 命令：`.venv/bin/python -m pytest tests/ -q --ignore=tests/test_web_search.py`
 - 结果：**1434 passed, 0 failed**（44.67s）
 - test_web_search 1个失败是网络超时（SSL 握手超时），非代码问题
+
+---
+
+## UI 修复 · 右侧窄图标栏 + FactoryPanel key 冲突（2026-07-17）
+
+### 改动 1：Launcher 大卡片按钮 → 窄图标侧边栏
+
+**问题**：用户多次反馈右侧应为一个侧边栏，但 Launcher 实现为 344px 宽的大卡片按钮堆（图标+文字+kbd），占据右栏且视觉上不像 sidebar。
+
+**修改**：
+- [Launcher.tsx](console/src/components/Launcher.tsx)：重写为数据驱动的纯图标栏（ENTRIES 数组 map），去掉 span 文字与 kbd，改为 `data-label` + `aria-label`，容器改 `role="toolbar"` 语义化 nav
+- [app.css](console/src/styles/app.css)：`.app.ctx-collapsed` 的 `--context-w` 344px → **52px**；`.launcher-item` 改为 36×36 方形图标按钮；新增 `::before` hover 左弹 tooltip（名称+快捷键，focus-visible 同触发）；清理 `> span` / `> svg` / `kbd` 死样式
+
+**验证**（browser 实测 @127.0.0.1:5273）：
+- 窄栏精确 52px 贴右边缘、垂直居中（栏中心 Y=408 = 图标组中心 Y=408）
+- 4 按钮纯图标（innerText 为空、无 kbd 元素）
+- hover "审查" 600ms 后 tooltip 左侧弹出，内容 "审查 ⌃⇧G" 正确；亮/暗主题均正常
+- 点击图标可重开面板直达对应 tab；无滚动条/溢出/遮挡异常
+- `tsc --noEmit` 0 错误；`vitest run` **45/45 passed**；`vite build` 成功
+
+### 改动 2：FactoryDetailCard React key 重复（proposed-4）
+
+**问题**：控制台警告 `Encountered two children with the same key 'proposed-4'`，源于 completed/failed/roadmap 列表用 `task.id` 做 key，后端返回中同一任务出现两次即冲突。
+
+**修改**：[FactoryPanel.tsx](console/src/components/FactoryPanel.tsx) 三处 key 加前缀+index 兜底——`done-${id}-${i}` / `fail-${id}-${i}` / `${task.id}-${i}`，同列表内保证唯一。
+
+**验证**：`tsc --noEmit` 0 错误；`vitest run` **45/45 passed**。
+
+---
+
+## UI 修复 · E2E 全量测试 + a11y 颜色对比度攻坚（2026-07-17 第二轮）
+
+### 背景
+第一轮 a11y axe 扫描 6 用例全失败，报大量 color-contrast 违规。逐条定位为两类根因。
+
+### 根因分析（Playwright evaluate 实测 computed style 取证）
+1. **动画折算误报**：axe 把元素 opacity 折算进前景色。入场动画（slide-up fade-in, 420ms+stagger）播放中扫描时，`.empty-hero`（真实 #1a1a1a）被折算成 #f8f8f8（对比度 1.06）、`.side-group-label`（真实 #757472）折算成 #93928f（2.8）、`.cbar-access` 橙色折算成 #e0aa7f（2.05）。
+2. **真实不达标**：`.thread-time` oklch(0.56) on #f5f3f0 = 4.21、`.tab` 4.38、`.palette-source` on white = 4.28、`kbd` on #f8f7f4 = 4.16，均 < 4.5:1。深色主题 `--text-muted/faint` oklch(0.62/0.60) 在 --bg-elevated(#2e2e2e) 上仅 ~3.7，也未达标（此前无深色用例，未发现）。
+
+### 修改
+- [tokens.css](console/src/styles/tokens.css)：
+  - 浅色 `--text-secondary` 53%→50%、`--text-muted` 55%→52%、`--text-faint` 56%→52%（#f5f3f0 上 ≥4.9:1）
+  - 浅色 `--orange/--warning` 58%→50%（white 上 ≥4.5:1）
+  - 深色 `--text-muted/faint` 62/60%→67%（--bg-elevated 上 ~4.7:1）、`--orange/--warning` 68%→71%（--bg-elevated 上 ≥4.5:1）
+- [global.css](console/src/styles/global.css)：prefers-reduced-motion 规则补 `animation-delay`/`transition-delay` 压缩（`both` fill-mode 动画立即到终态）
+- [a11y.spec.ts](console/e2e/a11y.spec.ts)：beforeEach `emulateMedia({reducedMotion:'reduce'})` 消除动画折算误报；新增「深色主题主壳」「深色主题设置页」2 用例（深色此前零覆盖）；命令面板用例按键前等 `.topbar` 可见（修 mount 时序 flaky）
+
+### 验证（实跑输出）
+- `npx playwright test e2e/a11y.spec.ts`：**8/8 passed (3.9s)**（主壳/窄图标栏/设置页/命令面板/工厂面板/移动端/深色主壳/深色设置页，axe wcag2a+2aa 零违规）
+- `npx playwright test`（全量）：**78 passed, 1 failed**
+- `npx tsc --noEmit`：0 错误；`npx vitest run`：**45/45 passed**；`npm run build`：✓ built in 626ms
+
+### 唯一失败项（非 UI 回归，环境冲突，如实记录）
+- `console.spec.ts › send task, approve, and complete`：`approval-card` 15s 未出现。
+  - 取证：测试期间创建的 3 个会话（sess-619d22d0/d565429f/7b54cf14）后端事件流均报 `Client error '405 Method Not Allowed' for url 'http://localhost:8000/api/conversations'`。
+  - 根因：后端「智能体」模式需连接 OpenHands agent-server @localhost:8000，但 8000 端口当前被 **NoteEdge 笔记应用**（uvicorn main:app, PID 35195）占用。OpenHands agent-server 未运行 → 任务派发即失败，走不到 approval 节点。
+  - 判定：后端外部依赖缺失（AGENTS.md §6），与本次 UI 改动无关；未擅自 kill 用户进程（项目隔离约束）。修复选项：① 停 NoteEdge 后启动 OpenHands agent-server；② 或改后端 agent-server URL 配置指向正确实例。
+
+---
+
+## M133 · UI/UX 深度修复：快捷键补齐 + 假控件撤下 + a11y separator 合规（2026-07-17 第三轮）
+
+### 背景
+接管时核查发现：上一会话摘要声称已落盘的多项修复实际**未写入文件**。逐项核实后重新落实，并修复本轮新引入的 2 类回归。
+
+### 修复清单（全部实跑验证）
+1. **快捷键宣传≠实际**（[store.tsx](console/src/store.tsx)）：原仅 ⌘B/⌘K/⌘J/⌘, 四组。补齐 ⌘N 新对话 / ⌘P 搜索文件 / ⌘T 浏览器 / ⌃⇧G 审查 / ⌘1-9 切会话。陷阱：effect deps 引用 `createSession/selectSession` 必须放在其声明之后（TDZ 会白屏）；⌃⇧G 分支须在通用 meta 分支之前（ctrlKey 也属于 meta）。
+2. **移动端 tabbar 图标语义**（[App.tsx](console/src/App.tsx)）：对话 IconSearch→IconChat，面板 IconFactory→IconLayout。
+3. **ResizeHandle 键盘可达**（[ResizeHandle.tsx](console/src/components/ResizeHandle.tsx)）：tabIndex + ←/→ 步进 8px。**回归**：可聚焦 role=separator 触发 axe `aria-required-attr` critical（需 aria-valuenow/min/max）→ App.tsx 传入 value/min/max（sidebar 200-460 / context 320-760）。
+4. **终端主题热切换**（[PtyTerminal.tsx](console/src/components/PtyTerminal.tsx)）：MutationObserver 监听 documentElement data-theme → `term.options.theme = pickTheme()`。
+5. **Plugins 死按钮**（[Plugins.tsx](console/src/components/Plugins.tsx)）：刷新→`refreshMcpServers()`（store 新增并导出，复用 M7.3 加载逻辑），设置→跳 Settings 页；刷新图标 IconSearch→IconRefresh。
+6. **假控件撤下**（[Settings.tsx](console/src/components/Settings.tsx)）：「权限」3 开关（后端无权限 API）+「语言」下拉（无 i18n 设施）——write-only localStorage 的死 UI 全部移除；快捷键表补 ⌘1-9 行。
+7. **Sidebar ⋯菜单**（[Sidebar.tsx](console/src/components/Sidebar.tsx)）：补 Escape 键关闭（原仅 click-outside）。
+8. **mobile.spec 遮罩点击**（[mobile.spec.ts](console/e2e/mobile.spec.ts)）：侧栏抽屉 260px / 底部面板 75dvh 物理覆盖 overlay 中心点击点 → 改为点击未被覆盖的遮罩区（右侧 x=340 / 顶部 y=100）。根因非产品 bug，是测试坐标落在抽屉上。
+
+### 验证（实跑输出）
+- `npx tsc --noEmit`：0 错误
+- `npx vitest run`：**45/45 passed**
+- `npx vite build`：✓ built in 3.79s
+- `npx playwright test e2e/a11y.spec.ts e2e/mobile.spec.ts`：**15/15 passed**（修复后）
+- `npx playwright test`（全量）：**79/79 passed (58.0s)** —— 修复前为 74 passed + 4 failed + 1 flaky
+
+### 遗留（如实记录）
+- 权限体系：后端无 API，UI 已撤下；待后端实现后再恢复并接线。
+- i18n：无语言设施，UI 已撤下；当前界面仅简体中文。

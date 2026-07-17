@@ -12,7 +12,7 @@ import { Plugins } from "./components/Plugins";
 import { TerminalDrawer } from "./components/TerminalDrawer";
 import { FactoryPanel } from "./components/FactoryPanel";
 import { AppProvider, useApp } from "./store";
-import { IconPlus, IconSearch, IconGear, IconFactory } from "./icons";
+import { IconPlus, IconChat, IconGear, IconLayout } from "./icons";
 
 const SIDEBAR_MIN = 200;
 const SIDEBAR_MAX = 460;
@@ -71,12 +71,18 @@ function AppShell() {
         {!sidebarCollapsed && (
           <ResizeHandle
             side="left"
+            value={sidebarW}
+            min={SIDEBAR_MIN}
+            max={SIDEBAR_MAX}
             onResize={(dx) => setSidebarW((w) => clamp(w + dx, SIDEBAR_MIN, SIDEBAR_MAX))}
           />
         )}
         {showContext && (
           <ResizeHandle
             side="right"
+            value={contextW}
+            min={CONTEXT_MIN}
+            max={CONTEXT_MAX}
             onResize={(dx) => setContextW((w) => clamp(w - dx, CONTEXT_MIN, CONTEXT_MAX))}
           />
         )}
@@ -97,7 +103,7 @@ function AppShell() {
           onClick={() => setMobileSidebarOpen(true)}
           aria-label="对话列表"
         >
-          <IconSearch size={20} />
+          <IconChat size={20} />
           <span>对话</span>
         </button>
         <button
@@ -112,7 +118,7 @@ function AppShell() {
           onClick={() => setMobilePanelOpen(true)}
           aria-label="上下文面板"
         >
-          <IconFactory size={20} />
+          <IconLayout size={20} />
           <span>面板</span>
         </button>
         <button

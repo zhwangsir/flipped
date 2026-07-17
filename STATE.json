@@ -1,8 +1,8 @@
 {
   "project": "flipped",
   "description": "接入本地 MLX 双模型(GLM-5.2 编排者 / Kimi-K2.7-Code 执行者)的 agentic 代码编辑器平台。fork Roo Code + 自定义驾驭层(强制验证/循环检测/上下文压缩/人工审批/子Agent/可观测性) + MCP 联网与外部能力。",
-  "updated": "2026-07-16",
-  "current_milestone": "M125-M129 借鉴 Orca 完成 · worktree 隔离+Fan-out 对比+Agent 状态 hook+视觉反馈闭环+Agent CLI, 全量 1430 passed",
+  "updated": "2026-07-17",
+  "current_milestone": "M133 UI/UX 深度修复完成 · 快捷键宣传=实际 + axe 零违规 + E2E 79/79 全绿",
   "key_facts": {
     "dev_host": "Apple M5 Max, 128GB RAM, 1.1TB 可用磁盘 — 开发/控制节点，非模型宿主",
     "model_cluster": "exo 集群 @ http://100.64.201.37:52415 (内网, OpenAI 兼容)；公网 https://dgmt.top/exo (需 Bearer token)",
@@ -2260,6 +2260,78 @@
           "note": "14/14 agent_cli 测试通过。项目全量 1430 passed, 0 failed"
         }
       }
+    },
+    "M132": {
+      "title": "Console UI/UX 全量 E2E 测试与可访问性攻坚",
+      "status": "done",
+      "tasks": {
+        "M132.1_launcher_sidebar": {
+          "title": "Launcher 重构为 52px 窄图标侧边栏 + tooltip",
+          "status": "done"
+        },
+        "M132.2_e2e_suite": {
+          "title": "E2E 套件: layout/panels/mobile/console-errors/a11y",
+          "status": "done"
+        },
+        "M132.3_a11y_contrast": {
+          "title": "axe 颜色对比度修复(浅/深色文本变量+orange/reduced-motion)",
+          "status": "done",
+          "note": "根因二分: 动画 opacity 折算误报(reduced-motion 仿真根治) + 真实不达标(tokens 加深)。axe wcag2a/2aa 8 用例零违规, 含新增深色主题 2 用例"
+        },
+        "M132.4_shortcuts_a11y": {
+          "title": "补齐 ⌘, 快捷键绑定 + Toggle/select aria-label + TerminalDrawer inert",
+          "status": "done"
+        },
+        "M132.5_regression": {
+          "title": "回归: tsc 0 错 / vitest 45/45 / build 通过 / E2E 78/79",
+          "status": "done"
+        }
+      }
+    },
+    "M133": {
+      "title": "UI/UX 深度修复:快捷键补齐 + 假控件撤下 + a11y separator 合规",
+      "status": "done",
+      "tasks": {
+        "M133.1_shortcuts": {
+          "title": "store.tsx 补齐 5 组快捷键绑定: ⌘N 新对话 / ⌘P 搜索文件 / ⌘T 浏览器 / ⌃⇧G 审查 / ⌘1-9 切会话",
+          "status": "done",
+          "note": "effect 须置于 createSession/selectSession 声明之后(deps 引用, 避免 TDZ); ⌃⇧G 分支须在通用 meta 分支之前"
+        },
+        "M133.2_mobile_tabbar_icons": {
+          "title": "移动端 tabbar 图标语义修正: 对话 IconSearch→IconChat, 面板 IconFactory→IconLayout",
+          "status": "done"
+        },
+        "M133.3_resize_handle": {
+          "title": "ResizeHandle 键盘可达(←/→ 步进 8px) + aria-valuenow/min/max 合规",
+          "status": "done",
+          "note": "可聚焦 role=separator 必须带 aria-valuenow/min/max(axe aria-required-attr critical); value/min/max 由 App.tsx 传入 sidebarW/contextW"
+        },
+        "M133.4_terminal_theme": {
+          "title": "PtyTerminal 主题热切换: MutationObserver 监听 data-theme 同步 xterm options.theme",
+          "status": "done"
+        },
+        "M133.5_plugins_buttons": {
+          "title": "Plugins 页死按钮接线: 刷新→refreshMcpServers(store 新增), 设置→跳转 Settings; 刷新图标 IconSearch→IconRefresh",
+          "status": "done"
+        },
+        "M133.6_fake_controls_removed": {
+          "title": "撤下假控件: 设置页「权限」3 开关(后端无 API) + 「语言」下拉(无 i18n 设施)",
+          "status": "done",
+          "note": "localStorage write-only 的死 UI 比没有更糟; 后续接后端权限/i18n 时再恢复"
+        },
+        "M133.7_sidebar_escape": {
+          "title": "Sidebar ⋯菜单补 Escape 键关闭(原仅 click-outside)",
+          "status": "done"
+        },
+        "M133.8_e2e_fixes": {
+          "title": "mobile.spec 遮罩点击坐标修正(抽屉 260px/面板 75dvh 覆盖点击点→点未覆盖区)",
+          "status": "done"
+        },
+        "M133.9_regression": {
+          "title": "回归: tsc 0 错 / vitest 45/45 / vite build 通过 / E2E 全量 79/79",
+          "status": "done"
+        }
+      }
     }
   },
   "architecture_decisions": [
@@ -2427,6 +2499,14 @@
       "title": "Codex 执行沙箱禁止 Python TCP socket bind 与 outbound 网络连接",
       "detail": "TRAE IDE 环境无此限制（实测 BIND_OK + exo 可达 + OpenHands 可达）。2026-07-07 真实 E2E 全链路通过：chat/plan/agent 三模式 + OpenHands 沙箱真实创建文件+执行。Codex 沙箱环境仍受限，但非代码缺陷。",
       "owner": "TRAE环境已解决；Codex沙箱仍有限制"
+    },
+    {
+      "id": "KI-20260717-e2e-approval-env",
+      "date": "2026-07-17",
+      "severity": "env-blocker",
+      "title": "E2E approval flow 依赖的 OpenHands agent-server 未运行",
+      "detail": "console.spec.ts 'send task, approve, and complete' 失败: 后端智能体模式派发任务到 http://localhost:8000/api/conversations 返回 405。根因: 8000 端口被 NoteEdge 笔记应用(uvicorn, PID 35195)占用, OpenHands agent-server 未启动。非 UI 回归。修复: 停 NoteEdge 并启动 agent-server, 或改后端 agent-server URL 配置。",
+      "status": "open"
     }
   ],
   "background_jobs": [

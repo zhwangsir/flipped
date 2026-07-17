@@ -297,7 +297,7 @@ function FactoryDetailCard({
         )}
         {detail.roadmap.map((task, i) => (
           <TaskRow
-            key={task.id}
+            key={`${task.id}-${i}`}
             task={task}
             index={i}
             isCurrent={detail.current_task_id === task.id}
@@ -314,7 +314,7 @@ function FactoryDetailCard({
           </div>
           <div className="fd-results">
             {detail.completed.map((r, i) => (
-              <ResultRow key={r.task.id} result={r} index={i} ok />
+              <ResultRow key={`done-${r.task.id}-${i}`} result={r} index={i} ok />
             ))}
           </div>
         </>
@@ -329,7 +329,7 @@ function FactoryDetailCard({
           </div>
           <div className="fd-results">
             {detail.failed.map((r, i) => (
-              <ResultRow key={r.task.id} result={r} index={i} ok={false} />
+              <ResultRow key={`fail-${r.task.id}-${i}`} result={r} index={i} ok={false} />
             ))}
           </div>
         </>
