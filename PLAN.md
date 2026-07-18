@@ -1,3 +1,40 @@
+# M138 · 全量回归真正绿 + M137 遗留清扫
+
+> 主题：修掉 test_factory_visual_regression 3 个长期失败的 mock 泄漏（a11y_lint 真实启动 Playwright 未被 mock），让全量 pytest 首次真正零失败；顺带清 M137 两处遗留。
+> 定位：小步快跑，三个独立子任务，均主代理直接做（不派子代理）。
+
+## 根因诊断（已实跑定位）
+
+`test_factory_visual_regression.py` 只 mock 了 `driving.visual_regression.make_visual_verifier`，但 verifier 装配链在 `factory_loop.py` L804-809：`combined_verifier_with_a11y(_base)` → `a11y_lint` 内部真实启动 **Playwright headless Chromium + 本地 HTTP 服务** 做 axe-core WCAG 扫描。测试环境无浏览器 → `ConnectError: [Errno 61]` → `_stub_drive_capture_verifier` 里 `verifier(...)` 抛异常 → `captured["verifier_result"]` 未赋值 → 断言失败。
+
+M134.2 验收时 Playwright 浏览器可用故 5/5；现在不可用故 3 失败。**不是该 skip 的环境依赖，是 mock 不完整**——test 4 已正确 mock 了 a11y/design_lint 两层，test 1/2/3 漏了。
+
+## 子任务
+
+### M138.1 · visual_regression 测试 mock 补全
+- test 1/2/3 补 mock `driving.a11y_lint.combined_verifier_with_a11y` + `driving.design_lint.combined_verifier`（照抄 test 4 的 mock 模式），让 verifier 链完全离线。
+- 顺带给 `_stub_drive_capture_verifier` 的 verifier 调用加 try/except，异常记入 captured（断言更鲁棒，失败信息更清晰）。
+- 验收：`pytest tests/test_factory_visual_regression.py` 5/5 绿（无浏览器环境）。
+
+### M138.2 · m10_integration 硬编码路径 tmp 化
+- `tests/test_m10_integration.py` 显式硬编码 `"data/gold_memory.db"`（M137 W1 报告：每次运行真实写该文件，在 data/ 留碎片）。改 tmp_path 注入。
+- 验收：该测试绿，且运行后 data/ 无新增 gold_memory.db。
+
+### M138.3 · checkpoint_db_path 死参处理
+- `run_factory_loop(checkpoint_db_path=...)`（factory_loop.py L976/1005）赋值后下游从未使用——真正写 checkpoint 的是 `default_orchestrator_fn` 内部（M137 W2 报告确认死参）。infinite_loop.py 仍传它。
+- 处理：**接线**而非删除（保留签名兼容）——把 `checkpoint_db_path` 透传进 orchestrator_fn 的 checkpoint 路径（若 orchestrator_fn 接受该参数）；若接线牵扯面大，则删除参数并同步清理 infinite_loop 调用方 + 测试。**先做最小调查再定**。
+- 验收：死参消除（要么真正生效、要么签名移除且调用方同步），全量零回归。
+- **实际决策（已落地）：删除**。调查结果：①`default_orchestrator_fn` L909 硬编码 `db_path=default_db_path()`，`OrchestratorFn` 协议为 `(task, state)` 不接受路径，接线需改协议+全部 mock orchestrator，牵扯面大；②M137 已决策 checkpoint 收敛统一库、thread_id 命名空间隔离，接线会复活 per-file 库违背该决策。故删除 `run_factory_loop.checkpoint_db_path` + `run_infinite_loop.factory_checkpoint_db_path`，同步清理 infinite_loop 调用方 + 8 个测试/脚本调用点（共 17 处 kwarg）。`api/schemas.py` 的 `session.checkpoint_db_path` 是 API 会话字段（另一套），不动。
+
+## 验收标准（M138 总）
+
+- [x] `pytest tests/` 全量**零失败**：1521 passed（首次真正绿，原 1518+3 环境依赖失败已修）
+- [x] data/ 运行测试后无碎片新增（仅 flipped.db + axe.min.js 缓存 + M137 .bak 备份）
+- [x] vitest 57 零回归 + console build ✓
+- [x] STATE.json / TEST_LOG.md 更新
+
+---
+
 # M137 · SQLite 八库合并（M136 拆出项）
 
 > 来源：M136 计划「SQLite 八库合并风险高，与事件表工作互相干扰，拆到 M137」。

@@ -4372,7 +4372,6 @@ def test_m63_smoke_factory_loop_bad_worker_to_passing(monkeypatch):
             product_goal="做一个落地页",
             cwd=d,
             db_path=os.path.join(d, "test_factory.db"),
-            checkpoint_db_path=os.path.join(d, "test_ckpt.db"),
             max_tasks=10,
             max_rounds=1,
             orchestrator_fn=fake_orchestrator,

@@ -1344,7 +1344,6 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
             product_goal="test",
             cwd=d,
             db_path=os.path.join(d, "test_factory.db"),
-            checkpoint_db_path=os.path.join(d, "test_ckpt.db"),
             max_tasks=10,
             max_rounds=3,
             planner=lambda s: [FactoryTask(id="t0", description="init", verify_cmd=["true"])],

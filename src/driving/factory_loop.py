@@ -973,7 +973,6 @@ def run_factory_loop(
     *,
     factory_id: str | None = None,
     db_path: str | None = None,
-    checkpoint_db_path: str | None = None,
     max_tasks: int = 10,
     max_rounds: int = 5,
     design_style: str = "auto",
@@ -1002,7 +1001,6 @@ def run_factory_loop(
     bus = event_bus if event_bus is not None else NullEventBus()
     # M137：默认收敛到统一库（env FLIPPED_DB 可覆盖）；显式传参（如测试 tmp 路径）行为不变
     db_path = db_path or default_db_path()
-    checkpoint_db_path = checkpoint_db_path or default_db_path()
 
     # M42: 默认自动接入自主任务生成 + 确定性 design fix fallback
     # 调用方无需显式传入即可获得"无限迭代"能力

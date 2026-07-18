@@ -44,7 +44,6 @@ def main():
         cwd=workdir,
         max_tasks=10,
         db_path="data/factory_e2e_10.db",
-        checkpoint_db_path="data/factory_e2e_10_checkpoints.db",
     )
 
     print()

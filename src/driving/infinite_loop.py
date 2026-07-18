@@ -366,7 +366,6 @@ def run_infinite_loop(
     max_rounds: int = 10,
     db_path: str | None = None,
     factory_db_path: str | None = None,
-    factory_checkpoint_db_path: str | None = None,
     evolve_fn: Callable[..., tuple[str, bool, str]] | None = None,
     factory_loop_fn: FactoryLoopFn | None = None,
     planner=None,
@@ -400,7 +399,6 @@ def run_infinite_loop(
     # M137：默认收敛到统一库（env FLIPPED_DB 可覆盖）；显式传参（如测试 tmp 路径）行为不变
     db_path = db_path or default_db_path()
     factory_db_path = factory_db_path or default_db_path()
-    factory_checkpoint_db_path = factory_checkpoint_db_path or default_db_path()
 
     # 加载已有状态（支持崩溃恢复）
     state = load_loop_state(loop_id, db_path) if loop_id else None
@@ -460,7 +458,6 @@ def run_infinite_loop(
             cwd,
             design_style=state.design_style,
             db_path=factory_db_path,
-            checkpoint_db_path=factory_checkpoint_db_path,
             planner=planner,
             orchestrator_fn=orchestrator_fn,
             event_bus=event_bus,

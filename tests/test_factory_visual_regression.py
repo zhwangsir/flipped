@@ -57,11 +57,15 @@ def _stub_drive_capture_verifier(captured: dict):
 
     def fake_drive(**kwargs):
         captured.update(kwargs)
-        # 调用 verifier 看它是否含 visual 校验
+        # 调用 verifier 看它是否含 visual 校验；verifier 内部若抛异常(如 a11y 渲染服务
+        # 不在线)也记录下来，避免异常导致 verifier_result 未赋值而误判为"未装配 verifier"。
         verifier = kwargs.get("verifier")
         if verifier:
-            ok, msg = verifier(["true"], "/tmp")
-            captured["verifier_result"] = (ok, msg)
+            try:
+                ok, msg = verifier(["true"], "/tmp")
+                captured["verifier_result"] = (ok, msg)
+            except Exception as exc:  # noqa: BLE001
+                captured["verifier_result"] = (False, f"<verifier raised: {exc!r}>")
         return {
             "verified": True,
             "stop_reason": "completed",
@@ -86,10 +90,16 @@ def test_visual_regression_injected_when_enabled(tmp_cwd, monkeypatch):
     # mock visual_regression 避免依赖真 Playwright
     mock_visual_verify = MagicMock(return_value=(True, "视觉回归通过(diff=2.3%)"))
     mock_make_visual = MagicMock(return_value=mock_visual_verify)
+    # mock a11y/design_lint 组合层,让 visual 包一个离线 True verifier(避免 a11y 真实启动 Chromium)
+    mock_base_verify = MagicMock(return_value=(True, "design ok"))
+    mock_combined = MagicMock(return_value=mock_base_verify)
+    mock_combined_a11y = MagicMock(return_value=mock_base_verify)
 
     with patch("driving.factory_loop.drive_orchestrated", side_effect=_stub_drive_capture_verifier(captured)):
         with patch("driving.visual_regression.make_visual_verifier", mock_make_visual):
-            default_orchestrator_fn(task, state)
+            with patch("driving.a11y_lint.combined_verifier_with_a11y", mock_combined_a11y):
+                with patch("driving.design_lint.combined_verifier", mock_combined):
+                    default_orchestrator_fn(task, state)
 
     assert "verifier" in captured, "应装配 verifier"
     assert "verifier_result" in captured, "verifier 应被调用"

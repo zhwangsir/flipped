@@ -551,7 +551,6 @@ body { margin: 0; padding: 16px; }</style>
             product_goal="做一个落地页",
             cwd=d,
             db_path=os.path.join(d, "test_factory.db"),
-            checkpoint_db_path=os.path.join(d, "test_ckpt.db"),
             max_tasks=10,
             max_rounds=2,
             orchestrator_fn=fake_orchestrator,

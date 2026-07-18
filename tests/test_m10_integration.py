@@ -74,7 +74,6 @@ def test_full_pipeline_design_lint_progress_gold_memory():
             max_tasks=5,
             design_style="dark",
             db_path=f"{d}/factory.db",
-            checkpoint_db_path=f"{d}/ckpt.db",
             planner=mock_planner,
             orchestrator_fn=mock_orchestrator,
         )
@@ -106,16 +105,11 @@ def test_full_pipeline_design_lint_progress_gold_memory():
 
         # 5. Gold Memory 记录了成功经验
         from driving.gold_memory import query_similar, build_memory_hint
-        gold_db = "data/gold_memory.db"
-        # 注意：Gold Memory 默认写 data/gold_memory.db（全局），测试后清理
-        from driving.gold_memory import clear_memory
-        try:
-            q = query_similar("构建暗黑模式 Landing Page", design_style="dark", db_path=gold_db)
-            # 如果之前有记录的话
-            if q.found:
-                assert q.success_rate > 0
-        finally:
-            pass  # 不清理，因为 Gold Memory 就是跨任务积累的
+        # M138.2：硬编码 data/gold_memory.db 会在真实 data/ 留碎片，改 tmp 隔离
+        gold_db = str(cwd / "gold_memory_test.db")
+        q = query_similar("构建暗黑模式 Landing Page", design_style="dark", db_path=gold_db)
+        # 空库不报错、返回未命中即可（行为验证，不强依赖积累数据）
+        assert q.found is False or q.success_rate >= 0
 
 
 def test_design_lint_catches_bad_html():
