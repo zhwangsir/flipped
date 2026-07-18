@@ -1,3 +1,32 @@
+# M139 · 产线化双轨：崩溃恢复 E2E 硬化 + 全屏 TUI 监控台
+
+> 来源：用户选定「两者并行」。W1 = AGENTS.md M5 旗舰验收（长任务中途 kill -9 → resume → 副作用不重放）；W2 = Kimi/Grok 调研唯一判定「值得做未落地」的项。
+> 执行：两子代理并行（W1/W2），主代理汇总全量回归 + STATE/TEST_LOG + commit。
+> **验收结果（done）**：pytest 1531 passed 0 failed（主代理独立复验）；`verify_m139_crash_resume.sh` 一键复跑 PASS（kill -9 后 resume，幂等键各 1 条、marker 各 1 个、状态收敛 done）；TUI 8 headless 用例绿 + 真实库实跑 12 工厂多轮轮询无 traceback。
+
+## M139-A · 崩溃恢复 E2E（W1）
+
+现状地基（M136-A 已落地）：`factory_events` append-only 表 + 幂等键；`factory_start`/`task_start`/`task_done` 均有幂等键；task 完成副作用（completed 追加/worktree 合并/quality 打分/memory）由 `{factory_id}:{task_id}:done` 查重跳过（factory_loop.py L1317-1383）。
+
+子任务：
+1. **调查补漏**：resume（`run_factory_loop(factory_id=X)` → `load_factory_state`）后，崩溃时处于 running 的 task 如何被重置/重跑。预期行为：task 体重跑可接受，副作用必须幂等查重。用测试固化该行为。
+2. **进程内崩溃集成测试**：orchestrator_fn 在第 N 个 task 抛异常模拟崩溃 → 同 factory_id resume → 断言：factory done、completed 无重复、factory_events 中每 task 的 task_done 仅 1 条、context_summary/memory 副作用不重复追加。
+3. **真实 kill -9 E2E**：`scripts/e2e_crash_resume.py`——子进程跑 factory loop（文件标记型慢 orchestrator：每 task 写 marker 文件 + sleep，无 LLM 依赖）→ 父进程 kill -9 → resume 子进程（快速 orchestrator）→ 断言 marker 文件每 task 恰好 1 个、task_done 事件无重复、退出码 0。配 `scripts/verify_m139_crash_resume.sh` 一键复跑。
+4. 验收：新测试全绿 + 脚本实跑输出留存；全量 pytest 零回归。
+
+## M139-B · 全屏 TUI 监控台（W2）
+
+数据源：`data/flipped.db`（env `FLIPPED_DB` 可覆盖）的 `factory_states` + `factory_events`（`event_log.list_events(after_seq=...)` 增量轮询）。只读观察者，不侵入运行中 loop，跨进程可用。
+
+子任务：
+1. `pip install textual`（venv）；新增 `src/tui/` 包（`__init__.py` / `app.py` / `__main__.py`）。
+2. 面板：Header（factory 状态/进度）、事件流（kind 着色滚动）、roadmap 任务进度、Footer 快捷键（q 退出 / p 暂停轮询）。轮询 ~1s；DB 不存在/为空显示空态不崩溃。
+3. 入口：`PYTHONPATH=src python -m tui`。
+4. 测试：Textual `App.run_test()` pilot API 确定性测试——空库空态 / 写入事件后渲染 / after_seq 增量不重复 / 畸形 payload 不崩 / 暂停恢复。
+5. 验收：新测试全绿 + 全量零回归；实跑导出文本快照佐证（`textual` headless 导出）。
+
+---
+
 # M138 · 全量回归真正绿 + M137 遗留清扫
 
 > 主题：修掉 test_factory_visual_regression 3 个长期失败的 mock 泄漏（a11y_lint 真实启动 Playwright 未被 mock），让全量 pytest 首次真正零失败；顺带清 M137 两处遗留。

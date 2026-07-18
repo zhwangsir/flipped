@@ -2,7 +2,7 @@
   "project": "flipped",
   "description": "接入本地 MLX 双模型(GLM-5.2 编排者 / Kimi-K2.7-Code 执行者)的 agentic 代码编辑器平台。fork Roo Code + 自定义驾驭层(强制验证/循环检测/上下文压缩/人工审批/子Agent/可观测性) + MCP 联网与外部能力。",
   "updated": "2026-07-18",
-  "current_milestone": "M138 完成 · 全量回归首次真正零失败(pytest 1521/0 failed)：visual_regression mock 补全 + m10 硬编码 tmp 化 + checkpoint_db_path 死参删除",
+  "current_milestone": "M139-B 完成 · 全屏 TUI 监控台（Textual 只读监控统一 SQLite：状态表 + 增量事件流着色斑）：src/tui/ + 8 headless 用例全绿，实跑真实库 12 工厂多轮轮询无异常，全量 pytest 1531/0 failed",
   "key_facts": {
     "dev_host": "Apple M5 Max, 128GB RAM, 1.1TB 可用磁盘 — 开发/控制节点，非模型宿主",
     "model_cluster": "exo 集群 @ http://100.64.201.37:52415 (内网, OpenAI 兼容)；公网 https://dgmt.top/exo (需 Bearer token)",
@@ -2438,6 +2438,50 @@
           "title": "checkpoint_db_path 死参删除（run_factory_loop + run_infinite_loop.factory_checkpoint_db_path）",
           "status": "done",
           "note": "调查后放弃接线：OrchestratorFn 协议 (task,state) 不接受路径且 M137 已定 checkpoint 收敛统一库+thread_id 隔离，接线违背该决策。删 2 参数 + 17 处调用点清理（infinite_loop + 7 测试文件 + e2e 脚本）。api session.checkpoint_db_path 是另一套字段不动。"
+        }
+      }
+    },
+    "M139-A": {
+      "title": "崩溃恢复 E2E 硬化：resume 后 running task 安全重跑 + 真实 kill -9 无副作用重复",
+      "status": "done",
+      "note": "调查结论：factory_loop L1100-1105 resume 时已正确重置 running→pending，L1316-1384 task_done 幂等键查重已防副作用重复，无需改 src。新增单测固化 + 真实 SIGKILL E2E 验收。全量 pytest 1531 passed, 0 failed。",
+      "tasks": {
+        "M139-A.1_unit": {
+          "title": "tests/test_factory_crash_recovery.py：mock orchestrator 模拟 running 中崩溃 → resume 重跑",
+          "status": "done",
+          "note": "关键设计：普通 Exception 会被 factory_loop L1289 捕获转为失败重试≠崩溃；用 BaseException 子类穿透 except，finally 落盘 running 现场，与 kill -9 一致。断言 completed 2 条无重复、t1/t2 done 幂等键各 1 条、context_summary 无重复摘要；另有 done 后 resume no-op 用例。2 passed。"
+        },
+        "M139-A.2_e2e_kill9": {
+          "title": "scripts/e2e_crash_resume.py + verify_m139_crash_resume.sh：真实 kill -9 → 同 factory_id resume",
+          "status": "done",
+          "note": "子进程 A 文件标记型慢 orchestrator（写 marker+sleep1s），父进程 polling 到 marker 后 SIGKILL（exit=-9）；子进程 B 快速 orchestrator（marker 存在即幂等跳过）resume → COMPLETED=3/done。断言 marker 各 1 个、task_start/done 幂等键各 1 条、DB completed 无重复。子进程 env FLIPPED_DB=tmp 库隔离副作用。一键复跑 scripts/verify_m139_crash_resume.sh 通过。"
+        }
+      }
+    },
+    "M139-B": {
+      "title": "全屏 TUI 监控台：Textual 只读观察统一 SQLite（factory_states 状态表 + factory_events 增量事件流）",
+      "status": "done",
+      "note": "src/tui/（app.py/__main__.py/__init__.py）+ tests/test_tui_monitor.py 8 用例全绿。实跑 python -m tui 读真实 data/flipped.db 显示 12 工厂、多轮 1s 轮询无异常；headless 快照含 5 种 kind 着色行。全量 pytest 1531 passed/0 failed，vitest 57 passed，console build ✓。textual 8.2.8 经 uv USTC 镜像安装（本机 socks5 代理 TLS 挂掉需 env -u 绕过）；rich 13.9.4→15.0.0 连带升级，回归零影响。",
+      "tasks": {
+        "M139-B.1_deps_pkg": {
+          "title": "装 textual + 建 src/tui/ 包骨架（__init__/app/__main__）",
+          "status": "done",
+          "note": "uv pip install（pypi.org 与 USTC 经本机 socks5://127.0.0.1:7897 均 TLS 握手 EOF，env -u *PROXY 绕过后 USTC 镜像成功）→ textual 8.2.8。__main__.py 一行 from tui.app import main; main()。"
+        },
+        "M139-B.2_app": {
+          "title": "FactoryMonitorApp：Header/DataTable/EventLog/Footer + 1s 轮询 + q 退出 / p 暂停恢复",
+          "status": "done",
+          "note": "CSS_PATH=None + DEFAULT_CSS 内联；DataTable 列 factory_id/status/tasks(done/failed/total)/updated_at；EventLog(max_lines=200) 子类挂 _KindHighlighter 按 [kind] 着色（factory_start=green/task_start=blue/task_done=cyan/verify_result=yellow/infra_failure=red）。只读纪律：DB 不存在不 connect（防 sqlite3 顺手建空文件）、只 SELECT、_last_seq 按 factory 增量、全部 fail-open。"
+        },
+        "M139-B.3_tests": {
+          "title": "tests/test_tui_monitor.py：run_test+pilot headless 8 用例",
+          "status": "done",
+          "note": "空库/空文件空态 No factories found（并断言 TUI 不创建 DB 文件）、种子数据渲染、after_seq 二次轮询零重复、增量只拾新事件、畸形 payload_json='{broken' 不崩且正常事件照显、pilot press p 暂停/恢复、210 条事件截断保留 200 行。FLIPPED_DB 指 tmp 路径隔离。8 passed。"
+        },
+        "M139-B.4_run_evidence": {
+          "title": "实跑 + 快照证据（TEST_LOG.md M139-B 节）",
+          "status": "done",
+          "note": "script(pty) 实跑 PYTHONPATH=src python -m tui 读真实 data/flipped.db：DataTable 实时列出 12 个 factory（done/paused + done/failed/total + updated_at），~7s 多轮轮询无 traceback；headless run_test 快照（2 工厂 7 事件含 5 种 kind）+ SVG 导出。"
         }
       }
     }

@@ -3030,3 +3030,64 @@ Tests  57 passed (57)
 $ npm run build
 ✓ built in 571ms
 ```
+
+## M139-A · 崩溃恢复 E2E 硬化
+
+- **单测**：`pytest tests/test_factory_crash_recovery.py -v` 2 passed（mock orchestrator 模拟 BaseException 穿透，running 中崩溃 → resume 后 running task 被重跑，completed 无重复、task_done 幂等键各仅 1 条、context_summary 无重复摘要）。
+- **真实 kill -9 E2E**：`scripts/verify_m139_crash_resume.sh` 一次通过：
+  - 子进程 A 慢 orchestrator 跑 factory，t1 marker 出现后 SIGKILL（exit=-9）；
+  - 子进程 B 快速 orchestrator resume，t1 marker 已存在则幂等跳过，最终 COMPLETED=3、FINAL_STATUS=done；
+  - 断言：每个 .marker 恰好 1 个、所有 task_start/task_done 幂等键各仅 1 条、DB 中 completed task IDs 与预期一致无重复。
+- **全量回归**：`pytest tests/ -q --tb=short` → 1531 passed, 0 failed, 2 warnings。
+```
+
+---
+
+## M139-B · 全屏 TUI 监控台（2026-07-18）
+
+> 只读观察者：Textual 全屏 TUI 轮询统一 SQLite（factory_states + factory_events），绝不写入 DB。
+
+- **依赖**：textual 8.2.8（rich 13.9.4→15.0.0 连带升级）。环境坑：本机 socks5 代理 `127.0.0.1:7897` TLS 握手 EOF，pypi.org/USTC 经代理全挂；`env -u HTTP(S)_PROXY -u http(s)_proxy` 绕过 + USTC 镜像装成。
+- **实现**：[src/tui/app.py](src/tui/app.py)（`FactoryMonitorApp`：Header + DataTable + EventLog + Footer；`CSS_PATH=None` + `DEFAULT_CSS` 内联；1s `set_interval` 轮询；`q` 退出 / `p` 暂停恢复；EventLog 子类挂 `_KindHighlighter` 按 `[kind]` 着色，max_lines=200 截断）+ [src/tui/__main__.py](src/tui/__main__.py)（一行入口）。
+- **只读纪律**：DB 文件不存在时不 connect（避免 sqlite3.connect 顺手创建空文件），空态显示 `No factories found`；`_last_seq` 按 factory 增量拉取；全部读取 fail-open。
+
+### TDD 单测（headless run_test + pilot）
+```
+$ .venv/bin/python -m pytest tests/test_tui_monitor.py -q
+8 passed, 1 warning in 2.64s
+```
+覆盖：空库/空文件空态（并断言 TUI 不创建 DB 文件）、种子数据渲染（表格 1/0/2 + 事件两行）、二次轮询零重复、增量只拾新事件、畸形 `payload_json='{broken'` 不崩且正常事件照显、pilot 按 `p` 暂停/恢复、210 条事件截断保留 200 行。
+
+### headless 快照（tmp DB 种子：2 工厂 / 7 事件含 5 种 kind，run_test size=100x30，SVG 同步导出）
+```text
+== DataTable ==
+factory-alpha | running | 2/1/5 | 2026-07-18T05:04:46.828166+00:00
+factory-beta | done | 3/0/3 | 2026-07-18T05:04:46.828166+00:00
+== EventLog ==
+2026-07-18T05:04:46 [factory_start] factory-alpha goal=demo goal
+2026-07-18T05:04:46 [task_start] factory-alpha task_id=t2
+2026-07-18T05:04:46 [verify_result] factory-alpha task_id=t2, verified=True
+2026-07-18T05:04:46 [task_done] factory-alpha task_id=t2
+2026-07-18T05:04:46 [infra_failure] factory-alpha reason=demo red line
+2026-07-18T05:04:46 [factory_start] factory-beta goal=beta
+2026-07-18T05:04:46 [task_done] factory-beta task_id=t0
+```
+
+### 真实库实跑（pty）
+```
+$ PYTHONPATH=src script -q /dev/null .venv/bin/python -m tui
+```
+DataTable 实时列出真实 `data/flipped.db` 的 12 个 factory（status=done/paused，tasks 如 `0/1/8`，updated_at=2026-07-17…），运行 ~7s 跨多个 1s 轮询周期无 traceback，人工终止。
+
+### 全量回归
+```
+$ .venv/bin/python -m pytest tests/ -q --tb=short
+1531 passed, 2 warnings in 46.88s
+
+$ npm test -- --run
+Test Files  6 passed (6) / Tests  57 passed (57)
+
+$ npm run build
+✓ built in 556ms
+```
+
