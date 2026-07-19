@@ -25,6 +25,7 @@ from driving.event_log import ensure_event_table, list_events
 
 POLL_INTERVAL = 1.0
 MAX_LOG_LINES = 200
+FOCUS_RELOAD_LIMIT = 50  # M140.2：聚焦时重拉该厂最近 N 条历史
 
 KIND_COLORS = {
     "factory_start": "green",
@@ -34,9 +35,44 @@ KIND_COLORS = {
     "infra_failure": "red",
 }
 
+# M140.1 · 状态着色映射（DataTable status 列）
+STATUS_COLORS = {
+    "done": "green",
+    "running": "dodger_blue1",
+    "failed": "red",
+    "paused": "yellow",
+}
+
 _KIND_RE = re.compile(r"\[(\w+)\]")
 
-STATE_COLUMNS = ("factory_id", "status", "tasks (done/failed/total)", "updated_at")
+STATE_COLUMNS = ("factory_id", "status", "progress", "tasks (done/failed/total)", "updated_at")
+
+
+def _progress_bar(done: int, failed: int, total: int, width: int = 10) -> Text:
+    """任务进度块条：done=绿块 / failed=红块 / pending=暗块 + 完成百分比。
+
+    total<=0（roadmap 为空）时返回占位条，不除零。
+    """
+    if total <= 0:
+        return Text("░" * width + "  —", style="dim")
+    done_cells = min(int(done / total * width), width)
+    failed_cells = min(int(failed / total * width), width - done_cells)
+    pending = max(width - done_cells - failed_cells, 0)
+    pct = int(done / total * 100)
+    bar = Text()
+    if done_cells:
+        bar.append("█" * done_cells, style="green")
+    if failed_cells:
+        bar.append("█" * failed_cells, style="red")
+    if pending:
+        bar.append("░" * pending, style="dim")
+    bar.append(f" {pct}%")
+    return bar
+
+
+def _status_text(status: str) -> Text:
+    """按 STATUS_COLORS 给状态着色；未知状态不着色（fail-open）。"""
+    return Text(status or "", style=STATUS_COLORS.get(status, ""))
 
 
 class _KindHighlighter(Highlighter):
@@ -90,18 +126,21 @@ class FactoryMonitorApp(App):
     BINDINGS = [
         ("q", "quit", "Quit"),
         ("p", "toggle_pause", "Pause"),
+        ("escape", "clear_focus", "Unfocus"),
     ]
 
     def __init__(self) -> None:
         super().__init__()
         self.paused = False
         self._last_seq: dict[str, int] = {}
+        self._states: list[dict] = []  # 最近一次轮询的状态快照（供聚焦按行号取 factory_id / M140.3 聚合）
+        self.focus_factory: str | None = None  # M140.2：聚焦中的工厂；None = 全部显示
 
     # ---------- 布局 ----------
 
     def compose(self) -> ComposeResult:
         yield Header()
-        yield DataTable(id="states")
+        yield DataTable(id="states", cursor_type="row", zebra_stripes=True)
         yield EventLog(id="events")
         yield Footer()
 
@@ -114,6 +153,66 @@ class FactoryMonitorApp(App):
 
     def action_toggle_pause(self) -> None:
         self.paused = not self.paused
+
+    # ---------- M140.2 · 工厂聚焦 ----------
+
+    def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
+        """Enter 聚焦 cursor 行工厂；已聚焦时再按 Enter 取消（toggle）。"""
+        if self.focus_factory is not None:
+            self._set_focus(None)
+            return
+        row = event.cursor_row
+        if 0 <= row < len(self._states):
+            self._set_focus(self._states[row]["factory_id"])
+
+    def action_clear_focus(self) -> None:
+        """Esc 取消聚焦。"""
+        if self.focus_factory is not None:
+            self._set_focus(None)
+
+    def _set_focus(self, factory_id: str | None) -> None:
+        self.focus_factory = factory_id
+        if factory_id is not None:
+            self._reload_focus_events(factory_id)
+        self._update_subtitle()
+
+    def _reload_focus_events(self, factory_id: str) -> None:
+        """聚焦切换：清空事件区并重拉该厂最近 N 条。只读，fail-open；不动 _last_seq。"""
+        log = self.query_one("#events", EventLog)
+        log.clear()
+        db_path = default_db_path()
+        if not os.path.exists(db_path):
+            return
+        try:
+            conn = connect(db_path)
+        except sqlite3.Error:
+            return
+        try:
+            events = list_events(conn, factory_id, after_seq=0)[-FOCUS_RELOAD_LIMIT:]
+            log.write_lines(self._format_event(factory_id, e) for e in events)
+        finally:
+            conn.close()
+
+    # ---------- M140.3 · Header 聚合统计 ----------
+
+    def _update_subtitle(self) -> None:
+        """sub_title：聚焦时显示聚焦厂；否则聚合 `N 工厂 · running X · done Y ...`（零计数省略）。"""
+        if self.focus_factory is not None:
+            self.sub_title = f"聚焦: {self.focus_factory}"
+            return
+        states = self._states
+        if not states:
+            self.sub_title = ""
+            return
+        counts: dict[str, int] = {}
+        for s in states:
+            counts[s["status"]] = counts.get(s["status"], 0) + 1
+        parts = [f"{len(states)} 工厂"]
+        for status in ("running", "done", "failed", "paused"):
+            n = counts.get(status, 0)
+            if n:
+                parts.append(f"{status} {n}")
+        self.sub_title = " · ".join(parts)
 
     # ---------- 轮询 ----------
 
@@ -166,26 +265,32 @@ class FactoryMonitorApp(App):
         return states
 
     def _refresh_states(self, states: list[dict]) -> None:
+        self._states = states
         table = self.query_one("#states", DataTable)
         table.clear()
         if not states:
-            table.add_row("No factories found", "", "", "")
+            table.add_row("No factories found", "", "", "", "")
+            self._update_subtitle()
             return
         for s in states:
             table.add_row(
                 s["factory_id"],
-                s["status"],
+                _status_text(s["status"]),
+                _progress_bar(s["done"], s["failed"], s["total"]),
                 f"{s['done']}/{s['failed']}/{s['total']}",
                 s["updated_at"],
             )
+        self._update_subtitle()
 
     def _drain_events(self, conn: sqlite3.Connection, factory_id: str) -> None:
         last = self._last_seq.get(factory_id, 0)
         events = list_events(conn, factory_id, after_seq=last)
         if not events:
             return
-        log = self.query_one("#events", EventLog)
-        log.write_lines(self._format_event(factory_id, e) for e in events)
+        # M140.2：聚焦时只显示聚焦厂；他厂新事件仍推进 _last_seq（取消聚焦后不爆历史重放）
+        if self.focus_factory is None or self.focus_factory == factory_id:
+            log = self.query_one("#events", EventLog)
+            log.write_lines(self._format_event(factory_id, e) for e in events)
         self._last_seq[factory_id] = events[-1]["seq"]  # list_events 按 seq 升序
 
     @staticmethod
