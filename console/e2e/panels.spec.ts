@@ -55,6 +55,8 @@ test.describe('CommandPalette · 命令面板', () => {
     await expect(page.locator('.topbar')).toBeVisible();
     await page.keyboard.press('Meta+k');
     await expect(page.locator('[data-testid="command-palette"]')).toBeVisible();
+    // 等 rAF 聚焦完成再按 Esc——Escape 监听在 .palette 的 onKeyDown，依赖 input 聚焦冒泡
+    await expect(page.locator('.palette-search input')).toBeFocused();
     await page.keyboard.press('Escape');
     await expect(page.locator('[data-testid="command-palette"]')).toBeHidden();
   });
@@ -135,6 +137,8 @@ test.describe('快捷键 · 全局', () => {
     await expect(page.locator('.topbar')).toBeVisible();
     await page.keyboard.press('Meta+k'); // 开面板
     await expect(page.locator('[data-testid="command-palette"]')).toBeVisible();
+    // 等 rAF 聚焦完成再按 Esc——Escape 监听在 .palette 的 onKeyDown，依赖 input 聚焦冒泡
+    await expect(page.locator('.palette-search input')).toBeFocused();
     await page.keyboard.press('Escape');
     await page.keyboard.press('Meta+j'); // 开终端
     await expect(page.locator('.term-drawer')).toHaveClass(/open/);

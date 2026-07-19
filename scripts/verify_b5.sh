@@ -23,14 +23,33 @@ export FLIPPED_MOCK_APPROVAL=1
 
 mkdir -p logs
 
+# 端口占用防御：本脚本的测试端口（API_PORT/CONSOLE_PORT）若被上次残留进程占用，
+# vite preview 会静默 "trying another one" 换端口，而健康检查仍打原端口——
+# 浏览器将加载旧 preview 服务的旧构建（API 指向 :8011 真实后端），审批卡永不出现。
+# 教训（2026-07-18）：占用即清理；preview 加 --strictPort 让换端口变成显性失败而非静默误测。
+kill_port_owner() {
+    local port="$1"
+    local pids
+    pids=$(lsof -nP -tiTCP:"${port}" -sTCP:LISTEN 2>/dev/null || true)
+    if [ -n "${pids}" ]; then
+        echo "[B5] 端口 :${port} 被占用 (pid=${pids// /,})，清理残留进程"
+        kill ${pids} 2>/dev/null || true
+        sleep 1
+    fi
+}
+kill_port_owner "${API_PORT}"
+kill_port_owner "${CONSOLE_PORT}"
+
 cd console
 if [ ! -d node_modules/vite ]; then
     echo "[B5] 安装 Console 依赖 ..."
     npm install > "${ROOT}/logs/b5-npm-install.log" 2>&1 || true
 fi
 
-echo "[B5] 构建 Console ..."
-npm run build > "${ROOT}/logs/b5-console-build.log" 2>&1
+echo "[B5] 构建 Console（指向本脚本的 mock 后端 :${API_PORT}）..."
+# 关键：console 构建期固化 VITE_API_BASE_URL（api.ts fallback 是 :8011 真实后端）。
+# 不注入则 preview 产物仍连 :8011，mock 后端收不到任何请求，审批卡永不出现。
+VITE_API_BASE_URL="${API_URL}" npm run build > "${ROOT}/logs/b5-console-build.log" 2>&1
 cd "${ROOT}"
 
 echo "[B5] 启动 orchestration-api @ :${API_PORT} ..."
@@ -39,7 +58,8 @@ API_PID=$!
 
 echo "[B5] 启动 vite preview @ :${CONSOLE_PORT} ..."
 cd console
-npm run preview > "${ROOT}/logs/b5-vite-preview.log" 2>&1 &
+# --strictPort：端口被占时立即失败（此时 kill_port_owner 已清理，走到这步说明占用者杀不掉，必须显性失败）
+npm run preview -- --strictPort > "${ROOT}/logs/b5-vite-preview.log" 2>&1 &
 PREVIEW_PID=$!
 cd "${ROOT}"
 
@@ -76,8 +96,11 @@ if [ "$REAL_E2E_OK" -eq 1 ]; then
         echo "[B5] 安装 Playwright Chromium ..."
         cd console
         npx playwright install chromium > "${ROOT}/logs/b5-playwright-install.log" 2>&1 || true
-        echo "[B5] 运行 Playwright E2E ..."
-        npx playwright test > "${ROOT}/logs/b5-playwright.log" 2>&1
+        # 本脚本起的是 mock 审批后端（FLIPPED_MOCK_WORKER=1 + FLIPPED_MOCK_APPROVAL=1），
+        # 只跑与之匹配的审批流用例（console.spec.ts，由 E2E_MOCK_APPROVAL=1 门控开启）。
+        # 其余用例面向真实 dev 全栈（dev_up.sh + :8011），在 mock 后端下无意义，不在此运行。
+        echo "[B5] 运行 Playwright E2E（审批流 mock 套件）..."
+        E2E_MOCK_APPROVAL=1 npx playwright test e2e/console.spec.ts > "${ROOT}/logs/b5-playwright.log" 2>&1
         PW_EXIT=$?
         cd "${ROOT}"
         if [ $PW_EXIT -ne 0 ]; then
