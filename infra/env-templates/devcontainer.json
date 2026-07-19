@@ -8,6 +8,6 @@
     "ghcr.io/devcontainers/features/java:1": { "version": "21" },
     "ghcr.io/devcontainers-extra/features/mise:1": {}
   },
-  "postCreateCommand": "mise trust --non-interactive && mise install --yes",
+  "postCreateCommand": "mise trust --all && mise install --yes",
   "remoteUser": "vscode"
 }

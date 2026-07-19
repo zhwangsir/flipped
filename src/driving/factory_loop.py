@@ -13,6 +13,7 @@ import json
 import os
 import sqlite3
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
@@ -960,11 +961,605 @@ def _next_task(state: FactoryState) -> FactoryTask | None:
     return None
 
 
+def _ready_tasks(state: FactoryState) -> list[FactoryTask]:
+    """M142-C — `_next_task` 的推广：返回所有 depends_on ⊆ 已完成 的 pending 任务。
+
+    依赖判定语义与 _next_task 完全一致（done_ids 来自 roadmap 中 status==done 的任务），
+    保持 roadmap 原有顺序。`_next_task(state)` 等价于 `_ready_tasks(state)` 的首元素。
+    """
+    done_ids = {t.id for t in state.roadmap if t.status == TaskStatus.done}
+    return [
+        task for task in state.roadmap
+        if task.status == TaskStatus.pending
+        and all(dep in done_ids for dep in task.depends_on)
+    ]
+
+
+def _max_parallel() -> int:
+    """M142-C — FLIPPED_MAX_PARALLEL 环境变量：factory 任务级并行度。
+
+    默认 "1" = 现有串行路径（零回归）；>1 时按依赖波次并行执行 orchestrator_fn。
+    非法值 fail-open 回退到 1。
+    """
+    try:
+        return max(1, int(os.environ.get("FLIPPED_MAX_PARALLEL", "1") or "1"))
+    except (TypeError, ValueError):
+        return 1
+
+
 def _emit(bus, event: str, payload: dict) -> None:
     try:
         bus.emit("__factory__", event, None, payload)
     except Exception:  # noqa: BLE001
         pass
+
+
+# ---------- M142-C · 主循环共享步骤（串行/并行两路复用，语义一致） ----------
+
+def _propose_next_task(
+    state: FactoryState,
+    db_path: str,
+    bus,
+    task_proposer,
+    design_fix_fallback,
+    feature_fallback,
+) -> bool:
+    """roadmap 全部执行完时，依次尝试 proposer/design_fix/feature_fallback 生成下一轮任务。
+
+    返回 True = 已生成并追加（调用方应重新调度）；False = 无更多任务（工厂收尾）。
+    """
+    if task_proposer is None or state.rounds_used >= state.max_rounds:
+        return False
+    try:
+        proposed = task_proposer(state)
+    except Exception:
+        proposed = None
+    # M41: GLM 不可用时，design_fix_fallback 确定性接管
+    if proposed is None and design_fix_fallback is not None:
+        try:
+            proposed = design_fix_fallback(state)
+        except Exception:
+            proposed = None
+    # M64: design_score 已达标时，feature_fallback 生成功能增强任务
+    if proposed is None and feature_fallback is not None:
+        try:
+            proposed = feature_fallback(state)
+        except Exception:
+            proposed = None
+    if proposed is None:
+        return False
+    state.roadmap.append(proposed)
+    state.rounds_used += 1
+    save_factory_state(state, db_path)
+    _emit(bus, "task_proposed", {
+        "factory_id": state.factory_id,
+        "task_id": proposed.id,
+        "description": proposed.description,
+        "round": state.rounds_used,
+    })
+    return True
+
+
+def _maybe_decompose_task(state: FactoryState, task: FactoryTask, db_path: str, bus) -> bool:
+    """M108: 复杂任务自动拆成 3-5 个子任务（fail-open）。
+
+    返回 True = 原任务已被替换为子任务列表（调用方应重新调度）。
+    """
+    try:
+        from driving.task_decomposer import decompose_task, SubTask
+        decomp_result = decompose_task(
+            task.description,
+            file_count=len(task.artifacts) if task.artifacts else 3,
+        )
+        if decomp_result.should_decompose and len(decomp_result.subtasks) > 1:
+            # 找到原任务在 roadmap 中的位置
+            task_idx = None
+            for i, t in enumerate(state.roadmap):
+                if t.id == task.id:
+                    task_idx = i
+                    break
+            if task_idx is not None:
+                original_deps = task.depends_on
+                subtask_models = []
+                prev_id = None
+                for st in decomp_result.subtasks:
+                    deps = list(original_deps)
+                    if prev_id is not None:
+                        deps.append(prev_id)
+                    st_model = FactoryTask(
+                        id=f"{task.id}-sub{st.order}",
+                        description=st.description,
+                        verify_cmd=st.verify_cmd,
+                        status=TaskStatus.pending,
+                        depends_on=deps,
+                    )
+                    subtask_models.append(st_model)
+                    prev_id = st_model.id
+                # 替换原任务为子任务列表
+                state.roadmap[task_idx:task_idx + 1] = subtask_models
+                save_factory_state(state, db_path)
+                _emit(bus, "task_decomposed", {
+                    "factory_id": state.factory_id,
+                    "original_task_id": task.id,
+                    "original_description": task.description,
+                    "subtask_count": len(subtask_models),
+                    "complexity_score": decomp_result.complexity_score,
+                })
+                return True
+    except Exception:
+        pass
+    return False
+
+
+def _prepare_task_start(
+    state: FactoryState,
+    task: FactoryTask,
+    db_path: str,
+    bus,
+    cli,
+    *,
+    worktree: bool,
+) -> None:
+    """任务启动前簿记：标记 running、attempts/iteration 计数、失败教训预警、
+    CLI 状态更新、落库、task_start 幂等事件。
+
+    worktree=True（串行默认）时创建 M130 worktree；并行波次下任务共享 cwd，
+    跳过 worktree 生命周期（current_worktree_id 单槽位无法追踪多任务），仅保留 status_update。
+    """
+    state.current_task_id = task.id
+    task.status = TaskStatus.running
+    task.attempts += 1
+    state.iteration_count += 1
+    # M105: 任务开始前注入历史失败教训预警（fail-open）
+    try:
+        from driving.failure_kb import build_warning_from_history
+        warning = build_warning_from_history(
+            task.description,
+            state.design_style or "auto",
+        )
+        if warning:
+            existing = state.context_summary or ""
+            state.context_summary = (existing + "\n" + warning).strip()
+            # M135-C: 双写到分层记忆,失败教训进入可检索的 working 层
+            _record_to_memory(state, warning)
+    except Exception:
+        pass
+
+    # M130: CLI 集成——任务开始时创建 worktree + 更新状态
+    if cli is not None:
+        if worktree:
+            try:
+                wt_result = cli.worktree_create(task.id)
+                if wt_result.success and "worktree_id" in wt_result.output:
+                    state.current_worktree_id = wt_result.output["worktree_id"]
+                    state.cli_stats["worktree_create"] = state.cli_stats.get("worktree_create", 0) + 1
+                cli.status_update(task.id, "active")
+                state.cli_stats["status_update"] = state.cli_stats.get("status_update", 0) + 1
+            except Exception:
+                pass
+        else:
+            try:
+                cli.status_update(task.id, "active")
+                state.cli_stats["status_update"] = state.cli_stats.get("status_update", 0) + 1
+            except Exception:
+                pass
+
+    save_factory_state(state, db_path)
+    # M136-A: 事件日志——task_start（幂等键去重，重试/崩溃重跑只记首次）
+    _append_factory_event(
+        db_path, state.factory_id, "task_start",
+        {"task_id": task.id, "attempt": task.attempts,
+         "description": task.description[:200]},
+        idempotency_key=f"{state.factory_id}:{task.id}:start",
+    )
+    _emit(
+        bus,
+        "task_started",
+        {
+            "factory_id": state.factory_id,
+            "task_id": task.id,
+            "attempt": task.attempts,
+            "description": task.description,
+        },
+    )
+
+
+def _execute_task(
+    task: FactoryTask,
+    state: FactoryState,
+    orchestrator_fn: OrchestratorFn,
+    fan_out_mode: bool,
+    cli,
+) -> TaskResult:
+    """执行单个任务（LLM 耗时部分）：fan_out 模式走 CLI 对比，否则调 orchestrator_fn。
+
+    任何异常都转为失败 TaskResult，绝不抛出（并行 worker 依赖此契约）。
+    注意：只能读取/修改传入的 state——并行路径传入的是主 state 的深拷贝快照，
+    一切落账由主循环串行完成。
+    """
+    # M130: Fan-out 模式——多 Agent 并行执行 + 质量对比
+    if fan_out_mode and cli is not None:
+        try:
+            fan_result = cli.fan_out(task.id)
+            state.cli_stats["fan_out"] = state.cli_stats.get("fan_out", 0) + 1
+            if fan_result.success and fan_result.output.get("winner"):
+                winner = fan_result.output["winner"]
+                return TaskResult(
+                    task=task,
+                    verified=True,
+                    stop_reason="fan_out_winner",
+                    iteration=0,
+                    summary=f"Fan-out 胜出: {winner.get('agent_id', 'unknown')}, {fan_result.message}",
+                )
+            return TaskResult(
+                task=task,
+                verified=False,
+                stop_reason="fan_out_no_winner",
+                iteration=0,
+                summary=fan_result.message,
+            )
+        except Exception as e:
+            return TaskResult(
+                task=task,
+                verified=False,
+                stop_reason="fan_out_exception",
+                iteration=0,
+                summary=str(e)[:500],
+            )
+    try:
+        return orchestrator_fn(task, state)
+    except Exception as e:  # noqa: BLE001
+        return TaskResult(
+            task=task,
+            verified=False,
+            stop_reason="orchestrator_exception",
+            iteration=0,
+            summary=str(e)[:500],
+        )
+
+
+def _apply_task_result(
+    state: FactoryState,
+    task: FactoryTask,
+    result: TaskResult,
+    db_path: str,
+    bus,
+    cli,
+    *,
+    worktree: bool,
+) -> str:
+    """串行应用一个任务的结果（落账）：事件/完成副作用/失败重试簿记。
+
+    幂等语义不变：task_done 副作用由 `{factory_id}:{task_id}:done` 查重跳过。
+    返回 "stop" = 工厂须暂停（infra_failure / 重试耗尽）；返回 "ok" = 正常继续。
+    """
+    # M136-A: 事件日志——verify_result（每次尝试都记录，无幂等键）
+    _append_factory_event(
+        db_path, state.factory_id, "verify_result",
+        {"task_id": task.id, "verified": result.verified,
+         "stop_reason": result.stop_reason, "iteration": result.iteration,
+         "attempt": task.attempts},
+    )
+    _emit(
+        bus,
+        "task_ended",
+        {
+            "factory_id": state.factory_id,
+            "task_id": task.id,
+            "verified": result.verified,
+            "stop_reason": result.stop_reason,
+        },
+    )
+
+    if result.verified:
+        task.status = TaskStatus.done
+        # M136-A: 幂等完成——崩溃恢复重放同一 task 时（事件已记录），
+        # 跳过重复追加完成副作用（context_summary/memory/quality_history/外部记录器）。
+        done_key = f"{state.factory_id}:{task.id}:done"
+        completion_already_applied = _factory_event_seen(db_path, done_key)
+        if not completion_already_applied:
+            state.completed.append(result)
+
+            # M130: CLI 集成——任务成功时合并 worktree + 更新状态
+            if cli is not None:
+                try:
+                    if worktree and state.current_worktree_id:
+                        cli.worktree_merge(state.current_worktree_id)
+                        state.cli_stats["worktree_merge"] = state.cli_stats.get("worktree_merge", 0) + 1
+                    cli.status_update(task.id, "finished")
+                    state.cli_stats["status_update"] = state.cli_stats.get("status_update", 0) + 1
+                except Exception:
+                    pass
+
+            state.context_summary += (
+                f"\n[{task.id}] {task.description}: done. artifacts={task.artifacts}"
+            )
+            # M135-C: 双写到分层记忆——task 完成摘要是 supervisor 上下文的核心来源
+            _record_to_memory(
+                state,
+                f"[{task.id}] {task.description}: done. artifacts={task.artifacts}",
+            )
+            # M10.4-B：记录到 FEATURE_CHECKLIST.json + PROGRESS.md（让无限迭代有长期记忆）
+            try:
+                from driving.progress_notes import record_task_done
+                record_task_done(
+                    state.cwd, task.id, task.description,
+                    summary=result.summary, round_num=None,
+                )
+            except Exception:
+                pass  # 进展笔记写入失败不影响主循环
+            # M10.4-D：记录到 Gold Memory（让系统越跑越快）
+            try:
+                from driving.gold_memory import record_task_result
+                record_task_result(task, state, result)
+            except Exception:
+                pass
+            # M102：沉淀为 Skill（Self-Improving Loop 核心）
+            try:
+                from driving.skill_registry import save_skill
+                save_skill(task, state, result)
+            except Exception:
+                pass
+            # M104：记录 Skill 使用（成功），用于质量评估和进化
+            try:
+                from driving.skill_evolution import record_skill_usage
+                record_skill_usage(
+                    task.description,
+                    state.design_style or "auto",
+                    success=True,
+                    iterations=result.iteration,
+                )
+            except Exception:
+                pass
+            # M135-B：质量打分——喂给前端 FactoryPanel 画趋势。fail-open:打分异常不阻塞。
+            _record_quality_score(task, state)
+        # M136-A: 事件日志——task_done（副作用应用后记录；重放时 INSERT OR IGNORE 去重）
+        _append_factory_event(
+            db_path, state.factory_id, "task_done",
+            {"task_id": task.id, "stop_reason": result.stop_reason,
+             "iteration": result.iteration},
+            idempotency_key=done_key,
+        )
+        return "ok"
+
+    # ---- 失败路径 ----
+    # M130: CLI 集成——任务失败时更新状态
+    if cli is not None:
+        try:
+            cli.status_update(task.id, "failed")
+            state.cli_stats["status_update"] = state.cli_stats.get("status_update", 0) + 1
+        except Exception:
+            pass
+
+    # M16: infra_failure 优雅暂停——集群不可用(ConnectTimeout/worker_error)
+    # 时立即暂停，不消耗重试次数。重试集群故障毫无意义，只会烧光 attempts → paused。
+    if _is_infra_failure(result.stop_reason, result.summary):
+        result.stop_reason = "infra_failure"
+        task.status = TaskStatus.failed
+        state.failed.append(result)
+        _emit(bus, "infra_failure_detected", {
+            "factory_id": state.factory_id,
+            "task_id": task.id,
+            "summary": result.summary[:200],
+        })
+        state.status = FactoryStatus.paused
+        return "stop"
+    task.status = TaskStatus.failed
+    state.failed.append(result)
+    # M10.4-B：失败也记录（演进者能看到哪些功能反复失败）
+    try:
+        from driving.progress_notes import record_task_failed
+        record_task_failed(
+            state.cwd, task.id, task.description,
+            reason=f"{result.stop_reason}: {result.summary[:120]}",
+            round_num=None,
+        )
+    except Exception:
+        pass
+    # M10.4-D：失败也记入 Gold Memory（记录失败模式）
+    try:
+        from driving.gold_memory import record_task_result
+        record_task_result(task, state, result)
+    except Exception:
+        pass
+    # M104：记录 Skill 使用（失败），用于质量评估和进化
+    try:
+        from driving.skill_evolution import record_skill_usage
+        record_skill_usage(
+            task.description,
+            state.design_style or "auto",
+            success=False,
+            iterations=result.iteration,
+        )
+    except Exception:
+        pass
+    # M105：记录失败到知识库（Self-Improving Loop 失败侧闭环）
+    try:
+        from driving.failure_kb import record_failure
+        from driving.rca import analyze_failure
+        try:
+            rca_tmp = analyze_failure(
+                stop_reason=result.stop_reason,
+                summary=result.summary,
+                feedback=task.feedback,
+                verify_output=result.summary,
+            )
+            cause = rca_tmp.cause.value
+        except Exception:
+            cause = result.stop_reason or "unknown"
+        record_failure(
+            task.description,
+            state.design_style or "auto",
+            cause=cause,
+            error_detail=result.summary[:500],
+            stop_reason=result.stop_reason,
+            iterations=result.iteration,
+            resolved=False,
+        )
+    except Exception:
+        pass
+    if task.attempts >= task.max_attempts:
+        state.status = FactoryStatus.paused
+        return "stop"
+    # M12/M94 RCA：自动分析失败根因，给 supervisor 精确修复建议（而非泛泛"失败了"）
+    # M94: 从 analyze_failure 升级为 analyze_failure_with_memory,
+    # 查 Gold Memory 历史类似失败,形成自我学习闭环(M91.1 集成)。
+    # M100: 把 RCA 结果追加到 state.rca_history,供 FactoryPanel 详情页聚合查看。
+    try:
+        from driving.rca import analyze_failure_with_memory, enrich_feedback
+        rca = analyze_failure_with_memory(
+            stop_reason=result.stop_reason,
+            summary=result.summary,
+            feedback=task.feedback,
+            verify_output=result.summary,
+            task_description=task.description,
+        )
+        task.feedback = enrich_feedback(
+            f"上次尝试失败({result.stop_reason}): {result.summary}",
+            rca,
+        )
+        # M100 — 追加 RCA 历史条目(fail-open:任何异常都不阻塞主流程)
+        try:
+            task_index = next(
+                (i for i, t in enumerate(state.roadmap) if t.id == task.id),
+                -1,
+            )
+            state.rca_history.append(FactoryRcaEntry(
+                cause=rca.cause.value,
+                confidence=float(rca.confidence),
+                fix_suggestion=rca.fix_suggestion,
+                history_hint=rca.history_hint,
+                related_rules=list(rca.related_rules),
+                task_index=task_index,
+            ))
+        except Exception:
+            pass  # RCA 历史写入失败不影响主循环
+    except Exception:
+        task.feedback = (
+            f"上次尝试失败({result.stop_reason}): {result.summary}"
+        )
+    task.status = TaskStatus.pending
+    return "ok"
+
+
+def _finalize_task_iteration(state: FactoryState, db_path: str, cli, *, worktree: bool) -> None:
+    """一次任务迭代的收尾：清理 worktree（串行模式）、清 current_task_id、落库。"""
+    # M130: CLI 集成——任务结束后清理 worktree
+    if worktree and cli is not None and state.current_worktree_id:
+        try:
+            cli.worktree_remove(state.current_worktree_id)
+            state.cli_stats["worktree_remove"] = state.cli_stats.get("worktree_remove", 0) + 1
+        except Exception:
+            pass
+        state.current_worktree_id = None
+
+    state.current_task_id = None
+    save_factory_state(state, db_path)
+
+
+# ---------- M142-C · 依赖波次并行 ----------
+
+def _run_wave_parallel(
+    wave: list[FactoryTask],
+    state: FactoryState,
+    orchestrator_fn: OrchestratorFn,
+    fan_out_mode: bool,
+    cli,
+    max_parallel: int,
+) -> "list[tuple[FactoryTask, TaskResult]]":
+    """并行跑一波 ready 任务（仅 LLM 耗时的执行部分），主线程串行回收结果。
+
+    state 隔离：每个 worker 只拿主 state 的 model_copy(deep=True) 深拷贝快照，
+    快照上的任何修改（含 default_orchestrator_fn 写 repo_map_cache）都不影响主 state；
+    一切落账（completed/事件/quality/memory/DB）只在主循环串行发生。
+    返回 [(task, TaskResult)]，按 wave 原顺序（= roadmap 顺序）供主循环串行落账。
+    """
+    baseline_fan_out = state.cli_stats.get("fan_out", 0)
+
+    def _worker(t: FactoryTask, snapshot: FactoryState):
+        res = _execute_task(t, snapshot, orchestrator_fn, fan_out_mode, cli)
+        return res, snapshot
+
+    results: dict[str, TaskResult] = {}
+    snapshots: list[FactoryState] = []
+    with ThreadPoolExecutor(max_workers=max_parallel) as pool:
+        futures = {}
+        for t in wave:
+            # 快照在主线程创建，保证所有 worker 看到同一波次起点的 state
+            futures[pool.submit(_worker, t, state.model_copy(deep=True))] = t
+        for fut, t in futures.items():
+            res, snap = fut.result()
+            results[t.id] = res
+            snapshots.append(snap)
+
+    # 把 worker 快照里的有效增量并回主 state：
+    # - cli_stats.fan_out 计数（fan_out 模式下每个任务 +1）
+    # - repo_map_cache（首任务扫描的项目结构缓存，后续任务/波次复用）
+    for snap in snapshots:
+        delta = snap.cli_stats.get("fan_out", 0) - baseline_fan_out
+        if delta > 0:
+            state.cli_stats["fan_out"] = state.cli_stats.get("fan_out", 0) + delta
+    if not state.repo_map_cache:
+        for snap in snapshots:
+            if snap.repo_map_cache:
+                state.repo_map_cache = snap.repo_map_cache
+                break
+
+    return [(t, results[t.id]) for t in wave]
+
+
+def _run_parallel_waves(
+    state: FactoryState,
+    db_path: str,
+    bus,
+    cli,
+    orchestrator_fn: OrchestratorFn,
+    fan_out_mode: bool,
+    task_proposer,
+    design_fix_fallback,
+    feature_fallback,
+    max_parallel: int,
+) -> None:
+    """M142-C — 依赖波次并行主循环（FLIPPED_MAX_PARALLEL > 1 时启用）。
+
+    模型：每波取 ≤max_parallel 个 ready 任务（_ready_tasks，依赖判定与串行一致），
+    用 ThreadPoolExecutor 并行跑 orchestrator_fn；波次结束后主循环串行落账，
+    再重新计算 ready 进入下一波。depends_on 未满足的任务绝不提前启动。
+    单任务失败处理与串行一致（失败路径落账相同），同波其他任务结果不受牵连。
+    """
+    while (
+        state.status == FactoryStatus.running
+        and state.iteration_count < state.max_tasks
+    ):
+        # 总预算约束：本波任务数不超过剩余迭代预算（与串行 iteration_count 语义一致）
+        budget = state.max_tasks - state.iteration_count
+        wave = _ready_tasks(state)[:min(max_parallel, budget)]
+        if not wave:
+            if _propose_next_task(
+                state, db_path, bus, task_proposer, design_fix_fallback, feature_fallback
+            ):
+                continue
+            state.status = FactoryStatus.done
+            break
+
+        # M108: 任务分解（与串行一致，只对首个 ready 任务判定）
+        if _maybe_decompose_task(state, wave[0], db_path, bus):
+            continue
+
+        # 启动簿记（主线程串行，逐任务落库 + task_start 幂等事件）
+        for t in wave:
+            _prepare_task_start(state, t, db_path, bus, cli, worktree=False)
+
+        # 并行执行（worker 只读 state 深拷贝快照）
+        wave_results = _run_wave_parallel(
+            wave, state, orchestrator_fn, fan_out_mode, cli, max_parallel
+        )
+
+        # 串行落账：即使某任务触发暂停（infra/重试耗尽），
+        # 同波其他已执行任务的结果仍正常落账（不受牵连）
+        for t, res in wave_results:
+            _apply_task_result(state, t, res, db_path, bus, cli, worktree=False)
+        _finalize_task_iteration(state, db_path, cli, worktree=False)
 
 
 def run_factory_loop(
@@ -1103,6 +1698,13 @@ def run_factory_loop(
                 if task.id == state.current_task_id and task.status == TaskStatus.running:
                     task.status = TaskStatus.pending
                     break
+        # M142-C: 并行波次崩溃恢复——崩溃时整波任务都可能停留在 running，
+        # 全部重置为 pending 重跑（完成副作用由 {fid}:{tid}:done 幂等键守卫，重跑安全）。
+        # 仅并行模式启用；串行路径（默认 FLIPPED_MAX_PARALLEL=1）行为一字不差。
+        if _max_parallel() > 1:
+            for task in state.roadmap:
+                if task.status == TaskStatus.running:
+                    task.status = TaskStatus.pending
         # 如果 roadmap 仍为空（如 API 先创建了初始状态），生成 roadmap
         if not state.roadmap:
             state.roadmap = planner(state)
@@ -1120,6 +1722,19 @@ def run_factory_loop(
             pass
 
     try:
+        # M142-C: FLIPPED_MAX_PARALLEL > 1 → 依赖波次并行主循环；
+        # 默认 1（未设置）= 下方现有串行路径，行为一字不差。
+        # 共用同一 try/finally：崩溃语义与串行一致（finally 落库崩溃现场）。
+        _mp = _max_parallel()
+        if _mp > 1:
+            _run_parallel_waves(
+                state, db_path, bus, cli, orchestrator_fn, fan_out_mode,
+                task_proposer, design_fix_fallback, feature_fallback, _mp,
+            )
+            if state.status == FactoryStatus.running:
+                state.status = FactoryStatus.done
+            return state
+
         while (
             state.status == FactoryStatus.running
             and state.iteration_count < state.max_tasks

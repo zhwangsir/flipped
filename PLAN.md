@@ -1,3 +1,110 @@
+# M142 · 三轨并行：Phase 2 devcontainer 实跑 + supervisor IDE 接线 + factory 任务级并行
+
+> ✅ 验收通过（2026-07-19）：W1 verify_m142_devcontainer.sh CORE 全绿 + KNOWN-ISSUE 清零（postCreateCommand 模板 bug 已修）；W2 9 用例绿含真实 GLM e2e（全量中实跑非 skip）；W3 15 用例绿（墙钟/恰好一次/依赖/预算/崩溃恢复）。全量 pytest 1586 passed / 0 failed（净增 24）。证据见 TEST_LOG.md M142 节、STATE.json M142 条目。
+
+> 来源：用户一次选定三个方向，按惯例 Agent 团队并行（W1/W2/W3 子代理），主代理汇总回归 + 留痕。
+> 侦察结论：W1 模板仅静态校验（verify_phase2.sh 只查文件），运行时未验；W2 :4000 在跑（401=需 key，走 LITELLM_MASTER_KEY/EXO_API_KEY），supervisor Plan schema 无 IDE 通道；W3 factory `_next_task` 单任务串行，task_dag/parallel_executor 闲置。
+
+## W1 = M142-A · Phase 2 devcontainer 运行时验收
+- 装 @devcontainers/cli（若缺）；`devcontainer build`（--config 指 infra/env-templates/devcontainer.json）→ `up` → 容器内 `exec` 验证 python3.12 / node20 / rustc / java21 / mise 真实可用且版本对。
+- 网络按 D7：registry 走 daocloud 镜像（mcr.m.daocloud.io / ghcr.m.daocloud.io）；拉不动则如实降级记录（docker run 基础镜像手动验核心工具版本），禁止谎报。
+- 产出 `scripts/verify_m142_devcontainer.sh` 一键复跑；证据进 TEST_LOG.md。
+
+## W2 = M142-B · supervisor IDE 工具面接线（M141 续）
+- orchestrator.py：Plan schema 加可选 `ide_action: {name, args}`；`_build_supervisor_prompt` 注入 IDE_TOOL_REGISTRY 工具清单（名称+描述+必填参）；believe_done/subtask/ide_action 三态互斥（ide_action 优先于子任务派发？——设计：supervisor 每轮三选一：派子任务 / 调 IDE 工具 / believe_done）。
+- 新增 governed 执行路径：ide_action → governed_ide_call（M141）→ deny/ask 不执行、结果写 feedback 回灌 supervisor；allow 执行结果同样回灌。审计接 factory_events（session 级 factory_id 约定复用 sess-* 或 orch-*，勿新造）。
+- 单测全 mock（schema 解析/prompt 含工具清单/deny 回灌/allow 执行回灌）；真实 GLM e2e 1 场景（goal 需读 IDE 设置 → supervisor 输出 ide_action，caller mock 记录即算通——真实 LLM + 注入 caller）。
+- 高风险：改 orchestrator.py 核心，必须小步、全量回归零失败才算完。
+
+## W3 = M142-C · factory 任务级并行（并行执行、串行落账）
+- `_ready_tasks(state)`：返回所有依赖满足的 pending 任务（现有 _next_task 的单任务版推广）。
+- `FLIPPED_MAX_PARALLEL`（默认 1 = 现状零回归）：>1 时用 ThreadPoolExecutor 并行跑 orchestrator（LLM 耗时部分），主循环**串行**应用 task_done 副作用（completed 追加/事件/quality/memory），幂等键语义不变。
+- 共享 state 隔离：并行 worker 只读 state 快照，不直接改；落账只在主循环。DB 单行 JSON 写不并发。
+- 测试：mock orchestrator（慢任务+屏障）断言 N=3 并行时墙钟 < 串行；completed 无重复、事件幂等键各 1 条、depends_on 语义不破。
+
+## 汇总（主代理）
+- 三轨全量 pytest + 相关 verify 脚本；STATE.json M142 条目（3 子任务）+ TEST_LOG.md + PLAN.md 验收标记。
+
+## 约束
+- 各轨独立分支式小步，互不触碰对方文件（W1=infra+scripts；W2=orchestrator+其测试；W3=factory_loop+其测试）。
+- 网络/宿主受限处如实降级记录，禁止谎报（AGENTS.md §5）。
+- 不引新 Python 依赖。
+
+---
+
+# M141 · IDE 控制面工具面接入驾驭层（M3 遗留首项）
+
+> 来源：用户选定「转向 M141，推进 M3 驾驭层剩余模块」。核查结论：循环检测(M3.4)/上下文压缩(M3.7+M5.2)/子Agent派发(M3.6)/M4 MCP+RAG 均已 done；M3 note 记录的真实遗留首项 = IDE 控制面 agent 桥接入。
+> 现状缺口：ide-extension TS 桥(127.0.0.1:39217 POST /tool, 9 工具)与 Python ide_client 均已建且各有单测，但 **orchestrator 编排层拿不到这套工具**——ide_client 全项目零调用方；工具未纳入 M136-E 五级权限管线；调用无 factory_events 审计。
+> 定位：纯本地确定性改动，TDD，不依赖模型。主代理直接做（M138/M140 小步模式）。真实 VS Code 宿主端到端验证受限（需扩展宿主），记为已知限制，由注入式单测兜底。
+> **验收结果（done）**：ide_tools.py（注册表9工具/render/governed_ide_call/审计）落地；test_ide_tools.py 24 用例 + ide_client 3 定向全绿；全量 pytest 1562 passed/0 failed（48.51s）。
+
+## 子任务
+
+### M141.1 · src/driving/ide_tools.py 工具注册表 + 动作渲染
+- `IDE_TOOL_REGISTRY`：9 工具（与 extension.ts 对齐）——ide.runTask/openTerminal/getSetting/updateSetting/installExtension/runCommand + env.addDevcontainerFeature/miseUse/rebuildDevcontainer；每项含 description/必填参数。
+- `render_ide_action(name, args) -> str`：把工具调用渲染成可评估动作串。关键：openTerminal 有 command 时渲染为命令本体（`rm -rf /` 直接进管线被判 deny）；rebuildDevcontainer 渲染 `devcontainer rebuild`；installExtension 渲染 `installExtension <id>`。
+- `IDE_RULES`：ide 专属规则叠加（getSetting/runTask/openTerminal 无命令/env 两个声明文件编辑 = allow；updateSetting/runCommand/installExtension = ask），与 DEFAULT_RULES 合并（deny>ask>allow 优先级不变）。
+- 未知工具名 → KeyError（注册表守门）。
+
+### M141.2 · governed_ide_call：五级管线 + 审计
+- `governed_ide_call(name, args, *, cwd=None, mode="default", caller=call_ide_tool, audit_conn=None, factory_id=None)`：
+  1. render → 2. evaluate_permission（IDE_RULES+DEFAULT_RULES 合并）→ 3. allow 才执行 caller；deny/ask 不执行。
+- 返回 `IdeCallResult{decision, level, reason, result, error}`（dataclass）；执行异常捕获进 error 不抛出（fail-open 桥不可用时调用方可判）。
+- 审计：audit_conn+factory_id 给定时 append_event(kind="ide_tool_call", payload={name,args,decision,level,reason})，天然 fail-open；deny/ask 也留痕（谁拦的、为什么）。
+
+### M141.3 · tests/test_ide_tools.py
+- 注册表与 extension.ts 工具名漂移守门（硬编码 9 名对照 + 必填参校验）。
+- render 映射全表；openTerminal 命令本体渲染（安全关键）。
+- 权限矩阵：deny（openTerminal `rm -rf /` / `sudo x`）、ask（installExtension / runCommand / updateSetting / rebuild）、allow（getSetting / runTask / 只读命令如 `git status` / env 声明编辑）。
+- governed 执行：注入 fake caller——allow 路径执行并回 result；deny/ask 路径 caller 零调用；caller 抛异常进 error。
+- 审计：tmp DB 断言 ide_tool_call 事件写入 + payload 含 decision/reason；无 audit_conn 不炸。
+
+### M141.4 · 全量回归 + 状态留痕
+- pytest 全量 + 定向 + STATE.json（M141 条目，含「VS Code 宿主运行时验证受限」已知限制）+ TEST_LOG.md + PLAN.md 验收标记。
+
+## 约束
+- 不动 extension.ts / ide_client.py 现有契约（POST /tool {name,args} ↔ {ok,result|error}）。
+- 不引新依赖；权限判定复用 approval.evaluate_permission，不另起炉灶。
+- 编排层 prompt 接线（supervisor 自主选用 IDE 工具）属模型侧验证，留待宿主环境，不在本里程碑。
+
+---
+
+# M140 · TUI 监控台体验深化（打磨）
+
+> 来源：用户指示「继续进行打磨」。M139-B TUI 已落地但体验朴素（无着色分层/无进度可视化/无过滤聚焦），做体验深化。
+> 定位：纯本地确定性改动，TDD（Textual run_test pilot），不依赖模型。主代理直接做，参考 M138 小步模式。
+> **验收结果（done）**：TUI 用例 8→15 全绿；全量 pytest 1538 passed/0 failed（53.93s）；真实库冒烟 sub_title「15 工厂 · done 11 · paused 4」+ 进度条渲染正确。
+
+## 子任务
+
+### M140.1 · 状态着色 + 任务进度条列
+- DataTable status 列用 `Text` 着色：done=green / running=blue / failed=red / paused=yellow，未知不着色。
+- 新增 progress 列：10 格块字符条，done=绿块 / failed=红块 / pending=暗块 + 完成百分比；total=0 时占位。
+- 列序：factory_id / status / progress / tasks(done/failed/total) / updated_at。
+- 同步更新既有断言（row[2]→row[3]），新增 _progress_bar 纯函数单测。
+
+### M140.2 · 工厂聚焦过滤
+- DataTable 开 row cursor（zebra_stripes）；Enter 聚焦 cursor 行工厂，事件流只显示该厂；再按 Enter 或 Esc 取消。
+- 聚焦切换时清空事件区并按当前过滤重拉最近 50 条（app 内只读 SQL，fail-open，不动 event_log.py）。
+- 过滤期间其他工厂新事件仍推进 `_last_seq`（取消聚焦后不爆历史），只是不显示。
+- App.sub_title 显示「聚焦: <factory_id>」。
+- 测试：双工厂聚焦后 log 只有该厂事件 + 重拉历史可见 + 取消后他厂新事件恢复显示。
+
+### M140.3 · Header 聚合统计
+- 轮询刷新 App.sub_title（未聚焦时）：`N 工厂 · running X · done Y · failed Z · paused W`（零计数项省略）。
+- 测试：3 工厂不同状态 → sub_title 含计数。
+
+### M140.4 · 全量回归 + 状态留痕
+- pytest 全量 + TUI 定向 + STATE.json（M140 条目）+ TEST_LOG.md（实跑证据）。
+
+## 约束
+- 只读纪律不破：TUI 仍只 SELECT（聚焦重拉也只读），不 connect 不存在的 DB。
+- fail-open：着色/聚焦/聚合任何异常不得崩 TUI。
+- 不引新依赖（rich/textual 已有）。
+
+---
+
 # M139 · 产线化双轨：崩溃恢复 E2E 硬化 + 全屏 TUI 监控台
 
 > 来源：用户选定「两者并行」。W1 = AGENTS.md M5 旗舰验收（长任务中途 kill -9 → resume → 副作用不重放）；W2 = Kimi/Grok 调研唯一判定「值得做未落地」的项。

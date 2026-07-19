@@ -18,9 +18,13 @@ from typing import Callable, Literal, TypedDict
 
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import interrupt
+from pydantic import BaseModel, Field
 
 from driving.approval import APPROVE_WORDS, classify_risk
+from driving.db import connect as db_connect
 from driving.db import default_db_path
+from driving.event_log import ensure_event_table
+from driving.ide_tools import IDE_TOOL_REGISTRY, governed_ide_call
 from driving.observe import run_and_observe
 from driving.sidecar import action_signature
 from metrics import MetricsCallbackHandler
@@ -94,6 +98,9 @@ class OrchestratorState(TypedDict, total=False):
     context_summary: dict | None
     max_context_tokens: int
     keep_recent: int
+    # M142-B IDE 工具面：supervisor 三态互斥（believe_done > ide_action > subtask）
+    ide_action: dict | None  # {"name": ..., "args": {...}}，执行后节点清回 None
+    factory_id: str          # session 级审计 id（orch-XXXXXXXX，graph 入口生成一次）
 
 
 # 可注入节点：(state) -> state 增量
@@ -413,8 +420,17 @@ def _direct_glm_tool_call(llm, schema_cls, prompt: str, *, max_retries: int = 1)
     return None
 
 
+def _render_ide_tool_brief() -> str:
+    """把 IDE_TOOL_REGISTRY 渲染成紧凑工具清单（名称 + 描述 + 必填参数），注入 supervisor prompt。"""
+    lines = []
+    for name, spec in IDE_TOOL_REGISTRY.items():
+        req = f"（必填: {', '.join(spec['required'])}）" if spec.get("required") else ""
+        lines.append(f"- {name}: {spec['description']}{req}")
+    return "\n".join(lines)
+
+
 def _build_supervisor_prompt(state: OrchestratorState) -> str:
-    """构建 supervisor 拆解 prompt(含项目规则/反馈/历史摘要)。抽出便于单测。"""
+    """构建 supervisor 拆解 prompt(含项目规则/反馈/历史摘要/IDE 工具清单)。抽出便于单测。"""
     fb = state.get("feedback", "")
     summary_note = ""
     ctx_summary = state.get("context_summary")
@@ -424,6 +440,8 @@ def _build_supervisor_prompt(state: OrchestratorState) -> str:
     rules_note = f"\n项目规则(务必遵守项目约定)：\n{rules}\n" if rules else ""
     repo = state.get("repo_map", "")
     repo_note = f"\n项目结构(据此把代码放对位置、别重造已有模块)：\n{repo}\n" if repo else ""
+    ide_note = (f"\nIDE 工具(如需读取/修改 IDE 设置、跑 IDE 任务等，输出 ide_action 字段"
+                f"——与 subtask/believe_done 三选一互斥)：\n{_render_ide_tool_brief()}\n")
     # 验收失败时，把错误输出注入反馈，并明确禁止“推倒重来”
     fb_prefix = ""
     if fb:
@@ -435,31 +453,54 @@ def _build_supervisor_prompt(state: OrchestratorState) -> str:
         else:
             fb_prefix = "反馈(上一轮验收失败/监督意见，必须据此调整)："
     return (f"目标：{state['goal']}\n工作目录：{state['cwd']}\n{repo_note}{rules_note}"
+            f"{ide_note}"
             f"{fb_prefix}{fb if fb else '这是首轮。'}{summary_note}\n"
-            "你是架构调度者。给出执行者下一步要做的【一个】自包含子任务；"
-            "若相信目标已达成则 believe_done=true。"
+            "你是架构调度者。每轮三选一：给执行者下一步要做的【一个】自包含子任务(subtask)；"
+            "或调一个 IDE 工具(ide_action)；若相信目标已达成则 believe_done=true。"
             "subtask 描述必须简洁（≤200字），只说做什么、不改什么文件，"
             "不要重复设计约束（执行者已有 project_rules）。")
 
 
+class IdeActionSpec(BaseModel):
+    """supervisor 请求的一次 IDE 工具调用（三态互斥的一支）。"""
+
+    name: str = Field(description="IDE 工具名，必须来自工具清单")
+    args: dict = Field(default_factory=dict, description="工具参数（按清单必填项提供）")
+
+
+class Plan(BaseModel):
+    """supervisor 结构化输出 schema：believe_done / ide_action / subtask 三态互斥。"""
+
+    believe_done: bool = Field(description="是否相信目标已达成(将由强制验证核对)")
+    subtask: str = Field(description="给执行者(coder)的下一步具体子任务，自包含、含必要上下文，勿引用历史")
+    rationale: str = Field(description="一句话理由")
+    ide_action: IdeActionSpec | None = Field(
+        default=None,
+        description="本轮要调的 IDE 工具(读/写 IDE 设置、跑 IDE 任务等)；与 subtask/believe_done 互斥")
+
+
 def default_supervisor(state: OrchestratorState) -> dict:
-    """GLM 调度：据目标 + 项目规则 + 反馈，给出下一步子任务（干净结构化），或相信已完成。"""
-    from pydantic import BaseModel, Field
-
-    class Plan(BaseModel):
-        believe_done: bool = Field(description="是否相信目标已达成(将由强制验证核对)")
-        subtask: str = Field(description="给执行者(coder)的下一步具体子任务，自包含、含必要上下文，勿引用历史")
-        rationale: str = Field(description="一句话理由")
-
+    """GLM 调度：据目标 + 项目规则 + 反馈，给出下一步子任务/IDE 工具调用（干净结构化），或相信已完成。"""
     msg = _build_supervisor_prompt(state)
+    mutex_note = ""
     try:
         # method="function_calling"：GLM/exo 不支持 json_schema(langchain 默认)，但支持工具调用(M0.4)
         plan = _invoke_structured(_make_llm("architect", callbacks=[MetricsCallbackHandler()]), Plan, msg)
         sub, done, why = plan.subtask, plan.believe_done, plan.rationale
+        ide = {"name": plan.ide_action.name, "args": plan.ide_action.args} if plan.ide_action else None
     except Exception as e:  # noqa: BLE001 失败兜底：直接把目标当子任务
-        sub, done, why = state["goal"], False, f"(supervisor LLM 失败兜底: {e})"
-    hist = state.get("history", []) + [{"step": "supervisor", "subtask": sub, "believe_done": done, "why": why}]
-    return {"current_subtask": sub, "believe_done": done, "history": hist}
+        sub, done, why, ide = state["goal"], False, f"(supervisor LLM 失败兜底: {e})", None
+    # 三态互斥：believe_done > ide_action > subtask。同时给出时按优先级取并提示。
+    if done and ide is not None:
+        ide = None
+        mutex_note = ("\n[互斥提示] 你同时给出了 believe_done 与 ide_action，已按 believe_done 处理"
+                      "（每轮只三选一：believe_done > ide_action > subtask）。")
+    hist = state.get("history", []) + [{"step": "supervisor", "subtask": sub, "believe_done": done,
+                                        "ide_action": ide, "why": why}]
+    upd = {"current_subtask": sub, "believe_done": done, "ide_action": ide, "history": hist}
+    if mutex_note:
+        upd["feedback"] = (state.get("feedback", "") + mutex_note).strip()
+    return upd
 
 
 def cline_worker(state: OrchestratorState) -> dict:
@@ -1231,8 +1272,67 @@ def build_orchestrator(supervisor: SupervisorFn = default_supervisor,
                        checkpointer=None,
                        max_context_tokens: int = 10000,
                        keep_recent: int = 4,
-                       summarizer: Callable | None = None):
-    """编译 Supervisor→Worker→Overseer→(条件)→Verify 多 agent 监督图。节点可注入。"""
+                       summarizer: Callable | None = None,
+                       ide_caller: Callable | None = None):
+    """编译 Supervisor→Worker→Overseer→(条件)→Verify 多 agent 监督图。节点可注入。
+
+    ide_caller：IDE 工具桥调用（默认 ide_client.call_ide_tool），单测注入 mock。
+    审计连接懒开 default_db_path()（env FLIPPED_DB 可覆盖），fail-open 不崩主流程。
+    """
+    from driving.ide_client import call_ide_tool as _default_ide_caller
+    _ide_caller = ide_caller or _default_ide_caller
+
+    # 审计 DB 连接：懒开 + fail-open（DB 不可用 → audit_conn=None，append_event 天然跳过）
+    _audit_box: dict = {"tried": False, "conn": None}
+
+    def _get_audit_conn():
+        if not _audit_box["tried"]:
+            _audit_box["tried"] = True
+            try:
+                conn = db_connect(default_db_path())
+                ensure_event_table(conn)
+                _audit_box["conn"] = conn
+            except Exception:  # noqa: BLE001
+                _audit_box["conn"] = None
+        return _audit_box["conn"]
+
+    def init_session(state: OrchestratorState) -> dict:
+        # session 级审计 factory_id：graph 入口生成一次（沿用 orch-XXXXXXXX 约定），断点续跑沿用已有值
+        if state.get("factory_id"):
+            return {}
+        return {"factory_id": f"orch-{uuid.uuid4().hex[:8]}"}
+
+    def ide_action_node(state: OrchestratorState) -> dict:
+        # supervisor 选择调 IDE 工具时不派 worker，走 M141 五级管线；结论写 feedback 回灌
+        act = state.get("ide_action") or {}
+        name = str(act.get("name") or "")
+        args = act.get("args") if isinstance(act.get("args"), dict) else {}
+        hist = state.get("history", [])
+        fb = state.get("feedback", "")
+        audit_conn = _get_audit_conn()
+        try:
+            res = governed_ide_call(name, args, caller=_ide_caller,
+                                    audit_conn=audit_conn,
+                                    factory_id=state.get("factory_id"))
+        except KeyError:
+            note = f"[IDE 工具调用失败] 未知工具: {name}（须从工具清单选择）"
+            return {"ide_action": None, "feedback": (fb + "\n" + note).strip(),
+                    "history": hist + [{"step": "ide_action", "name": name, "error": "unknown_tool"}]}
+        if audit_conn is not None:
+            try:
+                audit_conn.commit()  # append_event 不显式 commit；落盘让其他连接(TUI/事件流)可见
+            except Exception:  # noqa: BLE001 — fail-open
+                pass
+        if res.decision == "allow":
+            if res.error:
+                note = f"[IDE 工具执行出错: {name}] {res.error}"
+            else:
+                note = f"[IDE 工具已执行: {name}] 结果: {str(res.result)[:500]}"
+        else:
+            note = f"[IDE 工具被拦截: {res.decision}] {res.reason}"
+        return {"ide_action": None, "feedback": (fb + "\n" + note).strip(),
+                "history": hist + [{"step": "ide_action", "name": name, "args": args,
+                                    "decision": res.decision, "reason": res.reason}]}
 
     def verify(state: OrchestratorState) -> dict:
         # Worker 刚 finish 后沙箱可能还在清理 → 短暂等待 + 一次重试
@@ -1336,17 +1436,28 @@ def build_orchestrator(supervisor: SupervisorFn = default_supervisor,
         return {"approval_decision": "auto"}
 
     def _route_sup(state: OrchestratorState) -> str:
+        # 三态互斥优先级：believe_done > ide_action > subtask
         # supervisor 相信已完成 → 直接强制验证（跳过冗余 worker 步）
-        return "verify" if state.get("believe_done") else "approval_gate"
+        if state.get("believe_done"):
+            return "verify"
+        if state.get("ide_action"):
+            return "ide_action"
+        return "approval_gate"
 
     def _route_approval(state: OrchestratorState) -> str:
         # 被否决 → 回 supervisor 重规划；否则 → worker 执行
         return "supervisor" if state.get("approval_decision") == "rejected" else "worker"
 
     g.add_node("approval_gate", approval_gate)
-    g.add_edge(START, "supervisor")
+    g.add_node("init_session", init_session)
+    g.add_node("ide_action", ide_action_node)
+    g.add_edge(START, "init_session")
+    g.add_edge("init_session", "supervisor")
     g.add_edge("compress", "supervisor")
-    g.add_conditional_edges("supervisor", _route_sup, {"approval_gate": "approval_gate", "verify": "verify"})
+    g.add_edge("ide_action", "compress")  # IDE 工具结论经 feedback 回灌后回 supervisor 继续规划
+    g.add_conditional_edges("supervisor", _route_sup,
+                            {"approval_gate": "approval_gate", "verify": "verify",
+                             "ide_action": "ide_action"})
     g.add_conditional_edges("approval_gate", _route_approval, {"supervisor": "compress", "worker": "worker"})
     def mark_worker_error(state: OrchestratorState) -> dict:
         return {"done": True, "stop_reason": "worker_error"}

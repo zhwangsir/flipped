@@ -1,0 +1,21 @@
+{
+  "name": "flipped-dev",
+  "image": "m142-base:ubuntu",
+  "features": {
+    "ghcr.nju.edu.cn/devcontainers/features/python:1": { "version": "3.12" },
+    "ghcr.nju.edu.cn/devcontainers/features/node:1": { "version": "20" },
+    "ghcr.nju.edu.cn/devcontainers/features/rust:1": { "version": "1.83" },
+    "ghcr.nju.edu.cn/devcontainers/features/java:1": { "version": "21" },
+    "ghcr.nju.edu.cn/devcontainers-extra/features/mise:1": {}
+  },
+  "postCreateCommand": "mise trust --all && mise install --yes",
+  "remoteUser": "vscode",
+  "containerEnv": {
+    "HTTP_PROXY": "http://host.docker.internal:7897",
+    "HTTPS_PROXY": "http://host.docker.internal:7897",
+    "http_proxy": "http://host.docker.internal:7897",
+    "https_proxy": "http://host.docker.internal:7897",
+    "NO_PROXY": "localhost,127.0.0.1",
+    "no_proxy": "localhost,127.0.0.1"
+  }
+}

@@ -2,6 +2,74 @@
 
 > 命令 + 输出摘要 + 结论，追加写入（AGENTS.md §3）。
 
+## [2026-07-18] verify_b5 复跑：venv 路径迁移失效 + preview 端口静默漂移 双根因修复
+
+### 背景
+承接上文 verify_b5 修复后，复跑发现两个**新的隐藏 env 问题**，导致审批流 E2E 仍假性失败。逐一根因定位并工程化修复。
+
+### 根因一：.venv 目录迁移后路径失效（KI-20260718-venv-path-migration）
+- 现象：`bash scripts/verify_b5.sh` 报 `python: command not found`（line 39 / line 102）。
+- 定位：`source .venv/bin/activate` 后 `which python` 无输出；`.venv/bin/activate` 硬编码 `VIRTUAL_ENV='/Users/wangzhenyu/Desktop/flipped/.venv'`（旧路径），项目已移至 `Desktop/ALLProject/flipped`；`bin/` 下 ~120 个 entry point 脚本（uvicorn/pytest/litellm…）shebang 同样指向旧路径。`site-packages` 无硬编码路径不受影响。
+- 修复：`find .venv/bin -type f -exec grep -l OLD {} + | xargs sed -i '' 's|OLD|NEW|g'`（`find -type f` 排除符号链接，保护共享 python）。修复后 `which python/pytest/uvicorn` 均正确。
+- 教训：uv venv 非 relocatable，项目目录迁移后必须重建（`uv venv`）或修补 venv。
+
+### 根因二：vite preview 端口静默漂移，E2E 误测旧构建（KI-20260718-preview-port-drift）
+- 现象：venv 修复后 verify_b5 走到 Playwright，`approval-card` 15s 未出现 → 失败；但后端日志只有 health，无任何 sessions/tasks 请求。
+- 定位：error-context 页面快照显示项目列表含 noteedge/usage-check 等**真实后端 :8011** 数据，模式选择器「智能体」选中（真实 agent 模式直派沙盒无审批门）。`lsof -iTCP:5273` 发现残留旧 vite preview（PID 83547，昨日 dev_up 残留）占用端口；新 preview 日志 `Port 5273 is in use, trying another one... :5274`。健康检查与 Playwright 仍打 :5273 → 加载旧 preview 服务的旧构建（API 指向 :8011）→ 审批卡永不出现，mock 后端 :8001 只收到 health。
+- 修复（工程化，verify_b5.sh）：
+  - 启动前 `kill_port_owner "${API_PORT}"` / `kill_port_owner "${CONSOLE_PORT}"`（lsof 查占用并清理残留）。
+  - preview 改 `npm run preview -- --strictPort`：端口被占立即显性失败，而非静默换端口误导测试。
+- 教训：测试栈专用端口必须先清理；任何「端口被占自动换号」的默认行为在 E2E 场景都是静默误测源，应一律 strictPort。
+
+### 验证（实跑输出）
+```
+$ bash scripts/verify_b5.sh
+[B5] 端口 :5273 被占用 (pid=83547)，清理残留进程
+[B5] 构建 Console（指向本脚本的 mock 后端 :8001）...
+[B5] 启动 orchestration-api @ :8001 ...
+[B5] 启动 vite preview @ :5273 ...
+[B5] 运行 Playwright E2E（审批流 mock 套件）...
+  1 passed (5.4s)           # console.spec.ts send task, approve, and complete
+[B5] 运行全量 pytest 回归 ...
+  1531 passed, 2 warnings in 45.20s
+PASS: B5 UI 去 AI 感打磨 + 审批流端到端验收通过
+EXIT=0
+```
+
+### 结论
+- KI-20260718-venv-path-migration ✅、KI-20260718-preview-port-drift ✅ 均修复并录入 STATE.json。
+- verify_b5.sh 现对「venv 坏 + 端口占用」两类常见 env 问题具备自愈/显性失败能力。
+- 审批流 mock 套件 + pytest 全量回归全绿，KI 解除证据完整。
+
+### 附：panels.spec.ts Esc flaky 根因修复
+- 根因：`Escape` 监听挂在 `.palette` 的 `onKeyDown`，依赖 `requestAnimationFrame` 把焦点放进 `.palette-search input` 后事件才冒泡触发。测试在面板可见后立即按 Esc，若 rAF 尚未聚焦则事件不到 `.palette` → 偶发失败（重试即过）。
+- 修复：两处按 Esc 前加 `await expect(page.locator('.palette-search input')).toBeFocused()`，等待聚焦完成再按键。
+- 验证：`cd console && npx playwright test e2e/panels.spec.ts --retries=2` → **13 passed (4.3s)**，Esc 关闭面板与 ⌘B/⌘K/⌘J 互不干扰用例稳定通过。
+
+## [2026-07-18] 环境阻塞解除：KI-20260717 + LiteLLM :4000 + verify_b5.sh 修复
+
+### 背景
+两个 env-blocker：① LiteLLM proxy :4000 未启动（曾因 Postgres/prisma 阻塞）；② KI-20260717：E2E 审批流依赖的 OpenHands agent-server :8000 未运行（405）。
+
+### 根因与修复
+1. **Docker VM 未运行**：`docker ps` 空、`~/.colima/default/docker.sock` 不存在 → `colima start` 后 `flipped-oh-canvas` 容器恢复，`curl :8000/alive → {"status":"ok"}`。此为 :8000 缺失的真正根因（NoteEdge 占端口是上一会话的旧根因，现已不占用）。
+2. **LiteLLM prisma 阻塞已不存在**：config.yaml 的 `database_url` 此前已注释、.env 无 DATABASE_URL → `bash scripts/start_proxy.sh` 直接启动成功。双别名实测：`POST :4000/v1/chat/completions {model: architect|coder}` 均返回 `pong`。
+3. **verify_b5.sh 两个潜伏缺陷**（修复后首次真正跑通）：
+   - console 构建未注入 `VITE_API_BASE_URL` → preview 产物按 api.ts fallback 连 :8011（空），mock 后端 :8001 收不到任何请求 → 审批卡永不出现。修复：构建时 `VITE_API_BASE_URL=http://127.0.0.1:${API_PORT}`。
+   - 在 mock 后端下跑全量套件（factory.spec 等面向真实栈 :8011 的用例必然误败）。修复：只跑 `E2E_MOCK_APPROVAL=1 npx playwright test e2e/console.spec.ts`。
+4. **console.spec.ts 环境门控**：审批流仅存在于 mock 审批后端（FLIPPED_MOCK_APPROVAL=1）；真实 agent 模式直派沙盒无审批门。加 `test.skip(!E2E_MOCK_APPROVAL)`（环境门控，与网络不可达 skip 同一先例，非放宽断言）。
+
+### 验证（实跑输出）
+- `bash scripts/verify_b5.sh` → **PASS**：`console.spec.ts send task, approve, and complete ✓ 1 passed (5.4s)`（审批卡出现→approve→任务已完成）；全量 pytest **1531 passed, 0 failed (45.70s)**。
+- 真实全栈（dev_up.sh：:4000 + :8000 + :8011 + :5273）`npx playwright test` → **77 passed, 1 skipped（console.spec 环境门控）, 1 flaky（panels.spec Esc 关闭面板，重试即过，既有）, 0 failed**。
+- `GET :4000/v1/models` → `['architect', 'coder']`；两别名 chat 实测均 `pong`。
+- 后端日志取证：真实任务派发 OpenHands 沙盒执行（`POST /api/bash/start_bash_command 200` 连续成功），405 不再出现。
+
+### 结论
+- KI-20260717 ✅ 解除；ISSUE-5（LiteLLM 阻塞）✅ 解除。
+- 当前服务：colima + flipped-oh-canvas(:8000) + LiteLLM(:4000) + SearXNG(:8888) 全部运行中；dev 全栈可 `bash scripts/dev_up.sh` 幂等拉起。
+- 遗留（既有、非本次引入）：panels.spec.ts「Esc 关闭面板」时序 flaky，重试即过；真实 agent 模式无审批门（产品决策：审批仅 mock/orchestrator require_approval 路径）。
+
 ## [2026-07-18] M136 · API 契约治理(B) + 终端数据通路测试(C)
 
 ### M136-B1/B2 API 契约 pytest
@@ -3089,5 +3157,114 @@ Test Files  6 passed (6) / Tests  57 passed (57)
 
 $ npm run build
 ✓ built in 556ms
+```
+
+## M140 · TUI 监控台体验深化（2026-07-19）
+
+### TDD 单测（headless run_test + pilot，8→15 用例）
+```
+$ .venv/bin/python -m pytest tests/test_tui_monitor.py -q
+15 passed, 1 warning in 4.12s
+```
+新增覆盖：
+- M140.1：`_progress_bar` 纯函数（1/2 → `█████░░░░░ 50%`；3/4 含 green+red 双着色段；total=0 占位 `—`）；三状态工厂 status 列着色断言（done=green / failed=red / paused=yellow；running=dodger_blue1 见种子渲染用例）。
+- M140.2：双工厂 Enter 聚焦 → log 清空重拉该厂 2 条历史且全含 ` f1 `；聚焦期 f2 新事件不显示但 `_last_seq[f2]` 照推进；聚焦厂新事件正常追加；Esc 取消后他厂新事件恢复显示；Enter 再按 toggle 取消。
+- M140.3：3 工厂（running/done/failed）→ sub_title 含 `3 工厂 / running 1 / done 1 / failed 1` 且零计数 `paused` 省略；聚焦→Esc 后 sub_title 恢复聚合。
+
+### 真实库冒烟（headless run_test 读真实 data/flipped.db，只读）
+```
+sub_title: 15 工厂 · done 11 · paused 4
+rows: 15
+factory-4bb4b9f2 | done | █░░░░░░░░░ 0% | 0/1/8
+```
+副标题聚合正确（零计数 running/failed 省略），progress 块条真实渲染。
+
+### 全量回归
+```
+$ .venv/bin/python -m pytest tests/ -q --tb=short
+1538 passed, 2 warnings in 53.93s   # 较 M139 净增 7（M140.1×3 + M140.2×2 + M140.3×2）
+```
+
+## M141 · IDE 控制面工具面接入驾驭层（2026-07-19）
+
+### TDD 单测（tests/test_ide_tools.py，24 新用例 + ide_client 3）
+```
+$ .venv/bin/python -m pytest tests/test_ide_tools.py tests/test_ide_client.py -q
+27 passed, 1 warning in 0.18s
+```
+覆盖：
+- 注册表漂移守门（9 工具名 + 必填参与 extension.ts 对照）；未知工具名 KeyError。
+- render 全表映射；openTerminal 带 command 渲染为命令本体（安全关键）。
+- 权限矩阵（参数化）：deny×3（`rm -rf /` / `sudo` / `push --force`）、ask×5（installExtension / runCommand / updateSetting / rebuild / push）均断言 **caller 零调用**；allow×7（getSetting / runTask / openTerminal 无命令 / `git status` / `ls -la` / env 两个声明编辑）断言执行一次且参数透传。
+- 链式 `ls && rm -rf /` → 分段 deny 胜出；caller 抛异常进 `error` 不上抛。
+- 审计：tmp DB 断言 `ide_tool_call` 双事件（allow+deny）写入、deny 带 reason；无 audit_conn 不炸。
+
+### 全量回归
+```
+$ .venv/bin/python -m pytest tests/ -q --tb=short
+1562 passed, 2 warnings in 48.51s   # 较 M140 净增 24
+```
+已知限制：真实 VS Code 宿主端到端验证受限（需扩展宿主），由注入式单测兜底；supervisor prompt 接线留待宿主环境。
+
+## M142 · 三轨并行：devcontainer 运行时验收 + supervisor IDE 接线 + factory 任务级并行（2026-07-19）
+
+### W1 = M142-A · Phase 2 devcontainer 运行时验收（scripts/verify_m142_devcontainer.sh）
+
+模板修复：复跑首轮暴露 postCreateCommand 模板 bug（`mise trust --non-interactive`，mise 2026.x 已移除该 flag）→ infra/env-templates/devcontainer.json + devcontainer.mirror.json 均改为 `mise trust --all && mise install --yes`。修复后复跑：
+
+```
+$ bash scripts/verify_m142_devcontainer.sh
+== [0/6] 前置检查 ==
+  ✅ docker daemon 可用 / devcontainer CLI 0.87.0 / 宿主机代理 :7897 可用
+  ✅ colima 数据盘余量 2G (≥2G)（成品镜像已缓存，复跑档）
+== [2/6] 复用已缓存 m142-base:ubuntu
+== [3/6] 复用已缓存 m142-devcontainer:latest（M142_REBUILD=1 可强制全量重建）
+== [4/6] devcontainer up ==
+  ✅ devcontainer up 成功（含 postCreateCommand）   # 模板 bug 修复生效，KNOWN-ISSUE #1 消除
+== [5/6] 容器内工具链版本实测（remoteUser=vscode）==
+  ✅ python: Python 3.12.13
+  ✅ node: v20.20.2
+  ✅ java: openjdk version "21.0.11" 2026-04-21 LTS
+  ✅ rustc: rustc 1.83.0 (90b35a623 2024-11-26)（feature 层已钉 1.83）  # KNOWN-ISSUE #2 消除
+  ✅ mise: 2026.7.7 linux-arm64
+M142 devcontainer 运行时验收 CORE：通过 ✅（KNOWN-ISSUES 清零）
+```
+
+首轮实跑克服的网络约束（脚本头注释留痕）：ghcr.io 被墙→features 走 ghcr.nju.edu.cn；github.com 被墙→容器内经宿主机 mixed 端口 CONNECT 隧道；GPG HKP(80) 不能走代理→base 只注入 https_proxy；nodejs.org/rustup 抖动→npmmirror/rsproxy.cn 镜像。
+
+### W2 = M142-B · supervisor IDE 工具面接线（tests/test_orchestrator_ide_action.py，9 新用例）
+
+```
+$ .venv/bin/python -m pytest tests/test_orchestrator_ide_action.py -q
+9 passed
+```
+覆盖：
+- Plan schema：`ide_action: IdeActionSpec | None` 解析 / 默认 None 不破坏既有三字段输出。
+- prompt 注入：`_build_supervisor_prompt` 含 9 工具清单（名称+描述+必填参）。
+- 三态互斥路由：believe_done 优先于 ide_action；ide_action 优先于 subtask 派发。
+- governed 路径：deny（openTerminal `rm -rf /`）断言 caller 零调用且 feedback 回灌拦截原因；allow（getSetting）断言执行一次、结果回灌；未知工具名不执行、feedback 提示须从清单选择。
+- 审计：ide_action 节点经 governed_ide_call 写 factory_events（session 级 factory_id=orch-* 入口生成一次）。
+- **真实 GLM e2e**：`test_e2e_real_glm_supervisor_emits_legal_ide_action`（skipif 无 key/:4000 不可达）——goal 要求读 IDE 设置，真实 GLM 单轮输出注册表内 ide_action、mock caller 记录到调用。全量回归中实跑通过（非 skip），见下。
+
+### W3 = M142-C · factory 任务级并行（tests/test_factory_parallel.py，15 新用例）
+
+```
+$ .venv/bin/python -m pytest tests/test_factory_parallel.py -q
+15 passed
+```
+覆盖：
+- `_ready_tasks`×7：空 roadmap / 单 pending / 全独立保序全返 / 链式依赖逐个解锁 / 菱形依赖 / 跳过非 pending / 依赖未知 id 永不 ready。
+- 波次并行（FLIPPED_MAX_PARALLEL=3，ThreadPoolExecutor + 屏障 mock orchestrator）：墙钟 < 串行（3×0.3s 任务并行 <1.9×串行）；落账 exactly-once（completed 无重复、task_done 幂等事件各 1 条）；depends_on 语义不破（依赖未完成的任务不提前启动）；同波任务失败不阻塞 sibling 落账；max_tasks 预算约束（波次大小 ≤ 剩余预算）；崩溃恢复无重复副作用（幂等键重放语义不变）。
+- 零回归守门×2：env 未设默认串行（原 `_next_task` 路径）；FLIPPED_MAX_PARALLEL=1 显式串行。
+
+### 全量回归
+```
+$ .venv/bin/python -m pytest tests/ -q --tb=short
+1586 passed, 2 warnings in 75.60s   # 较 M141 净增 24（W2×9 + W3×15）；真实 GLM e2e 实跑通过（无 skip）
+```
+定向合计（W2 9 + W3 15 + M141 ide_tools 24 + M140 tui 15 = 63）：
+```
+$ .venv/bin/python -m pytest tests/test_ide_tools.py tests/test_orchestrator_ide_action.py tests/test_factory_parallel.py tests/test_tui_monitor.py -q
+63 passed, 1 warning in 34.13s
 ```
 

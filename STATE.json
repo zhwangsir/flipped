@@ -1,8 +1,8 @@
 {
   "project": "flipped",
   "description": "接入本地 MLX 双模型(GLM-5.2 编排者 / Kimi-K2.7-Code 执行者)的 agentic 代码编辑器平台。fork Roo Code + 自定义驾驭层(强制验证/循环检测/上下文压缩/人工审批/子Agent/可观测性) + MCP 联网与外部能力。",
-  "updated": "2026-07-18",
-  "current_milestone": "M139-B 完成 · 全屏 TUI 监控台（Textual 只读监控统一 SQLite：状态表 + 增量事件流着色斑）：src/tui/ + 8 headless 用例全绿，实跑真实库 12 工厂多轮轮询无异常，全量 pytest 1531/0 failed",
+  "updated": "2026-07-19 06:19:30",
+  "current_milestone": "M142 done: 三轨并行（devcontainer 运行时验收 KNOWN-ISSUE 清零 + supervisor IDE 接线含真实 GLM e2e + factory 任务级并行）; 24 新用例绿, 全量 pytest 1586/0 failed",
   "key_facts": {
     "dev_host": "Apple M5 Max, 128GB RAM, 1.1TB 可用磁盘 — 开发/控制节点，非模型宿主",
     "model_cluster": "exo 集群 @ http://100.64.201.37:52415 (内网, OpenAI 兼容)；公网 https://dgmt.top/exo (需 Bearer token)",
@@ -2484,6 +2484,87 @@
           "note": "script(pty) 实跑 PYTHONPATH=src python -m tui 读真实 data/flipped.db：DataTable 实时列出 12 个 factory（done/paused + done/failed/total + updated_at），~7s 多轮轮询无 traceback；headless run_test 快照（2 工厂 7 事件含 5 种 kind）+ SVG 导出。"
         }
       }
+    },
+    "M140": {
+      "title": "TUI 监控台体验深化（打磨）：状态着色 + 进度条 + 工厂聚焦过滤 + Header 聚合统计",
+      "status": "done",
+      "note": "用户指示「继续进行打磨」。纯本地确定性改动，TDD（Textual run_test pilot）。test_tui_monitor.py 8→15 用例全绿；全量 pytest 1538 passed/0 failed（净增 7）。只读纪律不破：聚焦重拉也只 SELECT，fail-open。",
+      "tasks": {
+        "M140.1_status_progress": {
+          "title": "DataTable status 列着色（done=green/running=dodger_blue1/failed=red/paused=yellow）+ 新增 progress 块条列",
+          "status": "done",
+          "note": "_status_text/_progress_bar 纯函数 + STATUS_COLORS 映射；progress 列 10 格块字符条（done 绿块/failed 红块/pending 暗块 + 百分比，total=0 占位 —），列序 factory_id/status/progress/tasks/updated_at，既有断言 row[2]→row[3] 同步后移，空态行补全 5 列。3 新用例。"
+        },
+        "M140.2_focus_filter": {
+          "title": "工厂聚焦过滤：DataTable row cursor + Enter 聚焦/Esc 或再按 Enter 取消，事件流只显示聚焦厂",
+          "status": "done",
+          "note": "focus_factory 状态 + on_data_table_row_selected（DataTable enter→select_cursor 消息路由，cursor_type=row + zebra_stripes）+ action_clear_focus(escape)。聚焦切换 log.clear() 重拉该厂最近 50 条（FOCUS_RELOAD_LIMIT，只读 fail-open，不动 _last_seq）；过滤期间他厂新事件仍推进 _last_seq（取消后不爆历史重放）。2 新用例含 toggle/恢复显示。"
+        },
+        "M140.3_subtitle_aggregate": {
+          "title": "Header sub_title 聚合统计：N 工厂 · running X · done Y · failed Z · paused W（零计数省略）；聚焦时显示「聚焦: <fid>」",
+          "status": "done",
+          "note": "_update_subtitle 挂在 _refresh_states 尾部 + _set_focus；_states 快照同时供聚焦按行号取 factory_id。2 新用例（聚合计数含零省略 / Esc 后恢复聚合）。"
+        },
+        "M140.4_regression": {
+          "title": "全量回归 + 状态留痕",
+          "status": "done",
+          "note": "pytest 1538 passed/0 failed（53.93s）；STATE.json 本条目 + TEST_LOG.md M140 节实跑证据。"
+        }
+      }
+    },
+    "M141": {
+      "title": "IDE 控制面工具面接入驾驭层（M3 遗留首项）：注册表 + 五级管线裁决 + factory_events 审计",
+      "status": "done",
+      "note": "用户指示转向 M141。核查确认循环检测(M3.4)/压缩(M3.7+M5.2)/子Agent(M3.6)/M4 MCP+RAG 均已 done，真实缺口 = ide_client 全项目零调用方、IDE 工具未入权限管线、调用无审计。新增 src/driving/ide_tools.py（注册表9工具/render_ide_action/governed_ide_call/evaluate_ide_action）+ tests/test_ide_tools.py 24 用例全绿；全量 pytest 1562 passed/0 failed。已知限制：真实 VS Code 宿主端到端验证受限（需扩展宿主），由注入式单测兜底；supervisor prompt 接线属模型侧验证，留待宿主环境。",
+      "tasks": {
+        "M141.1_registry_render": {
+          "title": "IDE_TOOL_REGISTRY 9 工具注册表 + render_ide_action 动作渲染",
+          "status": "done",
+          "note": "与 extension.ts tools 表对齐（测试硬编码漂移守门）。安全关键：openTerminal 带 command 渲染为命令本体，rm -rf / 在 L2 规则表即 deny；rebuild→'devcontainer rebuild'、installExtension→'installExtension <id>' 复用高风险模式。未知工具名 KeyError 守门。"
+        },
+        "M141.2_governed_audit": {
+          "title": "governed_ide_call：evaluate_command（IDE_RULES+DEFAULT_RULES 合并，链式分段）+ 仅 allow 执行 + ide_tool_call 审计",
+          "status": "done",
+          "note": "deny/ask 不执行且留痕（谁拦的/为什么）；allow 执行异常捕获进 error 不上抛（桥不可用 fail-open）。审计 append_event 天然 fail-open，payload 含 name/args/action/decision/level/reason/error。IdeCallResult dataclass 返回。"
+        },
+        "M141.3_tests": {
+          "title": "tests/test_ide_tools.py 24 用例：注册表/render/权限矩阵(deny3+ask5+allow7)/链式deny/异常/审计",
+          "status": "done",
+          "note": "参数化权限矩阵：deny（rm -rf /、sudo、push --force）与 ask（installExtension/runCommand/updateSetting/rebuild/push）均断言 caller 零调用；allow 7 项断言执行一次且透传。审计 tmp DB 断言双事件 + deny reason。定向 27 passed（含 ide_client 3）。"
+        },
+        "M141.4_regression": {
+          "title": "全量回归 + 状态留痕",
+          "status": "done",
+          "note": "pytest 1562 passed/0 failed（48.51s，净增 24）；STATE.json 本条目 + TEST_LOG.md M141 节 + PLAN.md 验收标记。"
+        }
+      }
+    },
+    "M142": {
+      "title": "三轨并行：Phase 2 devcontainer 运行时验收 + supervisor IDE 工具面接线 + factory 任务级并行",
+      "status": "done",
+      "note": "用户一次选定三方向，Agent 团队并行（W1/W2/W3）。W1：verify_m142_devcontainer.sh 一键复跑 CORE 全绿（build/up/python3.12.13/node20.20.2/java21.0.11/rustc1.83.0/mise2026.7.7），并修复 postCreateCommand 模板 bug（mise trust --non-interactive→--all），KNOWN-ISSUE 清零。W2：orchestrator Plan schema 加 ide_action 三态互斥（believe_done>ide_action>subtask）+ prompt 注入 9 工具清单 + governed_ide_call 执行回灌 + orch-* 审计；9 新用例含真实 GLM e2e（全量中实跑非 skip）。W3：_ready_tasks + FLIPPED_MAX_PARALLEL 波次并行（ThreadPoolExecutor 并行执行、主循环串行落账，幂等键语义不变），15 新用例含墙钟/恰好一次/依赖/预算/崩溃恢复守门。全量 pytest 1586 passed/0 failed（净增 24）。",
+      "tasks": {
+        "M142.1_devcontainer_runtime": {
+          "title": "W1：Phase 2 devcontainer 运行时验收（scripts/verify_m142_devcontainer.sh）",
+          "status": "done",
+          "note": "devcontainer CLI 0.87.0 + m142-base（https 代理+国内镜像源注入，http 直连保 GPG HKP）+ 5 features（ghcr.nju.edu.cn 镜像）构建/up/容器内 exec 实测全绿。复跑暴露并修复模板 bug：postCreateCommand 'mise trust --non-interactive'（mise 2026.x 移除该 flag）→ 'mise trust --all && mise install --yes'（devcontainer.json + devcontainer.mirror.json 同步修）。修复后 KNOWN-ISSUE 清零（含 rustc 默认 PATH 已钉 1.83）。脚本支持镜像缓存复跑（M142_REBUILD=1 强制全量）+ colima 磁盘余量前置检查。"
+        },
+        "M142.2_supervisor_ide_wiring": {
+          "title": "W2：supervisor IDE 工具面接线（orchestrator.py + tests/test_orchestrator_ide_action.py 9 用例）",
+          "status": "done",
+          "note": "Plan schema 加可选 ide_action{name,args}（IdeActionSpec）；_build_supervisor_prompt 注入 IDE_TOOL_REGISTRY 9 工具清单（名称+描述+必填参）；三态互斥路由 believe_done>ide_action>subtask；ide_action 节点走 governed_ide_call（M141 五级管线），deny/ask 不执行、结果写 feedback 回灌 supervisor，allow 执行结果同样回灌；审计接 factory_events（session 级 factory_id=orch-* 入口生成一次，未新造）。单测全 mock（schema/prompt/互斥/deny零调用/allow回灌/未知工具/审计）；真实 GLM e2e 1 场景（goal 读 IDE 设置→GLM 输出注册表内 ide_action，mock caller 记录即算通）在全量回归中实跑通过。"
+        },
+        "M142.3_factory_task_parallel": {
+          "title": "W3：factory 任务级并行（factory_loop.py + tests/test_factory_parallel.py 15 用例）",
+          "status": "done",
+          "note": "_ready_tasks(state) 返回所有依赖满足的 pending 任务（_next_task 多任务版，7 用例含链式/菱形/未知依赖）。FLIPPED_MAX_PARALLEL（默认 1=现状零回归，2 守门用例）：>1 时 _run_parallel_waves 波次并行——每波取 ≤min(max_parallel,剩余预算) 个 ready 任务，ThreadPoolExecutor 并行跑 orchestrator（worker 只读 state 快照），主循环串行落账（completed/事件/quality/memory），幂等键语义不变。测试实证：墙钟<串行、落账 exactly-once、depends_on 不破、sibling 失败不阻塞、崩溃恢复无重复副作用。"
+        },
+        "M142.4_regression": {
+          "title": "全量回归 + 状态留痕",
+          "status": "done",
+          "note": "pytest 1586 passed/0 failed（75.60s，净增 24=W2×9+W3×15）；定向 63 绿（ide_tools24+orch_ide9+factory_parallel15+tui15）。TEST_LOG.md M142 节 + STATE.json 本条目 + PLAN.md 验收标记。M140/M141/M142 尚未 commit（最后提交 M139），留待用户指示。"
+        }
+      }
     }
   },
   "architecture_decisions": [
@@ -2658,7 +2739,29 @@
       "severity": "env-blocker",
       "title": "E2E approval flow 依赖的 OpenHands agent-server 未运行",
       "detail": "console.spec.ts 'send task, approve, and complete' 失败: 后端智能体模式派发任务到 http://localhost:8000/api/conversations 返回 405。根因: 8000 端口被 NoteEdge 笔记应用(uvicorn, PID 35195)占用, OpenHands agent-server 未启动。非 UI 回归。修复: 停 NoteEdge 并启动 agent-server, 或改后端 agent-server URL 配置。",
-      "status": "open"
+      "status": "resolved",
+      "resolution": "2026-07-18 解除: 根因为 colima(Docker VM) 未运行导致 flipped-oh-canvas 容器停止; colima start 后 agent-server :8000 恢复(/alive OK), LiteLLM :4000 同步启动(architect/coder 实测 pong)。 顺带修复 verify_b5.sh 两个潜伏缺陷: (1)console 构建未注入 VITE_API_BASE_URL 导致 preview 产物仍连 :8011; (2)在 mock 后端下跑全量真实栈套件导致大量误败——改为只跑 E2E_MOCK_APPROVAL=1 门控的 console.spec.ts。 console.spec.ts 加环境门控: 仅 mock 审批后端下运行, 真实全栈显式 skip。 验证: verify_b5.sh PASS(playwright 1/1 + pytest 1531/0); 真实全栈 77 passed+1 skip(环境门控)+1 flaky(既有)。",
+      "owner": "已解决(2026-07-18)"
+    },
+    {
+      "id": "KI-20260718-venv-path-migration",
+      "date": "2026-07-18",
+      "severity": "env-blocker",
+      "title": ".venv 从旧路径迁移后 activate/shebang 全部失效",
+      "detail": "项目从 ~/Desktop/flipped 移至 ~/Desktop/ALLProject/flipped 后，.venv/bin/activate 硬编码 VIRTUAL_ENV 及 ~120 个 entry point 脚本 shebang 仍指向旧路径，source 后 PATH 指向不存在目录，python/pytest/uvicorn 全部 command not found。site-packages 无硬编码路径不受影响。",
+      "status": "resolved",
+      "resolution": "find .venv/bin -type f | xargs sed 批量替换旧路径为新路径(find -type f 排除符号链接, 保护共享 python)。修复后 verify_b5.sh 全绿。教训: 项目目录迁移后必须重建或修补 venv; uv venv 非 relocatable。",
+      "owner": "已解决(2026-07-18)"
+    },
+    {
+      "id": "KI-20260718-preview-port-drift",
+      "date": "2026-07-18",
+      "severity": "high",
+      "title": "vite preview 端口被占用时静默漂移, E2E 误测旧构建",
+      "detail": "残留旧 vite preview(PID 83547)占用 :5273，verify_b5.sh 新 preview 静默 'trying another one' 换到 :5274，但健康检查与 Playwright 仍打 :5273——加载的是旧 preview 服务的旧构建(API 指向 :8011 真实后端，agent 模式直派沙盒无审批门)，approval-card 永不出现，mock 后端 :8001 只收到 health。表现为 E2E 审批流假性失败。",
+      "status": "resolved",
+      "resolution": "verify_b5.sh 增加 kill_port_owner(API_PORT/CONSOLE_PORT) 启动前清理占用; preview 加 --strictPort 让换端口变显性失败。复跑全绿(Playwright 1 passed + pytest 1531)。",
+      "owner": "已解决(2026-07-18)"
     }
   ],
   "background_jobs": [
@@ -2669,8 +2772,8 @@
     },
     {
       "name": "litellm proxy :4000",
-      "purpose": "M0/M1 服务层代理(architect/coder); 当前因本地 Postgres/prisma 初始化阻塞未启动",
-      "status": "stopped",
+      "purpose": "M0/M1 服务层代理(architect/coder); 2026-07-18 已启动 :4000, 双别名实测通过",
+      "status": "running",
       "start_cmd": "bash scripts/start_proxy.sh"
     },
     {
@@ -2678,6 +2781,12 @@
       "purpose": "M1 联网搜索后端(JSON, 经宿主 Clash 出站), 运行中",
       "status": "running",
       "start_cmd": "docker compose -f infra/searxng/docker-compose.yml --project-directory infra/searxng up -d"
+    },
+    {
+      "name": "flipped-oh-canvas (docker :8000)",
+      "purpose": "OpenHands 沙盒 agent-server; E2E 审批流/真实任务派发依赖",
+      "status": "running",
+      "start_cmd": "colima start && docker start flipped-oh-canvas (或 bash scripts/dev_up.sh)"
     }
   ]
 }
