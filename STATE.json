@@ -1,8 +1,8 @@
 {
   "project": "flipped",
   "description": "接入本地 MLX 双模型(GLM-5.2 编排者 / Kimi-K2.7-Code 执行者)的 agentic 代码编辑器平台。fork Roo Code + 自定义驾驭层(强制验证/循环检测/上下文压缩/人工审批/子Agent/可观测性) + MCP 联网与外部能力。",
-  "updated": "2026-07-24 15:20:00",
-  "current_milestone": "M3 编排层分解 done：三修复落地——1)worker max_iterations 15→5（匹配 GLM-5.2-fp8 的 2-3 轮窗口极限）2)orchestrator history 压缩阈值 10000→4000 tokens + keep_recent 4→2（更早压缩，减少 supervisor prompt 注入）3)supervisor prompt 加窗口约束（每个 subtask 必须 3 步内可完成，复杂目标拆多个小 subtask 逐轮派发）。契约45/45+全量1613/1613通过",
+  "updated": "2026-07-24 21:15:00",
+  "current_milestone": "M3.3b supervisor 拆分真实验证+prompt强化 done：worker验证(scripts/verify_m149_condenser.py)确认退化第3轮开始(input~7K tokens,M3.1 max_iter=5 快速失败83s生效)+supervisor拆分验证(scripts/verify_m3_supervisor_split.py)暴露M3.3原始prompt缺陷(GLM把'3步'误解为'3个动作'打包全目标377字含config+test+pytest)→M3.3b强化prompt(明确'一个subtask只能涉及一个文件或一个命令'+禁止2+文件名+给出拆分示例)→强化后supervisor正确拆成单文件subtask(260字仅config.py,rationale'后续轮次再写测试')。契约2passed+全量1613/1613passed(4网络deselected)。退化模式=语义退化(token重复)非乱码,M3.3b让worker收到≤3轮可完成的单文件小subtask",
   "key_facts": {
     "dev_host": "Apple M5 Max, 128GB RAM, 1.1TB 可用磁盘 — 开发/控制节点，非模型宿主",
     "model_cluster": "exo 集群 @ http://studio01-1:52415 (MagicDNS 主机名=macstudio01，免疫 Tailscale IP 漂移；旧裸 IP 100.64.201.37 已于 2026-07-22 失效)；公网 https://dgmt.top/exo (需 Bearer token)",

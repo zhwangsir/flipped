@@ -459,9 +459,11 @@ def _build_supervisor_prompt(state: OrchestratorState) -> str:
             "或调一个 IDE 工具(ide_action)；若相信目标已达成则 believe_done=true。"
             "subtask 描述必须简洁（≤200字），只说做什么、不改什么文件，"
             "不要重复设计约束（执行者已有 project_rules）。"
-            "【窗口约束】执行者(GLM-5.2-fp8)的稳定窗口仅 ~3 轮工具调用，"
-            "每个 subtask 必须在 3 步内可完成（如：写一个文件+运行测试）。"
-            "复杂目标拆成多个小 subtask 逐轮派发，不要一次给大任务。")
+            "【窗口约束·硬性】执行者(GLM-5.2-fp8)经实测在第 3 轮工具调用后必退化（token 重复/语法畸形），"
+            "因此【一个 subtask 只能涉及一个文件或一个命令】，严禁在一个 subtask 里同时包含多个文件"
+            "（如同时写 config.py 和 test_config.py 是禁止的——必须拆成两轮各派一个）。"
+            "多文件目标必须拆成多个 subtask 逐轮派发：第一轮写文件 A，第二轮写文件 B，第三轮跑测试。"
+            "判断标准：如果你的 subtask 里出现了 2 个及以上文件名，就是违规，必须拆分。")
 
 
 class IdeActionSpec(BaseModel):

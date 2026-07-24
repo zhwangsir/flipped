@@ -429,13 +429,23 @@ def test_supervisor_prompt_forbids_rebuild_on_verify_failure():
 
 
 def test_supervisor_prompt_window_constraint():
-    """M3.3：supervisor prompt 包含窗口约束——每个 subtask 必须 3 步内可完成。"""
+    """M3.3：supervisor prompt 包含窗口约束——一个 subtask 只能涉及一个文件或一个命令。
+
+    M3.3b 强化（真实验证暴露 GLM 把"3 步"误解为"3 个动作"打包全目标）：
+    旧措辞"3 步内可完成（如：写一个文件+运行测试）"被 GLM 理解成可含多文件，
+    强化后明确禁止一个 subtask 含 2+ 文件名，并给出判断标准。
+    """
     from driving.orchestrator import _build_supervisor_prompt
     state = {"goal": "g", "cwd": "/tmp", "repo_map": "", "project_rules": "",
              "feedback": "", "context_summary": None}
     prompt = _build_supervisor_prompt(state)
     assert "窗口约束" in prompt
-    assert "3 步" in prompt
+    # M3.3b 强化：必须明确"一个 subtask 只能涉及一个文件或一个命令"
+    assert "一个文件或一个命令" in prompt
+    # 必须明确禁止多文件打包
+    assert "2 个及以上文件名" in prompt or "2个及以上文件名" in prompt
+    # 必须给出拆分示例（多文件拆成多轮）
+    assert "第一轮写文件" in prompt
 
 
 if __name__ == "__main__":
