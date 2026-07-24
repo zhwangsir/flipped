@@ -1,12 +1,12 @@
 {
   "project": "flipped",
   "description": "接入本地 MLX 双模型(GLM-5.2 编排者 / Kimi-K2.7-Code 执行者)的 agentic 代码编辑器平台。fork Roo Code + 自定义驾驭层(强制验证/循环检测/上下文压缩/人工审批/子Agent/可观测性) + MCP 联网与外部能力。",
-  "updated": "2026-07-19 06:19:30",
-  "current_milestone": "M142 done: 三轨并行（devcontainer 运行时验收 KNOWN-ISSUE 清零 + supervisor IDE 接线含真实 GLM e2e + factory 任务级并行）; 24 新用例绿, 全量 pytest 1586/0 failed",
+  "updated": "2026-07-24 12:10:00",
+  "current_milestone": "M149.20 done：乱码根因三修复落地——1)ThinkTool默认移除（arg_key碎片决定性触发器，debug_glm_think_bisect.py对照实验确认）2)LLM condenser默认NoOp（数学不成立：固定开销2200tok+压缩调用2000tok>稳定窗口3300tok）3)max_iterations默认15（非200，匹配2-3轮窗口极限）。契约19/19+全量1616/1616通过。真实验证：无碎片/无泄漏/JSON完好，GLM代码质量有限（语法错误循环）为模型能力限制",
   "key_facts": {
     "dev_host": "Apple M5 Max, 128GB RAM, 1.1TB 可用磁盘 — 开发/控制节点，非模型宿主",
-    "model_cluster": "exo 集群 @ http://100.64.201.37:52415 (内网, OpenAI 兼容)；公网 https://dgmt.top/exo (需 Bearer token)",
-    "cluster_topology": "Thunderbolt 桥接、张量并行多节点；GLM-5.2 与 Kimi-K2.7-Code 各 4 分片(deviceRank 0-3)",
+    "model_cluster": "exo 集群 @ http://studio01-1:52415 (MagicDNS 主机名=macstudio01，免疫 Tailscale IP 漂移；旧裸 IP 100.64.201.37 已于 2026-07-22 失效)；公网 https://dgmt.top/exo (需 Bearer token)",
+    "cluster_topology": "exo 集群 @ http://studio01-1:52415 (MagicDNS 主机名=macstudio01，免疫 Tailscale IP 漂移；旧裸 IP 100.64.201.37 已于 2026-07-22 失效)；公网 https://dgmt.top/exo (需 Bearer token)",
     "orchestrator_model": "mlx-community/GLM-5.2-DQ4plus-q8 (编排者/架构师, 主 Agent)",
     "executor_model": "mlx-community/Kimi-K2.7-Code-4bit (执行者/码农, 子 Agent)",
     "serving_arch": "客户端/编辑器 -> LiteLLM Proxy(:4000) -> exo(:52415) -> {GLM-5.2, Kimi-K2.7-Code}",
@@ -2565,6 +2565,284 @@
           "note": "pytest 1586 passed/0 failed（75.60s，净增 24=W2×9+W3×15）；定向 63 绿（ide_tools24+orch_ide9+factory_parallel15+tui15）。TEST_LOG.md M142 节 + STATE.json 本条目 + PLAN.md 验收标记。M140/M141/M142 尚未 commit（最后提交 M139），留待用户指示。"
         }
       }
+    },
+    "M143": {
+      "title": "真实 IDE 桥运行时验收（M141/M142 已知限制收口）：隔离 Extension Development Host × governed 五级管线",
+      "status": "done",
+      "note": "用户从三候选（A 真实 IDE 桥 / B 真实工厂 10-task E2E / C 并行基准）选定 A。此前 IDE 工具面全是注入式/mock 验证，真实 VS Code 宿主从未端到端跑通（TEST_LOG M141 节明示）。新增 scripts/verify_m143_ide_bridge.sh + .py：code --user-data-dir/--extensions-dir 全隔离 + --extensionDevelopmentPath 起 Extension Development Host（onStartupFinished 自动激活起桥，~6s 就绪），7/7 矩阵全绿——真实读回工作区标记值、allow 真实读/真实执行（开终端）、deny rm -rf / 零执行、deny 后桥无损、ask 零执行佐证（设置未变）、审计 4 事件全留痕。trap 兜底清理实证（端口释放/无进程残留/临时目录已删）。修复 M142 同款 shell 全角字符粘连陷阱 ×2（$WS（ / $CODE_PID， → ${VAR}）。全量 pytest 1586 passed/0 failed（与 M142 持平，本轮未动 src/tests）。",
+      "tasks": {
+        "M143.1_verify_script": {
+          "title": "verify_m143_ide_bridge.sh + .py 一键验收（7/7 全绿）",
+          "status": "done",
+          "note": "隔离实例验收矩阵：桥应答 raw getSetting=13（工作区标记值真实读回）；governed allow 真实读 result=13；allow 真实执行 ide.openTerminal result={'ok':True}；deny ide.openTerminal 'rm -rf /' decision=deny 零执行；deny 后桥无损；ask ide.updateSetting decision=ask 零执行（读回 fontSize 仍 13 佐证无泄漏）；审计 4 条 ide_tool_call 事件（allow/allow/deny/ask）。端口冲突保护：只杀 dev-host 残留，非 dev-host 占用拒绝起跑防误连真实实例。"
+        },
+        "M143.2_shell_trap_fix": {
+          "title": "修复 shell 全角字符粘连陷阱 ×2（工程化留痕）",
+          "status": "done",
+          "note": "复跑暴露 M142 同款陷阱：$WS（ 与 $CODE_PID， 变量名与全角字符粘连（macOS bash 3.2 把全角字节吃进变量名，set -u 报 unbound）。修复一律 ${VAR}；排查正则升级为 \\$[A-Za-z_][A-Za-z0-9_]*[^\\x00-\\x7F]（覆盖全角逗号，比 M142 只查括号更宽）。"
+        },
+        "M143.3_regression": {
+          "title": "全量回归 + 状态留痕",
+          "status": "done",
+          "note": "pytest 1586 passed/0 failed（78.72s，与 M142 持平——本轮只新增 scripts/ 两文件，未动 src/tests）。TEST_LOG.md M143 节 + STATE.json 本条目 + PLAN.md 验收标记。已知限制如实留痕：macOS 无真 headless（窗口闪现 ~10s）；ide.runTask/env.*/installExtension 未纳入本轮真实矩阵。"
+        }
+      }
+    },
+    "M144-A": {
+      "title": "IDE 桥真实矩阵补全：verify_m143_ide_bridge.py 7→12 步（M143 已知限制收口）",
+      "status": "done",
+      "note": "M143 已知限制「runTask/env.*/installExtension 未入真实矩阵」收口。sh 侧验收工作区新增 .vscode/tasks.json（无害 echo 任务 m144-echo）并透传 --ws 供读回断言；py 侧矩阵扩为 12 步。2026-07-20 沙箱内实跑 bash scripts/verify_m143_ide_bridge.sh 一次通过 12/12：allow×5 全部真实执行且读回断言通过（getSetting=13 / openTerminal / runTask m144-echo 返回 TaskExecution 序列化对象 / miseUse 落盘 .mise.toml='[tools]\\npython = \"3.12\"' / addDevcontainerFeature 落盘 devcontainer.json features=['ghcr.io/devcontainers/features/python']）；deny×1（rm -rf / 零执行）+ ask×4（updateSetting/installExtension/runCommand/rebuildDevcontainer 全零执行，fontSize 仍 13 佐证）；审计 10 条 ide_tool_call 事件按序全留痕；trap 清理无残留。汇总复查修复步骤编号缺口（[6/12] 直跳 [8/12]）：ask 零执行佐证拆为独立 [7/12] 步，docstring 补 --ws。证据见 TEST_LOG.md M144-A 节。",
+      "tasks": {
+        "M144-A.1_workspace_tasks_json": {
+          "title": "验收工作区加 .vscode/tasks.json（无害 echo 任务）+ sh 透传 --ws",
+          "status": "done",
+          "note": "m144-echo shell 任务（echo m144-ok，problemMatcher 空）；py 矩阵新增 --ws 必填参读回 .mise.toml / devcontainer.json。"
+        },
+        "M144-A.2_matrix_12_steps": {
+          "title": "矩阵 7→12 步：runTask/miseUse/addDevcontainerFeature 真实执行 + ask×3 + 审计 10 事件",
+          "status": "done",
+          "note": "allow 真实执行 3 路均带文件读回断言；ask 零执行 3 路（installExtension/runCommand/rebuildDevcontainer）；审计期望序列 allow×5+deny×1+ask×4 共 10 事件。实跑全绿。"
+        },
+        "M144-A.3_real_run_pass": {
+          "title": "实跑 verify_m143_ide_bridge.sh 全绿（沙箱内）",
+          "status": "done",
+          "note": "隔离 Extension Development Host 第 2 次探测桥就绪；12/12 通过；trap 清理无残留。窗口闪现属 macOS 预期。"
+        }
+      }
+    },
+    "M144-B": {
+      "title": "TUI 打磨三件套：事件时间线排序 + 状态过滤 + 搜索跳转（M140 遗留三候选收口）",
+      "status": "done",
+      "note": "src/tui/app.py 三件落地：①事件行 HH:MM:SS 前缀，_event_buffer 按 (ts,seq) bisect.insort_right 有序插入，缺 ts 用 \\uffff 哨兵恒排尾（退化到达序），超 MAX_LOG_LINES 截头，聚焦重拉同序；②1/2/3/4=running/done/failed/paused、0=全部，过滤只影响 _visible_states 渲染层（全量快照保留供聚合），sub_title 追加「过滤:<status>」，与聚焦正交叠加；③/ 进搜索模式，on_key 逐字累积（prevent_default 屏蔽数字过滤/p/q binding），实时前缀匹配 move_cursor，Enter 复用聚焦、Esc 取消不动聚焦。tests/test_tui_monitor.py 新增 10 用例（乱序重排/缺 ts 排尾/聚焦重拉有序/四过滤+复位/过滤×聚焦叠加/过滤跨轮询保持/搜索跳 cursor/Enter 聚焦/Esc 取消/搜索态数字不误触）。定向 25 passed（M140 15+新增 10）。只读纪律不破（渲染层操作，DB 只 SELECT）；fail-open；零新依赖。证据见 TEST_LOG.md M144-B 节。",
+      "tasks": {
+        "M144-B.1_event_timeline_sort": {
+          "title": "事件时间线排序（ts 有序插入，缺 ts 排尾）",
+          "status": "done",
+          "note": "_event_buffer (sort_key,seq,line) 三元组与 Log 显示同步；_event_sort_key/_hhmmss 纯函数。"
+        },
+        "M144-B.2_status_filter": {
+          "title": "状态过滤 1/2/3/4/0 + sub_title 标识",
+          "status": "done",
+          "note": "_set_status_filter → _refresh_states 重绘；过滤器跨轮询保持；空过滤结果显示占位行。"
+        },
+        "M144-B.3_search_jump": {
+          "title": "搜索跳转 / 前缀匹配 + Enter 聚焦 + Esc 取消",
+          "status": "done",
+          "note": "on_key 先于 bindings 派发（MRO），prevent_default 防误触；_first_match_index 大小写不敏感。"
+        },
+        "M144-B.4_tdd_regression": {
+          "title": "TDD 10 新用例 + TUI 定向全绿",
+          "status": "done",
+          "note": "pytest tests/test_tui_monitor.py 25 passed（7.62s）。"
+        }
+      }
+    },
+    "M146": {
+      "title": "逐按钮全量审查 + 反馈黑洞清零（用户指示「精确到每一个按钮，每一个细节，针对所有内容进行一个审查，确保整体项目完好」）",
+      "status": "done",
+      "note": "W1（console 14 组件逐按钮）/W2（scripts+src/api 端点）双路复审 + 主代理逐条亲验（子代理产出含大量无证据臆测与已修项复读，一律以亲验为准）。17 项真实问题全修：P0×1——store factory create/resume/pause 端点返回 FactorySummary 却当 FactoryDetail 入 state（详情字段丢失），统一回拉 getFactoryDetail；P1×16——①Conversation 发送失败零反馈（sendErr 错误行+输入保留+busy 防重复）②项目选择器搜索死输入框（visibleProjects 过滤+无匹配空态）③Sidebar 菜单假按钮×5 删除仅留 Finder 显示④FactoryPanel 创建/暂停/恢复失败静默+可重复提交（createBusy/actionBusy+错误行）⑤api.ts WS 断线无重连（指数退避 1s→10s+last_event_id 断点续传+主动关闭不重连）⑥main.py create_task/resume_session 无并发守卫（RUNNING_TASKS+409+done_callback+task_id uuid 后缀）⑦factory.py _BusAdapter emit 静默 pass 改 log.warning⑧session.py SessionStore 竞态（threading.RLock+tmp/os.replace 原子写+_seq_of 兼容解析）⑨dev_down.sh pkill -f vite 误杀改端口精确杀⑩await_glm_capstone.sh 恒 exit 0 改按 verified 退 0/1⑪-⑯async onClick 未 catch×6（Sidebar 删除会话/行内新建/全局新对话、Conversation 停止/项目选择器点击、CommandPalette ⌘N）统一 .catch(() => {}) 与既有模式一致。误报排除 12 项（toggleMcpServer 乐观回滚/sendApproval 同步不抛/submitPicker 有 catch/pkill 全精确匹配/except 块全合理等，逐条亲验证据）。回归新增：Conversation.test×5 + FactoryPanel.test×2。全面验收：pytest 1596 passed/0 failed（82.29s）、vitest 64/64、tsc --noEmit 无错、vite build 绿（chunk>500kB 警告为既有现象）。零新依赖、零 API 契约变更。证据见 TEST_LOG.md M146 节。",
+      "tasks": {
+        "M146.1_review_recon": {
+          "title": "W1/W2 双路复审 + 主代理逐条亲验",
+          "status": "done",
+          "note": "W1 覆盖 console 14 组件全部 onClick/输入/菜单/tab；W2 覆盖 scripts pkill/退出码与 src/api except/竞态/路径穿越。子代理产出低质（臆测+已修项复读），主代理逐条亲验定真伪：17 真实 + 12 误报。"
+        },
+        "M146.2_p0_factory_detail": {
+          "title": "P0：factory create/resume/pause Summary→Detail 回拉",
+          "status": "done",
+          "note": "store.tsx 三动作统一 apiGetFactoryDetail 回拉；api.ts 返回类型同步修正 FactorySummary。"
+        },
+        "M146.3_feedback_holes": {
+          "title": "P1：前端反馈黑洞清零（发送/工厂/菜单/搜索/WS 重连）",
+          "status": "done",
+          "note": "Conversation sendErr+搜索过滤；Sidebar 假按钮×5 删除；FactoryPanel busy+错误行；api.ts 指数退避重连+last_event_id 续传；app.css .form-err 通用错误样式。"
+        },
+        "M146.4_backend_guards": {
+          "title": "P1：后端并发守卫 + 竞态 + 静默修复",
+          "status": "done",
+          "note": "main.py 409 并发守卫+task_id uuid；factory.py 桥失效 log.warning；session.py RLock+原子写+_seq_of；dev_down.sh 端口精确杀；await_glm_capstone.sh 退出码契约。"
+        },
+        "M146.5_unhandled_rejection": {
+          "title": "P1：async onClick 未 catch ×6 统一修复",
+          "status": "done",
+          "note": "Sidebar×3（deleteSession/createSession×2）、Conversation×2（cancelTask/openProject 选择器）、CommandPalette×1（createSession ⌘N）；统一 .catch(() => {}) 防 unhandled rejection。"
+        },
+        "M146.6_full_acceptance": {
+          "title": "全面验收 + 回归测试",
+          "status": "done",
+          "note": "pytest 1596 passed/0 failed（82.29s）；vitest 64/64（新增 7 用例：Conversation×5、FactoryPanel×2）；tsc --noEmit 无错；vite build 绿。TEST_LOG.md M146 节 + STATE.json 本条目。"
+        }
+      }
+    },
+    "M145": {
+      "title": "全面问题排查 + 优化 + 验收（用户指示「检查还有哪些问题并进行优化，全面验收」）",
+      "status": "done",
+      "note": "系统性侦察 7 域：STATE.json known_issues 未决 0；测试 skip/xfail 5 处全为合理环境门控（Playwright/LiteLLM/axe），无被禁用失败用例；src 无真 TODO/FIXME；环境 :4000/:8000/:8011 在跑、exo 200、容器 Up 43h；console vitest 57/57、tsc、build 全绿。发现 2 项可优化：①全量 pytest 有 2 个 pydantic 弃用 warning——根因 src/api/schemas.py Event 用 v1 风格 class Config（全项目唯一处），改 model_config = ConfigDict(use_enum_values=True)，语义等价；②data/ 有 M144 e2e 实验残留库 ×6——删 v1（死锁废弃）/serial+shm+wal（对照废弃）/v2/v3（0 字节），保留 v4 验收实证库，e2e_m144_parallel.py 无残留引用。全面复验：pytest 1596 passed/0 failed/0 warnings（80.44s，warning 2→0）；vitest 57/57；tsc --noEmit + vite build 绿；IDE 桥 12/12（M144-A 本轮已实跑）；TUI 定向 25 passed。证据见 TEST_LOG.md M145 节。",
+      "tasks": {
+        "M145.1_recon": {
+          "title": "七域侦察（STATE/测试/代码/环境/console/pytest/data）",
+          "status": "done",
+          "note": "仅 2 项可优化，其余全域健康。"
+        },
+        "M145.2_pydantic_configdict": {
+          "title": "schemas.py class Config → ConfigDict（消弃用 warning）",
+          "status": "done",
+          "note": "Event.model_config = ConfigDict(use_enum_values=True)；防 Pydantic V3 移除时挂掉。"
+        },
+        "M145.3_data_cleanup": {
+          "title": "data/ e2e 废弃实验库清理 ×6",
+          "status": "done",
+          "note": "v1/serial(+shm/wal)/v2/v3 删除；v4 实证库保留；bak-20260718 迁移备份保留（用户数据不擅动）。"
+        },
+        "M145.4_full_acceptance": {
+          "title": "全面验收复跑",
+          "status": "done",
+          "note": "pytest 1596/0/0 warnings；vitest 57/57；tsc+build 绿。TEST_LOG.md M145 节 + STATE.json 本条目。"
+        }
+      }
+    },
+    "M144-C": {
+      "title": "factory 任务级并行真实产线基准：OpenHands + 真实 GLM/Kimi 跑 FLIPPED_MAX_PARALLEL=3（M142-C mock 证据 → 真实证据收口）",
+      "status": "done",
+      "note": "M142-C 的 _ready_tasks + _run_parallel_waves 此前只有 mock 墙钟证据，真实 LLM 并发从未跑过。本轮 docker start flipped-oh-canvas（~30s 就绪）+ exo 可达后，scripts/e2e_m144_parallel.py 真实跑通：3 个完全独立模块任务（a/b/c.py 各配 pytest）FLIPPED_MAX_PARALLEL=3，墙钟 908s 未超时，factory-5259cd09 终态 done、3/3 completed（attempts=1 全 verified）。决定性并发证据：3 条 task_start 在 9.6ms 内相继发出（17:23:38.905896/.910842/.915541，单任务耗时 ~99s ≫ 启动间隔）；3 条 task_done 由主循环 11ms 内串行落账。幂等证据：7 条幂等键 0 重复（表级 UNIQUE INDEX 兜底）。infra 事件 0 条。真实跑暴露并修复 M142 mock 测不到的熔断死锁：verified=ok AND believe_done（M89）使 fresh 任务至少需 2 轮迭代，而 adaptive_loop 对 simple/medium 给 max_iter=1 → 首试 100% circuit_breaker；factory_loop.default_orchestrator_fn 钳 adaptive_max_iter=max(2,·)（except 分支同步保底 2）。历经 v1（发现死锁）/serial 对照（同因停摆废弃）/v2/v3（前置快速失败）/v4（修复后 PASS）。全量 pytest 1596 passed/0 failed（较 M143 净增 10 来自 M144-B；本修复由既有 factory 定向 65 用例覆盖）。KNOWN-ISSUE 如实留痕：串行对照组未完成、墙钟加速比未量化；产物在 OpenHands 容器内验收（宿主 /tmp 仅 factory 侧清单）；toy 任务验证并行语义非生产能力，planner ~10.7min 属 GLM 固有成本。证据见 TEST_LOG.md M144-C 节。",
+      "tasks": {
+        "M144-C.1_prerequisites": {
+          "title": "前置：OpenHands 容器幂等拉起 + exo 可达性确认",
+          "status": "done",
+          "note": "docker start flipped-oh-canvas 幂等；curl -sf -m 3 localhost:8000/alive 轮询 ≤90s 就绪（~30s）；curl -sf -m 4 100.64.201.37:52415/v1/models 确认 exo 可达（NO_PROXY=100.64.201.37 绕过系统代理）；LiteLLM :4000 在跑。"
+        },
+        "M144-C.2_e2e_script": {
+          "title": "scripts/e2e_m144_parallel.py（参考 e2e_10_tasks.py 代理清理与报告结构）",
+          "status": "done",
+          "note": "workdir=/tmp/flipped_m144_e2e{tag} 清理重建；product_goal 明确要求 3 个完全相互独立模块（a/b/c.py 各配独立 pytest，互不 import）；max_tasks=4 防预算耗尽；FLIPPED_MAX_PARALLEL=3；db_path=data/factory_m144_e2e{tag}.db 先删旧库；time.monotonic 墙钟 + 跑后从 db 读 completed/事件计数/幂等键重复检查/task_start 时间戳并发判定；watchdog 1200s 超时如实记录部分完成。支持 FLIPPED_E2E_MP/FLIPPED_E2E_TAG 覆盖做对照实验。"
+        },
+        "M144-C.3_deadlock_fix": {
+          "title": "修复 adaptive max_iter=1 熔断死锁（真实 e2e 暴露）",
+          "status": "done",
+          "note": "verified = ok AND believe_done（M89）→ fresh 任务至少 2 轮迭代；adaptive_loop 对 simple/medium 给 max_iter=1 → 首试 100% circuit_breaker（验收其实已通过）。src/driving/factory_loop.py default_orchestrator_fn：adaptive_max_iter = max(2, adaptive_max_iter)，except 分支 1→2 同步保底。既有 factory 定向 65 用例（test_factory_parallel + test_factory_loop + test_adaptive_loop）全绿覆盖。"
+        },
+        "M144-C.4_real_run_pass": {
+          "title": "v4 实跑 PASS：真实并发 + 幂等语义在真实 LLM 下成立",
+          "status": "done",
+          "note": "factory-5259cd09：status=done，3/3 completed（attempts=1，stop_reason=verified），0 infra_failure。task_start×3 间隔 9.6ms（真实并发）；task_done×3 主循环串行落账；幂等键 7 条 0 重复；墙钟 908s < 1200s watchdog。判定四项标准全 ✅。"
+        },
+        "M144-C.5_regression_log": {
+          "title": "全量回归 + 证据留痕",
+          "status": "done",
+          "note": "pytest 1596 passed/0 failed（80.15s，较 M143 净增 10 来自 M144-B TUI）。TEST_LOG.md M144-C 节（前置/修复/实跑/并发与幂等证据/判定/KNOWN-ISSUE）+ STATE.json 本条目 + PLAN.md 验收标记。M144-A/M144-B 由并行子代理各自留痕。本轮未 commit（留待用户指示）。"
+        }
+      }
+    },
+    "M147": {
+      "title": "M147-A · 真实工厂 10-task E2E 推进 + 熔断（三轮尝试，架构级瓶颈固化）",
+      "status": "blocked",
+      "note": "用户指示「继续进行」推进 M147-A 真实工厂 E2E。三轮尝试迭代：v1（task_timeout 30min 撞墙）→ v2（修复 workdir 挂载点 /tmp→~/projects，但 LiteLLM 400「No connected db」卡死 16min）→ v3（修复 .env 未加载导致 worker 拿错 Bearer，LLM 调用恢复 200，但 GLM-5.2-fp8 enable_thinking=true 时输出全进 reasoning_content、content 空白，且 5.5 tok/s 推理速度 → 单 action 数千 token ≈ 12min+，单任务 5-10 action ≈ 2-3h 远超 1h 超时）。第三轮通过决定性诊断实测：2k prompt + max_tokens=200 → 36s 完成，content='       '（7 空格），reasoning_content 真实推理 200 token 全用完 finish=length。按 AGENTS.md §6 熔断原则（同一问题修复 ≥3 次仍失败）如实上报。已修复代码：scripts/e2e_m147_10tasks.py 增加 _load_dotenv_into_environ 等价于 start_proxy.sh 的 set -a/. .env，worker 才能拿到 LITELLM_MASTER_KEY 调 LiteLLM。架构级瓶颈不可代码修复：GLM-5.2-fp8 (744GB fp8) 在 exo 集群的推理吞吐 + reasoning_content 输出格式与 OpenAI 协议不兼容（OpenHands agent 期待 content 有实质内容，GLM 把内容写到 reasoning_content 直到 token 用完）。",
+      "tasks": {
+        "M147-A.1_infra_fix": {
+          "title": "基础设施修复（LiteLLM 端口/Docker/OpenHands 容器/.env 加载）",
+          "status": "done",
+          "note": "kill 旧 litellm（PID 35263/50566）→ start_proxy.sh 重启；colima stop+start 恢复 Docker daemon；docker start flipped-oh-canvas 恢复 agent-server（:8000/alive 200）；scripts/e2e_m147_10tasks.py 新增 _load_dotenv_into_environ 解决 worker Bearer 错配（此前 fallback EXO_API_KEY=dummy → LiteLLM 走 DB 校验路径 → 无 DB → 400）"
+        },
+        "M147-A.2_workdir_fix": {
+          "title": "E2E workdir 挂载点修复（/tmp → ~/projects）",
+          "status": "done",
+          "note": "OpenHands 容器挂载 $HOME/projects:/projects，/tmp 在容器内是独立 tmpfs，worker 写的文件宿主机 verify_cmd 读不到必败。e2e_m147_10tasks.py workdir 改到 ~/projects/flipped_m147_e2e{tag}"
+        },
+        "M147-A.3_roadmap_planner": {
+          "title": "Supervisor roadmap 规划真实跑通（2 个任务）",
+          "status": "done",
+          "note": "v3 实跑：factory_start + task_start 事件 22:51:16 同时落账，roadmap 任务数 2（task1_config: pyproject.toml+config.py+tests/test_config.py；task2_utils: utils.py+tests/test_utils.py），product_goal 中文正确识别为 Python CLI 项目（M147 修复的 _deterministic_roadmap 中文关键词「网页/落地页/首页」此前误判为 web 的回归已纳入测试覆盖）"
+        },
+        "M147-A.4_blocked_fuse": {
+          "title": "熔断：GLM-5.2-fp8 推理速度 + reasoning_content 格式架构级瓶颈",
+          "status": "blocked",
+          "note": "v3 实跑 12 分钟 OpenHands agent 仅 4 个初始事件（system_prompt/user_message/state_update×2），无 LLM 响应；诊断实测 GLM-5.2-fp8 5.5 tok/s + enable_thinking=true 时输出进 reasoning_content 而非 content；worker 单 action 需数千 token → 单任务 2-3h 远超 FLIPPED_TASK_TIMEOUT=3600。按 §6 熔断上报，可选方向：A) 拉长超时到 4h+ 跑一夜；B) 关 enable_thinking 牺牲质量换速度；C) LiteLLM proxy 层 merge reasoning_content→content；D) M147-A 标记 blocked-by-hardware 推进 M3/M4"
+        }
+      }
+    },
+    "M148": {
+      "title": "方向 D 收口：enable_thinking 开关 TDD 补全 + M3/M4 剩余项核查",
+      "status": "done",
+      "note": "用户选定方向 D（M147-A blocked-by-hardware + B 开关 + 转 M3/M4）。核查结论：M3 驾驭层六件套与 M4 MCP+RAG 全部 done（M141 侦察已确认，本轮复核无出入），无本机可自主推进的 M3/M4 编码项——真正剩余仅两项外部依赖门禁：Phase 3 壳（user-gated，需用户 Apple 证书）、M147-A E2E 重试（hardware-gated，需 Kimi-K2.7-Code 在 exo 恢复）。B 开关补 TDD：M147 落地 _thinking_extra_body 时零测试覆盖，tests/test_worker_knobs.py 新增 3 用例（默认 true 两入口一致 / true·1·yes·on·TRUE 启用 / 0·false·off·no 大小写不敏感+空白容忍禁用且顶层与 chat_template_kwargs 同关）。定向 6 passed；全量 pytest 1599 passed/0 failed（基线 1596+3）。用法：export FLIPPED_WORKER_ENABLE_THINKING=0 可关 thinking 换速度（牺牲 M131 质量），待 Kimi 恢复后重试 M147-A。证据见 TEST_LOG.md M148 节。",
+      "tasks": {
+        "M148.1_m3m4_audit": {
+          "title": "M3/M4 剩余项核查（不重复建设）",
+          "status": "done",
+          "note": "循环检测=M3.4 sidecar.py action_signature done；上下文压缩=M3.7+M5.2 done；子Agent派发=M3.6 orchestrator Supervisor/Worker/Overseer done；M4 MCP+RAG done（verify_m4.sh 47 passed）。剩余仅 user-gated（Phase 3 壳 Apple 证书）与 hardware-gated（M147-A 重试需 Kimi）两项外部门禁"
+        },
+        "M148.2_thinking_switch_tdd": {
+          "title": "FLIPPED_WORKER_ENABLE_THINKING 开关 TDD 补全",
+          "status": "done",
+          "note": "test_worker_knobs.py +3 用例（默认启用/显式启用/禁用值矩阵），定向 6 passed，全量 1599 passed/0 failed 零回归"
+        }
+      }
+    },
+    "M149": {
+      "title": "单模型模式切换（弃 Kimi 只用 GLM-5.2-fp8）+ exo IP 漂移修复 + tool-calling 契约测试",
+      "status": "doing",
+      "note": "用户决策：K2.7 不稳定且能力不比 GLM 强，先只跑 GLM-5.2-fp8。排障中发现真正根因不止 Kimi——exo 节点 macstudio01 的 Tailscale IP 已从 100.64.201.37 漂移（tailnet 中不存在，ping 100% 丢包），导致 LiteLLM 全链路 HTTP 000。工程化修复：所有关键路径改用 MagicDNS 主机名 studio01-1（免疫 IP 漂移）。",
+      "tasks": {
+        "M149.1_single_model_config": {
+          "title": "LiteLLM/model_router/.env 单模型对齐 + MagicDNS 修复",
+          "status": "done",
+          "note": "config.yaml architect=coder=GLM-5.2-fp8 + api_base→http://studio01-1:52415/v1；start_proxy.sh NO_PROXY 加 .ts.net 后缀；model_router.py DEFAULT_EXO_URL→MagicDNS + coder/supervisor/overseer/monitor 默认模型→GLM-5.2-fp8；.env FLIPPED_CODER_MODEL→GLM-5.2-fp8（均注释 Kimi 回退路径）。重启 proxy 后双别名 curl 验证 'pong' 且 reasoning=None（enable_thinking:false 生效）"
+        },
+        "M149.2_toolcall_contract_tdd": {
+          "title": "GLM tool-calling 契约测试入回归网",
+          "status": "done",
+          "note": "tests/test_toolcall_contract.py 新增 4 例（双别名×结构化 tool_calls 断言+content 无未解析残留），_litellm_reachable 门控同既有模式；实跑 4/4 passed(9.75s)。全量 pytest 1601 passed + 2 DDG 外网环境性失败（Clash 未运行，直连/代理均 000）→ 按仓库既有门控模式加 _ddg_reachable skipif（非放宽断言）；vitest 64/64、console build 绿"
+        },
+        "M149.3_m147a_e2e_rerun": {
+          "title": "M147-A 10-task E2E 重跑（GLM 单模型 + thinking off + temperature=0）",
+          "status": "blocked",
+          "note": "v6 运行（FLIPPED_WORKER_ENABLE_THINKING=0 FLIPPED_E2E_MP=1）：planner 正常出 roadmap、task1 派发成功、OpenHands run() 200，但 worker 首个 LLM 调用（OpenHands 大系统 prompt，~15-25k tokens）从 07:35 起 20+ 分钟零字节返回（nettop 采样 proxy 流量冻结）。二次 run() 07:52 同样挂死。排除项：proxy→exo 链路健康（07:57 pong 2.3s）、thinking on/off 均挂、3k/12k tokens 新 prompt 均挂死、最终连 pong 也 90s 超时 → 判定 exo GLM-5.2-fp8 实例（MlxJaccl TP=2, 78层, 790GB）被大 prompt 请求逐步压跨（内存/KV 耗尽式 wedge），控制面活、数据面全挂。已 kill E2E 并 DELETE 卡死实例 + place_instance 触发重载。"
+        },
+        "M149.4_temperature_fix": {
+          "title": "GLM-5.2-fp8 temperature=0 稳定性修复",
+          "status": "done",
+          "note": "openhands_worker.py LLM 构造加 temperature=0.0；infra/litellm/config.yaml 两别名均加 temperature: 0.0（此前 fp8 在非零 temperature 下长序列生成数值不稳定→乱码 token 流）。契约测试 temperature=0 下 4/4 通过"
+        },
+        "M149.5_exo_wedge_recovery": {
+          "title": "exo GLM-5.2-fp8 实例 wedge 恢复 + prompt 规模悬崖定位",
+          "status": "done",
+          "note": "DELETE /instance/{id} 卸载卡死实例（command 384e34f8）→ POST /place_instance {model_id:GLM-5.2-fp8, instance_meta:MlxJaccl, min_nodes:2}（command b1fce357）。790GB 双节点重载中。重载后必须先做 prompt 规模悬崖二分（1k/2k/4k/8k/16k, stream 观测首 token），确认 OpenHands 大 prompt 可行后才允许重跑 E2E，否则会再次压跨新实例"
+        },
+        "M149.6_gibberish_rootcause": {
+          "title": "GLM 乱码根因锁定（thinking on 必乱码）+ worker 默认关 thinking",
+          "status": "done",
+          "note": "E2E v7 乱码 FAIL 后跑 debug_glm_replay_oh.py 六变体矩阵（真实 OH 14k SP + OH 风格 tools，temperature=0）：A(stream,off)=乱码 B(非stream,off)=✅13s合法tool_call C(stream,on)=乱码 D(stream,off,2kSP)=✅ E(stream,off,无tools)=✅ F(非stream,on)=乱码。两个独立触发条件：①thinking on 必乱码（与 stream 无关，v7 正中）；②thinking off+stream+长SP+tools 乱码。唯一稳定路径=thinking off+非 stream（OH SDK LLM 默认 stream=False）。修复：_thinking_extra_body 默认 true→false（允许列表语义）；test_worker_knobs 改 test_thinking_default_disabled；E2E 脚本显式 FLIPPED_WORKER_ENABLE_THINKING=0。定向 6 passed。推断 exo 端 thinking 模板路径与 streaming 采样路径均有缺陷（infra 级）"
+        },
+        "M149.7_e2e_v8_hardening": {
+          "title": "E2E v8 工程化修复（worktree git init / MP=1 并发豁免 / watchdog 穿透）",
+          "status": "done",
+          "note": "v8 暴露三类工程缺陷（非模型问题）：①workdir 非 git 仓库/无 commit → worktree_create_failed 循环报错（worktree_path 为空、任务隔离失效）；②MP=1 时并发证据检查误判 FAIL（串行派发必然间隔>60s）；③_WatchdogTimeout 继承 Exception 被工厂循环 except Exception 吞掉。修复：e2e 脚本 git init+空 commit；MP=1 豁免并发检查；_WatchdogTimeout 改 BaseException；WATCHDOG 默认 12h、单任务超时 3h（GLM-fp8 1-1.5h×2 裕量）"
+        },
+        "M149.8_exo_wedge_rescue": {
+          "title": "exo 数据面 wedge 根因（幽灵 DQ4plus loader 内存死锁）+ 集群救捞 + E2E v10 启动",
+          "status": "done",
+          "note": "E2E v9 前置探针 300s 无首 token ABORT，直连 exo 小请求 120s 零响应，但控制面报 RunnerRunning（控制面/数据面背离）。根因三层：①有人放置 GLM-5.2-DQ4plus-q8（464GB TP2，实例 7bb155ab 未注册进控制面→API 删不掉），其 loader 卡 RunnerLoading 29/78 硬死锁（fp8 790GB+DQ4 464GB=1254GB>两节点 1024GB，永不可能完成）；②loader fork 各吃 360-402GB RSS 100%CPU 空转，studio01 仅剩 104GiB；③fp8 实例任务队列被 2 个 Shutdown Pending 毒化，新请求全排队。救捞：SSH 杀双节点 loader fork（studio01 104→468GiB）→ DELETE 3c7388a2 → place_instance 重建（cb618885，runner 40s RunnerReady）→ 直连 6.5s/LiteLLM 6.7s 验证通过。SOP 固化：控制面 RunnerRunning≠可服务，必须实测数据面。E2E v10（_v10，MP=1，thinking off，12h watchdog）21:34 启动，探针通过，task1 21:37 active，日志 /tmp/m147_e2e_v10.log"
+        },
+        "M149.9_tool_schema_bisect": {
+          "title": "工具 schema 复杂度二分（debug_glm_tool_bisect.py R1-R7）",
+          "status": "done",
+          "note": "构造 7 档逐步加料：R1 2简单工具→R2+think/finish→R3 真实terminal(带security_risk枚举)→R4 真实file_editor(嵌套)→R5 双真实→R6+task_tracker嵌套数组→R7 全量5真实工具。短 SP 下全档位 OK，证明工具 schema 复杂度（security_risk 枚举/嵌套数组）本身不是乱码触发条件，矛头指向 SP 长度"
+        },
+        "M149.10_sp_cliff_13k": {
+          "title": "GLM-5.2-fp8 系统提示悬崖定位：>13k chars 工具调用生成退化",
+          "status": "done",
+          "note": "SP 长度二分实测：SP≤13000 chars 全量5真实工具 OK；SP=14089（OH 默认渲染）确定性乱码/超时——工具参数里漏出 arg_key/Jinja 模板碎片、decode 骤降至 ~0.6 tok/s。悬崖点 ~13k，OH 默认 SP 超出 ~1.1k。这是 v7/v9 乱码与挂死的共同上游：不是 exo wedge 也不是工具 schema，而是 fp8 长 SP 数值退化"
+        },
+        "M149.11_sp_trim_fix": {
+          "title": "SP 裁剪修复（14089→10886 chars）+ 真实路径 3/3 验证",
+          "status": "done",
+          "note": "openhands_worker.py agent_kwargs 加双开关：security_policy_filename=\"\"（裁安全策略段，flipped 自有 driving/safety.audit 兜底）+ system_prompt_kwargs={\"llm_security_analyzer\": False}（裁 SECURITY_RISK_ASSESSMENT 段）。裁剪后 SP=10886 chars，悬崖下余量 ~2.1k。debug_glm_replay_oh_real.py 用裁剪后真实 SP+真实 user msg+全量5工具连跑 3 次：3/3 合法 JSON tool_call，无乱码无超时"
+        },
+        "M149.12_fallback_loop_fix": {
+          "title": "v10 失败根因（LiteLLM fallback 互环放大）+ 去互环修复 + v11 重跑",
+          "status": "doing",
+          "note": "v10 task1 failed 真相（容器日志铁证）：exo 重建期上游返回空 body（'Expecting value: line 1 column 1'），coder 失败→fallback architect（单模型=同后端，同样失败）→再 fallback coder……互环×num_retries=2×timeout=600s，单次 LLM 调用拖 16min（20:56:30→21:12:12）才报 LLMServiceUnavailableError，task 被误判 failed。修复：infra/litellm/config.yaml 删除 fallbacks 互环（单模型下同后端 fallback 无意义，快速失败由 SDK num_retries=2 兜底；Kimi 恢复后改回跨模型单向降级 coder→architect）。proxy 已重启，coder 7s 返回 OK。E2E v11（_v11，MP=1，thinking off，12h watchdog）已启动，日志 /tmp/m147_e2e_v11.log"
+        }
+      }
     }
   },
   "architecture_decisions": [
@@ -2762,6 +3040,17 @@
       "status": "resolved",
       "resolution": "verify_b5.sh 增加 kill_port_owner(API_PORT/CONSOLE_PORT) 启动前清理占用; preview 加 --strictPort 让换端口变显性失败。复跑全绿(Playwright 1 passed + pytest 1531)。",
       "owner": "已解决(2026-07-18)"
+    },
+    {
+      "id": "KI-20260721-m147a-glm-bottleneck",
+      "date": "2026-07-21",
+      "severity": "hardware-blocker",
+      "title": "M147-A 真实工厂 E2E 熔断：GLM-5.2-fp8 推理速度 + reasoning_content 输出格式架构级瓶颈",
+      "detail": "三轮实跑（v1 task_timeout 撞墙 → v2 workdir 挂载点修复 → v3 .env 加载修复后 LLM 调用恢复 200）后实锤：GLM-5.2-fp8 在 exo 集群推理 5.5 tok/s，且 enable_thinking=true 时输出全进 reasoning_content（content 空白），OpenHands agent 单 action 需数千 token → 单任务 2-3h 远超 1h 超时。按 AGENTS.md §6 熔断（同一问题修复 ≥3 次）。代码侧已修尽（infra/workdir/.env/roadmap 规划均真实跑通），瓶颈在模型推理层，非代码可修。",
+      "status": "open",
+      "unblock_condition": "Kimi-K2.7-Code 在 exo 集群恢复 LAUNCH（worker 角色回到 coder 别名，GLM 仅承担 planner/overseer）；届时设 FLIPPED_WORKER_ENABLE_THINKING=true 重跑 scripts/e2e_m147_10tasks.py",
+      "mitigations": "M148 已落地 FLIPPED_WORKER_ENABLE_THINKING env 开关（默认 true 保持 M131 质量；设 0 可关 thinking 换速度，但 GLM 单模型 5.5 tok/s 仍慢，仅作应急）。备选未采纳：A) 超时拉长 4h+ 跑一夜；C) LiteLLM proxy merge reasoning_content→content",
+      "owner": "blocked-by-hardware（待 Kimi 恢复）"
     }
   ],
   "background_jobs": [
