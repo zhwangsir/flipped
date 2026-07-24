@@ -458,77 +458,217 @@ OrchestratorFn = Callable[[FactoryTask, FactoryState], TaskResult]
 def _deterministic_roadmap(product_goal: str, cwd: str) -> list[FactoryTask]:
     """确定性 roadmap fallback：GLM 不可用时基于 product_goal 生成有意义的任务列表。
 
-    M50 增强：从 3 个基础任务扩展到 8 个，覆盖更多 UI 维度，
-    让 GLM 不可用时工厂也能持续迭代产出丰富的页面。
-    每个任务有真实验收命令（文件内容检查），不是无意义的 'true'。
+    根据目标类型自动选择任务模板：
+    - Python CLI/工具/模块 → 生成 Python 相关任务
+    - Web/UI/页面/HTML → 生成 HTML/CSS 相关任务
     """
+    goal_lower = (product_goal or "").lower()
     goal_short = product_goal[:30] if product_goal else "产品"
     safe_cwd = cwd.replace("'", "\\'")
+
+    is_python = any(k in goal_lower for k in ("python", "cli", "工具", "模块", "api", "后端"))
+    is_web = any(k in goal_lower for k in ("html", "web", "页面", "ui", "网站", "前端", "网页", "落地页", "首页"))
+
+    if is_python:
+        return [
+            FactoryTask(
+                id="det-task-1",
+                description=f"创建项目结构（{goal_short}）：__init__.py、pyproject.toml、README.md",
+                verify_cmd=[
+                    f"python -c \"import os; assert os.path.isfile('{safe_cwd}/pyproject.toml'), 'pyproject.toml not found'\""
+                ],
+                feedback="(确定性 fallback: 创建 Python 项目基础结构)",
+            ),
+            FactoryTask(
+                id="det-task-2",
+                description="创建配置管理模块（config.py）：支持 JSON 配置文件读写",
+                verify_cmd=[
+                    f"python -c \"import config; assert hasattr(config, 'load_config'), 'config module missing'\""
+                ],
+                feedback="(确定性 fallback: 创建配置管理模块)",
+            ),
+            FactoryTask(
+                id="det-task-3",
+                description="创建命令行解析模块（cli.py）：使用 argparse 实现子命令",
+                verify_cmd=[
+                    f"python -c \"import cli; assert hasattr(cli, 'parse_args'), 'cli module missing'\""
+                ],
+                feedback="(确定性 fallback: 创建命令行解析模块)",
+            ),
+            FactoryTask(
+                id="det-task-4",
+                description="创建主入口（main.py）：整合所有模块，提供统一 CLI 入口",
+                verify_cmd=[
+                    f"python -c \"import main; assert hasattr(main, 'main'), 'main module missing'\""
+                ],
+                feedback="(确定性 fallback: 创建主入口)",
+            ),
+            FactoryTask(
+                id="det-task-5",
+                description="创建测试套件（tests/）：每个模块配独立 pytest 测试文件",
+                verify_cmd=[
+                    f"python -c \"import os; assert os.path.isdir('{safe_cwd}/tests'), 'tests dir missing'\""
+                ],
+                feedback="(确定性 fallback: 创建测试套件)",
+            ),
+            FactoryTask(
+                id="det-task-6",
+                description="创建日志模块（logging.py）：结构化日志输出、日志级别",
+                verify_cmd=[
+                    f"python -c \"import logging; assert hasattr(logging, 'setup_logger'), 'logging module missing'\""
+                ],
+                feedback="(确定性 fallback: 创建日志模块)",
+            ),
+            FactoryTask(
+                id="det-task-7",
+                description="创建 HTTP 客户端模块（http_client.py）：超时配置、重试机制",
+                verify_cmd=[
+                    f"python -c \"import http_client; assert hasattr(http_client, 'request'), 'http_client module missing'\""
+                ],
+                feedback="(确定性 fallback: 创建 HTTP 客户端模块)",
+            ),
+            FactoryTask(
+                id="det-task-8",
+                description="创建数据验证模块（validation.py）：数据格式校验、错误处理",
+                verify_cmd=[
+                    f"python -c \"import validation; assert hasattr(validation, 'validate'), 'validation module missing'\""
+                ],
+                feedback="(确定性 fallback: 创建数据验证模块)",
+            ),
+        ]
+
+    if is_web:
+        return [
+            FactoryTask(
+                id="det-task-1",
+                description=f"创建 index.html 基础结构（{goal_short}）：lang/meta viewport/header/main/footer",
+                verify_cmd=[
+                    f"python -c \"import os; assert os.path.isfile('{safe_cwd}/index.html'), 'index.html not found'\""
+                ],
+                feedback="(确定性 fallback: 创建基础 HTML 结构)",
+            ),
+            FactoryTask(
+                id="det-task-2",
+                description="添加 CSS 变量系统（:root --color-* 变量、配色不超过 5 种）",
+                verify_cmd=[
+                    f"python -c \"f=open('{safe_cwd}/index.html'); c=f.read(); assert ':root' in c or '--color' in c, 'no CSS variables'; f.close()\""
+                ],
+                feedback="(确定性 fallback: 添加 CSS 样式系统)",
+            ),
+            FactoryTask(
+                id="det-task-3",
+                description="添加 hero 首屏区块（主视觉标题 + CTA 按钮 + 副标题）",
+                verify_cmd=[
+                    f"python -c \"f=open('{safe_cwd}/index.html'); c=f.read(); assert '<button' in c or '<a ' in c, 'no interactive elements'; f.close()\""
+                ],
+                feedback="(确定性 fallback: 添加 hero 首屏区块)",
+            ),
+            FactoryTask(
+                id="det-task-4",
+                description="添加响应式布局（@media 断点、移动端适配）",
+                verify_cmd=[
+                    f"python -c \"f=open('{safe_cwd}/index.html'); c=f.read(); assert '@media' in c, 'no responsive breakpoints'; f.close()\""
+                ],
+                feedback="(确定性 fallback: 添加响应式布局)",
+            ),
+            FactoryTask(
+                id="det-task-5",
+                description="添加无障碍属性（aria-label、img alt、html lang、focus-visible）",
+                verify_cmd=[
+                    f"python -c \"f=open('{safe_cwd}/index.html'); c=f.read(); assert 'aria-' in c or 'alt=' in c, 'no a11y attributes'; f.close()\""
+                ],
+                feedback="(确定性 fallback: 添加无障碍属性)",
+            ),
+            FactoryTask(
+                id="det-task-6",
+                description="添加微交互动画（transition/transform/opacity，呼吸式动效）",
+                verify_cmd=[
+                    f"python -c \"f=open('{safe_cwd}/index.html'); c=f.read(); assert 'transition' in c or 'animation' in c, 'no animations'; f.close()\""
+                ],
+                feedback="(确定性 fallback: 添加微交互动画)",
+            ),
+            FactoryTask(
+                id="det-task-7",
+                description="添加交互组件状态（hover/focus/disabled/active 样式）",
+                verify_cmd=[
+                    f"python -c \"f=open('{safe_cwd}/index.html'); c=f.read(); assert ':hover' in c or ':focus' in c, 'no component states'; f.close()\""
+                ],
+                feedback="(确定性 fallback: 添加组件状态样式)",
+            ),
+            FactoryTask(
+                id="det-task-8",
+                description="添加语义内容区块（article/nav/section + h1-h3 标题层级）",
+                verify_cmd=[
+                    f"python -c \"f=open('{safe_cwd}/index.html'); c=f.read(); assert '<h1' in c or '<h2' in c, 'no heading hierarchy'; f.close()\""
+                ],
+                feedback="(确定性 fallback: 添加语义内容区块)",
+            ),
+        ]
 
     return [
         FactoryTask(
             id="det-task-1",
-            description=f"创建 index.html 基础结构（{goal_short}）：lang/meta viewport/header/main/footer",
+            description=f"创建基础项目结构（{goal_short}）：目录组织、README.md",
             verify_cmd=[
-                f"python -c \"import os; assert os.path.isfile('{safe_cwd}/index.html'), 'index.html not found'\""
+                f"python -c \"import os; assert os.path.isfile('{safe_cwd}/README.md'), 'README.md not found'\""
             ],
-            feedback="(确定性 fallback: 创建基础 HTML 结构)",
+            feedback="(确定性 fallback: 创建基础项目结构)",
         ),
         FactoryTask(
             id="det-task-2",
-            description="添加 CSS 变量系统（:root --color-* 变量、配色不超过 5 种）",
+            description="创建核心模块（core.py）：基础功能实现",
             verify_cmd=[
-                f"python -c \"f=open('{safe_cwd}/index.html'); c=f.read(); assert ':root' in c or '--color' in c, 'no CSS variables'; f.close()\""
+                f"python -c \"import os; assert os.path.isfile('{safe_cwd}/core.py'), 'core.py not found'\""
             ],
-            feedback="(确定性 fallback: 添加 CSS 样式系统)",
+            feedback="(确定性 fallback: 创建核心模块)",
         ),
         FactoryTask(
             id="det-task-3",
-            description="添加 hero 首屏区块（主视觉标题 + CTA 按钮 + 副标题）",
+            description="创建测试文件（test_core.py）：核心功能单元测试",
             verify_cmd=[
-                f"python -c \"f=open('{safe_cwd}/index.html'); c=f.read(); assert '<button' in c or '<a ' in c, 'no interactive elements'; f.close()\""
+                f"python -c \"import os; assert os.path.isfile('{safe_cwd}/test_core.py'), 'test_core.py not found'\""
             ],
-            feedback="(确定性 fallback: 添加 hero 首屏区块)",
+            feedback="(确定性 fallback: 创建测试文件)",
         ),
         FactoryTask(
             id="det-task-4",
-            description="添加响应式布局（@media 断点、移动端适配）",
+            description="创建配置文件（config.yaml）：项目配置管理",
             verify_cmd=[
-                f"python -c \"f=open('{safe_cwd}/index.html'); c=f.read(); assert '@media' in c, 'no responsive breakpoints'; f.close()\""
+                f"python -c \"import os; assert os.path.isfile('{safe_cwd}/config.yaml'), 'config.yaml not found'\""
             ],
-            feedback="(确定性 fallback: 添加响应式布局)",
+            feedback="(确定性 fallback: 创建配置文件)",
         ),
         FactoryTask(
             id="det-task-5",
-            description="添加无障碍属性（aria-label、img alt、html lang、focus-visible）",
+            description="创建文档（docs/）：项目文档目录",
             verify_cmd=[
-                f"python -c \"f=open('{safe_cwd}/index.html'); c=f.read(); assert 'aria-' in c or 'alt=' in c, 'no a11y attributes'; f.close()\""
+                f"python -c \"import os; assert os.path.isdir('{safe_cwd}/docs'), 'docs dir missing'\""
             ],
-            feedback="(确定性 fallback: 添加无障碍属性)",
+            feedback="(确定性 fallback: 创建文档目录)",
         ),
         FactoryTask(
             id="det-task-6",
-            description="添加微交互动画（transition/transform/opacity，呼吸式动效）",
+            description="创建工具函数（utils.py）：通用工具函数集合",
             verify_cmd=[
-                f"python -c \"f=open('{safe_cwd}/index.html'); c=f.read(); assert 'transition' in c or 'animation' in c, 'no animations'; f.close()\""
+                f"python -c \"import os; assert os.path.isfile('{safe_cwd}/utils.py'), 'utils.py not found'\""
             ],
-            feedback="(确定性 fallback: 添加微交互动画)",
+            feedback="(确定性 fallback: 创建工具函数)",
         ),
         FactoryTask(
             id="det-task-7",
-            description="添加交互组件状态（hover/focus/disabled/active 样式）",
+            description="创建示例（examples/）：使用示例目录",
             verify_cmd=[
-                f"python -c \"f=open('{safe_cwd}/index.html'); c=f.read(); assert ':hover' in c or ':focus' in c, 'no component states'; f.close()\""
+                f"python -c \"import os; assert os.path.isdir('{safe_cwd}/examples'), 'examples dir missing'\""
             ],
-            feedback="(确定性 fallback: 添加组件状态样式)",
+            feedback="(确定性 fallback: 创建示例目录)",
         ),
         FactoryTask(
             id="det-task-8",
-            description="添加语义内容区块（article/nav/section + h1-h3 标题层级）",
+            description="创建 Makefile：项目构建和运行命令",
             verify_cmd=[
-                f"python -c \"f=open('{safe_cwd}/index.html'); c=f.read(); assert '<h1' in c or '<h2' in c, 'no heading hierarchy'; f.close()\""
+                f"python -c \"import os; assert os.path.isfile('{safe_cwd}/Makefile'), 'Makefile not found'\""
             ],
-            feedback="(确定性 fallback: 添加语义内容区块)",
+            feedback="(确定性 fallback: 创建 Makefile)",
         ),
     ]
 
@@ -879,9 +1019,14 @@ def default_orchestrator_fn(task: FactoryTask, state: FactoryState) -> TaskResul
             adaptive_max_iter = 1
         else:
             adaptive_max_iter = 1
+        # M144-C 修复：verified = ok AND believe_done（M89）使任何新任务至少需要
+        # 2 轮迭代（第 1 轮派子任务，验收通过后第 2 轮 supervisor 才能 declare
+        # believe_done）。max_iter=1 对 fresh 任务是必熔断死锁——真实 e2e 中
+        # simple/medium 任务首试 100% circuit_breaker（验收其实已通过）。下限钳到 2。
+        adaptive_max_iter = max(2, adaptive_max_iter)
     except Exception:
         dynamic_loop_threshold = 3
-        adaptive_max_iter = 1
+        adaptive_max_iter = 2  # M144-C 同上，保底 2 防死锁
         complexity_score = 50.0
 
     # M134.1 — repo_map 注入 Supervisor:让 GLM 调度看见项目结构(技术栈/目录/关键文件),
@@ -906,6 +1051,11 @@ def default_orchestrator_fn(task: FactoryTask, state: FactoryState) -> TaskResul
         repo_map=state.repo_map_cache,
         max_iterations=adaptive_max_iter,
         loop_threshold=dynamic_loop_threshold,
+        # M3.2：GLM-5.2-fp8 窗口约束——orchestrator history 压缩阈值从默认
+        # 10000 降到 4000（≈10000 chars，匹配 ~11-12k 窗口），keep_recent
+        # 从 4 降到 2（只保留最近 2 条 history，减少 supervisor prompt 注入）。
+        max_context_tokens=int(os.environ.get("FLIPPED_ORCH_MAX_CONTEXT_TOKENS", "4000")),
+        keep_recent=int(os.environ.get("FLIPPED_ORCH_KEEP_RECENT", "2")),
         # M137：checkpoint 库收敛为统一库；任务间隔离由 thread_id 命名空间承担
         db_path=default_db_path(),
         thread_id=thread_id,

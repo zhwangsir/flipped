@@ -2,6 +2,50 @@
 
 > 命令 + 输出摘要 + 结论，追加写入（AGENTS.md §3）。
 
+## 2026-07-24 · M3 编排层分解 — worker 短会话 + orchestrator 压缩 + 窗口约束
+
+### 背景
+
+M149.20 修复了乱码三根因（ThinkTool 移除 + condenser NoOp + max_iterations=15），
+但 15 轮仍远超 GLM-5.2-fp8 经 exo 的 2-3 轮稳定窗口。M3 编排层分解进一步收紧：
+让 worker 单会话匹配实际窗口，让 orchestrator 更早压缩历史，让 supervisor
+拆出更小的子任务。
+
+### 修复
+
+```
+M3.1 worker max_iterations 15→5（openhands_worker.py）
+  GLM-5.2-fp8 稳定窗口 ~11-12k chars，固定开销~8.2k，留给多轮历史~3-4k ≈ 2-3 轮。
+  5 轮已是上限，复杂任务由 orchestrator 拆短子任务逐轮派发。
+
+M3.2 orchestrator history 压缩阈值收紧（factory_loop.py）
+  max_context_tokens 10000→4000（≈10000 chars，匹配 ~11-12k 窗口）
+  keep_recent 4→2（只保留最近 2 条 history，减少 supervisor prompt 注入）
+  env 可覆盖：FLIPPED_ORCH_MAX_CONTEXT_TOKENS / FLIPPED_ORCH_KEEP_RECENT
+
+M3.3 supervisor prompt 加窗口约束（orchestrator.py）
+  "【窗口约束】执行者(GLM-5.2-fp8)的稳定窗口仅 ~3 轮工具调用，
+   每个 subtask 必须在 3 步内可完成（如：写一个文件+运行测试）。
+   复杂目标拆成多个小 subtask 逐轮派发，不要一次给大任务。"
+```
+
+### 契约测试
+
+```
+PYTHONPATH=src .venv/bin/python -m pytest tests/test_worker_condenser.py \
+  tests/test_worker_knobs.py tests/test_worker_compact_sp.py \
+  tests/test_orchestrator.py tests/test_context_manager.py -v
+→ 45/45 PASSED (2.65s)
+
+PYTHONPATH=src .venv/bin/python -m pytest tests/ -q --ignore=tests/test_web_search.py
+→ 1613/1613 PASSED (107.62s)
+（test_web_search 跳过：DuckDuckGo SSL 握手超时，网络问题非代码问题）
+```
+
+**结论**：M3 编排层分解三修复落地，全量回归零失败。
+worker 单会话迭代数匹配实际窗口（5 vs 15），orchestrator history 更早压缩，
+supervisor 拆更小子任务。下一步：真实验证短会话下多轮无乱码。
+
 ## 2026-07-24 · M149.20 — 乱码根因三修复：ThinkTool 移除 + condenser NoOp + 短会话
 
 ### 背景（M149.19 决定性结论）

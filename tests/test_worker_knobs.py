@@ -10,12 +10,13 @@ def _worker(**kw):
 
 def test_defaults_unchanged(monkeypatch):
     """M131 质量优先：默认 timeout=3600s（1小时）；
-    M149.20：max_iterations=15（非 200，GLM-5.2-fp8 稳定窗口约束）。"""
+    M149.20：max_iterations=15（非 200，GLM-5.2-fp8 稳定窗口约束）；
+    M3.1：max_iterations=5（非 15，进一步匹配 2-3 轮窗口极限）。"""
     monkeypatch.delenv("FLIPPED_WORKER_TIMEOUT", raising=False)
     monkeypatch.delenv("FLIPPED_WORKER_MAX_ITERATIONS", raising=False)
     w = _worker()
     assert w.timeout == 3600.0
-    assert w.max_iterations == 15
+    assert w.max_iterations == 5
 
 
 def test_env_overrides(monkeypatch):

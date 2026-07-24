@@ -261,7 +261,7 @@ def _coerce_schema(data: dict, schema_cls):
     return schema_cls.model_validate(coerced)
 
 
-def _invoke_structured(llm, schema_cls, prompt: str, *, max_retries: int = 0):
+def _invoke_structured(llm, schema_cls, prompt: str, *, max_retries: int = 2):
     """带重试 + 原始响应兜底的结构化输出调用。
 
     GLM-5.2 经 exo 的 function calling 有已知兼容问题：
@@ -458,7 +458,10 @@ def _build_supervisor_prompt(state: OrchestratorState) -> str:
             "你是架构调度者。每轮三选一：给执行者下一步要做的【一个】自包含子任务(subtask)；"
             "或调一个 IDE 工具(ide_action)；若相信目标已达成则 believe_done=true。"
             "subtask 描述必须简洁（≤200字），只说做什么、不改什么文件，"
-            "不要重复设计约束（执行者已有 project_rules）。")
+            "不要重复设计约束（执行者已有 project_rules）。"
+            "【窗口约束】执行者(GLM-5.2-fp8)的稳定窗口仅 ~3 轮工具调用，"
+            "每个 subtask 必须在 3 步内可完成（如：写一个文件+运行测试）。"
+            "复杂目标拆成多个小 subtask 逐轮派发，不要一次给大任务。")
 
 
 class IdeActionSpec(BaseModel):

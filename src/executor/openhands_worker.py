@@ -199,13 +199,14 @@ class OpenHandsWorker:
         # M131 质量优先（用户要求：不追求速度，只追求质量和完整）：
         # - timeout 默认 3600s（1小时），给复杂任务充足时间
         # - M149.20 调整：max_iterations 默认 15（非 200）。
+        # - M3.1 进一步收紧：max_iterations 默认 5（非 15）。
         #   GLM-5.2-fp8 经 exo 稳定窗口 ~11-12k chars，固定开销(SP+tools)~8.2k，
-        #   留给多轮历史 ~3-4k chars ≈ 2-3 轮。15 轮已远超窗口极限，
-        #   超过 15 轮必然乱码。复杂任务由 orchestrator 拆短子任务派发。
+        #   留给多轮历史 ~3-4k chars ≈ 2-3 轮。5 轮已是上限，超过必乱码。
+        #   复杂任务由 orchestrator 拆短子任务派发（M3 编排层分解）。
         #   FLIPPED_WORKER_MAX_ITERATIONS 可覆盖。
         self.timeout = timeout if timeout is not None else float(
             os.environ.get("FLIPPED_WORKER_TIMEOUT", "3600"))
-        self.max_iterations = int(os.environ.get("FLIPPED_WORKER_MAX_ITERATIONS", "15"))
+        self.max_iterations = int(os.environ.get("FLIPPED_WORKER_MAX_ITERATIONS", "5"))
         # F8 实测缺陷:orchestrator 模式下 worker 一跑完就把会话状态设 done,
         # 覆盖了还在继续的外层循环(overseer/verify/下一轮)。False=子任务模式,不碰会话状态。
         self.manage_session_status = manage_session_status

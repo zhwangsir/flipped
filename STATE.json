@@ -1,8 +1,8 @@
 {
   "project": "flipped",
   "description": "接入本地 MLX 双模型(GLM-5.2 编排者 / Kimi-K2.7-Code 执行者)的 agentic 代码编辑器平台。fork Roo Code + 自定义驾驭层(强制验证/循环检测/上下文压缩/人工审批/子Agent/可观测性) + MCP 联网与外部能力。",
-  "updated": "2026-07-24 12:10:00",
-  "current_milestone": "M149.20 done：乱码根因三修复落地——1)ThinkTool默认移除（arg_key碎片决定性触发器，debug_glm_think_bisect.py对照实验确认）2)LLM condenser默认NoOp（数学不成立：固定开销2200tok+压缩调用2000tok>稳定窗口3300tok）3)max_iterations默认15（非200，匹配2-3轮窗口极限）。契约19/19+全量1616/1616通过。真实验证：无碎片/无泄漏/JSON完好，GLM代码质量有限（语法错误循环）为模型能力限制",
+  "updated": "2026-07-24 15:20:00",
+  "current_milestone": "M3 编排层分解 done：三修复落地——1)worker max_iterations 15→5（匹配 GLM-5.2-fp8 的 2-3 轮窗口极限）2)orchestrator history 压缩阈值 10000→4000 tokens + keep_recent 4→2（更早压缩，减少 supervisor prompt 注入）3)supervisor prompt 加窗口约束（每个 subtask 必须 3 步内可完成，复杂目标拆多个小 subtask 逐轮派发）。契约45/45+全量1613/1613通过",
   "key_facts": {
     "dev_host": "Apple M5 Max, 128GB RAM, 1.1TB 可用磁盘 — 开发/控制节点，非模型宿主",
     "model_cluster": "exo 集群 @ http://studio01-1:52415 (MagicDNS 主机名=macstudio01，免疫 Tailscale IP 漂移；旧裸 IP 100.64.201.37 已于 2026-07-22 失效)；公网 https://dgmt.top/exo (需 Bearer token)",

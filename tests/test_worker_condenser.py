@@ -63,11 +63,11 @@ def test_condenser_env_overrides(monkeypatch):
 
 
 def test_max_iterations_default_reduced(monkeypatch):
-    """M149.20：max_iterations 默认 15（非 200）——GLM-5.2-fp8 稳定窗口
+    """M3.1：max_iterations 默认 5（非 15/200）——GLM-5.2-fp8 稳定窗口
     ~11-12k chars，固定开销~8.2k，留给多轮历史~3-4k chars ≈ 2-3 轮。
-    15 轮已远超窗口极限，超过必然乱码。复杂任务由编排层拆短。"""
+    5 轮已是上限，复杂任务由编排层拆短。"""
     monkeypatch.delenv("FLIPPED_WORKER_MAX_ITERATIONS", raising=False)
-    assert _worker().max_iterations == 15
+    assert _worker().max_iterations == 5
 
 
 def test_max_iterations_env_override(monkeypatch):

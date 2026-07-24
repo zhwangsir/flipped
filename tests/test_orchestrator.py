@@ -428,6 +428,16 @@ def test_supervisor_prompt_forbids_rebuild_on_verify_failure():
     assert "严禁删除" in prompt or "禁止" in prompt
 
 
+def test_supervisor_prompt_window_constraint():
+    """M3.3：supervisor prompt 包含窗口约束——每个 subtask 必须 3 步内可完成。"""
+    from driving.orchestrator import _build_supervisor_prompt
+    state = {"goal": "g", "cwd": "/tmp", "repo_map": "", "project_rules": "",
+             "feedback": "", "context_summary": None}
+    prompt = _build_supervisor_prompt(state)
+    assert "窗口约束" in prompt
+    assert "3 步" in prompt
+
+
 if __name__ == "__main__":
     for fn in (test_happy_dispatch_work_oversee_verify, test_supervisor_believe_done_skips_worker,
                test_overseer_abort, test_overseer_replan_then_pass, test_forced_verify_retry,
