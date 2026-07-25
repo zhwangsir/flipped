@@ -79,3 +79,47 @@ def test_planner_prompt_contains_verify_cmd_rules():
     assert "verify_cmd" in src
     assert "单行" in src or "单元素" in src
     assert "禁止" in src
+
+
+def test_sanitize_bare_assert_wrapped_in_python_c():
+    """M156.12：裸 assert → python -c "assert ..."（assert 是 Python 关键字非 shell 命令）。
+
+    GLM planner 偶发生成裸 `assert "x" == "$(python hello.py)"` 作为 verify_cmd，
+    被 safety.is_safe_command 白名单拦截 → circuit_breaker → task failed。
+    包裹成 python -c 让 assert 语句合法执行（含 shell $() 替换的会失败但给出真实错误）。
+    """
+    from driving.factory_loop import _sanitize_verify_cmd
+
+    # 纯 Python 表达式的裸 assert → 包裹后能执行
+    result = _sanitize_verify_cmd(["assert os.path.isfile('hello.py')"])
+    assert result == ['python -c "assert os.path.isfile(\'hello.py\')"']
+
+    # 含 shell 替换的裸 assert → 包裹后执行会失败，但 safety 不拦截（可诊断）
+    result = _sanitize_verify_cmd(['assert "hello" == "$(python hello.py)"'])
+    assert result[0].startswith('python -c "assert ')
+    assert "safety" not in result[0]  # 不再被 safety 拦截
+
+
+def test_sanitize_python_c_with_assert_not_affected():
+    """M156.12：python -c 里已有的 assert 不受裸 assert 改写影响。"""
+    from driving.factory_loop import _sanitize_verify_cmd
+
+    # 已经是 python -c "...assert..." 的不改写
+    original = ['python -c "import calc; assert calc.add(1,2)==3"']
+    result = _sanitize_verify_cmd(original)
+    assert result == original
+
+    # python -m pytest ... 不受影响
+    original = ["python -m pytest tests/test_calc.py -q"]
+    result = _sanitize_verify_cmd(original)
+    assert result == original
+
+
+def test_planner_prompt_forbids_bare_assert():
+    """M156.12：planner prompt 必须含禁止裸 assert 的规则。"""
+    import inspect
+    from driving.factory_loop import default_planner
+
+    src = inspect.getsource(default_planner)
+    assert "裸 assert" in src
+    assert "python -c / python -m pytest / bash / test" in src

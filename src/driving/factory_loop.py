@@ -717,7 +717,11 @@ def default_planner(state: FactoryState) -> list[FactoryTask]:
         "['bash -c \"node -e \\\"assert(require(\\'./add\\')(1,2)===3)\\\"\"']\n"
         "4. 错误示例：['python -c \"def f():\\n  pass\\n\\nf()\" && pytest']（多行+连接，会熔断）\n"
         "5. 若需要多步验证，写成一条调用测试脚本的命令：['bash scripts/verify_task1.sh']\n"
-        "6. 禁止用裸 pytest 命令（沙箱 PATH 里没有 pytest 可执行文件）；必须用 python -m pytest。"
+        "6. 禁止用裸 pytest 命令（沙箱 PATH 里没有 pytest 可执行文件）；必须用 python -m pytest。\n"
+        "7. 禁止用裸 assert 命令（assert 是 Python 关键字不是 shell 命令，会被 safety 白名单拦截）。"
+        "verify_cmd 必须以 python -c / python -m pytest / bash / test 开头。\n"
+        "   错误示例：['assert \"hello\" == \"$(python hello.py)\"']（裸 assert 会熔断）\n"
+        "   正确示例：['python -c \"import subprocess; r=subprocess.run([\\'python\\',\\'hello.py\\'],capture_output=True,text=True); assert r.stdout.strip()==\\'hello\\'\"']"
     )
     try:
         rm = _invoke_structured(_make_llm("architect"), Roadmap, msg)
@@ -745,6 +749,10 @@ def _sanitize_verify_cmd(cmd: list[str]) -> list[str]:
     - 空数组 → ['true']（至少不阻塞循环）
     - 裸 `pytest` → `python -m pytest`（OpenHands 沙箱 PATH 里没有 pytest 可执行文件，
       T3 熔断的根因；用 python -m 走模块路径，只要 python 装了 pytest 就能跑）
+    - 裸 `assert ...` → `python -c "assert ..."`（M156.12：GLM 偶发生成裸 assert
+      作为 shell 命令，但 assert 是 Python 关键字不是 shell 命令，会被 safety
+      白名单拦截 → circuit_breaker。包裹成 python -c 让 assert 语句合法执行；
+      含 shell $() 替换的会失败但给出真实 SyntaxError，比 safety 拦截可诊断）
     """
     import re
 
@@ -760,6 +768,11 @@ def _sanitize_verify_cmd(cmd: list[str]) -> list[str]:
     joined = " ".join(joined.split())
     # 裸 pytest → python -m pytest（lookbehind 避免重复替换已正确的 `python -m pytest`）
     joined = re.sub(r"(?<!-m\s)pytest\b", "python -m pytest", joined)
+    # M156.12：裸 assert → python -c "assert ..."（assert 是 Python 关键字非 shell 命令）
+    # 只处理以 assert 开头的（避免误伤 python -c "...assert..." 里已有的）
+    if re.match(r"^assert\s+", joined):
+        inner = joined[len("assert"):].strip()
+        joined = f'python -c "assert {inner}"'
     return [joined]
 
 
