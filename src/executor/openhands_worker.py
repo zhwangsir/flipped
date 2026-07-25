@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import os
 import threading
+import time
 from typing import Any
 
 # 抑制 OpenHands SDK banner 与 litellm 远程 cost map 拉取超时警告

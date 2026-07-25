@@ -4896,3 +4896,124 @@ finish_reason: length  (reasoning 用完 200 token)
 
 E2E 长跑属于小时级 + 烧 token 操作，按 AGENTS.md §7「沙箱外副作用要审批」原则
 需用户确认是否启动 `scripts/e2e_m147_10tasks.py`。
+
+---
+
+## 2026-07-26 · M156.10 OpenHandsWorker `import time` 缺失修复 + 诊断脚本 proxy URL 修复
+
+### 背景
+
+M156 双模型恢复后，M147-A E2E v2 在 factory_loop planner 阶段卡住（5min 无新 LLM 调用）。
+按 §6 熔断原则停止，用最小诊断脚本 `scripts/diag_openhands_worker.py` 隔离根因：
+绕过 factory_loop 编排层，直接调 `OpenHandsWorker.run()` 跑最小任务（创建 hello.py）。
+
+### 根因定位（两个独立 bug 叠加）
+
+**Bug 1：`src/executor/openhands_worker.py` 缺 `import time`**
+
+```python
+# 修复前（line 8-9）：
+import os
+import threading
+from typing import Any   # ← 没有 import time
+
+# run() 方法 line 461/482 用到 time.monotonic()：
+_session_start = time.monotonic()   # ← NameError: name 'time' is not defined
+```
+
+`run()` 第一次访问 `time.monotonic()` 即抛 `NameError`，被 line 508 `except Exception` 捕获后 `raise` 重抛。
+诊断脚本首次运行即报：
+```
+NameError: name 'time' is not defined. Did you forget to import 'time'?
+```
+
+**Bug 2：诊断脚本错误覆盖 `OPENHANDS_PROXY_BASE_URL=localhost:4000`**
+
+```python
+# scripts/diag_openhands_worker.py 修复前（line 55-56）：
+# 诊断脚本在宿主机跑，强制 proxy 用 localhost（而非 host.docker.internal）
+os.environ["OPENHANDS_PROXY_BASE_URL"] = "http://localhost:4000/v1"
+```
+
+这个注释理解反了。`OPENHANDS_PROXY_BASE_URL` 是给**容器内 agent-server** 用的（`flipped-oh-canvas` 容器跑 agent-server），
+容器内 `localhost:4000` 指容器自己，连不到宿主机 LiteLLM。
+
+`model_router.resolve_worker_model_config()` line 118：
+```python
+proxy_runtime_url = os.environ.get("OPENHANDS_PROXY_BASE_URL", DEFAULT_WORKER_PROXY_URL)
+# DEFAULT_WORKER_PROXY_URL = "http://host.docker.internal:4000/v1"  ← 默认值才是对的
+```
+
+被覆盖后返回 `localhost:4000` → agent-server 容器内调 LiteLLM → `Connection error`。
+
+### 修复
+
+```python
+# src/executor/openhands_worker.py 修复后（line 8-11）：
+import os
+import threading
+import time              # ← 新增
+from typing import Any
+```
+
+```python
+# scripts/diag_openhands_worker.py 修复后（line 52-58）：
+os.environ["FLIPPED_WORKER_TIMEOUT"] = "300"
+os.environ["FLIPPED_WORKER_MAX_ITERATIONS"] = "5"
+# M156.10 修复：不覆盖 OPENHANDS_PROXY_BASE_URL。该变量是给容器内 agent-server
+# 用的，必须 host.docker.internal（容器视角）；之前误设 localhost:4000 导致
+# 容器内连不到宿主机 LiteLLM → Connection error。
+# resolve_worker_model_config 默认返回 DEFAULT_WORKER_PROXY_URL=host.docker.internal:4000。
+```
+
+### 容器内网络验证
+
+```
+docker exec flipped-oh-canvas sh -c 'curl ...'
+=== localhost:4000 ===            → 空响应（容器内 localhost 指容器自己，不通）
+=== host.docker.internal:4000 === → {"error":"No connected db."}（网络通，dummy key 认证失败）
+=== getent host.docker.internal === → 192.168.5.2  （host-gateway 已配，DNS 可解析）
+```
+
+用正确 master key 从容器内调 chat/completions 确认通：
+```
+curl http://host.docker.internal:4000/v1/chat/completions \
+  -H "Authorization: Bearer $LITELLM_MASTER_KEY" \
+  -d '{"model":"coder","messages":[{"role":"user","content":"say OK"}],"max_tokens":20}'
+→ {"choices":[{"message":{"content":" \"","reasoning_content":"..."}}],...}
+  （Kimi coder 路由正常，reasoning_content 在独立字段，未抢占 content 路径）
+```
+
+### 诊断脚本重跑结果（修复后）
+
+```
+[DIAG] resolve_worker_model_config('coder') → base_url=http://host.docker.internal:4000/v1, model=coder
+[DIAG] worker.base_url=http://host.docker.internal:4000/v1   ← 修复生效
+[DIAG] [0.0s] 调用 worker.run() ...
+
+# Kimi coder 执行流程（4 轮迭代，35.4s 完成）：
+轮1: pwd && ls -la                    （探索工作目录）
+轮2: cat > hello.py <<'EOF'           （创建文件）
+       print('hello world')
+       EOF
+轮3: python hello.py                  （验证，输出 hello world）
+轮4: FinishTool                       （报告完成）
+
+[DIAG] [35.4s] worker.run() 返回: {'status': 'ConversationExecutionStatus.FINISHED',
+                                  'events_count': 20,
+                                  'conversation_id': 'd2828945-...'}
+[DIAG] ✓ hello.py 已创建，内容:
+print('hello world')
+
+[DIAG] === 结论：OpenHandsWorker 层正常，问题在 factory_loop 编排层 ===
+```
+
+### 结论
+
+- **OpenHandsWorker 层完全正常**：Kimi coder 在 35.4s 内独立完成"创建+验证"任务，产出正确。
+- **M147-A E2E v2 卡住的直接根因**是 `import time` 缺失导致 `worker.run()` 抛 NameError。
+  factory_loop 层吞掉/重试该异常时进入卡住状态（具体机制待 factory_loop 层验证）。
+- **诊断脚本本身的 proxy URL bug** 是次要问题，已一并修复。
+- 注：诊断脚本 `status=⚠ UNEXPECTED STATUS` 是脚本 line 168 的小 bug
+  （检查 `=="finished"` 而实际返回 `"ConversationExecutionStatus.FINISHED"`），
+  不影响结论——worker 层确实成功了。
