@@ -5017,3 +5017,74 @@ print('hello world')
 - 注：诊断脚本 `status=⚠ UNEXPECTED STATUS` 是脚本 line 168 的小 bug
   （检查 `=="finished"` 而实际返回 `"ConversationExecutionStatus.FINISHED"`），
   不影响结论——worker 层确实成功了。
+
+---
+
+## 2026-07-26 · M156.11 factory_loop 冒烟测试（验证编排层不再卡住）
+
+### 背景
+
+M156.10 修复 `import time` 后，诊断脚本证明 OpenHandsWorker 层正常。
+但 M147-A v2 卡在 factory_loop planner 阶段——需验证**编排层**（planner 拆 roadmap
++ orchestrator 调 worker + verify 验收 + retry）是否真的能跑通，不再卡住。
+
+脚本：`scripts/smoke_factory_loop.py`（max_tasks=2, 简单 goal, 10min watchdog,
+auto_proposer=off）。
+
+### 执行结果
+
+```
+[SMOKE] 墙钟: 542.7s (9.0min)  超时: 否
+[SMOKE] factory status=FactoryStatus.done        ← 工厂正常结束！
+[SMOKE] roadmap 任务数: 2
+  task[0] task1: 创建 hello.py，带类型注解的函数返回 'hello world' 并在 main 中打印
+  task[1] task2: 创建 test_hello.py，使用 pytest 验证 hello.py 的输出
+
+[SMOKE] completed: 0  failed: 2
+[SMOKE] workdir 产出:
+  hello.py (134 bytes)  ← worker 真的创建了文件！内容正确：
+    def get_hello() -> str:
+        return 'hello world'
+    def main() -> None:
+        print(get_hello())
+    if __name__ == '__main__':
+        main()
+  FEATURE_CHECKLIST.json (1080 bytes)
+  PROGRESS.md (709 bytes)
+
+[SMOKE] ✗ FAIL：0 完成，2 失败
+  failed: task1 reason=circuit_breaker
+    feedback=验收命令退出非0: command blocked: command not in whitelist: assert
+```
+
+### 关键结论
+
+**✓ factory_loop 编排层完全正常，不再卡住**：
+- 9 分钟跑完整流程（planner → worker → verify → retry → circuit_breaker → done）
+- planner 用 GLM 成功拆解 2 个任务（hello.py + test_hello.py）
+- worker 用 Kimi coder 成功执行（hello.py 134 bytes，内容正确，带类型注解）
+- factory status=done（正常结束，非 stuck/paused/error）
+- 对比 M147-A v2：5min 无新 LLM 调用、无文件产出、CPU time 不增长 → 现在全通了
+
+**✗ verify 失败的根因（新发现，非 M156.10 范围）**：
+- GLM planner 生成了裸 `assert "..." == "$(python hello.py)"` 作为 verify_cmd
+- `assert` 不是 shell 命令，被 `safety.is_safe_command` 白名单拦截
+  （`SAFE_BASE_COMMANDS` 里有 python/pytest/test，无 assert）
+- `_sanitize_verify_cmd` 处理了裸 pytest/多行/多元素，但没处理裸 assert
+- 修复方向（待 M156.12）：
+  A) `_sanitize_verify_cmd` 检测裸 assert 并改写成 `python -c "..."`（但 shell `$(...)` 替换在 python -c 里不工作，改写难通用）
+  B) 改进 planner prompt 强约束 verify_cmd 必须以 `python -c`/`python -m pytest`/`bash` 开头
+  C) safety 白名单加 `assert`（治标，assert 命令执行仍会失败）
+
+### M156.10/M156.11 总结
+
+| 验证层 | 状态 | 证据 |
+|--------|------|------|
+| OpenHandsWorker 层 | ✓ 正常 | 诊断脚本：Kimi coder 35.4s 完成 hello.py |
+| factory_loop 编排层 | ✓ 不再卡住 | smoke test：9min 跑完全程，factory status=done |
+| verify 验收层 | ✗ assert 白名单 | 裸 assert 被拦截，需 M156.12 修复 |
+
+**M147-A v2 "factory_loop planner 阶段卡住"问题已解决**。根因是 `import time` 缺失
+导致 worker.run() 抛 NameError，factory_loop 层吞掉/重试时卡住。修复后编排层恢复。
+
+下一个阻碍：verify_cmd 的 assert 白名单问题（M156.12）。修完后可跑完整 M147-A E2E。

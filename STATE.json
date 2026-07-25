@@ -2,7 +2,7 @@
   "project": "flipped",
   "description": "接入本地 MLX 双模型(GLM-5.2 编排者 / Kimi-K2.7-Code 执行者)的 agentic 代码编辑器平台。fork Roo Code + 自定义驾驭层(强制验证/循环检测/上下文压缩/人工审批/子Agent/可观测性) + MCP 联网与外部能力。",
   "updated": "2026-07-26 03:39:01",
-  "current_milestone": "M156.10 done（OpenHandsWorker import time 缺失修复 + 诊断脚本 proxy URL 修正）。M147-A E2E v2 卡住根因已定位：openhands_worker.py 缺 import time 导致 run() 抛 NameError；诊断脚本另有个 OPENHANDS_PROXY_BASE_URL 错误覆盖 localhost（应留默认 host.docker.internal）。诊断脚本验证 Kimi coder 35.4s 完成 hello.py 任务，OpenHandsWorker 层正常。M147-A E2E 可重跑验证 factory_loop 层。全量门禁通过：py=1683 passed/2 skipped, fe=591 passed, tsc=0, build=ok。",
+  "current_milestone": "M156.11 done（factory_loop 冒烟测试验证编排层不再卡住）。M147-A v2 \"factory_loop planner 卡住\" 问题已彻底解决：根因是 import time 缺失，修复后 9min 跑完全程（planner→worker→verify→retry→circuit_breaker→done），worker 成功创建文件。新发现阻碍：verify_cmd 裸 assert 被 safety 白名单拦截（KI-20260726-verify-assert-whitelist），需 M156.12 修复后跑完整 M147-A E2E。全量门禁通过：py=1683 passed/2 skipped, fe=591 passed, tsc=0, build=ok。",
   "key_facts": {
     "dev_host": "Apple M5 Max, 128GB RAM, 1.1TB 可用磁盘 — 开发/控制节点，非模型宿主",
     "model_cluster": "exo 集群 @ http://studio01-1:52415 (MagicDNS 主机名=macstudio01，免疫 Tailscale IP 漂移；旧裸 IP 100.64.201.37 已于 2026-07-22 失效)；公网 https://dgmt.top/exo (需 Bearer token)",
@@ -3118,6 +3118,11 @@
           "title": "修复 import time 缺失 + 诊断脚本 proxy URL 错误覆盖",
           "status": "done",
           "note": "两个独立 bug 修复：\n1) src/executor/openhands_worker.py 补 import time（line 10）—— run() 方法 line 461/482 用 time.monotonic()。\n2) scripts/diag_openhands_worker.py 删除 OPENHANDS_PROXY_BASE_URL=localhost:4000 错误覆盖 —— 该变量是给容器内 agent-server 用的，必须 host.docker.internal；resolve_worker_model_config 默认返回正确的 host.docker.internal:4000。\n验证：诊断脚本重跑，Kimi coder 35.4s 完成 hello.py 创建+验证（4 轮迭代），产出正确。全量回归 py=1683/2skip/fe=591/tsc=0/build=ok。commit 5d6cbe7。"
+        },
+        "M156.11_smoke_test": {
+          "title": "factory_loop 冒烟测试：验证编排层不再卡住",
+          "status": "done",
+          "note": "scripts/smoke_factory_loop.py（max_tasks=2, 10min watchdog）。结果：9min 跑完全程，factory status=done，planner 拆 2 task，worker 成功创建 hello.py（134 bytes 内容正确）。verify 失败因裸 assert 被白名单拦截（见 KI-20260726-verify-assert-whitelist），非编排层问题。结论：M147-A v2 \"factory_loop planner 卡住\" 问题已解决，根因是 import time 缺失。"
         }
       }
     }
@@ -3338,7 +3343,7 @@
     },
     {
       "id": "KI-20260725-m149-e2e-arch-bottleneck",
-      "status": "open",
+      "status": "resolved",
       "severity": "P1",
       "title": "M149.3 E2E 10-task 长跑架构级瓶颈（GLM-fp8 单模型路径已穷尽工程修复）",
       "note": "v6/v8/v10/v11 多轮演进，每轮修复一个工程缺陷后下一轮暴露新缺陷。v10 修复 LiteLLM fallback 互环，单测全绿；v11 日志丢失无法确认结果。根因趋于「GLM-5.2-fp8 在 exo MlxJaccl TP=2 上的长 prompt 推理稳定性」架构级问题。【M154.2 监控】heartbeat.py 已加 Kimi 恢复检测，Kimi-K2.7-Code-4bit 恢复后自动写通知 reports/recovery_*.md，届时可切回双模型架构解除阻塞。",
@@ -3346,7 +3351,22 @@
         "M149",
         "M147"
       ],
-      "opened_at": "2026-07-25"
+      "opened_at": "2026-07-25",
+      "resolved_at": "2026-07-26",
+      "resolution": "M156 双模型架构恢复（coder=Kimi-K2.7-Code-4bit）+ M156.10 修复 OpenHandsWorker import time 缺失。M156.11 smoke test 验证 factory_loop 编排层 9min 跑完全程（planner→worker→verify→retry→circuit_breaker→done），不再卡住。架构级瓶颈解除。"
+    },
+    {
+      "id": "KI-20260726-verify-assert-whitelist",
+      "date": "2026-07-26",
+      "status": "open",
+      "severity": "P1",
+      "title": "verify_cmd 裸 assert 被 safety 白名单拦截（M147-A E2E 下一阻碍）",
+      "note": "M156.11 smoke test 发现：GLM planner 生成 verify_cmd 时偶发用裸 `assert \"...\" == \"$(python hello.py)\"`（assert 不是 shell 命令），被 safety.is_safe_command 的 SAFE_BASE_COMMANDS 白名单拦截 → verify circuit_breaker → task failed。worker 实际已正确创建文件（hello.py 134 bytes 内容正确），纯 verify 层问题。_sanitize_verify_cmd 处理了裸 pytest/多行/多元素但没处理裸 assert。修复方向：A) _sanitize_verify_cmd 检测裸 assert 改写 python -c（shell $() 替换难通用）；B) planner prompt 强约束 verify_cmd 必须以 python -c/python -m pytest/bash 开头；C) safety 白名单加 assert（治标）。修完后可跑完整 M147-A E2E。",
+      "related_milestones": [
+        "M147",
+        "M156"
+      ],
+      "opened_at": "2026-07-26"
     }
   ],
   "background_jobs": [
