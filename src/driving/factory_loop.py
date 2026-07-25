@@ -1785,7 +1785,19 @@ def run_factory_loop(
             design_style=design_style,
             design_context=build_design_brief(design_style, product_type=product_goal),
         )
+        # M150 修复：planner 阶段发 plan 事件，让前端看到规划进度
+        _emit(bus, "plan_roadmap", {
+            "factory_id": state.factory_id,
+            "status": "planning",
+            "goal": state.product_goal[:100],
+        })
         state.roadmap = planner(state)
+        _emit(bus, "plan_roadmap", {
+            "factory_id": state.factory_id,
+            "status": "planned",
+            "task_count": len(state.roadmap),
+            "tasks": [t.description[:60] for t in state.roadmap[:5]],
+        })
         # M102/M104: Skill 沉淀系统——新工厂自动加载最相似的历史 Skill（fail-open）
         # M104 升级：支持多 Skill 组合应用 + 自动淘汰低质量 Skill
         try:
@@ -1857,7 +1869,19 @@ def run_factory_loop(
                     task.status = TaskStatus.pending
         # 如果 roadmap 仍为空（如 API 先创建了初始状态），生成 roadmap
         if not state.roadmap:
+            # M150 修复：planner 阶段发 plan 事件，让前端看到规划进度
+            _emit(bus, "plan_roadmap", {
+                "factory_id": state.factory_id,
+                "status": "planning",
+                "goal": state.product_goal[:100],
+            })
             state.roadmap = planner(state)
+            _emit(bus, "plan_roadmap", {
+                "factory_id": state.factory_id,
+                "status": "planned",
+                "task_count": len(state.roadmap),
+                "tasks": [t.description[:60] for t in state.roadmap[:5]],
+            })
         state.status = FactoryStatus.running
         save_factory_state(state, db_path)
         _emit(bus, "factory_resumed", {"factory_id": state.factory_id})

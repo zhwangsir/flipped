@@ -6,11 +6,12 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 import uuid
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from driving.factory_loop import (
@@ -25,6 +26,8 @@ from driving.factory_loop import (
     run_factory_loop,
     save_factory_state,
 )
+
+log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/factories", tags=["factory"])
 
@@ -108,6 +111,8 @@ class _BusAdapter:
             "factory_error": EventType.error,
             "task_started": EventType.status,
             "task_ended": EventType.status,
+            # M150 修复：planner 阶段发 plan 事件，让前端看到规划进度
+            "plan_roadmap": EventType.plan,
         }
         et = type_map.get(event, EventType.message)
         try:
@@ -116,7 +121,9 @@ class _BusAdapter:
                 **payload,
             })
         except Exception:
-            pass
+            # fail-open 但留痕：桥失效不能再静默（M146 P1）
+            log.warning("factory event bridge emit failed: factory=%s event=%s",
+                        self._factory_id, event, exc_info=True)
 
 
 # ---------- 端点 ----------
@@ -173,14 +180,31 @@ async def create_factory(req: CreateFactoryRequest) -> FactorySummary:
 
 
 @router.get("", response_model=list[FactorySummary])
-async def list_factories_endpoint() -> list[FactorySummary]:
-    """列出所有工厂（按更新时间倒序）。"""
+async def list_factories_endpoint(
+    status: str | None = Query(None, description="按状态过滤(running/paused/done/error)"),
+    limit: int = Query(50, ge=1, le=200, description="最大返回条数"),
+    include_test: bool = Query(False, description="是否包含 E2E 测试工厂(product_goal 含'测试')"),
+) -> list[FactorySummary]:
+    """列出所有工厂（按更新时间倒序）。
+
+    M150 修复：默认过滤 product_goal 含"测试"的 E2E 测试工厂，避免污染真实列表；
+    支持按 status 过滤和 limit 限制。
+    """
     ids = list_factories(FACTORY_DB)
     out: list[FactorySummary] = []
     for fid in ids:
         st = load_factory_state(fid, FACTORY_DB)
-        if st:
-            out.append(_to_summary(st))
+        if st is None:
+            continue
+        # 默认过滤测试工厂（M150：E2E 测试工厂污染生产列表）
+        if not include_test and "测试" in st.product_goal:
+            continue
+        # 按 status 过滤
+        if status and st.status.value != status:
+            continue
+        out.append(_to_summary(st))
+        if len(out) >= limit:
+            break
     return out
 
 
@@ -330,6 +354,11 @@ async def resume_factory(factory_id: str) -> FactorySummary:
 
     task = asyncio.create_task(_run())
     _RUNNING[factory_id] = task
+
+    # M150 修复：立即把状态改回 running 并保存，避免返回 paused 让用户误以为没生效。
+    # 后台线程实际恢复循环后，updated_at 会被刷新；这里先落库保证 API 响应反映真实意图。
+    state.status = FactoryStatus.running
+    save_factory_state(state, FACTORY_DB)
 
     return _to_summary(state)
 

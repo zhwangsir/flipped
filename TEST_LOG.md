@@ -4215,3 +4215,88 @@ M3.3b prompt 强化**决定性生效**：supervisor 从"打包全目标"变成"�
 | 全量回归 | pytest tests/ (deselect 网络测试) | ✅ 1613/1613 passed |
 
 M3.3b 真实验证完美通过，可以提交。
+
+---
+
+## [2026-07-24] M150 · 7 场景体验反馈 P0 修复
+
+### 背景
+
+以真实用户身份对 :8011 后端做了 7 个差异化场景的真实 HTTP API 体验（新手导航/多文件项目/批量监控/调试恢复/审批门禁/MCP+RAG/远程可观测），发现 4 个 P0 + 3 个 P1 + 2 个 P2 问题。本轮修复全部 P0。
+
+### 修复清单（4 个 P0）
+
+#### 1. resume 时序 bug（api/factory.py）
+
+**问题**：`POST /factories/{id}/resume` 把 `resume_factory_loop` 丢到 `asyncio.to_thread` 后台跑，但立即 `load_factory_state` 返回——后台还没改 status，返回 paused。用户点 resume 看到还是 paused，会以为没生效重复点。
+
+**修复**：resume 端点在派发后台任务后，立即 `state.status = FactoryStatus.running; save_factory_state(state)` 再返回，保证 API 响应反映真实意图。
+
+**实测**：
+```
+resume 前 status: paused
+POST resume 响应 status: running   ← 修复前是 paused
+resume 后立即再查 status: done      ← 后台真实恢复完成
+```
+
+#### 2. metrics latency 全 0（metrics/collector.py + executor/openhands_worker.py）
+
+**问题**：`/metrics` 端点 `total_latency_ms=0, avg_latency_ms=0, avg_ttft_ms=0`——可观测性形同虚设。根因：`record_usage`(OpenHands worker 调用，无 LLMResult)只加 tokens 不加 latency。
+
+**修复**：
+- `MetricsCollector.record_usage` 加可选 `latency: float | None` 参数，传入时累加 `total_latency`
+- `openhands_worker` 在 `RemoteConversation` 创建前记 `_session_start = time.monotonic()`，会话结束后算 `_session_latency` 传给 `record_usage`
+
+**实测**：修复代码就位，新调用才会累计 latency（旧数据为 0 是预期）。
+
+#### 3. list_factories 测试数据污染（api/factory.py）
+
+**问题**：`GET /factories` 返回 15 个工厂，大量 "E2E 测试工厂（可安全删除）" 污染生产列表。
+
+**修复**：`list_factories_endpoint` 加 query 参数：
+- `status: str | None` 按状态过滤
+- `limit: int = 50` 分页
+- `include_test: bool = False` 默认过滤 product_goal 含"测试"的 E2E 工厂
+
+**实测**：
+```
+默认（应不含'测试'）: 总数 3，含'测试'的 0
+include_test=true:    总数 17，含'测试'的 14
+status=done 过滤:     done 12，非 done 0
+```
+
+#### 4. 工厂规划黑盒（driving/factory_loop.py + api/factory.py）
+
+**问题**：工厂创建后到 roadmap 生成之间是黑盒，用户无法判断 planner 在调 LLM 规划、还是卡死、还是失败。长时间无 roadmap 会被误判为挂死。
+
+**修复**：
+- `factory_loop.run_factory_loop` 在 `planner(state)` 调用前后发 `plan_roadmap` 事件（status=planning/planned，含 goal/task_count/tasks）
+- `_BusAdapter.type_map` 加 `plan_roadmap → EventType.plan` 映射
+
+**单测**：
+```python
+捕获事件数: 2
+plan_roadmap 事件数: 2
+  status=planning goal=plan 事件单测 tasks=0
+  status=planned goal= tasks=0
+plan_roadmap 事件单测 PASS
+```
+
+### 全量回归
+
+```
+pytest tests/ --deselect tests/test_web_search.py
+1608 passed, 5 skipped, 4 deselected in 69.74s
+```
+
+唯一失败是 `test_api_contract`（list_factories 加了 query 参数，契约变更），用 `FLIPPED_UPDATE_API_SNAPSHOT=1` 更新快照后通过。
+
+### P1/P2 待办（未修）
+
+| 优先级 | 场景 | 问题 |
+|---|---|---|
+| P1 | 1 | OpenAPI 无 `info.description`，端点零描述 |
+| P1 | 5 | chat 模式无审批门禁，用户不知；无 `safety_preview` |
+| P1 | 2 | detail 返回空字段全暴露，信噪比低 |
+| P2 | 6 | MCP 工具 schema 不可见 |
+| P2 | 1 | Session.mode 语义不显 |

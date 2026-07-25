@@ -458,6 +458,7 @@ class OpenHandsWorker:
             agent = Agent(**agent_kwargs)
             workspace = RemoteWorkspace(host=self.agent_host, working_dir=self.working_dir, api_key=self.api_key)
             with workspace:
+                _session_start = time.monotonic()
                 conversation = RemoteConversation(
                     agent=agent,
                     workspace=workspace,
@@ -476,11 +477,15 @@ class OpenHandsWorker:
                 final_state = conversation.state
                 status = getattr(final_state, "execution_status", None)
                 status_done = status == ConversationExecutionStatus.FINISHED
+                # M150 修复：记录 OpenHands 会话总耗时，汇入 metrics 延迟统计。
+                # conversation 无 per-LLM 时间戳，用整体会话耗时近似（含多轮 LLM+工具）。
+                _session_latency = time.monotonic() - _session_start
                 # F10 补全:Worker(Kimi)沙盒会话的 token 用量汇入全局统计(尽力而为)
                 try:
                     p, c, n = _sum_conversation_usage(final_state)
                     if p or c:
-                        COLLECTOR.record_usage(prompt_tokens=p, completion_tokens=c, calls=n)
+                        COLLECTOR.record_usage(prompt_tokens=p, completion_tokens=c, calls=n,
+                                               latency=_session_latency)
                 except Exception:  # noqa: BLE001 统计失败绝不影响任务
                     pass
                 if self.manage_session_status:

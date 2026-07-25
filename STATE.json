@@ -1,8 +1,8 @@
 {
   "project": "flipped",
   "description": "接入本地 MLX 双模型(GLM-5.2 编排者 / Kimi-K2.7-Code 执行者)的 agentic 代码编辑器平台。fork Roo Code + 自定义驾驭层(强制验证/循环检测/上下文压缩/人工审批/子Agent/可观测性) + MCP 联网与外部能力。",
-  "updated": "2026-07-24 21:15:00",
-  "current_milestone": "M3.3b supervisor 拆分真实验证+prompt强化 done：worker验证(scripts/verify_m149_condenser.py)确认退化第3轮开始(input~7K tokens,M3.1 max_iter=5 快速失败83s生效)+supervisor拆分验证(scripts/verify_m3_supervisor_split.py)暴露M3.3原始prompt缺陷(GLM把'3步'误解为'3个动作'打包全目标377字含config+test+pytest)→M3.3b强化prompt(明确'一个subtask只能涉及一个文件或一个命令'+禁止2+文件名+给出拆分示例)→强化后supervisor正确拆成单文件subtask(260字仅config.py,rationale'后续轮次再写测试')。契约2passed+全量1613/1613passed(4网络deselected)。退化模式=语义退化(token重复)非乱码,M3.3b让worker收到≤3轮可完成的单文件小subtask",
+  "updated": "2026-07-24 22:00:00",
+  "current_milestone": "M150 P0 修复 done(7场景体验反馈)：1)resume 时序 bug(api/factory.py 立即置 running 落库,实测 resume 响应 status=running 修复前=paused) 2)metrics latency 全 0(collector.record_usage 加 latency 参数+openhands_worker 记 _session_start 会话耗时) 3)list_factories 污染(默认过滤product_goal 含'测试'的 E2E 工厂+status/limit 分页,实测默认 3 真实 vs include_test 17 含测试) 4)工厂规划黑盒(factory_loop planner 前后发 plan_roadmap 事件→_BusAdapter 映射 EventType.plan,单测捕获 2 事件 planning/planned)。契约 6 passed+全量 1608/1608 passed(4 网络 deselected,test_api_contract 快照更新)。7 场景体验发现 4P0+3P1+2P2,P0 全部修复,P1/P2 待后续。",
   "key_facts": {
     "dev_host": "Apple M5 Max, 128GB RAM, 1.1TB 可用磁盘 — 开发/控制节点，非模型宿主",
     "model_cluster": "exo 集群 @ http://studio01-1:52415 (MagicDNS 主机名=macstudio01，免疫 Tailscale IP 漂移；旧裸 IP 100.64.201.37 已于 2026-07-22 失效)；公网 https://dgmt.top/exo (需 Bearer token)",

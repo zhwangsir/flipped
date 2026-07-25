@@ -504,8 +504,54 @@
     },
     "/api/v1/factories": {
       "get": {
-        "description": "列出所有工厂（按更新时间倒序）。",
+        "description": "列出所有工厂（按更新时间倒序）。\n\nM150 修复：默认过滤 product_goal 含\"测试\"的 E2E 测试工厂，避免污染真实列表；\n支持按 status 过滤和 limit 限制。",
         "operationId": "list_factories_endpoint_api_v1_factories_get",
+        "parameters": [
+          {
+            "description": "按状态过滤(running/paused/done/error)",
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "按状态过滤(running/paused/done/error)",
+              "title": "Status"
+            }
+          },
+          {
+            "description": "最大返回条数",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "description": "最大返回条数",
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "是否包含 E2E 测试工厂(product_goal 含'测试')",
+            "in": "query",
+            "name": "include_test",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "是否包含 E2E 测试工厂(product_goal 含'测试')",
+              "title": "Include Test",
+              "type": "boolean"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -520,6 +566,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
         "summary": "List Factories Endpoint",
