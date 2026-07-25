@@ -167,3 +167,35 @@ done
 每次接管时：读 `STATE.json` → 报告当前进度与下一步计划 → 等待人类对计划的确认（首次）→ 进入 §2 工作循环。若 `STATE.json` 不存在，先初始化项目骨架与状态文件，从 M0 开始。
 
 > 备注：若你的本地模型对英文指令服从性更好，可把本文件整体翻译成英文使用；技术约束不变。
+
+---
+
+## 10. 集群依赖
+
+本项目依赖 `/Users/wangzhenyu/Desktop/ALLProject/.设备说明.md` 中记录的集群资源：
+
+| 依赖 | 设备 | 端口/路径 | 用途 |
+|---|---|---|---|
+| Euryale 70B (vLLM) | spark01 + spark02 | http://192.168.71.82:8000 | 后端 :8011 可使用的 LLM 后端（OpenAI 兼容协议）；spark02 不监听 :8000（Ray worker 正常行为） |
+| OpenClaw gateway | studio01-04 + openclaw01-04 | :18789 | LLM 备用接入（euryale provider → spark01:8000） |
+| EXO 集群 | studio01-04 | :52415 | 本地推理（GLM-5.2-fp8 / Kimi-K2.7-Code-4bit），M0 路线图备选方案 |
+| ComfyUI-LB | Workstation (192.168.71.127) | :8188 | 可选文生图/视频接入 |
+| NAS SMB | NAS (192.168.71.7) | :445 (smb://192.168.71.7) | 可选共享存储 |
+
+**注意事项**:
+- 不把基础设施地址/密钥硬编码进代码，通过环境变量 / `.env` 引用（且 `.env` 必须在 `.gitignore` 里）
+- 项目隔离：不修改其他项目代码
+- 本项目 M0 路线图原定 MLX 本地方案，集群 LLM（spark01:8000）为可选替代/补充后端
+
+---
+
+## 端口配置
+
+> 参考: /Users/wangzhenyu/Desktop/ALLProject/项目端口规划指南.md
+
+| 服务 | 端口 | 说明 |
+|------|------|------|
+| 前端 dev (console) | 5273 | 固定不变 |
+| 后端 (FastAPI) dev | 8011 | 固定不变 |
+
+flipped 端口已稳定运行，保持不变。

@@ -11,7 +11,9 @@ import { Settings } from "./components/Settings";
 import { Plugins } from "./components/Plugins";
 import { TerminalDrawer } from "./components/TerminalDrawer";
 import { FactoryPanel } from "./components/FactoryPanel";
+import { Assistant } from "./views/Assistant";
 import { AppProvider, useApp } from "./store";
+import { useHashRoute } from "./router";
 import { IconPlus, IconChat, IconGear, IconLayout } from "./icons";
 
 const SIDEBAR_MIN = 200;
@@ -37,9 +39,19 @@ function writeNum(key: string, v: number) {
 }
 
 function AppShell() {
-  const { sidebarCollapsed, showContext, mobileSidebarOpen, setMobileSidebarOpen, mobilePanelOpen, setMobilePanelOpen, createSession, setSettingsOpen } = useApp();
+  const { sidebarCollapsed, showContext, mobileSidebarOpen, setMobileSidebarOpen, mobilePanelOpen, setMobilePanelOpen, createSession, setSettingsOpen, setActiveView, setFactoryOpen } = useApp();
   const [sidebarW, setSidebarW] = useState(() => readNum("flipped-sidebar-w", 272));
   const [contextW, setContextW] = useState(() => readNum("flipped-context-w", 468));
+
+  // M151.5 · hash 路由是顶层视图的唯一真相源：
+  // '#/' → Assistant（默认）；'#/factory' → 既有工厂 shell（Conversation + FactoryPanel）。
+  // route 变化时同步 store（activeView / factoryOpen），让旧组件无需感知 hash 也能
+  // 正确渲染（FactoryPanel 读 factoryOpen 决定是否显示）。
+  const route = useHashRoute();
+  useEffect(() => {
+    setActiveView(route);
+    setFactoryOpen(route === "factory");
+  }, [route, setActiveView, setFactoryOpen]);
 
   useEffect(() => writeNum("flipped-sidebar-w", sidebarW), [sidebarW]);
   useEffect(() => writeNum("flipped-context-w", contextW), [contextW]);
@@ -66,7 +78,7 @@ function AppShell() {
       <TopBar />
       <div className="body">
         <Sidebar />
-        <Conversation />
+        {route === "factory" ? <Conversation /> : <Assistant />}
         {showContext ? <ContextPanel /> : <Launcher />}
         {!sidebarCollapsed && (
           <ResizeHandle

@@ -207,3 +207,18 @@
     --sidebar-w: 236px;
   }
 }
+
+/* ============ M151.4 · Assistant 视图作用域 token（Codex 风:温暖中性灰 + 双色强调） ============
+ * 不覆盖既有 :root[data-theme=...]，仅在 .view-assistant 作用域内追加变量。
+ * --assistant-indigo: 用户消息底色 + 发送按钮（8% alpha 用于气泡底）；
+ * --assistant-coral:  assistant 消息左边框 + 审批高亮。
+ */
+.view-assistant {
+  --assistant-bg: #212121;
+  --assistant-surface: #2f2f2f;
+  --assistant-border: #4d4d4d;
+  --assistant-text: #ececec;
+  --assistant-secondary: #8e8ea0;
+  --assistant-indigo: #8080FF;
+  --assistant-coral: #FF6F61;
+}

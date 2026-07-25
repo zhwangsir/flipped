@@ -25,6 +25,7 @@ import type {
   QualityTrendResponse,
   RcaInfo,
   VerifierVerdict,
+  AssistantTurn,
 } from './types';
 import { eventToStreamItem, detectServerUrl } from './types';
 import {
@@ -53,6 +54,11 @@ import {
   fetchFactoryQualityTrend as apiFetchFactoryQualityTrend,
   fetchFailureCounter,
   connectEvents,
+  createAssistantSession,
+  sendAssistantMessage as apiSendAssistantMessage,
+  fetchAssistantHistory,
+  approveAssistant as apiApproveAssistant,
+  rejectAssistant as apiRejectAssistant,
 } from './api';
 
 export type ConnectionState = 'idle' | 'connecting' | 'connected' | 'error';
@@ -150,6 +156,14 @@ interface AppState {
   setMobileSidebarOpen: (open: boolean) => void;
   mobilePanelOpen: boolean;
   setMobilePanelOpen: (open: boolean) => void;
+  // M151.4 · Assistant 视图状态
+  assistantTurns: AssistantTurn[];
+  assistantBusy: boolean;
+  assistantError: string | null;
+  sendAssistantMessage: (text: string, mode?: string) => Promise<void>;
+  approveAssistant: (sessionId: string) => Promise<void>;
+  rejectAssistant: (sessionId: string) => Promise<void>;
+  clearAssistantTurns: () => void;
 }
 
 const AppContext = createContext<AppState | null>(null);
@@ -174,7 +188,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [mcpServers, setMcpServers] = useState<McpServer[]>([]);
   const [selectedModel, setSelectedModel] = useState('coder');
   const [selectedMode, setSelectedMode] = useState('agent');
-  const [activeView, setActiveView] = useState('agent');
+  const [activeView, setActiveView] = useState('assistant');
   const [contextTab, setContextTab] = useState<ContextTab>('files');
   const [sidebarTab, setSidebarTab] = useState<SidebarTab>('chats');
   const [showContext, setShowContext] = useState(true);
@@ -207,6 +221,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // M131 — 移动端适配
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [mobilePanelOpen, setMobilePanelOpen] = useState(false);
+  // M151.4 · Assistant 视图状态
+  const [assistantTurns, setAssistantTurns] = useState<AssistantTurn[]>([]);
+  const [assistantBusy, setAssistantBusy] = useState(false);
+  const [assistantError, setAssistantError] = useState<string | null>(null);
   const clearRca = useCallback(() => {
     setRcaHistory([]);
     setLastVerifierVerdict(null);
@@ -215,6 +233,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const toggleTerminal = useCallback(() => setTerminalOpen((v) => !v), []);
   const prefillComposer = useCallback((text: string) => setComposerPrefill(text), []);
   const wsRef = useRef<{ close: () => void; send: (msg: unknown) => void } | null>(null);
+  const lastEventIdRef = useRef<string | null>(null);
 
   const toggleContext = useCallback(() => setShowContext((v) => !v), []);
   const openContext = useCallback((t: ContextTab) => {
@@ -473,6 +492,98 @@ export function AppProvider({ children }: { children: ReactNode }) {
     wsRef.current?.send({ type: 'approval_result', decision, reason });
   }, []);
 
+  // M151.4 · Assistant 视图:对话式代码助手后端(http + 历史折叠)
+  // 不复用 sendTask,因为后端有专门的 /assistant/sessions/{id}/messages 端点
+  // (折叠成 user/assistant/tool/approval turns,适合对话流呈现)。
+  const refreshAssistantHistory = useCallback(async (sid: string | null) => {
+    if (!sid) {
+      setAssistantTurns([]);
+      return;
+    }
+    try {
+      const turns = await fetchAssistantHistory(sid);
+      setAssistantTurns(turns);
+    } catch {
+      // fail-open:历史拉取失败保持原状,不阻塞发消息
+    }
+  }, []);
+
+  const sendAssistantMessageAction = useCallback(
+    async (text: string, mode?: string) => {
+      const trimmed = text.trim();
+      if (!trimmed) return;
+      let sid = selectedSessionId;
+      setAssistantBusy(true);
+      setAssistantError(null);
+      try {
+        if (!sid) {
+          const s = await createAssistantSession({ mode: (mode as 'auto' | 'agent' | 'chat' | 'plan') || 'agent' });
+          sid = s.id;
+          setSessions((prev) => [s, ...prev]);
+          setSelectedSessionId(s.id);
+        }
+        await apiSendAssistantMessage(sid, {
+          text: trimmed,
+          ...(mode ? { mode: mode as 'auto' | 'agent' | 'chat' | 'plan' } : {}),
+        });
+        // 步级流:发完后立刻拉一次历史,轮询会在下面接手
+        await refreshAssistantHistory(sid);
+      } catch (e) {
+        setAssistantError(e instanceof Error ? e.message : String(e));
+        throw e;
+      } finally {
+        setAssistantBusy(false);
+      }
+    },
+    [selectedSessionId, refreshAssistantHistory]
+  );
+
+  const approveAssistantAction = useCallback(
+    async (sessionId: string) => {
+      setAssistantBusy(true);
+      try {
+        await apiApproveAssistant(sessionId);
+        await refreshAssistantHistory(sessionId);
+      } catch (e) {
+        setAssistantError(e instanceof Error ? e.message : String(e));
+      } finally {
+        setAssistantBusy(false);
+      }
+    },
+    [refreshAssistantHistory]
+  );
+
+  const rejectAssistantAction = useCallback(
+    async (sessionId: string) => {
+      setAssistantBusy(true);
+      try {
+        await apiRejectAssistant(sessionId);
+        await refreshAssistantHistory(sessionId);
+      } catch (e) {
+        setAssistantError(e instanceof Error ? e.message : String(e));
+      } finally {
+        setAssistantBusy(false);
+      }
+    },
+    [refreshAssistantHistory]
+  );
+
+  const clearAssistantTurns = useCallback(() => setAssistantTurns([]), []);
+
+  // 选中会话变化 → 重拉助手历史(步级流,不是 token 流)
+  useEffect(() => {
+    refreshAssistantHistory(selectedSessionId);
+  }, [selectedSessionId, refreshAssistantHistory]);
+
+  // 任务运行中 → 轮询历史让对话流向前推进(2.5s 一次,廉价 GET)
+  useEffect(() => {
+    if (sessionStatus !== 'running' || !selectedSessionId) return;
+    const id = setInterval(() => {
+      refreshAssistantHistory(selectedSessionId);
+    }, 2500);
+    return () => clearInterval(id);
+  }, [sessionStatus, selectedSessionId, refreshAssistantHistory]);
+
   // M9 — 工厂循环
   const refreshFactories = useCallback(async () => {
     try {
@@ -502,7 +613,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const createFactory = useCallback(async (productGoal: string, cwd: string, maxTasks = 10) => {
-    const d = await apiCreateFactory(productGoal, cwd, maxTasks);
+    // 端点返回 FactorySummary（无 roadmap/completed/failed），必须回拉 detail 再入 state（M146 P0）
+    const s = await apiCreateFactory(productGoal, cwd, maxTasks);
+    const d = await apiGetFactoryDetail(s.factory_id);
     setFactoryDetail(d);
     setFactoryOpen(true);
     refreshFactories().catch(() => {});
@@ -533,12 +646,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const resumeFactory = useCallback(async (id: string) => {
-    const d = await apiResumeFactory(id);
+    // 端点返回 FactorySummary，回拉 detail（M146 P0）
+    await apiResumeFactory(id);
+    const d = await apiGetFactoryDetail(id);
     setFactoryDetail(d);
   }, []);
 
   const pauseFactory = useCallback(async (id: string) => {
-    const d = await apiPauseFactory(id);
+    // 端点返回 FactorySummary，回拉 detail（M146 P0）
+    await apiPauseFactory(id);
+    const d = await apiGetFactoryDetail(id);
     setFactoryDetail(d);
   }, []);
 
@@ -578,6 +695,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setDetectedServerUrl(null);
       setRcaHistory([]);
       setLastVerifierVerdict(null);
+      lastEventIdRef.current = null;
       return;
     }
 
@@ -596,8 +714,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setDetectedServerUrl(null);
     setRcaHistory([]);
     setLastVerifierVerdict(null);
+    lastEventIdRef.current = null;
 
     const appendEvent = (ev: ApiEvent) => {
+      if (ev.id) lastEventIdRef.current = ev.id;
       // M6.1 — 从事件流派生 ContextPanel 的真实上下文数据
       if (ev.type === 'terminal') {
         setTerminalBlocks((prev) => [
@@ -757,6 +877,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setError('WebSocket 连接失败');
       },
       onMessage: appendEvent,
+      getLastEventId: () => lastEventIdRef.current,
     });
 
     wsRef.current = ws;
@@ -857,6 +978,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setMobileSidebarOpen,
         mobilePanelOpen,
         setMobilePanelOpen,
+        assistantTurns,
+        assistantBusy,
+        assistantError,
+        sendAssistantMessage: sendAssistantMessageAction,
+        approveAssistant: approveAssistantAction,
+        rejectAssistant: rejectAssistantAction,
+        clearAssistantTurns,
       }}
     >
       {children}

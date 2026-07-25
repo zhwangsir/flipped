@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { useApp } from "../store";
+import { navigate } from "../router";
 import { useTheme } from "../hooks/useTheme";
 import { formatWhen } from "../types";
 import type { Session } from "../types";
@@ -13,11 +14,8 @@ import {
   IconFolder,
   IconChevronDown,
   IconGear,
-  IconGit,
   IconMore,
   IconEdit,
-  IconPin,
-  IconArchive,
   IconX,
   IconSun,
   IconMoon,
@@ -128,7 +126,8 @@ export function Sidebar() {
         className="thread-del"
         onClick={(e) => {
           e.stopPropagation();
-          deleteSession(s.id);
+          // M146：失败静默（会话仍在列表不假装删掉），与 openProject 同模式，防 unhandled rejection
+          deleteSession(s.id).catch(() => {});
         }}
         aria-label="删除对话"
       >
@@ -166,7 +165,7 @@ export function Sidebar() {
             title="在此项目新建对话"
             onClick={async () => {
               if (g.host && !isActive) await openProject(g.host).catch(() => {});
-              createSession("新对话");
+              createSession("新对话").catch(() => {}); // M146：防 unhandled rejection
               expand(g.name);
             }}
           >
@@ -184,16 +183,9 @@ export function Sidebar() {
             </button>
             {menuFor === g.name && (
               <div className="proj-menu" role="menu">
-                <button
-                  className="proj-menu-item"
-                  onClick={() => {
-                    setMenuFor(null);
-                    // TODO: 接入 store 的置顶项目方法（目前 store 无对应 API）
-                    console.log("[proj-menu] 置顶项目", g.name);
-                  }}
-                >
-                  <IconPin size={14} /> 置顶项目
-                </button>
+                {/* M146：置顶/工作树/重命名/归档/移除在后端无 API，原为 console.log 假按钮，
+                    “点了没用/假装成功”是信任破坏者——全部隐藏，仅保留有真实效果的项。
+                    待后端 API 落地后再逐项接线恢复。 */}
                 <button
                   className="proj-menu-item"
                   onClick={async () => {
@@ -203,52 +195,6 @@ export function Sidebar() {
                   }}
                 >
                   <IconFolder size={14} /> 在 Finder 中显示
-                </button>
-                <button
-                  className="proj-menu-item"
-                  onClick={() => {
-                    setMenuFor(null);
-                    // TODO: 接入工作树创建流程（需要 git worktree add 命令支持）
-                    console.log("[proj-menu] 创建永久工作树", g.name);
-                  }}
-                >
-                  <IconGit size={14} /> 创建永久工作树
-                </button>
-                <button
-                  className="proj-menu-item"
-                  onClick={() => {
-                    const next = window.prompt("重命名项目", g.name);
-                    if (next && next.trim() && next.trim() !== g.name) {
-                      // TODO: 接入 store 的 renameProject 方法（目前 store 无对应 API）
-                      console.log("[proj-menu] 重命名项目", g.name, "→", next.trim());
-                    }
-                    setMenuFor(null);
-                  }}
-                >
-                  <IconEdit size={14} /> 重命名项目
-                </button>
-                <button
-                  className="proj-menu-item"
-                  onClick={() => {
-                    if (window.confirm(`归档「${g.name}」下的对话并新建一个会话？`)) {
-                      createSession("新对话").catch(() => {});
-                    }
-                    setMenuFor(null);
-                  }}
-                >
-                  <IconArchive size={14} /> 归档对话
-                </button>
-                <button
-                  className="proj-menu-item danger"
-                  onClick={() => {
-                    if (window.confirm(`确定移除项目「${g.name}」？（不会删除磁盘文件）`)) {
-                      // TODO: 接入 store 的 removeProject 方法（目前 store 无对应 API）
-                      console.log("[proj-menu] 移除项目", g.name);
-                    }
-                    setMenuFor(null);
-                  }}
-                >
-                  <IconX size={14} /> 移除
                 </button>
               </div>
             )}
@@ -270,7 +216,7 @@ export function Sidebar() {
         <button
           className="side-nav-item"
           onClick={() => {
-            createSession("新对话");
+            createSession("新对话").catch(() => {}); // M146：防 unhandled rejection
             setNavView("threads");
           }}
         >
@@ -288,7 +234,7 @@ export function Sidebar() {
         <button className="side-nav-item" onClick={() => setPluginsOpen(true)}>
           <IconPuzzle size={16} /> 插件
         </button>
-        <button className="side-nav-item" onClick={() => setFactoryOpen(true)}>
+        <button className="side-nav-item" onClick={() => { navigate("factory"); setFactoryOpen(true); }}>
           <IconFactory size={16} /> 工厂
         </button>
       </nav>

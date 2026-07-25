@@ -1,11 +1,20 @@
 /**
  * GENERATED FILE — 请勿手改。
- * 来源: http://127.0.0.1:8123/openapi.json
+ * 来源: http://127.0.0.1:8151/openapi.json
  * 生成: node scripts/gen-api-types.mjs  (M136-B3, 零依赖)
  * 重新生成前需先启动 flipped 后端。
  */
 
 /* eslint-disable */
+export interface AssistantTurn {
+  "role": string;
+  "text"?: string | null;
+  "tools"?: Record<string, unknown>[];
+  "verdict"?: Record<string, unknown> | null;
+  "approval"?: Record<string, unknown> | null;
+  "created_at": string;
+}
+
 export interface BrowserRenderRequest {
   /** 要渲染的目标 URL（仅 http/https） */
   "url": string;
@@ -18,6 +27,19 @@ export interface CreateFactoryRequest {
   "cwd"?: string | null;
   /** 最大任务数 */
   "max_tasks"?: number;
+}
+
+export interface CreateSessionRequest {
+  "title"?: string;
+  "mode"?: string;
+  "cwd"?: string | null;
+  "model_alias"?: string;
+}
+
+export interface DecisionResponse {
+  "ok": boolean;
+  "session_id": string;
+  "decision": string;
 }
 
 export interface Event {
@@ -57,12 +79,24 @@ export interface HealthResponse {
   "error"?: string | null;
 }
 
+export interface MessageResponse {
+  "task_id": string;
+  "session_id": string;
+}
+
 export interface MetricsResponse {
   "llm"?: Record<string, unknown>;
   "context"?: Record<string, unknown>;
 }
 
 export type Role = "user" | "supervisor" | "worker" | "overseer" | "verify" | "system";
+
+export interface SendMessageRequest {
+  "text": string;
+  "mode"?: string | null;
+  "model"?: string | null;
+  "orchestrator"?: Record<string, unknown> | null;
+}
 
 export interface Session {
   "id": string;
@@ -104,7 +138,11 @@ export interface ValidationError {
 export interface paths {
   "/api/v1/factories": {
     get: {
-      params?: Record<string, never>;
+      params: {
+        "status"?: string | null;
+        "limit"?: number;
+        "include_test"?: boolean;
+      };
       requestBody: null;
       responses: {
         200: FactorySummary[];
@@ -181,6 +219,59 @@ export interface paths {
       requestBody: null;
       responses: {
         200: FactorySummary;
+      };
+    };
+  };
+  "/api/v1/assistant/sessions": {
+    post: {
+      params?: Record<string, never>;
+      requestBody: CreateSessionRequest;
+      responses: {
+        200: Session;
+      };
+    };
+  };
+  "/api/v1/assistant/sessions/{session_id}/messages": {
+    post: {
+      params: {
+        "session_id": string;
+      };
+      requestBody: SendMessageRequest;
+      responses: {
+        200: MessageResponse;
+      };
+    };
+  };
+  "/api/v1/assistant/sessions/{session_id}/history": {
+    get: {
+      params: {
+        "session_id": string;
+      };
+      requestBody: null;
+      responses: {
+        200: AssistantTurn[];
+      };
+    };
+  };
+  "/api/v1/assistant/sessions/{session_id}/approve": {
+    post: {
+      params: {
+        "session_id": string;
+      };
+      requestBody: null;
+      responses: {
+        200: DecisionResponse;
+      };
+    };
+  };
+  "/api/v1/assistant/sessions/{session_id}/reject": {
+    post: {
+      params: {
+        "session_id": string;
+      };
+      requestBody: null;
+      responses: {
+        200: DecisionResponse;
       };
     };
   };

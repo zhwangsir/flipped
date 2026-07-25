@@ -1,8 +1,8 @@
 {
   "project": "flipped",
   "description": "接入本地 MLX 双模型(GLM-5.2 编排者 / Kimi-K2.7-Code 执行者)的 agentic 代码编辑器平台。fork Roo Code + 自定义驾驭层(强制验证/循环检测/上下文压缩/人工审批/子Agent/可观测性) + MCP 联网与外部能力。",
-  "updated": "2026-07-24 22:00:00",
-  "current_milestone": "M150 P0 修复 done(7场景体验反馈)：1)resume 时序 bug(api/factory.py 立即置 running 落库,实测 resume 响应 status=running 修复前=paused) 2)metrics latency 全 0(collector.record_usage 加 latency 参数+openhands_worker 记 _session_start 会话耗时) 3)list_factories 污染(默认过滤product_goal 含'测试'的 E2E 工厂+status/limit 分页,实测默认 3 真实 vs include_test 17 含测试) 4)工厂规划黑盒(factory_loop planner 前后发 plan_roadmap 事件→_BusAdapter 映射 EventType.plan,单测捕获 2 事件 planning/planned)。契约 6 passed+全量 1608/1608 passed(4 网络 deselected,test_api_contract 快照更新)。7 场景体验发现 4P0+3P1+2P2,P0 全部修复,P1/P2 待后续。",
+  "updated": "2026-07-25 11:40:00",
+  "current_milestone": "M153 前端覆盖率补强 done：105 新测试（store 26 + Sidebar 36 + Settings 24 + TopBar 19），覆盖率 29.36%→51.57%（+22.21pp，超 50% 目标）。双模型就绪验证通过。心跳监控运行中。全量门禁通过：pytest 1639 / vitest 183 / tsc 0 / build ok。",
   "key_facts": {
     "dev_host": "Apple M5 Max, 128GB RAM, 1.1TB 可用磁盘 — 开发/控制节点，非模型宿主",
     "model_cluster": "exo 集群 @ http://studio01-1:52415 (MagicDNS 主机名=macstudio01，免疫 Tailscale IP 漂移；旧裸 IP 100.64.201.37 已于 2026-07-22 失效)；公网 https://dgmt.top/exo (需 Bearer token)",
@@ -2842,6 +2842,123 @@
           "status": "doing",
           "note": "v10 task1 failed 真相（容器日志铁证）：exo 重建期上游返回空 body（'Expecting value: line 1 column 1'），coder 失败→fallback architect（单模型=同后端，同样失败）→再 fallback coder……互环×num_retries=2×timeout=600s，单次 LLM 调用拖 16min（20:56:30→21:12:12）才报 LLMServiceUnavailableError，task 被误判 failed。修复：infra/litellm/config.yaml 删除 fallbacks 互环（单模型下同后端 fallback 无意义，快速失败由 SDK num_retries=2 兜底；Kimi 恢复后改回跨模型单向降级 coder→architect）。proxy 已重启，coder 7s 返回 OK。E2E v11（_v11，MP=1，thinking off，12h watchdog）已启动，日志 /tmp/m147_e2e_v11.log"
         }
+      },
+      "note_hardware_cleared": "2026-07-25: 双模型 exo 实测就绪（GLM-5.2-fp8 5.9s + Kimi-K2.7-Code-4bit 4.0s，工具调用解析正常），hardware block 已解除。M149 单模型配置（architect=coder=GLM）保持，coder faceoff 实证 GLM 编码能力优于 Kimi（4/4 vs 3/4，token 效率 2x）。"
+    },
+    "M151": {
+      "title": "代码助手应用（TUI + Web 双形态，参考 claudecode/opencode/Kimi Code，Web 套 Codex 视觉）",
+      "status": "done",
+      "note": "在既有驾驭层之上叠加交互式代码助手形态：assistant router（/api/v1/assistant/*）+ 审批 interrupt→resume 闭环 + 单模型 GLM fallback 钉测试 + Console Assistant 视图（Codex 配色）+ hash 路由（#/ 默认 Assistant / #/factory 工厂 shell）+ TUI AssistantApp。不需要打包，dev 模式跑 python -m src.tui.assistant + npm run dev。M149 单模型路线复用，无生产代码改动于 M151.3。",
+      "tasks": {
+        "M151.1_assistant_router": {
+          "title": "后端 assistant router（TDD 12 例）",
+          "status": "done",
+          "note": "src/api/assistant.py：POST /sessions /messages /approve /reject + GET /history；复用 store/bus/RUNNING_TASKS/_run_orchestrator/_run_chat；函数级 lazy import 避免循环；DecisionResponse 命名 response_model；_events_to_turns 纯函数折叠事件流。12 例全绿。"
+        },
+        "M151.2_approval_resume": {
+          "title": "审批 interrupt→resume 闭环（TDD 5 例）",
+          "status": "done",
+          "note": "orchestrator.build_orchestrator 加 on_approval_request 回调（interrupt 前发事件）；resume_orchestrated 加 resume_value 参数，用 tasks.interrupts 精确判定 interrupt vs crash 半跑态；assistant._resume_with_decision 接通真实 resume_orchestrated(resume_value=decision)。5 例全绿。"
+        },
+        "M151.3_single_model_pin": {
+          "title": "单模型 GLM fallback 钉测试（TDD 4 例）",
+          "status": "done",
+          "note": "tests/test_assistant_single_model.py：钉 _model_id_for_alias 全角色默认 GLM-5.2-fp8 / _make_llm 解析 GLM / _run_chat 传 GLM 给 _llm_chat / approve 端点单模型 env 通路。无生产代码改动——M149 已配置。4 例全绿，84 回归全绿。"
+        },
+        "M151.4_console_assistant_view": {
+          "title": "Console Assistant 视图 + Codex 配色（TDD 12 例）",
+          "status": "done",
+          "note": "console/src/views/Assistant.tsx：三栏 MessageStream+Composer+ContextPanel；user 右对齐 indigo 8% alpha / assistant 左对齐 coral 左边框；ToolCard 折叠卡 + ApprovalInline；tokens.css 追加 .view-assistant 作用域块（#212121/#8080FF/#FF6F61）；store 默认 activeView=assistant。Assistant.test/composer.test/tool-card.test 共 12 例全绿。"
+        },
+        "M151.5_hash_route": {
+          "title": "Console hash 路由 + 工厂视图保留（TDD 2 例）",
+          "status": "done",
+          "note": "console/src/router.ts：parseHash/useHashRoute/navigate（不引 react-router）；App.tsx 用 useHashRoute 驱动主区（route=factory→Conversation，else→Assistant）+ 同步 store；Sidebar 工厂按钮 + FactoryPanel 关闭按钮改用 navigate。App.test.tsx 2 例全绿，78 vitest 全绿。"
+        },
+        "M151.6_tui_assistant": {
+          "title": "TUI Assistant（src/tui/assistant.py，TDD 6 例）",
+          "status": "done",
+          "note": "AssistantTUIApp：StreamPane(RichLog) + ContextPane + InputBar + ApprovalOverlay；Codex 派生 ANSI 色（235/238/245/bright_blue/209）；WS loop 连 :8011；slash 命令 /clear /mode /help。tests/test_assistant_tui.py 6 例（Textual Pilot）全绿。python -m src.tui.assistant 可用。"
+        },
+        "M151.7_regression_verify": {
+          "title": "全量回归 + verify_assistant.sh + 状态留痕",
+          "status": "done",
+          "note": "scripts/verify_assistant.sh 6 步全绿：assistant 4 文件 pytest / console vitest 78 / tsc / vite build / 全量 pytest 1639 passed 7 skipped / 端到端 WS 事件通路。契约修复：DecisionResponse 命名模型 + history allowlist + api-types.d.ts 重生。"
+        }
+      }
+    },
+    "M152_cyclic_testing": {
+      "title": "系统性循环测试流程落地（TEST_PLAN.md + quality_gate.sh + loop_test.sh + check_shell_lint.sh）",
+      "status": "done",
+      "note": "用户指示建立系统性循环测试：4 测试阶段（L1 单元/L2 集成/L3 系统/L4 回归）+ 用例矩阵（后端 10 簇 + 前端 6 簇 + 缺口 5 项）+ 质量门禁（G0 shell lint / G1 pytest / G2 py cov / G3 vitest / G4 tsc / G5 build）+ 循环协议（连续 2 轮全绿提前收尾 / 单缺陷修 ≥3 次熔断）+ 缺陷跟踪格式。R1+R2 连续 2 轮全绿提前收尾：py_passed=1639 稳定 / py_coverage 82.84-82.89% / fe_passed=78（用例数）/ fe_lines_cov=29.36% / tsc 0 错 / build 成功。verify-post-fix 轮确认 fe_passed 解析修复（12→78，剥离 ANSI + 取 Tests 行）。D-0001 缺陷（$VAR<全角字符>陷阱复发 7 处）已 fixed + 加 G0 守卫根治。证据见 TEST_LOG.md 循环测试节、TEST_PLAN.md §6 当前指标表、DEFECT_LOG.md D-0001。",
+      "tasks": {
+        "M152.1_test_plan": {
+          "title": "TEST_PLAN.md 测试计划文档",
+          "status": "done",
+          "note": "4 测试阶段 + 用例矩阵 + 质量门禁标准（3.1 通过率/3.2 覆盖率 floor/3.3 缺陷门禁/3.4 退出码）+ 循环协议（单轮流程/预算/熔断）+ 缺陷格式 + 工具清单 + 当前指标表。"
+        },
+        "M152.2_quality_gate": {
+          "title": "scripts/quality_gate.sh 六门禁串联",
+          "status": "done",
+          "note": "G0 shell lint（M144-A 陷阱守卫）/ G1 pytest 全量 / G2 py coverage ≥80% / G3 vitest + 前端 thresholds / G4 tsc / G5 vite build。产出 quality_metrics.json。set -u 下用 Python 正则 + set -- 安全拆词解析。--quick 模式自动跳过 --cov 避免子集覆盖率误判。"
+        },
+        "M152.3_loop_driver": {
+          "title": "scripts/loop_test.sh 多轮驱动 + 趋势 + 熔断",
+          "status": "done",
+          "note": "默认 3 轮，连续 2 轮全绿提前收尾，单缺陷修 ≥3 次熔断，quality_metrics_history.jsonl 每轮追加，趋势汇总表。"
+        },
+        "M152.4_lint_guard": {
+          "title": "scripts/check_shell_lint.sh 陷阱守卫（M144-A 复发防护）",
+          "status": "done",
+          "note": "扫 scripts/*.sh 的 $VAR<非 ASCII> 模式，接入 G0 门禁。R1 中途发现 D-0001（7 处陷阱）→ 修复后 28 文件全绿。从此同类陷阱无法再悄然复发。"
+        },
+        "M152.5_cycle_execution": {
+          "title": "R1+R2 循环测试执行 + verify-post-fix",
+          "status": "done",
+          "note": "R1: 1639 passed / 82.89% cov / 78 vitest / 0 tsc / build ok ✅。R2: 1639 / 82.84% / 78 / 0 / ok ✅（连续 2 轮全绿提前收尾）。verify: fe_passed 解析修复后 78 准确 ✅。零回归、零新缺陷（D-0001 已 fixed）。"
+        }
+      }
+    },
+    "M153": {
+      "status": "done",
+      "title": "前端覆盖率补强 + 双模型就绪验证 + 心跳监控",
+      "subtasks": {
+        "M153.1": {
+          "status": "done",
+          "title": "store.tsx 测试（26 用例，0%→显著覆盖：UI状态/会话/MCP/Assistant/工厂/RCA）"
+        },
+        "M153.2": {
+          "status": "done",
+          "title": "Sidebar.tsx 测试（36 用例，0%→100% lines / 94.93% branches）"
+        },
+        "M153.3": {
+          "status": "done",
+          "title": "Settings.tsx 测试（24 用例，0%→98.77% lines）+ TopBar.tsx 测试（19 用例，0%→100% lines）"
+        },
+        "M153.4": {
+          "status": "done",
+          "title": "双模型就绪验证：GLM-5.2-fp8 + Kimi-K2.7-Code-4bit 工具调用解析均正常（M0 命根子达标）"
+        },
+        "M153.5": {
+          "status": "done",
+          "title": "心跳监控脚本 scripts/heartbeat.py（每 10 分钟扫描进度/偏差/阻碍，报告存 reports/）"
+        },
+        "M153.6": {
+          "status": "done",
+          "title": "全量回归 + 质量门禁验证（pytest + vitest + tsc + build）"
+        }
+      },
+      "coverage_before": {
+        "lines": 29.36,
+        "functions": 43.52,
+        "branches": 74.95,
+        "tests": 78
+      },
+      "coverage_after": {
+        "lines": 51.57,
+        "functions": 54.83,
+        "branches": 83.57,
+        "tests": 183
       }
     }
   },
@@ -2960,6 +3077,12 @@
       "decision": "双模型并行验证监督: worker(Kimi)产出代码后, GLM 与确定性 verifier(verify_cmd+design-lint+a11y) 经 ThreadPoolExecutor 并行对产物做语义验证(设计/结构/a11y/bug)。合并 det_ok AND glm_severity!=blocker; GLM 不可用/超时 fail-open 不阻塞。opt-in: FLIPPED_USE_PARALLEL_VERIFIER=1。跨模型族验证避免自偏(呼应 D15)。用户原话:'两个模型需要同时进行使用,一个用来跑代码的时候另外一个用来验证监督'。",
       "date": "2026-07-10",
       "approved_by": "用户"
+    },
+    {
+      "id": "D-coder-faceoff-20260725",
+      "title": "GLM-5.2-fp8 编码能力优于 Kimi-K2.7-Code-4bit（实证）",
+      "detail": "4 维度真实编码任务对比（基础算法/边界异常/多文件协作/bug修复），实际执行生成代码验证。GLM 4/4 通过、Kimi 3/4（T2 token 耗尽截断）。GLM 平均 259 tok vs Kimi 540 tok（2x 效率差）。fp8 量化精度优势 + 指令遵循更好。建议 coder 继续用 GLM，Kimi 价值在 MCP 工具调用而非纯代码生成。",
+      "date": "2026-07-25"
     }
   ],
   "known_issues": [

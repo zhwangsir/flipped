@@ -1,0 +1,31 @@
+# M151 循环测试 · Python 覆盖率配置
+# 跑法: PYTHONPATH=src .venv/bin/python -m pytest tests/ --cov=src --cov-report=term --cov-report=json:coverage.json
+[run]
+source = src
+branch = False
+omit =
+    src/__pycache__/*
+    */__init__.py
+    src/tools/web_search.py
+    src/mcp_server/*
+    src/rag/*
+    # 调试脚本不算覆盖率目标
+    scripts/debug_*
+
+[report]
+# 质量门禁：低于 fail_under 的整体覆盖率 → pytest 退出码非 0
+fail_under = 80
+show_missing = True
+skip_covered = False
+# 排除：调试入口、平台守卫、__main__ 块
+exclude_lines =
+    pragma: no cover
+    def __repr__
+    raise NotImplementedError
+    if __name__ == .__main__.:
+    if TYPE_CHECKING:
+    if sys\.platform
+    @overload
+
+[json]
+output = coverage.json

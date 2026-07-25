@@ -54,7 +54,7 @@ export function CommandPalette() {
       });
     });
     // 推荐
-    list.push({ id: 'new', section: '推荐', label: '新对话', icon: <IconEdit size={15} />, shortcut: '⌘N', run: () => { app.createSession('新对话'); close(); } });
+    list.push({ id: 'new', section: '推荐', label: '新对话', icon: <IconEdit size={15} />, shortcut: '⌘N', run: () => { app.createSession('新对话').catch(() => {}); close(); } });
     list.push({ id: 'searchfiles', section: '推荐', label: '搜索文件', icon: <IconSearch size={15} />, shortcut: '⌘P', run: () => { app.openContext('files'); close(); } });
     list.push({ id: 'settings', section: '推荐', label: '设置', icon: <IconGear size={15} />, shortcut: '⌘,', run: () => { app.setSettingsOpen(true); close(); } });
     // 面板

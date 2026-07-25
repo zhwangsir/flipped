@@ -268,6 +268,23 @@ export interface QualityTrendResponse {
   }>;
 }
 
+/** M151.4 — AssistantTurn:后端 /api/v1/assistant/sessions/{id}/history 折叠视图。 */
+export interface AssistantTool {
+  tool: string;
+  args?: Record<string, unknown>;
+  status: 'running' | 'ok' | 'error';
+  summary?: string;
+  output?: string;
+}
+export interface AssistantTurn {
+  role: 'user' | 'assistant' | 'tool' | 'approval';
+  text?: string;
+  tools: AssistantTool[];
+  verdict?: Record<string, unknown>;
+  approval?: { action?: string; reason?: string; risk?: string } & Record<string, unknown>;
+  created_at: string;
+}
+
 /** orchestration-api 发过来的原始事件（与 src/api/schemas.py 对齐）。 */
 export interface ApiEvent {
   id: string;

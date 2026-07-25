@@ -4300,3 +4300,282 @@ pytest tests/ --deselect tests/test_web_search.py
 | P1 | 2 | detail 返回空字段全暴露，信噪比低 |
 | P2 | 6 | MCP 工具 schema 不可见 |
 | P2 | 1 | Session.mode 语义不显 |
+
+## M151.4 · Console Assistant 视图 + Codex 配色
+
+### 前端单测(console/vitest)
+
+```
+cd console && npx vitest run src/views/
+
+ ✓ src/views/tool-card.test.tsx (3 tests) 25ms
+ ✓ src/views/composer.test.tsx (3 tests) 35ms
+ ✓ src/views/Assistant.test.tsx (6 tests) 50ms
+
+ Test Files  3 passed (3)
+      Tests  12 passed (12)
+```
+
+12 例覆盖:
+- tool-card 3: running spinner / ok 折叠+点击展开 / error 自动展开
+- composer 3: 空输入不发 / busy 禁用 / slash 补全 5 项
+- Assistant 6: 空态 hero / user+assistant 气泡对齐 / Enter 发送 Shift+Enter 换行 /
+  /clear 清空 / 工具卡折叠 / 审批 Allow once 调 approveAssistant(sid)
+
+### 全量回归(确保未破坏既有测试)
+
+```
+cd console && npx vitest run
+
+ Test Files  11 passed (11)
+      Tests  76 passed (76)
+```
+
+### 类型检查
+
+```
+cd console && npx tsc --noEmit
+(无输出 = 通过)
+```
+
+### P1 待办(文档化,不在本里程碑实现)
+
+| 优先级 | 项 | 说明 |
+|---|---|---|
+| P1 | "Always" 持久化审批规则 | 当前 ApprovalInline 仅 Allow once / Reject 单次决策;持久化白名单需后端 rules 端点 |
+| P1 | /compact /mode /help /files 行为接线 | 当前 Assistant.onSlash 仅 /clear 落地,其余 4 个命令静默忽略(不假装成功) |
+| P1 | 真实 step-level 事件流 → 增量渲染 | 当前实现 2.5s 轮询 /history,后端事件流未直接驱动 UI 增量 |
+
+---
+
+## 2026-07-25 · M151 · 代码助手应用（TUI + Web 双形态，Web 套 Codex 视觉）
+
+> 来源：用户要求开发代码助手应用，不需要打包，TUI + Web 双界面，参考 Kimi Code / opencode / claudecode，Web 对齐 Codex 视觉。
+> 验收：`bash scripts/verify_assistant.sh` 6 步全绿 ✅
+
+### M151.3 · 单模型 GLM fallback 钉测试（TDD 4 例，无生产改动）
+
+新增 `tests/test_assistant_single_model.py`，钉住 M149 单模型策略（全角色默认 `mlx-community/GLM-5.2-fp8`），
+防未来 Kimi 恢复时静默破坏 agent/chat/approve 三条路径。
+
+```
+PYTHONPATH=src .venv/bin/python -m pytest tests/test_assistant_single_model.py -q
+....                                                                     [100%]
+4 passed in 3.01s
+```
+
+4 例覆盖：
+- `test_model_id_for_alias_defaults_all_roles_to_glm` — 清 env 后 architect/coder/supervisor/overseer/monitor 全默认 GLM
+- `test_make_llm_resolves_architect_and_coder_to_glm` — proxy 不可达 → 回退直连 exo，`_make_llm(alias).model == GLM`
+- `test_run_chat_passes_glm_to_llm_chat` — monkeypatch `resolve_worker_model_config` 返回 GLM，`_run_chat` 把 GLM 传给 `_llm_chat`
+- `test_approve_path_works_under_single_model_env` — 单模型 env 下 approve 端点 200 + approval_result 事件 + `_resume_with_decision('approve')` 被调用
+
+回归（84 例 model_router/orchestrator/approval/api_recovery/api_approval_flow/api_auto_mode）全绿：
+
+```
+PYTHONPATH=src .venv/bin/python -m pytest tests/test_model_router.py tests/test_orchestrator.py \
+  tests/test_approval.py tests/test_approval_pipeline.py tests/test_orchestrator_stream.py \
+  tests/test_api_recovery.py tests/test_api_approval_flow.py tests/test_api_auto_mode.py -q
+........................................................................ [ 85%]
+............                                                             [100%]
+84 passed in 7.67s
+```
+
+### M151.5 · Console hash 路由 + 工厂视图保留（TDD 2 例）
+
+新增 `console/src/router.ts`（`parseHash` / `useHashRoute` / `navigate`，不引 react-router），
+`App.tsx` 用 `useHashRoute()` 驱动主区（`route === "factory" ? <Conversation/> : <Assistant/>`）+
+同步 store（`setFactoryOpen(route === "factory")`），Sidebar 工厂按钮与 FactoryPanel 关闭按钮改用 `navigate()`。
+
+```
+cd console && npx vitest run src/App.test.tsx
+ ✓ src/App.test.tsx (2 tests) 26ms
+ Test Files  1 passed (1)
+      Tests  2 passed (2)
+```
+
+2 例：
+- 默认 `#/`（hash 空）渲染 Assistant，不渲染 Conversation/FactoryPanel
+- `#/factory` 渲染 Conversation（工厂 shell 主区）+ 同步 `setFactoryOpen(true)`
+
+### M151.7 · 契约修复 + 全量回归 + verify_assistant.sh
+
+**契约修复**（M151.1 遗留的 2 个 test_api_contract 失败）：
+- `src/api/assistant.py` 新增 `DecisionResponse(BaseModel)`，approve/reject 端点补 `response_model=DecisionResponse`
+- `tests/test_api_contract.py` `RESPONSE_MODEL_ALLOWLIST` 加 `GET /api/v1/assistant/sessions/{session_id}/history`（`list[AssistantTurn]` 是命名模型，list 包裹，启发式只认直接 BaseModel 子类）
+- `FLIPPED_UPDATE_API_SNAPSHOT=1` 重生 `tests/snapshots/api_contract_snapshot.json`
+- `npm run gen:api-types`（起 :8151 后端）重生 `console/src/api-types.d.ts`（schemas=19 paths=32，含 DecisionResponse）
+
+**verify_assistant.sh 6 步全绿**：
+
+```
+bash scripts/verify_assistant.sh
+== [1/6] pytest · assistant 新测试文件（api/approval_resume/single_model/tui） ==
+  ✅ assistant 4 文件全绿
+== [2/6] vitest · console 全量（含 App/Assistant/composer/tool-card） ==
+  ✅ console vitest 全绿
+== [3/6] tsc --noEmit · 类型检查 ==
+  ✅ tsc 无错误
+== [4/6] vite build · 产物可生成 ==
+  ✅ vite build 成功
+== [5/6] 全量 pytest 回归（不破坏既有测试） ==
+  ✅ 全量 pytest 回归通过（1639 passed, 7 skipped）
+== [6/6] 端到端 · 创建 assistant session → 发消息 → WS 收事件 ==
+  ✅ 端到端 WS 事件通路（mock 模式）
+============================================================
+  M151（代码助手应用）验收：通过 ✅
+```
+
+### 全量回归
+
+```
+PYTHONPATH=src .venv/bin/python -m pytest tests/ -q
+1639 passed, 7 skipped in 64.64s   (7 skipped = DDG 外网环境性，同既有门控)
+
+cd console && npx vitest run
+ Test Files  12 passed (12)
+      Tests  78 passed (78)
+
+cd console && npx tsc --noEmit   (无输出 = 通过)
+cd console && npm run build      (✓ built in 841ms)
+```
+
+### M151 TDD 总计
+- pytest 新增 25 例（assistant_api 12 + approval_resume 5 + single_model 4 + tui 6 = 27，含 split）
+- vitest 新增 16 例（Assistant 6 + composer 3 + tool-card 3 + App 2 + 既有 FactoryPanel/Conversation 回归）
+- 全量 pytest 1639 passed（M151 前 1612 → +27 新例）
+- vitest 78 passed（M151 前 62 → +16 新例）
+
+---
+
+## 系统性循环测试（2026-07-25 · TEST_PLAN.md 落地）
+
+> 来源：用户指示「实施系统性的循环测试流程以确保产品质量。设计全面的测试计划，包括单元测试、集成测试、系统测试和回归测试等多个测试阶段。建立明确的测试用例，覆盖主要功能点、边界条件和异常场景。执行多轮循环测试…设置质量门禁标准…记录测试过程中的所有数据」。
+> 验收：TEST_PLAN.md（4 层测试 + 用例矩阵 + 质量门禁 + 循环协议 + 缺陷格式）+ quality_gate.sh（G0-G5 六门禁）+ loop_test.sh（多轮驱动+趋势+熔断）+ check_shell_lint.sh（陷阱守卫）落地。R1+R2 连续 2 轮全绿提前收尾，verify-post-fix 轮确认 fe_passed 解析修复（12→78）。证据见下。
+
+### 工具产出
+- `TEST_PLAN.md`：4 测试阶段（L1 单元/L2 集成/L3 系统/L4 回归）+ 用例矩阵（后端 10 簇 + 前端 6 簇 + 缺口 5 项）+ 质量门禁（3.1 通过率/3.2 覆盖率 floor/3.3 缺陷门禁/3.4 退出码）+ 循环协议（单轮流程/预算/熔断）+ 缺陷格式。
+- `scripts/quality_gate.sh`：6 门禁串联（G0 shell lint / G1 pytest / G2 py coverage / G3 vitest / G4 tsc / G5 build），任一失败 → exit 1，产出 quality_metrics.json。
+- `scripts/loop_test.sh`：多轮驱动，连续 2 轮全绿提前收尾，单缺陷修 ≥3 次熔断，趋势汇总表。
+- `scripts/check_shell_lint.sh`：守卫 `$VAR<全角字符>` 陷阱（M144-A 警告复发防护），扫 28 个 .sh。
+- `.coveragerc`：Python fail_under=80 强制门禁。
+- `console/vitest.config.ts`：前端 thresholds（lines≥28% / branches≥35% / functions≥40%）。
+- `DEFECT_LOG.md`：缺陷流水（结构化字段：ID/轮次/级别/类型/现象/根因/修复/验证/状态/复发）。
+
+### Round 1（2026-07-25 11:27）
+```
+== [G0] shell lint ==          ✅ 28 文件扫描通过
+== [G1] pytest 全量回归 ==      1639 passed, 7 skipped in 77.66s  ✅
+== [G2] Python 覆盖率 ==        82.89%（≥ 80% floor）             ✅
+== [G3] vitest ==              12 文件 / 78 用例 passed           ✅
+== [G4] tsc --noEmit ==        0 错误                             ✅
+== [G5] vite build ==          成功                               ✅
+质量门禁：通过 ✅
+```
+指标：py_passed=1639 / py_coverage=82.89% / fe_passed=78（R1 当时记 12，解析 bug 后修） / fe_lines_cov=29.36% / tsc=0 / build=1
+
+### D-0001 缺陷发现与修复（R1 中途触发，门禁误判失败后定位）
+- **现象**：首次 R1 跑到 G1 pytest 全绿（1639 passed），但 quality_gate.sh 在 L82 崩溃：`scripts/quality_gate.sh: line 82: PY_FAILED\xxx: unbound variable`，loop_test.sh L103 同样崩溃 `DEFECT_LOG\xxx: unbound variable`。门禁误判失败。
+- **根因**：M144-A 节警告过的陷阱复发——bash 在某些 locale 下把 `$IDENT` 后的多字节字符（全角 `）`、`，`）当作变量名一部分，`set -u` 下报未绑定。
+- **修复**：7 处统一改 `${VAR}` 显式大括号（quality_gate.sh L82/84/129/131 + loop_test.sh L85/103/112）；同顺手修 await_glm_capstone.sh L21。
+- **工程化**：新增 `scripts/check_shell_lint.sh` 守卫，扫所有 `scripts/*.sh` 的 `$VAR<非 ASCII>` 模式；接入 quality_gate.sh G0 门禁，从此同类陷阱无法再悄然复发。
+- **验证**：`bash scripts/check_shell_lint.sh` → ✅ 28 文件全绿。
+
+### Round 2（2026-07-25 11:30）
+```
+== [G0] shell lint ==          ✅ 28 文件扫描通过
+== [G1] pytest 全量回归 ==      1639 passed, 7 skipped             ✅
+== [G2] Python 覆盖率 ==        82.84%（≥ 80% floor）             ✅
+== [G3] vitest ==              12 文件 / 78 用例 passed           ✅
+== [G4] tsc --noEmit ==        0 错误                             ✅
+== [G5] vite build ==          成功                               ✅
+质量门禁：通过 ✅（连续 2 轮全绿，提前收尾）
+```
+指标：py_passed=1639 / py_coverage=82.84% / fe_passed=78 / fe_lines_cov=29.36% / tsc=0 / build=1
+- py_coverage R1→R2: 82.89%→82.84%（±0.05% 正常波动，覆盖率工具小数点级抖动）
+- py_passed/fe_passed/fe_lines_cov 三轮完全一致 → 零回归。
+
+### verify-post-fix 轮（2026-07-25 11:38 · fe_passed 解析修复后验证）
+- **背景**：R1/R2 的 fe_passed=12 是 vitest "Test Files" 行的文件数（解析 bug），实际用例数 78。
+- **根因**：vitest 输出含 ANSI 颜色码（`\x1b[2m`/`\x1b[32m` 等）夹在 "Tests" 和 "78" 之间，正则 `Tests\s+(\d+)\s+passed` 失效；同时旧解析取首个 "N passed" 命中 "Test Files 12 passed" 而非 "Tests 78 passed"。
+- **修复**：解析前 `re.sub(r'\x1b\[[0-9;]*m','',t)` 剥离 ANSI；优先匹配 `Tests\s+(\d+)\s+passed` 取用例数。
+- **同顺手修**：--quick 模式跑子集不应触发 .coveragerc fail_under=80（子集覆盖率本就无意义）→ --quick 自动跳过 --cov；G2 加 `[ $QUICK = 0 ]` 守卫不采信陈旧 coverage.json。
+- **验证**：`bash scripts/quality_gate.sh --quick` → fe_passed=78 ✅；`bash scripts/quality_gate.sh`（full）→ fe_passed=78 ✅，全门禁绿。
+
+### 趋势汇总
+| 轮次 | 门禁 | py_passed | py_cov | fe_passed | fe_lines | tsc | build |
+|---|---|---|---|---|---|---|---|
+| R1 | ✅ | 1639 | 82.89% | 78* | 29.36% | 0 | 1 |
+| R2 | ✅ | 1639 | 82.84% | 78* | 29.36% | 0 | 1 |
+| verify | ✅ | 1639 | 82.86% | 78 | 29.36% | 0 | 1 |
+
+\* R1/R2 当时记 12（文件数，解析 bug），实际用例数 78；verify 轮修复后准确。
+
+### 质量门禁达成情况
+- 3.1 通过率：Python 100%（1639/1639）、前端 100%（78/78）、tsc 0 错、build 成功 — 全达标。
+- 3.2 覆盖率 floor：Python 82.86% ≥ 80% ✅、前端 lines 29.36% ≥ 28% ✅、branches 74.91% ≥ 35% ✅、functions 43.52% ≥ 40% ✅。
+- 3.3 缺陷门禁：P0 open=0 ✅、P1 open=0 ✅（D-0001 已 fixed）、修复率 100%（1/1 本轮发现本轮修）、复发=0（M144-A 警告过但已加自动化守卫根治）。
+- 4.2 提前收尾：连续 2 轮全绿 + 无新缺陷 → R2 后收尾。
+
+### 约束遵守
+- 零新依赖（纯 bash + python3 标准库）。
+- 零 API 契约变更、零生产代码改动（仅测试基础设施 + 守卫脚本）。
+- 不 commit（用户规则：明确要求才提交）。
+
+
+---
+
+## M153 · 前端覆盖率补强 + 双模型就绪验证 + 心跳监控（2026-07-25）
+
+> ✅ 验收通过：105 新测试落地，前端覆盖率 29.36%→51.57%（+22.21pp，超 50% 目标）。全量门禁通过：pytest 1639 / vitest 183 / tsc 0 / build ok。
+
+### 1. 前端覆盖率补强（M153.1-M153.3）
+
+| 文件 | 用例数 | 覆盖前 | 覆盖后 | 执行方式 |
+|---|---|---|---|---|
+| store.tsx | 26 | 0% | 显著覆盖 | TDD：mock api + StoreProbe harness |
+| Sidebar.tsx | 36 | 0% | 100% lines / 94.93% branches | TDD：mock store + 7 场景 |
+| Settings.tsx | 24 | 0% | 98.77% lines / 96.07% branches | TDD：mock store + useTheme |
+| TopBar.tsx | 19 | 0% | 100% lines / 63.63% branches | TDD：mock store + matchMedia |
+
+整体覆盖率变化：
+- Lines: 29.36% → **51.57%**（+22.21pp，超 TEST_PLAN.md §3 目标值 50%）
+- Branches: 74.95% → **83.57%**（+8.62pp）
+- Functions: 43.52% → **54.83%**（+11.31pp）
+- 测试数: 78 → **183**（+105）
+
+### 2. 双模型就绪验证（M153.4）
+
+| 模型 | 角色 | 工具调用 | 耗时 | 状态 |
+|---|---|---|---|---|
+| GLM-5.2-fp8 | 编排者 | ✅ calc({"expr":"7*8"}) | 5.9s | 就绪 |
+| Kimi-K2.7-Code-4bit | 执行者 | ✅ calc({"expr":"9+16"}) | 4.0s | 就绪 |
+
+M0 命根子（工具调用解析）双通过。M149 hardware block 实质解除。
+
+### 3. Coder Faceoff 实证（架构决策 D-coder-faceoff-20260725）
+
+4 维度真实编码任务对比（实际执行生成代码验证）：
+- GLM-5.2-fp8: 4/4 通过，平均 259 tok，20.2s
+- Kimi-K2.7-Code-4bit: 3/4 通过（T2 token 耗尽截断），平均 540 tok，21.6s
+- 结论：GLM 编码能力优于 Kimi（token 效率 2x），建议 coder 继续用 GLM
+
+### 4. 心跳监控（M153.5）
+
+scripts/heartbeat.py 每 10 分钟扫描：
+- STATE.json 里程碑状态 + 进度偏差
+- git 状态（commit 年龄、未提交文件数）
+- 模型就绪探针（只读 ping，不扰动）
+- 测试基线（quality_metrics.json）
+- 潜在阻碍因素识别
+
+报告存 reports/heartbeat_YYYYMMDD_HHMM.md + heartbeat.log + heartbeat_history.jsonl
+
+### 5. 全量回归（M153.6）
+
+```
+质量门禁：通过 ✅
+  py_passed: 1639  py_failed: 0  py_skipped: 7
+  fe_passed: 183   fe_failed: 0
+  tsc_errors: 0    build_ok: 1
+```

@@ -9,6 +9,7 @@
  */
 import { useState } from "react";
 import { useApp } from "../store";
+import { navigate } from "../router";
 import { formatWhen } from "../types";
 import type { FactoryDetail, FactoryTask, TaskResult, FactorySummary, FactoryRcaEntry } from "../types";
 import {
@@ -44,8 +45,45 @@ export function FactoryPanel() {
   const [goal, setGoal] = useState("");
   const [cwd, setCwd] = useState("");
   const [maxTasks, setMaxTasks] = useState(5);
+  // M146 P1：启动/暂停/恢复失败此前静默（unhandled rejection），用户以为操作成功
+  const [createBusy, setCreateBusy] = useState(false);
+  const [createErr, setCreateErr] = useState("");
+  const [actionBusy, setActionBusy] = useState(false);
+  const [actionErr, setActionErr] = useState("");
 
   if (!factoryOpen) return null;
+
+  const errText = (e: unknown) =>
+    e instanceof Error ? e.message.replace(/^HTTP \d+: /, "") : "操作失败，请重试";
+
+  const submitCreate = async () => {
+    if (!goal.trim() || !cwd.trim() || createBusy) return;
+    setCreateBusy(true);
+    setCreateErr("");
+    try {
+      await createFactory(goal.trim(), cwd.trim(), maxTasks);
+      setShowCreate(false);
+      setGoal("");
+      setCwd("");
+    } catch (e) {
+      setCreateErr(errText(e));
+    } finally {
+      setCreateBusy(false);
+    }
+  };
+
+  const runAction = async (fn: () => Promise<void>) => {
+    if (actionBusy) return;
+    setActionBusy(true);
+    setActionErr("");
+    try {
+      await fn();
+    } catch (e) {
+      setActionErr(errText(e));
+    } finally {
+      setActionBusy(false);
+    }
+  };
 
   return (
     <div className="factory-overlay" data-testid="factory-panel">
@@ -58,10 +96,10 @@ export function FactoryPanel() {
         <button className="icon-btn ghost" title="刷新" onClick={() => refreshFactories()}>
           <IconRefresh size={15} />
         </button>
-        <button className="icon-btn ghost" title="新建工厂" onClick={() => setShowCreate((v) => !v)}>
+        <button className="icon-btn ghost" title="新建工厂" onClick={() => { setShowCreate((v) => !v); setCreateErr(""); }}>
           <IconPlus size={16} />
         </button>
-        <button className="icon-btn ghost" onClick={() => setFactoryOpen(false)} aria-label="关闭">
+        <button className="icon-btn ghost" onClick={() => { navigate("assistant"); setFactoryOpen(false); }} aria-label="关闭">
           <IconX size={16} />
         </button>
       </header>
@@ -75,13 +113,9 @@ export function FactoryPanel() {
             setCwd={setCwd}
             maxTasks={maxTasks}
             setMaxTasks={setMaxTasks}
-            onSubmit={async () => {
-              if (!goal.trim() || !cwd.trim()) return;
-              await createFactory(goal.trim(), cwd.trim(), maxTasks);
-              setShowCreate(false);
-              setGoal("");
-              setCwd("");
-            }}
+            busy={createBusy}
+            err={createErr}
+            onSubmit={submitCreate}
             onCancel={() => setShowCreate(false)}
           />
         )}
@@ -90,9 +124,11 @@ export function FactoryPanel() {
         {factoryDetail ? (
           <FactoryDetailCard
             detail={factoryDetail}
-            onResume={() => resumeFactory(factoryDetail.factory_id)}
-            onPause={() => pauseFactory(factoryDetail.factory_id)}
+            onResume={() => runAction(() => resumeFactory(factoryDetail.factory_id))}
+            onPause={() => runAction(() => pauseFactory(factoryDetail.factory_id))}
             onBack={() => selectFactory("")}
+            actionBusy={actionBusy}
+            actionErr={actionErr}
           />
         ) : (
           <>
@@ -129,11 +165,12 @@ export function FactoryPanel() {
 }
 
 function CreateFactoryCard({
-  goal, setGoal, cwd, setCwd, maxTasks, setMaxTasks, onSubmit, onCancel,
+  goal, setGoal, cwd, setCwd, maxTasks, setMaxTasks, busy, err, onSubmit, onCancel,
 }: {
   goal: string; setGoal: (v: string) => void;
   cwd: string; setCwd: (v: string) => void;
   maxTasks: number; setMaxTasks: (v: number) => void;
+  busy: boolean; err: string;
   onSubmit: () => void; onCancel: () => void;
 }) {
   return (
@@ -167,11 +204,12 @@ function CreateFactoryCard({
           onChange={(e) => setMaxTasks(Number(e.target.value) || 5)}
         />
       </label>
+      {err && <div className="form-err" role="alert" data-testid="factory-create-error">{err}</div>}
       <div className="factory-create-actions">
-        <button className="btn-primary" onClick={onSubmit} disabled={!goal.trim() || !cwd.trim()}>
-          <IconPlay size={14} /> 启动工厂
+        <button className="btn-primary" onClick={onSubmit} disabled={!goal.trim() || !cwd.trim() || busy}>
+          <IconPlay size={14} /> {busy ? "启动中…" : "启动工厂"}
         </button>
-        <button className="btn-ghost" onClick={onCancel}>取消</button>
+        <button className="btn-ghost" onClick={onCancel} disabled={busy}>取消</button>
       </div>
     </div>
   );
@@ -213,10 +251,11 @@ function FactoryCard({
 }
 
 function FactoryDetailCard({
-  detail, onResume, onPause, onBack,
+  detail, onResume, onPause, onBack, actionBusy = false, actionErr = "",
 }: {
   detail: FactoryDetail;
   onResume: () => void; onPause: () => void; onBack: () => void;
+  actionBusy?: boolean; actionErr?: string;
 }) {
   const { status } = detail;
   const done = detail.completed.length;
@@ -242,17 +281,18 @@ function FactoryDetailCard({
         </div>
         <div className="fd-header-actions">
           {status === "running" && (
-            <button className="btn-ghost sm" onClick={onPause}>
-              <IconPause size={14} /> 暂停
+            <button className="btn-ghost sm" onClick={onPause} disabled={actionBusy}>
+              <IconPause size={14} /> {actionBusy ? "处理中…" : "暂停"}
             </button>
           )}
           {(status === "paused" || status === "error") && (
-            <button className="btn-primary sm" onClick={onResume}>
-              <IconPlay size={14} /> 恢复
+            <button className="btn-primary sm" onClick={onResume} disabled={actionBusy}>
+              <IconPlay size={14} /> {actionBusy ? "处理中…" : "恢复"}
             </button>
           )}
         </div>
       </div>
+      {actionErr && <div className="form-err" role="alert" data-testid="factory-action-error">{actionErr}</div>}
 
       {/* 产品目标 */}
       <div className="fd-goal">

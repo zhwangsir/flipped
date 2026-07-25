@@ -268,6 +268,8 @@ export function Conversation() {
   const [pickerErr, setPickerErr] = useState('');
   const [mention, setMention] = useState<string | null>(null); // @ 之后的查询串,null=未提及
   const [mentionSel, setMentionSel] = useState(0);
+  const [sendErr, setSendErr] = useState(''); // 发送失败可见反馈（M146 P1：此前静默吞错）
+  const [projQuery, setProjQuery] = useState(''); // 项目选择器搜索串（M146：此前搜索框无过滤逻辑）
 
   // 扁平化项目文件路径(供 @ 提及)
   const flatFiles = useMemo(() => {
@@ -310,6 +312,7 @@ export function Conversation() {
         setPickerMode(null);
         setPickerInput('');
         setPickerErr('');
+        setProjQuery('');
       }
     };
     document.addEventListener('mousedown', onDown);
@@ -327,9 +330,13 @@ export function Conversation() {
   const submit = async () => {
     if (!text.trim() || busy || approvalPending) return;
     setBusy(true);
+    setSendErr('');
     try {
       await sendTask(text.trim());
       setText('');
+    } catch (e) {
+      // 发送失败必须可见——此前异常只走 finally，用户以为已发出（M146 P1）
+      setSendErr(e instanceof Error ? e.message.replace(/^HTTP \d+: /, '') : '发送失败，请重试');
     } finally {
       setBusy(false);
     }
@@ -340,6 +347,7 @@ export function Conversation() {
     setPickerMode(null);
     setPickerInput('');
     setPickerErr('');
+    setProjQuery('');
   };
   const submitPicker = async () => {
     const v = pickerInput.trim();
@@ -391,6 +399,12 @@ export function Conversation() {
 
   const disabled = busy || approvalPending !== null;
   const isNewThread = !selectedSessionId && stream.length === 0 && !approvalPending;
+
+  // 项目选择器搜索过滤（M146：此前输入不过滤列表，搜索框是死输入框）
+  const projQueryLc = projQuery.trim().toLowerCase();
+  const visibleProjects = projQueryLc
+    ? projects.filter((p) => p.name.toLowerCase().includes(projQueryLc))
+    : projects;
 
   // @ 提及:根据光标前的 @token 更新查询串
   const onComposerChange = (value: string, cursor: number) => {
@@ -523,7 +537,7 @@ export function Conversation() {
             </button>
             <span className='spacer' />
             {sessionStatus === 'running' && (
-              <button className='cbar-stop' onClick={() => cancelTask()} disabled={busy} title='停止'>
+              <button className='cbar-stop' onClick={() => cancelTask().catch(() => {})} disabled={busy} title='停止'>
                 <IconX size={13} /> 停止
               </button>
             )}
@@ -548,6 +562,9 @@ export function Conversation() {
             </button>
           </div>
         </div>
+        {sendErr && (
+          <div className='form-err' role='alert' data-testid='send-error'>{sendErr}</div>
+        )}
         <div className='composer-context'>
           <div className='ctx-proj-wrap' ref={projPickerRef}>
             <button className='ctx-item ctx-proj' onClick={() => setProjPicker((o) => !o)}>
@@ -585,16 +602,24 @@ export function Conversation() {
                   <>
                     <div className='proj-picker-search'>
                       <IconSearch size={13} />
-                      <input placeholder='搜索项目' aria-label='搜索项目' />
+                      <input
+                        placeholder='搜索项目'
+                        aria-label='搜索项目'
+                        value={projQuery}
+                        onChange={(e) => setProjQuery(e.target.value)}
+                      />
                     </div>
                     {projects.length === 0 && (
                       <div className='proj-picker-empty'>~/projects 下暂无项目 · 新建或导入一个</div>
                     )}
-                    {projects.map((p) => (
+                    {projects.length > 0 && visibleProjects.length === 0 && (
+                      <div className='proj-picker-empty'>无匹配「{projQuery.trim()}」的项目</div>
+                    )}
+                    {visibleProjects.map((p) => (
                       <button
                         key={p.host}
                         className={'proj-picker-item' + (projectContext?.project === p.name ? ' selected' : '')}
-                        onClick={() => { openProject(p.host); closePicker(); }}
+                        onClick={() => { openProject(p.host).catch(() => {}); closePicker(); }}
                       >
                         <IconFile size={14} />
                         <span className='pp-name'>{p.name}</span>
