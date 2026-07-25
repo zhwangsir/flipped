@@ -67,3 +67,23 @@ config/mcp_servers.json
 
 # M137 迁移备份(二进制, 不入库)
 data/*.bak-*
+
+# ---- 测试 / 覆盖率 / 质量门禁产物（M153） ----
+.coverage
+.coverage.*
+coverage.xml
+coverage.json
+htmlcov/
+console/coverage/
+quality_metrics.json
+quality_metrics_history.jsonl
+
+# ---- 心跳监控报告产物（M153） ----
+# 脚本本身入库，运行时生成的报告/日志不入库
+reports/heartbeat_*.md
+reports/heartbeat.log
+reports/heartbeat_history.jsonl
+reports/heartbeat_loop.log
+
+# ---- Trae 编辑器产物 ----
+.trae/

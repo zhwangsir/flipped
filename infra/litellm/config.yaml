@@ -1,36 +1,46 @@
 # LiteLLM Proxy 配置 — flipped M0（决策 D1）
-# 链路: 客户端/编辑器 -> 本代理(:4000) -> exo 集群(:52415) -> {GLM-5.2, Kimi-K2.7-Code}
-# 默认别名: architect = GLM-5.2(编排者/架构师) ; coder = Kimi-K2.7-Code(执行者/码农)
-# M89 交替接力: GLM-5.2 Worker 卡死,切 Kimi 接力
-# 当前轮次: architect=GLM-5.2(监督), coder=Kimi-K2.7-Code(接力执行)
+# 链路: 客户端/编辑器 -> 本代理(:4000) -> exo 集群(:52415) -> GLM-5.2-fp8
+# M149: api_base 用 MagicDNS 主机名 studio01-1（原裸 IP 100.64.201.37 因 Tailscale
+#   IP 漂移失效导致全链路 000；主机名免疫 IP 变化，对应节点 macstudio01）
+# M149 单模型模式: architect = coder = GLM-5.2-fp8（用户决策：K2.7 不稳定且能力不比 GLM 强，
+#   先只跑 GLM-5.2-fp8；Kimi 恢复后改回 coder -> Kimi-K2.7-Code-4bit 即可）
 # 启动: litellm --config infra/litellm/config.yaml --port 4000
 
 model_list:
-  # M89 当前: architect(编排者) -> GLM-5.2-fp8(监督,关闭 reasoning)
+  # architect(编排者) -> GLM-5.2-fp8
   - model_name: architect
     litellm_params:
       model: openai/mlx-community/GLM-5.2-fp8
-      api_base: http://100.64.201.37:52415/v1
-      api_key: os.environ/EXO_API_KEY
+      api_base: http://studio01-1:52415/v1
+      api_key: dummy-exo-no-auth
+      # M149: temperature=0 — fp8 非零 temperature 下长序列生成数值不稳定→乱码
+      temperature: 0.0
       extra_body:
         enable_thinking: false
         chat_template_kwargs:
           enable_thinking: false
 
-  # M89 当前: coder(执行者) -> Kimi-K2.7-Code-4bit(接力,关闭 reasoning)
+  # M149: coder(执行者) -> GLM-5.2-fp8（原为 Kimi-K2.7-Code-4bit；Kimi 掉线时
+  #   fallback 会降级到 GLM 造成来回切换抖动，单模型模式直接指同模型 + 自环 fallback 重试）
   - model_name: coder
     litellm_params:
-      model: openai/mlx-community/Kimi-K2.7-Code-4bit
-      api_base: http://100.64.201.37:52415/v1
-      api_key: os.environ/EXO_API_KEY
+      model: openai/mlx-community/GLM-5.2-fp8
+      api_base: http://studio01-1:52415/v1
+      api_key: dummy-exo-no-auth
+      # M149: temperature=0 — 同上，fp8 数值稳定性
+      temperature: 0.0
       extra_body:
         enable_thinking: false
         chat_template_kwargs:
           enable_thinking: false
 
 router_settings:
-  # 双向降级: 某别名报错(429/500/超时)时路由到另一个 (key/value 必须是 model_name 别名)
-  fallbacks: [{ "architect": ["coder"] }, { "coder": ["architect"] }]
+  # M149.12 修复: 单模型模式下删除 coder<->architect 互环 fallback。
+  #   事故实录(v10): exo 重建期上游返回空 body, coder 失败 -> fallback architect
+  #   (同一后端, 同样失败) -> 再 fallback coder ... 互环放大 x num_retries=2 x
+  #   timeout=600s, 单次 LLM 调用拖 16min 才报错, task 被误判失败。
+  #   单模型=同后端, fallback 无意义; 快速失败由 SDK num_retries 兜底更清晰。
+  #   Kimi 恢复双模型后, 再改回跨模型单向降级: [{ "coder": ["architect"] }]
   num_retries: 2
   timeout: 600          # 本地大模型首 token 慢, 调大避免误触发降级
   allowed_fails: 3

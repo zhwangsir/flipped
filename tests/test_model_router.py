@@ -149,14 +149,16 @@ def test_resolve_worker_model_config_fallback_direct(mock_get, monkeypatch):
 
 @patch("driving.model_router.httpx.get")
 def test_resolve_worker_model_config_defaults_when_env_empty(mock_get, monkeypatch):
+    """M149 单模型模式：env 全空时 coder 默认 = GLM-5.2-fp8（原为 Kimi-K2.7）。"""
     monkeypatch.delenv("LITELLM_BASE_URL", raising=False)
     monkeypatch.delenv("FLIPPED_MODEL_BASE_URL", raising=False)
     monkeypatch.delenv("OPENHANDS_BASE_URL", raising=False)
     monkeypatch.delenv("OPENHANDS_MODEL", raising=False)
+    monkeypatch.delenv("FLIPPED_CODER_MODEL", raising=False)
     mock_get.side_effect = TimeoutError("down")
     base, model = resolve_worker_model_config()
     assert base == DEFAULT_EXO_URL
-    assert model == "mlx-community/Kimi-K2.7-Code-4bit"
+    assert model == "mlx-community/GLM-5.2-fp8"
 
 
 @patch("driving.model_router.httpx.get")

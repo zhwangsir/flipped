@@ -1278,11 +1278,16 @@ def build_orchestrator(supervisor: SupervisorFn = default_supervisor,
                        max_context_tokens: int = 10000,
                        keep_recent: int = 4,
                        summarizer: Callable | None = None,
-                       ide_caller: Callable | None = None):
+                       ide_caller: Callable | None = None,
+                       on_approval_request: Callable | None = None):
     """编译 Supervisor→Worker→Overseer→(条件)→Verify 多 agent 监督图。节点可注入。
 
     ide_caller：IDE 工具桥调用（默认 ide_client.call_ide_tool），单测注入 mock。
     审计连接懒开 default_db_path()（env FLIPPED_DB 可覆盖），fail-open 不崩主流程。
+
+    on_approval_request（M151.2）：高风险子任务 interrupt 前的回调，签名 (state) -> None。
+    用途：在 LangGraph interrupt 暂停图之前发 EventType.approval_request 事件，让
+    前端/TUI 即时弹出审批卡。默认 None → 行为与旧版完全一致（向后兼容）。
     """
     from driving.ide_client import call_ide_tool as _default_ide_caller
     _ide_caller = ide_caller or _default_ide_caller
@@ -1432,6 +1437,12 @@ def build_orchestrator(supervisor: SupervisorFn = default_supervisor,
     def approval_gate(state: OrchestratorState) -> dict:
         # 高风险子任务（逸出沙箱/不可逆，§7）在派给 worker 前硬暂停审批；require_approval=False 时直通
         if state.get("require_approval") and classify_risk(state.get("current_subtask", "")) == "high":
+            # M151.2：interrupt 前发回调，让 API 层 emit approval_request 事件（前端/TUI 即时弹卡）
+            if on_approval_request is not None:
+                try:
+                    on_approval_request(state)
+                except Exception:  # noqa: BLE001 — 回调失败不该阻断审批门本身
+                    pass
             decision = interrupt({"subtask": state.get("current_subtask"),
                                   "reason": "高风险子任务，需人工放行（§7 沙箱外要审批）"})
             if str(decision).strip().lower() in APPROVE_WORDS:
@@ -1540,7 +1551,8 @@ def drive_orchestrated(goal: str, cwd: str, verify_cmd: list, *,
                        supervisor: SupervisorFn = default_supervisor,
                        worker: WorkerFn = default_worker,
                        overseer: OverseerFn = default_overseer,
-                       verifier: VerifierFn = _safe_default_verifier) -> OrchestratorState:
+                       verifier: VerifierFn = _safe_default_verifier,
+                       on_approval_request: Callable | None = None) -> OrchestratorState:
     """多 Agent 监督编排驱动一个目标到验收通过 / 监督中止 / 循环 / 熔断。
 
     require_approval=True：高风险子任务在执行前 interrupt 等人工放行（命中需用 Command(resume=...) 续跑）。
@@ -1568,6 +1580,7 @@ def drive_orchestrated(goal: str, cwd: str, verify_cmd: list, *,
             max_context_tokens=max_context_tokens,
             keep_recent=keep_recent,
             summarizer=summarizer,
+            on_approval_request=on_approval_request,
         )
         result = graph.invoke(initial, config={"configurable": {"thread_id": thread_id}})
         CheckpointRetention(cp, max_checkpoints=max_checkpoints).trim(thread_id)
@@ -1581,7 +1594,8 @@ def resume_orchestrated(thread_id: str, db_path: str | None = None, *,
                         verifier: VerifierFn = _safe_default_verifier,
                         max_context_tokens: int = 10000, keep_recent: int = 4,
                         summarizer: Callable | None = None,
-                        max_checkpoints: int = 50) -> OrchestratorState | None:
+                        max_checkpoints: int = 50,
+                        resume_value: str | None = None) -> OrchestratorState | None:
     """从 LangGraph checkpoint 恢复并继续一次未完成的 orchestrator 运行。
 
     适用于：orchestration-api 崩溃重启后，扫描到 `status=running` 的会话，
@@ -1589,6 +1603,10 @@ def resume_orchestrated(thread_id: str, db_path: str | None = None, *,
 
     thread_id 命名空间约定（M137 统一库后各 saver 共享 checkpoints/writes 表，靠前缀隔离）：
     API 会话 "sess-*"、factory 任务 "factory-{id}-task-{id}"、delegate "delegate-*"。
+
+    resume_value（M151.2）：非 None 时表示这是审批决策续跑（"approve"/"reject"），
+    用 Command(resume=resume_value) 注入 interrupt 续跑；为 None 时行为不变
+    （既有崩溃恢复调用方零改动）。只有 checkpoint 处于 __interrupt__ 态时才注入 resume。
     """
     from langgraph.checkpoint.sqlite import SqliteSaver
 
@@ -1621,8 +1639,24 @@ def resume_orchestrated(thread_id: str, db_path: str | None = None, *,
         values = snapshot.values
         if values.get("done"):
             return values
-        # 若上一 checkpoint 已被 interrupt（如审批断点），不自动恢复，等待外部 Command(resume=...)
-        if "__interrupt__" in values:
+        # M151.2：interrupt 检测用 tasks.interrupts，而非 values["__interrupt__"] 或 snapshot.next。
+        # - values["__interrupt__"] 只在同一 graph 连接的 invoke 返回值里出现，跨 SqliteSaver
+        #   连接（崩溃恢复 / 审批 resume）的 get_state().values 不含它。
+        # - snapshot.next 在「interrupt 暂停」和「crash 后 stream+break 的半跑状态」下都非空，
+        #   无法区分两者 → 用 tasks.interrupts 精确判定：只有 interrupt() 产生的暂停才填
+        #   PregelTask.interrupts，crash 半跑态 tasks 无 interrupts → 走 invoke(None) 续跑。
+        is_interrupted = any(
+            getattr(t, "interrupts", None) for t in snapshot.tasks
+        )
+        # 若上一 checkpoint 已被 interrupt（如审批断点）：
+        # - resume_value 非 None → 用 Command(resume=...) 注入决策续跑（M151.2 审批闭环）
+        # - resume_value 为 None → 不自动恢复，返回当前值（旧行为，崩溃恢复兼容）
+        if is_interrupted:
+            if resume_value is not None:
+                from langgraph.types import Command
+                result = graph.invoke(Command(resume=resume_value), config)
+                CheckpointRetention(cp, max_checkpoints=max_checkpoints).trim(thread_id)
+                return result
             return values
         result = graph.invoke(None, config)
         CheckpointRetention(cp, max_checkpoints=max_checkpoints).trim(thread_id)

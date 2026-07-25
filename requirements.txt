@@ -15,6 +15,9 @@ httpx==0.28.1
 websockets==15.0.1
 openhands-ai==1.8.0
 
+# ---------- TUI: Factory Monitor + Assistant (M139 / M151.6) ----------
+textual>=0.50
+
 # ---------- M4: MCP Server + RAG ----------
 mcp==1.26.0
 chromadb>=1.5

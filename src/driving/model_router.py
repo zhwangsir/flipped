@@ -12,7 +12,9 @@ from typing import Any
 import httpx
 
 DEFAULT_PROXY_URL = "http://localhost:4000/v1"
-DEFAULT_EXO_URL = "http://100.64.201.37:52415/v1"
+# M149: 裸 IP 100.64.201.37 因 Tailscale IP 漂移失效（全链路 000），
+# 改用 MagicDNS 主机名（= macstudio01），免疫 IP 变化
+DEFAULT_EXO_URL = "http://studio01-1:52415/v1"
 DEFAULT_WORKER_PROXY_URL = "http://host.docker.internal:4000/v1"
 
 
@@ -25,16 +27,15 @@ def _api_key() -> str | None:
 
 
 def _model_id_for_alias(alias: str) -> str:
+    # M149 单模型模式：全部角色默认 GLM-5.2-fp8（用户决策：K2.7 不稳定且能力不
+    # 比 GLM 强）。Kimi 恢复后把 coder/supervisor/overseer/monitor 默认改回
+    # mlx-community/Kimi-K2.7-Code-4bit 即可；env 变量始终可覆盖。
     env_map = {
-        # M131 模型分工调整：GLM-5.2 为主模型（编排者/架构师），Kimi-K2.7-Code 为执行者/监控者
-        # GLM-5.2：1M 上下文、工具调用快(8s)，适合全局编排和任务分解
-        # Kimi-K2.7-Code：代码生成完整、工具调用更快(4.6s)、中文理解优秀，适合执行和监控
         "architect": os.environ.get("FLIPPED_ARCHITECT_MODEL", "mlx-community/GLM-5.2-fp8"),
-        "coder": os.environ.get("FLIPPED_CODER_MODEL", "mlx-community/Kimi-K2.7-Code-4bit"),
-        # M131 新增角色别名
-        "supervisor": os.environ.get("FLIPPED_SUPERVISOR_MODEL", "mlx-community/Kimi-K2.7-Code-4bit"),
-        "overseer": os.environ.get("FLIPPED_OVERSEER_MODEL", "mlx-community/Kimi-K2.7-Code-4bit"),
-        "monitor": os.environ.get("FLIPPED_MONITOR_MODEL", "mlx-community/Kimi-K2.7-Code-4bit"),
+        "coder": os.environ.get("FLIPPED_CODER_MODEL", "mlx-community/GLM-5.2-fp8"),
+        "supervisor": os.environ.get("FLIPPED_SUPERVISOR_MODEL", "mlx-community/GLM-5.2-fp8"),
+        "overseer": os.environ.get("FLIPPED_OVERSEER_MODEL", "mlx-community/GLM-5.2-fp8"),
+        "monitor": os.environ.get("FLIPPED_MONITOR_MODEL", "mlx-community/GLM-5.2-fp8"),
     }
     return env_map.get(alias, alias)
 

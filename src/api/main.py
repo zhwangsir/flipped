@@ -8,6 +8,7 @@ import asyncio
 import json
 import os
 import sys
+import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import Any
@@ -63,6 +64,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.include_router(factory_router)
+# M151.1 · 代码助手 assistant router（对话式 surface，复用既有 orchestrator/chat）
+# assistant.py 不在模块级 import main 的符号（用函数级 lazy import），故无循环导入，
+# 可在 app 创建后立即挂载。router 内的端点在调用时才取 main._run_orchestrator 等。
+from .assistant import router as assistant_router  # noqa: E402
+
+app.include_router(assistant_router)
 
 
 # ---------- 健康检查 ----------
@@ -477,7 +484,12 @@ async def create_task(session_id: str, req: TaskRequest) -> TaskResponse:
     session = store.get(session_id)
     if not session:
         raise HTTPException(status_code=404, detail="session not found")
-    task_id = f"task-{datetime.now(timezone.utc).strftime('%H%M%S')}"
+    # 并发守卫：同一会话已有未完成任务时拒绝重复派发（否则旧任务句柄丢失、无法取消）
+    existing = RUNNING_TASKS.get(session_id)
+    if existing and not existing.done():
+        raise HTTPException(status_code=409, detail="session already has a running task")
+    # task_id 加 uuid 后缀：避免同秒重复派发撞名
+    task_id = f"task-{datetime.now(timezone.utc).strftime('%H%M%S')}-{uuid.uuid4().hex[:4]}"
     store.update_status(session_id, SessionStatus.running)
     bus.emit(session_id, EventType.status, Role.system,
              {"status": "running", "progress": 0, "note": f"任务 {task_id} 已派发"})
@@ -507,7 +519,13 @@ async def resume_session(session_id: str) -> Session:
         raise HTTPException(status_code=404, detail="session not found")
     if not session.checkpoint_db_path:
         raise HTTPException(status_code=400, detail="session has no checkpoint_db_path")
-    asyncio.create_task(_resume_orchestrator(session))
+    # 并发守卫：已在运行则拒绝重复恢复（防双 orchestrator 写同一 checkpoint）
+    existing = RUNNING_TASKS.get(session_id)
+    if existing and not existing.done():
+        raise HTTPException(status_code=409, detail="session already has a running task")
+    t = asyncio.create_task(_resume_orchestrator(session))
+    RUNNING_TASKS[session_id] = t
+    t.add_done_callback(lambda _t, sid=session_id: RUNNING_TASKS.pop(sid, None))
     return session
 
 
@@ -648,6 +666,17 @@ async def _run_orchestrator(session_id: str, task_id: str, req: TaskRequest) -> 
     # F8 真机实测抓到的缺陷:SqliteSaver 不自动建父目录 → "unable to open database file"
     Path(db_path).expanduser().parent.mkdir(parents=True, exist_ok=True)
     store.update(session_id, goal=goal, verify_cmd=verify_cmd, cwd=cwd, checkpoint_db_path=db_path)
+
+    # M151.2：审批门 interrupt 前发 approval_request 事件，让前端/TUI 即时弹审批卡。
+    # 闭包捕 session_id + bus，在 drive_orchestrated 的工作线程内被 approval_gate 调用。
+    def _on_approval_request(state):
+        subtask = state.get("current_subtask", "")
+        bus.emit(session_id, EventType.approval_request, Role.system,
+                 {"action": subtask, "reason": "高风险子任务，需人工放行（§7 沙箱外要审批）"})
+        # 同步把会话置 paused，让 approve 端点的 pending 守卫可识别（interrupt 后
+        # drive_orchestrated 返回，_run_orchestrated 会再置 review；paused 仅在窗口期内有效）
+        store.update_status(session_id, SessionStatus.paused)
+
     try:
         if os.environ.get("FLIPPED_MOCK_ORCHESTRATOR"):
             sup, work, over, ver = _mock_orchestrator_fns()
@@ -659,6 +688,7 @@ async def _run_orchestrator(session_id: str, task_id: str, req: TaskRequest) -> 
                 require_approval=cfg.get("require_approval", False),
                 max_iterations=cfg.get("max_iterations", 30),
                 supervisor=sup, worker=work, overseer=over, verifier=ver,
+                on_approval_request=_on_approval_request,
             )
         else:
             nodes = _build_real_nodes(session_id, cwd, verify_cmd)
@@ -669,6 +699,7 @@ async def _run_orchestrator(session_id: str, task_id: str, req: TaskRequest) -> 
                 thread_id=session_id, db_path=db_path,
                 require_approval=cfg.get("require_approval", False),
                 max_iterations=cfg.get("max_iterations", 30),
+                on_approval_request=_on_approval_request,
                 **nodes,
             )
         if final.get("verified"):

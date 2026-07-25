@@ -427,5 +427,302 @@ def test_subtitle_restores_after_unfocus(tmp_db, monkeypatch):
     _run_app(app, body)
 
 
+# ---------- M144-B.1：事件时间线排序（HH:MM:SS 前缀 + 乱序按 ts 插入） ----------
+
+
+def _seed_events_at(db_path: Path, rows: list[tuple[str, str, str]]) -> None:
+    """直接 INSERT 指定 ts 的事件（append_event 不接受自定义 ts）。"""
+    with connect(str(db_path)) as conn:
+        ensure_event_table(conn)
+        for factory_id, ts, kind in rows:
+            conn.execute(
+                "INSERT INTO factory_events (factory_id, ts, kind, payload_json) "
+                "VALUES (?, ?, ?, ?)",
+                (factory_id, ts, kind, json.dumps({"info": kind})),
+            )
+
+
+def test_event_lines_prefixed_with_hhmmss(tmp_db, monkeypatch):
+    """M144-B.1a：事件行以 HH:MM:SS 时间戳前缀渲染（取事件行 ts 字段）。"""
+    _seed_factory(tmp_db, "f1")
+    _seed_events_at(tmp_db, [("f1", "2026-07-19T08:09:10+00:00", "factory_start")])
+    monkeypatch.setenv("FLIPPED_DB", str(tmp_db))
+    app = FactoryMonitorApp()
+
+    async def body(app, pilot):
+        await pilot.pause()
+        app._poll()
+        lines = _log_lines(app)
+        assert len(lines) == 1
+        assert lines[0].startswith("08:09:10 "), "事件行应以 HH:MM:SS 前缀开头"
+        assert "[factory_start]" in lines[0]
+
+    _run_app(app, body)
+
+
+def test_out_of_order_events_sorted_by_ts(tmp_db, monkeypatch):
+    """M144-B.1b：多厂事件交织到达时按事件 ts 有序插入，而非纯追加序。
+
+    数据布局：f1 在前（updated_at 更新），其事件 ts 晚；f2 在后，其事件 ts 早。
+    轮询先 drain f1 追加晚事件，f2 的早事件必须插入到它前面。
+    """
+    _seed_factory(tmp_db, "f1")
+    _seed_factory(tmp_db, "f2")
+    # f1 的事件 ts 晚（10:00:09），f2 的事件 ts 早（10:00:01）
+    _seed_events_at(tmp_db, [("f1", "2026-07-19T10:00:09+00:00", "task_done")])
+    _seed_events_at(tmp_db, [("f2", "2026-07-19T10:00:01+00:00", "factory_start")])
+    _fix_row_order(tmp_db, "f1", "f2")  # f1 在前 → 先被 drain（追加序 vs ts 序相反）
+    monkeypatch.setenv("FLIPPED_DB", str(tmp_db))
+    app = FactoryMonitorApp()
+
+    async def body(app, pilot):
+        await pilot.pause()
+        app._poll()
+        lines = _log_lines(app)
+        assert len(lines) == 2
+        assert lines[0].startswith("10:00:01"), "ts 早的事件（f2 factory_start）应排在前面"
+        assert " f2 " in lines[0]
+        assert lines[1].startswith("10:00:09")
+        assert " f1 " in lines[1]
+
+    _run_app(app, body)
+
+
+def test_event_missing_ts_appends_in_arrival_order(tmp_db, monkeypatch):
+    """M144-B.1c：事件缺 ts 时 fail-open 退化为到达序排尾，不崩不排序。"""
+    _seed_factory(tmp_db, "f1")
+    _seed_factory(tmp_db, "f2")
+    _seed_events_at(tmp_db, [("f1", "2026-07-19T11:00:05+00:00", "task_done")])
+    _seed_events_at(tmp_db, [("f2", "", "factory_start")])  # 空 ts（缺 ts 退化场景）
+    _fix_row_order(tmp_db, "f1", "f2")
+    monkeypatch.setenv("FLIPPED_DB", str(tmp_db))
+    app = FactoryMonitorApp()
+
+    async def body(app, pilot):
+        await pilot.pause()
+        app._poll()
+        lines = _log_lines(app)
+        assert len(lines) == 2
+        assert lines[0].startswith("11:00:05"), "带 ts 事件按 ts 序在前"
+        assert "factory_start" in lines[1], "缺 ts 事件到达序排尾（fail-open）"
+        assert " f2 " in lines[1]
+
+    _run_app(app, body)
+
+
+# ---------- M144-B.2：状态过滤快捷键（1/2/3/4 过滤，0 恢复全部） ----------
+
+
+def _seed_four_statuses(db_path: Path) -> None:
+    _seed_factory(db_path, "f-run", status="running")
+    _seed_factory(db_path, "f-done", status="done", roadmap=2, completed=2)
+    _seed_factory(db_path, "f-fail", status="failed", failed=1)
+    _seed_factory(db_path, "f-pause", status="paused")
+
+
+def _table_factory_ids(app: FactoryMonitorApp) -> list[str]:
+    table = app.query_one("#states", DataTable)
+    return [str(table.get_row_at(i)[0]) for i in range(table.row_count)]
+
+
+def test_status_filter_keys_filter_rows(tmp_db, monkeypatch):
+    """M144-B.2a：按 1/2/3 只显示对应状态的行，行数正确。"""
+    _seed_four_statuses(tmp_db)
+    monkeypatch.setenv("FLIPPED_DB", str(tmp_db))
+    app = FactoryMonitorApp()
+
+    async def body(app, pilot):
+        await pilot.pause()
+        app._poll()
+        assert len(_table_factory_ids(app)) == 4
+
+        await pilot.press("1")  # running
+        await pilot.pause()
+        assert _table_factory_ids(app) == ["f-run"]
+        assert app.status_filter == "running"
+
+        await pilot.press("2")  # done
+        await pilot.pause()
+        assert _table_factory_ids(app) == ["f-done"]
+        assert app.status_filter == "done"
+
+        await pilot.press("3")  # failed
+        await pilot.pause()
+        assert _table_factory_ids(app) == ["f-fail"]
+        assert app.status_filter == "failed"
+
+    _run_app(app, body)
+
+
+def test_filter_zero_restores_all_rows(tmp_db, monkeypatch):
+    """M144-B.2b：过滤后按 0 恢复显示全部行，标识清除。"""
+    _seed_four_statuses(tmp_db)
+    monkeypatch.setenv("FLIPPED_DB", str(tmp_db))
+    app = FactoryMonitorApp()
+
+    async def body(app, pilot):
+        await pilot.pause()
+        app._poll()
+        await pilot.press("4")  # paused
+        await pilot.pause()
+        assert _table_factory_ids(app) == ["f-pause"]
+        await pilot.press("0")  # 全部
+        await pilot.pause()
+        assert len(_table_factory_ids(app)) == 4
+        assert app.status_filter is None
+        assert "过滤" not in app.sub_title, "全部时不显示过滤标识"
+
+    _run_app(app, body)
+
+
+def test_subtitle_shows_filter_tag(tmp_db, monkeypatch):
+    """M144-B.2c：过滤器激活时 sub_title 聚合统计后追加 `| 过滤:xxx`。"""
+    _seed_four_statuses(tmp_db)
+    monkeypatch.setenv("FLIPPED_DB", str(tmp_db))
+    app = FactoryMonitorApp()
+
+    async def body(app, pilot):
+        await pilot.pause()
+        app._poll()
+        await pilot.press("1")
+        await pilot.pause()
+        sub = app.sub_title
+        assert "4 工厂" in sub, "聚合统计仍覆盖全部工厂"
+        assert "running 1" in sub
+        assert "过滤:running" in sub, "激活过滤器后追加标识"
+
+    _run_app(app, body)
+
+
+def test_filter_combines_with_focus(tmp_db, monkeypatch):
+    """M144-B.2d：过滤与 Enter 聚焦正交叠加，过滤器在 _poll 重拉后保持。"""
+    _seed_factory(tmp_db, "f1", status="running")
+    _seed_factory(tmp_db, "f2", status="running")
+    _seed_factory(tmp_db, "f3", status="done", roadmap=2, completed=2)
+    _seed_events(tmp_db, "f1", ["factory_start", "task_start"])
+    _seed_events(tmp_db, "f3", ["factory_start"])
+    _fix_row_order(tmp_db, "f1", "f2", "f3")
+    monkeypatch.setenv("FLIPPED_DB", str(tmp_db))
+    app = FactoryMonitorApp()
+
+    async def body(app, pilot):
+        await pilot.pause()
+        app._poll()
+        await pilot.press("1")  # 过滤 running：f1, f2 可见，f3 隐藏
+        await pilot.pause()
+        visible = _table_factory_ids(app)
+        assert set(visible) == {"f1", "f2"}
+        assert visible[0] == "f1", "cursor 应落在过滤后的首行 f1"
+
+        await pilot.press("enter")  # 聚焦 cursor 行（过滤后行序的 f1）
+        await pilot.pause()
+        assert app.focus_factory == "f1"
+        assert app.status_filter == "running", "聚焦不改变过滤器（正交叠加）"
+        assert "过滤:running" in app.sub_title
+        lines = _log_lines(app)
+        assert len(lines) == 2 and all(" f1 " in line for line in lines), "聚焦事件过滤仍生效"
+
+        _seed_events(tmp_db, "f2", ["task_done"])
+        _seed_events(tmp_db, "f1", ["task_done"])
+        app._poll()  # 重拉后过滤器保持
+        assert app.status_filter == "running"
+        assert set(_table_factory_ids(app)) == {"f1", "f2"}, "过滤器在轮询重拉后保持"
+        assert len(_log_lines(app)) == 3, "聚焦厂新事件正常显示，他厂事件仍只推进 seq"
+
+    _run_app(app, body)
+
+
+# ---------- M144-B.3：搜索跳转（/ 前缀匹配 → Enter 聚焦 / Esc 取消） ----------
+
+
+def test_search_prefix_moves_cursor(tmp_db, monkeypatch):
+    """M144-B.3a：/ 进入搜索，实时前缀匹配 factory_id（大小写不敏感），cursor 跳首个匹配行。"""
+    _seed_factory(tmp_db, "Alpha")
+    _seed_factory(tmp_db, "beta")
+    _seed_factory(tmp_db, "Alpine")
+    _fix_row_order(tmp_db, "Alpha", "beta", "Alpine")
+    monkeypatch.setenv("FLIPPED_DB", str(tmp_db))
+    app = FactoryMonitorApp()
+
+    async def body(app, pilot):
+        await pilot.pause()
+        app._poll()
+        table = app.query_one("#states", DataTable)
+        assert table.cursor_row == 0
+
+        await pilot.press("slash")  # 进入搜索
+        await pilot.pause()
+        assert app.search_active is True
+        assert "搜索" in app.sub_title
+
+        await pilot.press("a", "l", "p", "i")  # 前缀 "alpi" 匹配 Alpine（大小写不敏感）
+        await pilot.pause()
+        assert app.search_query == "alpi"
+        assert table.cursor_row == 2, "cursor 应跳到首个大小写不敏感前缀匹配行 Alpine"
+        assert "搜索:alpi" in app.sub_title
+
+        await pilot.press("backspace")  # 前缀 "alp" → 首个匹配回到 Alpha
+        await pilot.pause()
+        assert app.search_query == "alp"
+        assert table.cursor_row == 0
+
+    _run_app(app, body)
+
+
+def test_search_enter_confirms_focus(tmp_db, monkeypatch):
+    """M144-B.3b：搜索中 Enter 确认并复用聚焦机制聚焦匹配厂，退出搜索模式。"""
+    _seed_factory(tmp_db, "Alpha")
+    _seed_factory(tmp_db, "beta")
+    _seed_events(tmp_db, "beta", ["factory_start"])
+    _fix_row_order(tmp_db, "Alpha", "beta")
+    monkeypatch.setenv("FLIPPED_DB", str(tmp_db))
+    app = FactoryMonitorApp()
+
+    async def body(app, pilot):
+        await pilot.pause()
+        app._poll()
+        await pilot.press("slash", "b", "e", "t")
+        await pilot.pause()
+        assert app.search_active is True
+
+        await pilot.press("enter")  # 确认 → 聚焦 beta
+        await pilot.pause()
+        assert app.search_active is False, "Enter 确认后退出搜索模式"
+        assert app.search_query == ""
+        assert app.focus_factory == "beta", "Enter 确认复用聚焦机制"
+        assert "beta" in app.sub_title
+        lines = _log_lines(app)
+        assert len(lines) == 1 and "beta" in lines[0], "聚焦后事件区重拉该厂历史"
+
+    _run_app(app, body)
+
+
+def test_search_escape_cancels_and_clears(tmp_db, monkeypatch):
+    """M144-B.3c：搜索中 Esc 取消搜索并清空前缀，不触发聚焦/取消聚焦。"""
+    _seed_factory(tmp_db, "Alpha")
+    _seed_factory(tmp_db, "beta")
+    _fix_row_order(tmp_db, "Alpha", "beta")
+    monkeypatch.setenv("FLIPPED_DB", str(tmp_db))
+    app = FactoryMonitorApp()
+
+    async def body(app, pilot):
+        await pilot.pause()
+        app._poll()
+        await pilot.press("slash", "b", "e")
+        await pilot.pause()
+        table = app.query_one("#states", DataTable)
+        assert table.cursor_row == 1
+        assert app.search_query == "be"
+
+        await pilot.press("escape")  # 取消搜索
+        await pilot.pause()
+        assert app.search_active is False
+        assert app.search_query == ""
+        assert "搜索" not in app.sub_title
+        assert app.focus_factory is None, "Esc 取消搜索不得触发聚焦"
+
+    _run_app(app, body)
+
+
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-q"]))

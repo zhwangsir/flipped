@@ -13,6 +13,23 @@ import pytest  # noqa: E402
 from tools.web_search import SearchError, format_for_llm, search  # noqa: E402
 
 
+def _ddg_reachable() -> bool:
+    """M149: DuckDuckGo 是外网依赖（开发机走 Clash 时可能全网不通），
+    与 _litellm_reachable() 同模式——依赖不可达时 skip，避免环境抖动污染回归网。"""
+    import socket
+    try:
+        with socket.create_connection(("duckduckgo.com", 443), timeout=3):
+            return True
+    except OSError:
+        return False
+
+
+_requires_ddg = pytest.mark.skipif(
+    not _ddg_reachable(), reason="DuckDuckGo 外网不可达（环境性，非代码回归）"
+)
+
+
+@_requires_ddg
 def test_search_returns_results():
     """内置 DuckDuckGo 搜索应返回结果（开箱即用，无需外部服务）。"""
     r = search("Python programming language", max_results=3)
@@ -39,6 +56,7 @@ def test_format_for_llm():
     assert "https://x" in out and "[1]" in out
 
 
+@_requires_ddg
 def test_search_with_timeout():
     """超时参数应生效。"""
     r = search("test", timeout=5)

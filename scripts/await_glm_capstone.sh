@@ -18,7 +18,7 @@ for i in $(seq 1 30); do
     -H "Authorization: Bearer ${LITELLM_MASTER_KEY:-}" -H 'Content-Type: application/json' \
     -d '{"model":"architect","messages":[{"role":"user","content":"hi"}],"max_tokens":4}' 2>/dev/null || echo 000)
   if [ "$rc" = "200" ]; then ready=1; say "✅ architect 就绪(第 $i 次探针)"; break; fi
-  say "  第 $i 次 architect=$rc，180s 后重试"
+  say "  第 $i 次 architect=${rc}，180s 后重试"
   sleep 180
 done
 [ "$ready" = "1" ] || { say "❌ 90min 内 GLM 仍未就绪，退出（请确认 exo 上 GLM-5.2-fp8 加载完成）。"; exit 1; }
@@ -44,7 +44,14 @@ for h in final.get("history", []):
     elif s == "overseer":
         v = h.get("verdict", {}); print("  [GLM 监督] action=%s eff=%s dir=%s" % (v.get("action"), v.get("efficiency"), v.get("direction")))
     elif s == "verify": print("  [强制验证] ok=%s it=%s" % (h.get("ok"), h.get("iteration")))
+# M146：退出码契约——编排未通过验证必须 exit 非 0，CI/调度器才能判失败（此前恒 exit 0）
+sys.exit(0 if final.get("verified") else 1)
 PYEOF
+rc=$?
 say "终态测试: $(cd "$F" && python3 test_calc.py 2>&1 | tail -1)"
 rm -rf "$F"
+if [ "$rc" -ne 0 ]; then
+  say "❌ capstone 未通过(verified=false, exit $rc)"
+  exit "$rc"
+fi
 say "===== capstone 完成（详见本日志上方 RESULT/轨迹）====="

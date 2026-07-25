@@ -127,6 +127,10 @@ RESPONSE_MODEL_ALLOWLIST: frozenset[str] = frozenset({
     "POST /api/v1/project/open",
     "POST /api/v1/project/reveal",
     "POST /api/v1/projects",
+    # M151 · assistant history 返回 list[AssistantTurn]（命名模型，list 包裹），
+    # 契约已命名但本测试的启发式只认直接 BaseModel 子类，故登记。
+    # approve/reject 已补 response_model=DecisionResponse，不需要 allowlist。
+    "GET /api/v1/assistant/sessions/{session_id}/history",
 })
 
 

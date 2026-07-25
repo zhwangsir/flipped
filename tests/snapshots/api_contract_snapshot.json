@@ -1,6 +1,68 @@
 {
   "components": {
     "schemas": {
+      "AssistantTurn": {
+        "description": "对话 turn 视图：把事件流折叠成 user/assistant/tool/approval 四类。",
+        "properties": {
+          "approval": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Approval"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "role": {
+            "title": "Role",
+            "type": "string"
+          },
+          "text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text"
+          },
+          "tools": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Tools",
+            "type": "array"
+          },
+          "verdict": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Verdict"
+          }
+        },
+        "required": [
+          "role",
+          "created_at"
+        ],
+        "title": "AssistantTurn",
+        "type": "object"
+      },
       "BrowserRenderRequest": {
         "properties": {
           "url": {
@@ -48,6 +110,63 @@
           "product_goal"
         ],
         "title": "CreateFactoryRequest",
+        "type": "object"
+      },
+      "CreateSessionRequest": {
+        "description": "创建助手会话请求。",
+        "properties": {
+          "cwd": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cwd"
+          },
+          "mode": {
+            "default": "agent",
+            "title": "Mode",
+            "type": "string"
+          },
+          "model_alias": {
+            "default": "coder",
+            "title": "Model Alias",
+            "type": "string"
+          },
+          "title": {
+            "default": "新对话",
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "title": "CreateSessionRequest",
+        "type": "object"
+      },
+      "DecisionResponse": {
+        "description": "approve/reject 端点响应：决策已受理 + 异步 resume 派发。",
+        "properties": {
+          "decision": {
+            "title": "Decision",
+            "type": "string"
+          },
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "session_id": {
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ok",
+          "session_id",
+          "decision"
+        ],
+        "title": "DecisionResponse",
         "type": "object"
       },
       "Event": {
@@ -239,6 +358,24 @@
         "title": "HealthResponse",
         "type": "object"
       },
+      "MessageResponse": {
+        "properties": {
+          "session_id": {
+            "title": "Session Id",
+            "type": "string"
+          },
+          "task_id": {
+            "title": "Task Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "task_id",
+          "session_id"
+        ],
+        "title": "MessageResponse",
+        "type": "object"
+      },
       "MetricsResponse": {
         "description": "/metrics 端点返回的 LLM / 上下文性能指标。",
         "properties": {
@@ -267,6 +404,55 @@
         ],
         "title": "Role",
         "type": "string"
+      },
+      "SendMessageRequest": {
+        "description": "发送消息请求。",
+        "properties": {
+          "mode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mode"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "orchestrator": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Orchestrator"
+          },
+          "text": {
+            "minLength": 1,
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "title": "SendMessageRequest",
+        "type": "object"
       },
       "Session": {
         "properties": {
@@ -461,6 +647,234 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/v1/assistant/sessions": {
+      "post": {
+        "description": "创建助手会话。默认 mode=agent（完整 agent 管线）。\n\n复用既有 store.create + bus.emit + ps.active_project()，与 /api/v1/sessions 同语义，\n区别仅在默认 surface（对话助手）和 model_alias 字段（前端展示用）。",
+        "operationId": "create_assistant_session_api_v1_assistant_sessions_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateSessionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Session"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Assistant Session",
+        "tags": [
+          "assistant"
+        ]
+      }
+    },
+    "/api/v1/assistant/sessions/{session_id}/approve": {
+      "post": {
+        "description": "审批放行 → 调 _resume_with_decision('approve') + 发 approval_result 事件。",
+        "operationId": "approve_assistant_api_v1_assistant_sessions__session_id__approve_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DecisionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Approve Assistant",
+        "tags": [
+          "assistant"
+        ]
+      }
+    },
+    "/api/v1/assistant/sessions/{session_id}/history": {
+      "get": {
+        "description": "返回对话 turns 视图（事件流折叠）。",
+        "operationId": "get_assistant_history_api_v1_assistant_sessions__session_id__history_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/AssistantTurn"
+                  },
+                  "title": "Response Get Assistant History Api V1 Assistant Sessions  Session Id  History Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Assistant History",
+        "tags": [
+          "assistant"
+        ]
+      }
+    },
+    "/api/v1/assistant/sessions/{session_id}/messages": {
+      "post": {
+        "description": "发送消息 → 后台派发 orchestrator / chat，返回 task_id。\n\n- mode=auto/agent（默认）→ _run_orchestrator（require_approval=True）\n- mode=chat/plan         → _run_chat（轻量直连模型，不启沙盒）\n\n并发守卫复用 RUNNING_TASKS（409），与既有 /sessions/{id}/tasks 一致。\nasync def：asyncio.create_task 必须在事件循环线程内调用（同步 def 会被\nFastAPI 丢进 threadpool，那里没有 running loop → RuntimeError）。\n\nmonkeypatch：测试通过 `monkeypatch.setattr(\"api.main._run_chat\", fake)` 替换\n源头引用；本函数 lazy import 时取到的就是替换后的版本。",
+        "operationId": "send_assistant_message_api_v1_assistant_sessions__session_id__messages_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SendMessageRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessageResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Send Assistant Message",
+        "tags": [
+          "assistant"
+        ]
+      }
+    },
+    "/api/v1/assistant/sessions/{session_id}/reject": {
+      "post": {
+        "description": "审批否决 → 调 _resume_with_decision('reject') + 发 approval_result 事件。",
+        "operationId": "reject_assistant_api_v1_assistant_sessions__session_id__reject_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DecisionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Reject Assistant",
+        "tags": [
+          "assistant"
+        ]
+      }
+    },
     "/api/v1/browser/render": {
       "post": {
         "description": "用真 Chromium 渲染 URL，返回截图 + 可点击 DOM 元素框。",
