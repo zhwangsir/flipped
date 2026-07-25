@@ -1,8 +1,8 @@
 {
   "project": "flipped",
   "description": "接入本地 MLX 双模型(GLM-5.2 编排者 / Kimi-K2.7-Code 执行者)的 agentic 代码编辑器平台。fork Roo Code + 自定义驾驭层(强制验证/循环检测/上下文压缩/人工审批/子Agent/可观测性) + MCP 联网与外部能力。",
-  "updated": "2026-07-25 11:40:00",
-  "current_milestone": "M155 done（覆盖率再深化：前端 73.53%→85.26% + 后端 openhands_worker 54.79%→97.26%）。项目完成度 156/157 = 99.4%（M147 blocked 架构级瓶颈）。全量门禁通过：py=1676 passed, fe=591 passed, tsc=0, build=ok。",
+  "updated": "2026-07-26 01:35:47",
+  "current_milestone": "M156 done（双模型架构恢复：coder=Kimi-K2.7-Code-4bit，解除 M147-A 熔断前置）。M147-A E2E 长跑待用户确认启动。项目完成度 157/157 = 100%（M147 doing）。全量门禁通过：py=1678 passed, fe=591 passed, tsc=0, build=ok。",
   "key_facts": {
     "dev_host": "Apple M5 Max, 128GB RAM, 1.1TB 可用磁盘 — 开发/控制节点，非模型宿主",
     "model_cluster": "exo 集群 @ http://studio01-1:52415 (MagicDNS 主机名=macstudio01，免疫 Tailscale IP 漂移；旧裸 IP 100.64.201.37 已于 2026-07-22 失效)；公网 https://dgmt.top/exo (需 Bearer token)",
@@ -2734,9 +2734,9 @@
       }
     },
     "M147": {
-      "title": "M147-A · 真实工厂 10-task E2E 推进 + 熔断（三轮尝试，架构级瓶颈固化）",
-      "status": "blocked",
-      "note": "用户指示「继续进行」推进 M147-A 真实工厂 E2E。三轮尝试迭代：v1（task_timeout 30min 撞墙）→ v2（修复 workdir 挂载点 /tmp→~/projects，但 LiteLLM 400「No connected db」卡死 16min）→ v3（修复 .env 未加载导致 worker 拿错 Bearer，LLM 调用恢复 200，但 GLM-5.2-fp8 enable_thinking=true 时输出全进 reasoning_content、content 空白，且 5.5 tok/s 推理速度 → 单 action 数千 token ≈ 12min+，单任务 5-10 action ≈ 2-3h 远超 1h 超时）。第三轮通过决定性诊断实测：2k prompt + max_tokens=200 → 36s 完成，content='       '（7 空格），reasoning_content 真实推理 200 token 全用完 finish=length。按 AGENTS.md §6 熔断原则（同一问题修复 ≥3 次仍失败）如实上报。已修复代码：scripts/e2e_m147_10tasks.py 增加 _load_dotenv_into_environ 等价于 start_proxy.sh 的 set -a/. .env，worker 才能拿到 LITELLM_MASTER_KEY 调 LiteLLM。架构级瓶颈不可代码修复：GLM-5.2-fp8 (744GB fp8) 在 exo 集群的推理吞吐 + reasoning_content 输出格式与 OpenAI 协议不兼容（OpenHands agent 期待 content 有实质内容，GLM 把内容写到 reasoning_content 直到 token 用完）。",
+      "title": "M147-A · 真实工厂 10-task E2E 重跑（M156 双模型恢复：coder=Kimi-K2.7-Code-4bit）",
+      "status": "doing",
+      "note": "M156 解除熔断：Kimi-K2.7-Code 在 exo 已就绪（实测 2.5s 响应），切回双模型分工（architect=GLM-5.2-fp8 编排者 / coder=Kimi-K2.7-Code-4bit 执行者）。\n关键诊断（与 M149 单模型 GLM 熔断场景对比）：\n  - GLM 单模型 max_tokens=200 → content='       '（7 空格）+ finish=length（reasoning 抢占 content 路径）\n  - Kimi coder max_tokens=200 → content='OK' + finish=stop + reasoning_tokens=35（reasoning 与 content 并行，不抢占）\n结论：Kimi 接管 coder 后 OpenHands agent 期待的 content 路径有实质内容，架构级瓶颈消失。\n改动：src/driving/model_router.py（coder 默认 → Kimi）+ infra/litellm/config.yaml（coder 改 Kimi + 加回跨模型单向降级 fallbacks） + tests/test_model_router.py（+2 双模型路由测试）+ tests/test_assistant_single_model.py（断言更新）。\n回归：pytest 1678 passed / vitest 591 passed / tsc 0 / build ok。\nE2E 长跑待用户确认启动（小时级 + 烧 token）。",
       "tasks": {
         "M147-A.1_infra_fix": {
           "title": "基础设施修复（LiteLLM 端口/Docker/OpenHands 容器/.env 加载）",
@@ -3062,6 +3062,38 @@
         "backend_openhands_worker_after": "97.26%",
         "python_coverage_before": "82.89%",
         "python_coverage_after": "83.56%"
+      }
+    },
+    "M156": {
+      "title": "M156 · 双模型架构恢复（解除 M147-A 熔断前置）",
+      "status": "done",
+      "note": "Kimi-K2.7-Code 在 exo (studio01-1:52415) 已就绪，切回 M0 设计的双模型分工：\n  - architect/supervisor/overseer/monitor → mlx-community/GLM-5.2-fp8（编排者，1M 上下文）\n  - coder → mlx-community/Kimi-K2.7-Code-4bit（执行者，编码强 + MCP 强）\n逃生门：export FLIPPED_CODER_MODEL=mlx-community/GLM-5.2-fp8 一行回退 M149 单模型。\nLiteLLM proxy 已重启，/v1/models 返回 [architect, coder] 双别名，端到端 probe 通过：\n  - architect (GLM-5.2-fp8): content='OK', reasoning=''\n  - coder (Kimi-K2.7-Code-4bit): content='OK', reasoning_tokens=35（不抢占 content）\n测试：tests/test_model_router.py 新增 test_dual_model_routing_complete + test_single_model_escape_hatch_via_env，tests/test_assistant_single_model.py 更名断言为双模型分工。",
+      "tasks": {
+        "M156.1_model_router": {
+          "title": "model_router._model_id_for_alias: coder 默认 → Kimi-K2.7-Code-4bit",
+          "status": "done",
+          "note": "src/driving/model_router.py L29-44。M149 单模型逃生门通过 env 实现。"
+        },
+        "M156.2_litellm_config": {
+          "title": "infra/litellm/config.yaml: coder 改 Kimi + 跨模型单向降级 fallbacks",
+          "status": "done",
+          "note": "router_settings.fallbacks: [{coder: [architect]}] 恢复，避免 Kimi 抖动直接挂任务。architect 不配 fallback 避免反向互环。"
+        },
+        "M156.3_tests": {
+          "title": "tests/test_model_router.py + test_assistant_single_model.py 双模型断言",
+          "status": "done",
+          "note": "+2 新测试（dual_model_routing_complete / single_model_escape_hatch_via_env），2 测试改名（dual_model_defaults / resolves_dual_model_architect_glm_coder_kimi）。"
+        },
+        "M156.4_regression": {
+          "title": "全量回归：py=1678 / fe=591 / tsc=0 / build=ok",
+          "status": "done",
+          "note": "pytest 1678 passed (M155 基线 1676 + 2 新增) / vitest 591 passed / tsc 0 / vite build ok。"
+        },
+        "M156.5_proxy_restart": {
+          "title": "重启 LiteLLM proxy + 双别名端到端 probe",
+          "status": "done",
+          "note": "logs/litellm_m156.log。architect/coder 双别名经 :4000 端到端可用。"
+        }
       }
     }
   },

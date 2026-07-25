@@ -27,12 +27,16 @@ def _api_key() -> str | None:
 
 
 def _model_id_for_alias(alias: str) -> str:
-    # M149 单模型模式：全部角色默认 GLM-5.2-fp8（用户决策：K2.7 不稳定且能力不
-    # 比 GLM 强）。Kimi 恢复后把 coder/supervisor/overseer/monitor 默认改回
-    # mlx-community/Kimi-K2.7-Code-4bit 即可；env 变量始终可覆盖。
+    # M156 双模型模式恢复（Kimi-K2.7-Code 在 exo 已恢复，实测 2.5s 响应）：
+    # - architect/supervisor/overseer/monitor → GLM-5.2-fp8（编排者，1M 上下文）
+    # - coder → Kimi-K2.7-Code-4bit（执行者，MCP 强、编码强）
+    # 解除 M147-A 熔断：GLM 单模型 + enable_thinking=true 时 reasoning_content
+    # 抢占 content 路径不可代码修复；Kimi 接管 coder 后该瓶颈消失。
+    # M149 单模型模式作为逃生门：export FLIPPED_CODER_MODEL=mlx-community/GLM-5.2-fp8
+    # 即可回退。env 变量始终覆盖默认。
     env_map = {
         "architect": os.environ.get("FLIPPED_ARCHITECT_MODEL", "mlx-community/GLM-5.2-fp8"),
-        "coder": os.environ.get("FLIPPED_CODER_MODEL", "mlx-community/GLM-5.2-fp8"),
+        "coder": os.environ.get("FLIPPED_CODER_MODEL", "mlx-community/Kimi-K2.7-Code-4bit"),
         "supervisor": os.environ.get("FLIPPED_SUPERVISOR_MODEL", "mlx-community/GLM-5.2-fp8"),
         "overseer": os.environ.get("FLIPPED_OVERSEER_MODEL", "mlx-community/GLM-5.2-fp8"),
         "monitor": os.environ.get("FLIPPED_MONITOR_MODEL", "mlx-community/GLM-5.2-fp8"),

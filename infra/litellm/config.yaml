@@ -1,9 +1,10 @@
 # LiteLLM Proxy 配置 — flipped M0（决策 D1）
-# 链路: 客户端/编辑器 -> 本代理(:4000) -> exo 集群(:52415) -> GLM-5.2-fp8
+# 链路: 客户端/编辑器 -> 本代理(:4000) -> exo 集群(:52415) -> GLM-5.2-fp8 / Kimi-K2.7-Code-4bit
 # M149: api_base 用 MagicDNS 主机名 studio01-1（原裸 IP 100.64.201.37 因 Tailscale
 #   IP 漂移失效导致全链路 000；主机名免疫 IP 变化，对应节点 macstudio01）
-# M149 单模型模式: architect = coder = GLM-5.2-fp8（用户决策：K2.7 不稳定且能力不比 GLM 强，
-#   先只跑 GLM-5.2-fp8；Kimi 恢复后改回 coder -> Kimi-K2.7-Code-4bit 即可）
+# M156 双模型模式恢复: architect=GLM-5.2-fp8, coder=Kimi-K2.7-Code-4bit
+#   解除 M147-A 熔断（GLM 单模型 reasoning_content 抢占 content 路径不可代码修复）。
+#   M149 单模型作为逃生门：把 coder model 改回 GLM-5.2-fp8 + 注释 fallbacks 即可。
 # 启动: litellm --config infra/litellm/config.yaml --port 4000
 
 model_list:
@@ -20,27 +21,28 @@ model_list:
         chat_template_kwargs:
           enable_thinking: false
 
-  # M149: coder(执行者) -> GLM-5.2-fp8（原为 Kimi-K2.7-Code-4bit；Kimi 掉线时
-  #   fallback 会降级到 GLM 造成来回切换抖动，单模型模式直接指同模型 + 自环 fallback 重试）
+  # M156: coder(执行者) -> Kimi-K2.7-Code-4bit（双模型恢复，Kimi 在 exo 已就绪）
+  #   M149 期间临时改 GLM-5.2-fp8 是因 Kimi 掉线；现恢复双模型分工。
   - model_name: coder
     litellm_params:
-      model: openai/mlx-community/GLM-5.2-fp8
+      model: openai/mlx-community/Kimi-K2.7-Code-4bit
       api_base: http://studio01-1:52415/v1
       api_key: dummy-exo-no-auth
-      # M149: temperature=0 — 同上，fp8 数值稳定性
       temperature: 0.0
+      # Kimi-K2.7-Code 无 reasoning_content 路径抢占问题，可不传 enable_thinking；
+      # 但保留 false 与 architect 一致，避免 chat_template 误打开思考模式。
       extra_body:
         enable_thinking: false
         chat_template_kwargs:
           enable_thinking: false
 
 router_settings:
-  # M149.12 修复: 单模型模式下删除 coder<->architect 互环 fallback。
-  #   事故实录(v10): exo 重建期上游返回空 body, coder 失败 -> fallback architect
-  #   (同一后端, 同样失败) -> 再 fallback coder ... 互环放大 x num_retries=2 x
-  #   timeout=600s, 单次 LLM 调用拖 16min 才报错, task 被误判失败。
-  #   单模型=同后端, fallback 无意义; 快速失败由 SDK num_retries 兜底更清晰。
-  #   Kimi 恢复双模型后, 再改回跨模型单向降级: [{ "coder": ["architect"] }]
+  # M156 恢复跨模型单向降级: coder 失败 → fallback architect（不同后端，有意义）。
+  #   M149.12 单模型期删除此 fallback 是因 coder/architect 同后端互环放大超时；
+  #   双模型恢复后必须改回单向，避免 Kimi 临时抖动直接挂任务。
+  #   注意：architect 不配置 fallback，避免反向互环。
+  fallbacks:
+    - coder: [architect]
   num_retries: 2
   timeout: 600          # 本地大模型首 token 慢, 调大避免误触发降级
   allowed_fails: 3

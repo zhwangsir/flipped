@@ -4830,3 +4830,69 @@ $ bash scripts/quality_gate.sh
 | Conversation.tsx | 45.16% | 96.5% | +53 |
 | store.tsx | 62.24% | 94.74% | +61 |
 | openhands_worker.py | 54.79% | 97.26% | +37 |
+
+---
+
+## M156 · 双模型架构恢复（解除 M147-A 熔断前置） · 2026-07-26
+
+### 背景
+
+M149 单模型期把 coder 也指到 GLM-5.2-fp8（Kimi 掉线临时方案）。M147-A 真实工厂 E2E
+因此熔断：GLM 单模型 + enable_thinking=true 时 reasoning_content 抢占 content 路径
+（max_tokens=200 → content='       ' 7 空格 + finish=length），OpenHands agent 期待
+content 有实质内容 → 单 action 数千 token → 单任务 2-3h 超 1h 超时。
+
+M156 前置条件已满足：Kimi-K2.7-Code 在 exo (studio01-1:52415) 已就绪。
+
+### 改动
+
+| 文件 | 改动 |
+|---|---|
+| src/driving/model_router.py | `_model_id_for_alias`: coder 默认 → `mlx-community/Kimi-K2.7-Code-4bit`（其他保持 GLM） |
+| infra/litellm/config.yaml | coder model 改 Kimi + 恢复 `fallbacks: [{coder: [architect]}]` 跨模型单向降级 |
+| scripts/start_proxy.sh | 启动提示文字 M149→M156 |
+| tests/test_model_router.py | +2 测试：`test_dual_model_routing_complete` / `test_single_model_escape_hatch_via_env`；改 1 测试断言：`test_resolve_worker_model_config_defaults_when_env_empty`（coder 默认 → Kimi） |
+| tests/test_assistant_single_model.py | 2 测试改名+断言更新：`test_model_id_for_alias_dual_model_defaults` / `test_make_llm_resolves_dual_model_architect_glm_coder_kimi` |
+
+### 端到端 probe 证据（关键）
+
+通过 LiteLLM proxy (:4000) 调用两个别名，验证 content 路径有实质内容：
+
+**architect (GLM-5.2-fp8)** max_tokens=20:
+```
+content: 'OK'
+reasoning: ''
+```
+
+**coder (Kimi-K2.7-Code-4bit)** max_tokens=200:
+```
+finish_reason: stop
+content: 'OK'
+reasoning_len: 139  (reasoning_tokens=35, 不抢占 content)
+usage: {'completion_tokens': 38, 'prompt_tokens': 12, 'total_tokens': 50}
+```
+
+对比 M147-A 熔断场景（GLM 单模型 max_tokens=200）：
+```
+content: '       '  (7 空格)
+finish_reason: length  (reasoning 用完 200 token)
+```
+
+**结论**：Kimi 接管 coder 后 content 路径有实质内容，架构级瓶颈消失。
+
+### 全量回归
+
+```
+[G1] pytest:        1678 passed, 7 skipped (M155 基线 1676 + 2 新增)
+[G2] vitest:        591 passed, 0 failed (lines cov 85.26%)
+[G3] tsc --noEmit:  0 errors
+[G4] vite build:    ok
+```
+
+### 状态判定
+
+- M156 双模型架构恢复 = **done**（5 子任务全 done）
+- M147-A 真实工厂 E2E 重跑 = **doing**（前置条件已满足，E2E 长跑待用户确认启动）
+
+E2E 长跑属于小时级 + 烧 token 操作，按 AGENTS.md §7「沙箱外副作用要审批」原则
+需用户确认是否启动 `scripts/e2e_m147_10tasks.py`。

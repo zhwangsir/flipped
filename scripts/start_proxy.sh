@@ -11,6 +11,6 @@ set -a; . ./.env; set +a
 # M149: 加 .ts.net 后缀——config 已改用 MagicDNS 主机名 studio01-1（IP 会漂移，后缀匹配免疫）
 export NO_PROXY="100.64.201.37,100.67.43.40,studio01-1,.ts.net,${NO_PROXY:-localhost,127.0.0.1,::1}"
 export no_proxy="$NO_PROXY"
-echo "启动 LiteLLM 代理 :4000 (M149 单模型: architect=coder=GLM-5.2-fp8; NO_PROXY 已含 exo) ..."
+echo "启动 LiteLLM 代理 :4000 (M156 双模型: architect=GLM-5.2-fp8, coder=Kimi-K2.7-Code-4bit; NO_PROXY 已含 exo) ..."
 # M149: --port 4000 在该 litellm 版本被吞(实测落到随机端口),改用 PORT env 传端口
 PORT=4000 exec .venv/bin/litellm --config infra/litellm/config.yaml

@@ -1,22 +1,26 @@
-"""M151.3 · 单模型 GLM fallback 钉测试（TDD 3 例）。
+"""M156 · 双模型路由钉测试（前身 M151.3 单模型钉子）。
 
-M149 决策：Kimi K2.7-Code 不稳定且能力不比 GLM 强 → 全角色默认切到
-`mlx-community/GLM-5.2-fp8`（model_router._model_id_for_alias）。M151 代码助手
-要复用同一条管线，本测试钉住「无论 agent / chat / approve 路径，所有角色都解析到
-GLM-5.2-fp8」这一行为，防止未来 Kimi 恢复时静默破坏单模型路径。
+历史脉络：
+- M149 决策：Kimi K2.7-Code 不稳定且能力不比 GLM 强 → 全角色默认切到 GLM-5.2-fp8
+  （单模型模式）。此文件原钉住「全角色 → GLM」。
+- M156 恢复：Kimi-K2.7-Code 在 exo 已就绪（实测 2.5s 响应），切回双模型分工：
+    architect/supervisor/overseer/monitor = GLM-5.2-fp8（编排者，1M 上下文）
+    coder                          = Kimi-K2.7-Code-4bit（执行者，编码强 + MCP 强）
+  解除 M147-A 熔断（GLM 单模型 reasoning_content 抢占 content 路径不可代码修复）。
+  逃生门：export FLIPPED_CODER_MODEL=mlx-community/GLM-5.2-fp8 回退单模型。
 
-3 例（按 M151 计划）：
-1. mode=agent 时 architect 与 coder 都解析到 GLM-5.2-fp8
+4 例（M156 更新）：
+1. mode=agent 时 architect→GLM、coder→Kimi（双模型分工）
    - 直接钉 `_model_id_for_alias` 默认值（生产代码层契约）
-   - monkeypatch `resolve_model_config` 返回 GLM，验证 `_make_llm(alias)` 拿到的 model 是 GLM
-2. mode=chat 时 `_llm_chat` 收到 GLM-5.2-fp8
+   - monkeypatch `resolve_model_config` 走 best-effort 回退，验证 `_make_llm(alias)` 拿到的 model 符合双模型分工
+2. mode=chat 时 `_llm_chat` 收到的 model 与 resolve_worker_model_config 返回值一致
    - monkeypatch `resolve_worker_model_config` 返回 GLM
-   - 调 `_run_chat` → 断言 `_llm_chat` 收到的 model 参数 == GLM
-3. approve 路径在单模型下可走通
-   - FLIPPED_MOCK_ORCHESTRATOR=1 走 mock resume（不触真实 LLM，但完整跑审批 resume 闭环）
-   - 钉：单模型 env（无 Kimi 覆盖）下，approve 端点能正常返回 200 且 status 流转到 done
+   - 调 `_run_chat` → 断言 `_llm_chat` 收到的 model 参数 == GLM（行为钉：chat 路径正确转发 model）
+3. approve 路径在默认 env 下可走通
+   - FLIPPED_MOCK_ORCHESTRATOR=1 走 mock resume（不触真实 LLM）
+   - 钉：默认 env 下 approve 端点能正常返回 200 且 status 流转到 done
 
-无生产代码改动——M149 已配置；本文件仅钉行为。
+无生产代码改动——M156 仅改 _model_id_for_alias 默认值与 LiteLLM 配置；本文件钉行为。
 """
 from __future__ import annotations
 
@@ -31,15 +35,19 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 
 GLM = "mlx-community/GLM-5.2-fp8"
+KIMI = "mlx-community/Kimi-K2.7-Code-4bit"
 
 
-# ---------- 1) mode=agent：所有角色默认解析到 GLM-5.2-fp8 ----------
+# ---------- 1) mode=agent：双模型分工（architect→GLM、coder→Kimi） ----------
 
-def test_model_id_for_alias_defaults_all_roles_to_glm():
-    """`_model_id_for_alias` 对 architect/coder/supervisor/overseer/monitor 默认都返回 GLM-5.2-fp8。
+def test_model_id_for_alias_dual_model_defaults():
+    """`_model_id_for_alias` 默认值钉 M156 双模型分工：
 
-    这是 M149 单模型策略的核心钉子：env 不覆盖时，全角色无差别走 GLM。
-    未来若有人把 coder 默认改回 Kimi（而 architect 留 GLM），本例会先红，强制显式决策。
+    - architect/supervisor/overseer/monitor → GLM-5.2-fp8（编排者，1M 上下文）
+    - coder → Kimi-K2.7-Code-4bit（执行者，编码强 + MCP 强）
+
+    env 不覆盖时验证默认映射。未来若有人把 coder 默认改回 GLM（单模型），
+    本例会先红，强制显式决策 + 同步更新 LiteLLM 配置。
     """
     # 清掉所有可覆盖 env，确保测到的是默认值（而非本机 .env 的覆盖）
     env_keys = [
@@ -49,11 +57,18 @@ def test_model_id_for_alias_defaults_all_roles_to_glm():
     saved = {k: os.environ.pop(k, None) for k in env_keys}
     try:
         from driving.model_router import _model_id_for_alias
-        for alias in ("architect", "coder", "supervisor", "overseer", "monitor"):
+        # 编排角色 → GLM
+        for alias in ("architect", "supervisor", "overseer", "monitor"):
             assert _model_id_for_alias(alias) == GLM, (
-                f"alias={alias} 应默认解析到 {GLM}（M149 单模型策略），"
-                f"实际 {_model_id_for_alias(alias)!r}。如已恢复 Kimi，请显式更新本测试。"
+                f"alias={alias} 应默认解析到 {GLM}（M156 编排者角色），"
+                f"实际 {_model_id_for_alias(alias)!r}。"
             )
+        # 执行者 → Kimi
+        assert _model_id_for_alias("coder") == KIMI, (
+            f"alias=coder 应默认解析到 {KIMI}（M156 执行者角色），"
+            f"实际 {_model_id_for_alias('coder')!r}。"
+            f"如需回退单模型：export FLIPPED_CODER_MODEL=mlx-community/GLM-5.2-fp8"
+        )
         # 未知 alias 原样透传（不强制映射）
         assert _model_id_for_alias("custom-llm") == "custom-llm"
     finally:
@@ -63,28 +78,31 @@ def test_model_id_for_alias_defaults_all_roles_to_glm():
 
 
 @patch("driving.model_router.httpx.get")
-def test_make_llm_resolves_architect_and_coder_to_glm(mock_get, monkeypatch):
-    """orchestrator 的 `_make_llm(alias)` 经 `resolve_model_config` 拿到 GLM-5.2-fp8。
+def test_make_llm_resolves_dual_model_architect_glm_coder_kimi(mock_get, monkeypatch):
+    """orchestrator 的 `_make_llm(alias)` 经 `resolve_model_config` 拿到对应模型。
 
-    场景：LiteLLM proxy 不健康（httpx 抛错）→ 回退直连 exo，返回 full_model=GLM。
-    钉：无论 alias=architect 还是 coder，最终 ChatOpenAI.model 都是 GLM-5.2-fp8。
+    场景：LiteLLM proxy 不健康（httpx 抛错）→ 回退直连 exo，返回 full_model。
+    钉 M156 双模型分工：architect → GLM-5.2-fp8，coder → Kimi-K2.7-Code-4bit。
     """
     monkeypatch.setenv("LITELLM_BASE_URL", "http://proxy.test/v1")
     monkeypatch.setenv("FLIPPED_MODEL_BASE_URL", "http://direct.test/v1")
     # 清 alias 覆盖 env，确保默认值生效
     for k in ("FLIPPED_ARCHITECT_MODEL", "FLIPPED_CODER_MODEL"):
         monkeypatch.delenv(k, raising=False)
-    # 所有端点都不可达 → 走 best-effort 直连回退，返回 (direct_url, full_model=GLM)
+    # 所有端点都不可达 → 走 best-effort 直连回退，返回 (direct_url, full_model)
     mock_get.side_effect = TimeoutError("proxy down")
 
     from driving.orchestrator import _make_llm
 
-    for alias in ("architect", "coder"):
-        llm = _make_llm(alias)
-        model = getattr(llm, "model_name", "") or getattr(llm, "model", "")
-        assert model == GLM, (
-            f"_make_llm({alias!r}) 应解析到 {GLM}，实际 {model!r}"
-        )
+    # architect → GLM
+    llm_a = _make_llm("architect")
+    model_a = getattr(llm_a, "model_name", "") or getattr(llm_a, "model", "")
+    assert model_a == GLM, f"_make_llm('architect') 应解析到 {GLM}，实际 {model_a!r}"
+
+    # coder → Kimi
+    llm_c = _make_llm("coder")
+    model_c = getattr(llm_c, "model_name", "") or getattr(llm_c, "model", "")
+    assert model_c == KIMI, f"_make_llm('coder') 应解析到 {KIMI}，实际 {model_c!r}"
 
 
 # ---------- 2) mode=chat：_llm_chat 收到 GLM-5.2-fp8 ----------
