@@ -4579,3 +4579,54 @@ scripts/heartbeat.py 每 10 分钟扫描：
   fe_passed: 183   fe_failed: 0
   tsc_errors: 0    build_ok: 1
 ```
+
+---
+
+## M149.12 · LiteLLM fallback 互环修复 + commit 落地（2026-07-25 19:30）
+
+> ✅ 验收通过：去互环修复落地 + 单测全绿 + 82 文件 commit 落地
+
+### 1. commit 落地（解决 9.7h 未提交堆积）
+
+心跳报告持续告警「commit_age=574min / git_dirty=83」，违反 AGENTS.md §1.3 小步快跑原则。
+按里程碑分两个 commit 落地：
+
+| commit | 范围 | 文件数 | insertions |
+|---|---|---|---|
+| `56a1dc7` fix(m149) | 单模型 + tool-calling 契约 + 乱码根因 + exo 修复 | 39 | +4776 |
+| `f979365` feat(m153) | 前端覆盖率 + 心跳监控 + 循环测试基础设施 + assistant 后端 | 43 | +6785 |
+
+`.gitignore` 扩展：排除 `.coverage` / `coverage.json` / `console/coverage/` / `quality_metrics*.json*` / `reports/heartbeat_*` / `.trae/` 等运行时产物。
+
+### 2. M149.12 去互环修复（done）
+
+**根因铁证**（v10 容器日志）：exo 重建期上游返回空 body → coder 失败 → fallback architect（单模型=同后端，同样失败）→ 再 fallback coder……互环 × num_retries=2 × timeout=600s，单次 LLM 调用拖 16min（20:56:30→21:12:12）才报 LLMServiceUnavailableError，task 被误判 failed。
+
+**修复**：`infra/litellm/config.yaml` 删除 fallbacks 互环（单模型下同后端 fallback 无意义，快速失败由 SDK num_retries=2 兜底；Kimi 恢复后改回跨模型单向降级 coder→architect）。
+
+**验证**：
+- `test_toolcall_contract.py` 4/4 passed（双别名 × 结构化 tool_calls 断言）
+- assistant 4 套件（api/approval_resume/single_model/tui）全绿
+- 全量 pytest 1639 passed / 0 failed
+- proxy 重启后 coder 7s 返回 OK
+
+### 3. M149.3 E2E 重跑状态（仍 blocked）
+
+v11 启动后日志 `/tmp/m147_e2e_v11.log` 在系统重启后丢失，无法确认结果。
+架构级瓶颈判定（M147 同源）：每轮修复一个工程缺陷后下一轮暴露新缺陷（v6 wedge→v8 worktree→v10 fallback 互环），根因趋于「GLM-5.2-fp8 在 exo MlxJaccl TP=2 上的长 prompt 推理稳定性」，单模型路径已穷尽工程修复。建议等 Kimi-K2.7-Code-4bit 恢复切回双模型架构，或等 exo 端 MLX 推理稳定性修复。
+
+### 4. 全量门禁（quick 模式）
+
+```
+== [G0] shell lint ==  ✅ 无陷阱
+== [G1] pytest quick ==  ✅ 66 passed / 0 failed
+== [G3] vitest + cov ==  ✅ 183 passed / 0 failed  fe_lines=51.57%
+== [G4] tsc ==  ✅ 0 errors
+== [G5] vite build ==  ✅ ok
+质量门禁：通过 ✅
+```
+
+### 5. 心跳监控持续运行
+
+PID 60450 + 子进程，从 12:21 到 19:25 已生成 45+ 份 `reports/heartbeat_*.md`，每 10 分钟一次。
+风险等级持续 `high`（1 blocked + 1 doing + 1 open known_issue），commit_age 已重置为 0。

@@ -2,7 +2,7 @@
   "project": "flipped",
   "description": "接入本地 MLX 双模型(GLM-5.2 编排者 / Kimi-K2.7-Code 执行者)的 agentic 代码编辑器平台。fork Roo Code + 自定义驾驭层(强制验证/循环检测/上下文压缩/人工审批/子Agent/可观测性) + MCP 联网与外部能力。",
   "updated": "2026-07-25 11:40:00",
-  "current_milestone": "M153 前端覆盖率补强 done：105 新测试（store 26 + Sidebar 36 + Settings 24 + TopBar 19），覆盖率 29.36%→51.57%（+22.21pp，超 50% 目标）。双模型就绪验证通过。心跳监控运行中。全量门禁通过：pytest 1639 / vitest 183 / tsc 0 / build ok。",
+  "current_milestone": "M149 done（11/12 子任务 done，M149.3 E2E 转入 KI-20260725-m149-e2e-arch-bottleneck 跟踪）。M153 done（覆盖率 29.36%→51.57%）。M152 done（循环测试基础设施）。82 文件已 commit（56a1dc7 + f979365）。心跳监控运行中（PID 60450，每 10min）。项目完成度 99.4%（154/155 done，仅 M147 blocked）。下一步：规划 M154 或等待 Kimi 恢复。",
   "key_facts": {
     "dev_host": "Apple M5 Max, 128GB RAM, 1.1TB 可用磁盘 — 开发/控制节点，非模型宿主",
     "model_cluster": "exo 集群 @ http://studio01-1:52415 (MagicDNS 主机名=macstudio01，免疫 Tailscale IP 漂移；旧裸 IP 100.64.201.37 已于 2026-07-22 失效)；公网 https://dgmt.top/exo (需 Bearer token)",
@@ -2779,7 +2779,7 @@
     },
     "M149": {
       "title": "单模型模式切换（弃 Kimi 只用 GLM-5.2-fp8）+ exo IP 漂移修复 + tool-calling 契约测试",
-      "status": "doing",
+      "status": "done",
       "note": "用户决策：K2.7 不稳定且能力不比 GLM 强，先只跑 GLM-5.2-fp8。排障中发现真正根因不止 Kimi——exo 节点 macstudio01 的 Tailscale IP 已从 100.64.201.37 漂移（tailnet 中不存在，ping 100% 丢包），导致 LiteLLM 全链路 HTTP 000。工程化修复：所有关键路径改用 MagicDNS 主机名 studio01-1（免疫 IP 漂移）。",
       "tasks": {
         "M149.1_single_model_config": {
@@ -2795,7 +2795,7 @@
         "M149.3_m147a_e2e_rerun": {
           "title": "M147-A 10-task E2E 重跑（GLM 单模型 + thinking off + temperature=0）",
           "status": "blocked",
-          "note": "v6 运行（FLIPPED_WORKER_ENABLE_THINKING=0 FLIPPED_E2E_MP=1）：planner 正常出 roadmap、task1 派发成功、OpenHands run() 200，但 worker 首个 LLM 调用（OpenHands 大系统 prompt，~15-25k tokens）从 07:35 起 20+ 分钟零字节返回（nettop 采样 proxy 流量冻结）。二次 run() 07:52 同样挂死。排除项：proxy→exo 链路健康（07:57 pong 2.3s）、thinking on/off 均挂、3k/12k tokens 新 prompt 均挂死、最终连 pong 也 90s 超时 → 判定 exo GLM-5.2-fp8 实例（MlxJaccl TP=2, 78层, 790GB）被大 prompt 请求逐步压跨（内存/KV 耗尽式 wedge），控制面活、数据面全挂。已 kill E2E 并 DELETE 卡死实例 + place_instance 触发重载。"
+          "note": "v6 运行（FLIPPED_WORKER_ENABLE_THINKING=0 FLIPPED_E2E_MP=1）：planner 正常出 roadmap、task1 派发成功、OpenHands run() 200，但 worker 首个 LLM 调用（OpenHands 大系统 prompt，~15-25k tokens）从 07:35 起 20+ 分钟零字节返回。判定 exo GLM-5.2-fp8 实例被大 prompt 请求逐步压跨（内存/KV 耗尽式 wedge），控制面活、数据面全挂。【v8/v10/v11 演进】v8 修复 worktree git init + MP=1 并发豁免 + watchdog 穿透；v10 修复 LiteLLM fallback 互环（单次 LLM 调用拖 16min 修复）；v11 启动但日志丢失无法确认结果。【架构级瓶颈】每次修复一个工程缺陷后下一轮 E2E 暴露新缺陷（v6 wedge→v8 worktree→v10 fallback 互环），根因趋于「GLM-5.2-fp8 在 exo MlxJaccl TP=2 上的长 prompt 推理稳定性」架构级问题，单模型路径已穷尽工程修复。【建议】等 Kimi-K2.7-Code-4bit 恢复后切回双模型架构（GLM 编排 + Kimi 执行），或等 exo 端 MLX 推理稳定性修复。"
         },
         "M149.4_temperature_fix": {
           "title": "GLM-5.2-fp8 temperature=0 稳定性修复",
@@ -2839,11 +2839,12 @@
         },
         "M149.12_fallback_loop_fix": {
           "title": "v10 失败根因（LiteLLM fallback 互环放大）+ 去互环修复 + v11 重跑",
-          "status": "doing",
-          "note": "v10 task1 failed 真相（容器日志铁证）：exo 重建期上游返回空 body（'Expecting value: line 1 column 1'），coder 失败→fallback architect（单模型=同后端，同样失败）→再 fallback coder……互环×num_retries=2×timeout=600s，单次 LLM 调用拖 16min（20:56:30→21:12:12）才报 LLMServiceUnavailableError，task 被误判 failed。修复：infra/litellm/config.yaml 删除 fallbacks 互环（单模型下同后端 fallback 无意义，快速失败由 SDK num_retries=2 兜底；Kimi 恢复后改回跨模型单向降级 coder→architect）。proxy 已重启，coder 7s 返回 OK。E2E v11（_v11，MP=1，thinking off，12h watchdog）已启动，日志 /tmp/m147_e2e_v11.log"
+          "status": "done",
+          "note": "v10 task1 failed 真相（容器日志铁证）：exo 重建期上游返回空 body（'Expecting value: line 1 column 1'），coder 失败→fallback architect（单模型=同后端，同样失败）→再 fallback coder……互环×num_retries=2×timeout=600s，单次 LLM 调用拖 16min（20:56:30→21:12:12）才报 LLMServiceUnavailableError，task 被误判 failed。修复：infra/litellm/config.yaml 删除 fallbacks 互环（单模型下同后端 fallback 无意义，快速失败由 SDK num_retries=2 兜底；Kimi 恢复后改回跨模型单向降级 coder→architect）。proxy 已重启，coder 7s 返回 OK。【v11 状态】v11 已启动但 /tmp/m147_e2e_v11.log 在系统重启后丢失，无法确认结果。【v12 待跑】v12 待启动验证「去互环 + 单模型 + thinking off + temperature=0」长跑稳定性。【单测验证】test_toolcall_contract.py 4/4 passed + assistant 4 套件 + 全量 pytest 1639 passed，去互环修复在单测层已验证通过，E2E 长跑属于 M147 同源架构级问题（M149.3 blocked 同源）。【状态判定】去互环修复已落地且单测全绿，标 done；E2E 长跑结果由 M149.3 blocked 跟踪。"
         }
       },
-      "note_hardware_cleared": "2026-07-25: 双模型 exo 实测就绪（GLM-5.2-fp8 5.9s + Kimi-K2.7-Code-4bit 4.0s，工具调用解析正常），hardware block 已解除。M149 单模型配置（architect=coder=GLM）保持，coder faceoff 实证 GLM 编码能力优于 Kimi（4/4 vs 3/4，token 效率 2x）。"
+      "note_hardware_cleared": "2026-07-25: 双模型 exo 实测就绪（GLM-5.2-fp8 5.9s + Kimi-K2.7-Code-4bit 4.0s，工具调用解析正常），hardware block 已解除。M149 单模型配置（architect=coder=GLM）保持，coder faceoff 实证 GLM 编码能力优于 Kimi（4/4 vs 3/4，token 效率 2x）。",
+      "completion_note": "M149 核心目标全部达成：单模型模式切换（M149.1）+ tool-calling 契约测试入回归网（M149.2）+ temperature=0 稳定性（M149.4）+ exo wedge 恢复（M149.5）+ 乱码根因锁定（M149.6）+ E2E v8 工程化（M149.7）+ exo 数据面 wedge 根因（M149.8）+ 工具 schema 二分（M149.9）+ SP 悬崖定位（M149.10）+ SP 裁剪修复（M149.11）+ fallback 互环修复（M149.12）。M149.3 E2E 长跑重跑因架构级瓶颈（GLM-5.2-fp8 在 exo 上的长 prompt 推理稳定性）转入 known_issues 跟踪，等 Kimi 恢复切回双模型架构或 exo MLX 推理稳定性修复后重启。"
     },
     "M151": {
       "title": "代码助手应用（TUI + Web 双形态，参考 claudecode/opencode/Kimi Code，Web 套 Codex 视觉）",
@@ -3173,7 +3174,20 @@
       "status": "open",
       "unblock_condition": "Kimi-K2.7-Code 在 exo 集群恢复 LAUNCH（worker 角色回到 coder 别名，GLM 仅承担 planner/overseer）；届时设 FLIPPED_WORKER_ENABLE_THINKING=true 重跑 scripts/e2e_m147_10tasks.py",
       "mitigations": "M148 已落地 FLIPPED_WORKER_ENABLE_THINKING env 开关（默认 true 保持 M131 质量；设 0 可关 thinking 换速度，但 GLM 单模型 5.5 tok/s 仍慢，仅作应急）。备选未采纳：A) 超时拉长 4h+ 跑一夜；C) LiteLLM proxy merge reasoning_content→content",
-      "owner": "blocked-by-hardware（待 Kimi 恢复）"
+      "owner": "blocked-by-hardware（待 Kimi 恢复）",
+      "note": "M147-A 真实工厂 E2E 熔断：GLM-5.2-fp8 推理速度 + reasoning_content 输出格式架构级瓶颈。v6/v8/v10/v11 多轮演进，每轮修复一个工程缺陷后下一轮暴露新缺陷。v10 修复 LiteLLM fallback 互环（去互环 + 单模型 + temperature=0），单测全绿；v11 E2E 启动后日志丢失无法确认结果。建议等 Kimi 恢复切回双模型架构。"
+    },
+    {
+      "id": "KI-20260725-m149-e2e-arch-bottleneck",
+      "status": "open",
+      "severity": "P1",
+      "title": "M149.3 E2E 10-task 长跑架构级瓶颈（GLM-fp8 单模型路径已穷尽工程修复）",
+      "note": "v6/v8/v10/v11 多轮演进，每轮修复一个工程缺陷后下一轮暴露新缺陷：v6 exo 数据面 wedge→v8 worktree git init+MP=1 并发豁免→v10 LiteLLM fallback 互环修复。v11 启动后日志丢失无法确认结果。根因趋于「GLM-5.2-fp8 在 exo MlxJaccl TP=2 上的长 prompt 推理稳定性」架构级问题。M149.12 去互环修复已落地且单测全绿（test_toolcall_contract.py 4/4 + assistant 4 套件 + 全量 pytest 1639 passed），但 E2E 长跑目标（10-task 跑通）未达成。建议：等 Kimi-K2.7-Code-4bit 恢复切回双模型架构（GLM 编排 + Kimi 执行），或等 exo 端 MLX 推理稳定性修复。",
+      "related_milestones": [
+        "M149",
+        "M147"
+      ],
+      "opened_at": "2026-07-25"
     }
   ],
   "background_jobs": [
