@@ -2,7 +2,7 @@
   "project": "flipped",
   "description": "接入本地 MLX 双模型(GLM-5.2 编排者 / Kimi-K2.7-Code 执行者)的 agentic 代码编辑器平台。fork Roo Code + 自定义驾驭层(强制验证/循环检测/上下文压缩/人工审批/子Agent/可观测性) + MCP 联网与外部能力。",
   "updated": "2026-07-25 11:40:00",
-  "current_milestone": "M149 done（11/12 子任务 done，M149.3 E2E 转入 KI-20260725-m149-e2e-arch-bottleneck 跟踪）。M153 done（覆盖率 29.36%→51.57%）。M152 done（循环测试基础设施）。82 文件已 commit（56a1dc7 + f979365）。心跳监控运行中（PID 60450，每 10min）。项目完成度 99.4%（154/155 done，仅 M147 blocked）。下一步：规划 M154 或等待 Kimi 恢复。",
+  "current_milestone": "M154 done（质量保障常态化 + Kimi 恢复检测 + 覆盖率深化 51.57%→73.53%）。项目完成度 155/156 = 99.4%（M147 blocked 架构级瓶颈 + 2 open known_issues 同源）。心跳监控 + 循环测试常态化后台运行中。下一步：等 Kimi 恢复（heartbeat.py 自动检测通知）→ 切回双模型架构 → 解除 M147/M149.3 阻塞。",
   "key_facts": {
     "dev_host": "Apple M5 Max, 128GB RAM, 1.1TB 可用磁盘 — 开发/控制节点，非模型宿主",
     "model_cluster": "exo 集群 @ http://studio01-1:52415 (MagicDNS 主机名=macstudio01，免疫 Tailscale IP 漂移；旧裸 IP 100.64.201.37 已于 2026-07-22 失效)；公网 https://dgmt.top/exo (需 Bearer token)",
@@ -2961,6 +2961,47 @@
         "branches": 83.57,
         "tests": 183
       }
+    },
+    "M154": {
+      "status": "done",
+      "title": "质量保障常态化 + Kimi 恢复检测 + 覆盖率深化",
+      "started_at": "2026-07-25",
+      "completed_at": "2026-07-25",
+      "note": "M154 全量落地：循环测试常态化（每 6h 自动跑 loop_test.sh）+ heartbeat.py Kimi 恢复检测（not ready→ready 自动写通知）+ 前端覆盖率深化（51.57%→73.53%，+21.96pp，超 70% stretch 目标）。",
+      "tasks": {
+        "M154.1_cyclic_test_loop": {
+          "status": "done",
+          "title": "循环测试定时任务（cyclic_test_loop.sh 每 6h 跑 3 轮 --quick）",
+          "note": "创建 scripts/cyclic_test_loop.sh，nohup 后台启动（PID 13808），延迟 1h 首次跑（避开 M154.3 覆盖率深化），每 6h 跑一次 loop_test.sh 3 --quick，产出 reports/cyclic_test_loop.log + cyclic_test_history.jsonl。.gitignore 排除运行时产物。"
+        },
+        "M154.2_kimi_recovery_detection": {
+          "status": "done",
+          "title": "heartbeat.py 加 Kimi 恢复健康探针（恢复后自动通知）",
+          "note": "heartbeat.py 新增 load_prev_model_state/detect_recovery/write_recovery_notice 三函数，对比上一次心跳的模型状态，检测 not ready→ready 恢复事件，写 reports/recovery_*.md 通知 + heartbeat.log 加 📢 RECOVERY 标记。5 场景测试全通过（Kimi 恢复/双模型恢复/无恢复/GLM 故障/首次运行空 prev）。"
+        },
+        "M154.3_coverage_deepening": {
+          "status": "done",
+          "title": "前端覆盖率深化：51.57%→73.53%（+21.96pp，超 70% stretch）",
+          "note": "子 agent 并行推进，新增 12 测试文件 254 用例：ResizeHandle(8)/PlanCard(7)/Launcher(8)/TerminalDrawer(7)/CommandPalette(29)/Plugins(24)/PtyTerminal(13)/ContextPanel(70)/useTheme(9)/native(22)/mock(14)/api(43)。ContextPanel.tsx 0%→100% lines（496 行最大空白补齐）。覆盖率：lines 51.57%→73.53%（+21.96pp）/ branches 83.57%→89.85% / functions 54.83%→70.49%。"
+        },
+        "M154.4_full_regression": {
+          "status": "done",
+          "title": "全量回归验证 + STATE.json/TEST_LOG.md 更新 + commit",
+          "note": "quality_gate.sh full 模式全绿：pytest 1639/0/7（py_cov 82.93%）+ vitest 437/0（fe_lines 73.53%）+ tsc 0 + build ok。"
+        }
+      },
+      "coverage_before": {
+        "lines": 51.57,
+        "branches": 83.57,
+        "functions": 54.83,
+        "tests": 183
+      },
+      "coverage_after": {
+        "lines": 73.53,
+        "branches": 89.85,
+        "functions": 70.49,
+        "tests": 437
+      }
     }
   },
   "architecture_decisions": [
@@ -3182,7 +3223,7 @@
       "status": "open",
       "severity": "P1",
       "title": "M149.3 E2E 10-task 长跑架构级瓶颈（GLM-fp8 单模型路径已穷尽工程修复）",
-      "note": "v6/v8/v10/v11 多轮演进，每轮修复一个工程缺陷后下一轮暴露新缺陷：v6 exo 数据面 wedge→v8 worktree git init+MP=1 并发豁免→v10 LiteLLM fallback 互环修复。v11 启动后日志丢失无法确认结果。根因趋于「GLM-5.2-fp8 在 exo MlxJaccl TP=2 上的长 prompt 推理稳定性」架构级问题。M149.12 去互环修复已落地且单测全绿（test_toolcall_contract.py 4/4 + assistant 4 套件 + 全量 pytest 1639 passed），但 E2E 长跑目标（10-task 跑通）未达成。建议：等 Kimi-K2.7-Code-4bit 恢复切回双模型架构（GLM 编排 + Kimi 执行），或等 exo 端 MLX 推理稳定性修复。",
+      "note": "v6/v8/v10/v11 多轮演进，每轮修复一个工程缺陷后下一轮暴露新缺陷。v10 修复 LiteLLM fallback 互环，单测全绿；v11 日志丢失无法确认结果。根因趋于「GLM-5.2-fp8 在 exo MlxJaccl TP=2 上的长 prompt 推理稳定性」架构级问题。【M154.2 监控】heartbeat.py 已加 Kimi 恢复检测，Kimi-K2.7-Code-4bit 恢复后自动写通知 reports/recovery_*.md，届时可切回双模型架构解除阻塞。",
       "related_milestones": [
         "M149",
         "M147"

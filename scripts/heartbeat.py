@@ -196,6 +196,77 @@ def compute_deviation(state: dict) -> dict:
     }
 
 
+def load_prev_model_state() -> dict:
+    """读上一次心跳的模型状态（从 heartbeat_history.jsonl 最后一行）。
+    M154.2：用于检测 Kimi 从 not ready → ready 的恢复事件。"""
+    hist_path = os.path.join(REPORTS_DIR, "heartbeat_history.jsonl")
+    if not os.path.exists(hist_path):
+        return {}
+    try:
+        # 读最后几行（避免大文件全读）
+        with open(hist_path, "rb") as f:
+            f.seek(0, 2)
+            size = f.tell()
+            f.seek(max(0, size - 8192))
+            tail = f.read().decode("utf-8", errors="ignore").strip().split("\n")
+        for line in reversed(tail):
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                entry = json.loads(line)
+                if "models" in entry:
+                    return entry["models"]
+            except Exception:
+                continue
+    except Exception:
+        pass
+    return {}
+
+
+def detect_recovery(models: dict, prev_models: dict) -> list:
+    """M154.2：检测模型恢复事件（not ready → ready）。
+    返回恢复事件列表，每个事件是 (model_id, prev_error, curr_latency)。
+    首次运行（prev_models 为空）不触发恢复通知——无对比基准。"""
+    if not prev_models:
+        return []
+    recoveries = []
+    for mid, curr in models.items():
+        prev = prev_models.get(mid, {})
+        was_ready = prev.get("ready", False)
+        is_ready = curr.get("ready", False)
+        if not was_ready and is_ready:
+            recoveries.append({
+                "model": mid,
+                "prev_error": prev.get("error", "未知"),
+                "curr_latency_s": curr.get("latency_s"),
+            })
+    return recoveries
+
+
+def write_recovery_notice(recoveries: list, now_ts: str, now_human: str) -> None:
+    """M154.2：写模型恢复通知到 reports/recovery_*.md。"""
+    if not recoveries:
+        return
+    notice_path = os.path.join(REPORTS_DIR, f"recovery_{now_ts}.md")
+    with open(notice_path, "w") as f:
+        f.write(f"# 模型恢复通知 · {now_human}\n\n")
+        f.write(f"检测到以下模型从不可用转为可用（M154.2 自动检测）：\n\n")
+        for r in recoveries:
+            f.write(f"## ✅ {r['model']}\n\n")
+            f.write(f"- **先前错误**: {r['prev_error']}\n")
+            f.write(f"- **当前延迟**: {r['curr_latency_s']}s\n")
+            f.write(f"- **恢复时间**: {now_human}\n\n")
+        f.write(f"## 建议动作\n\n")
+        f.write(f"- 如果是 Kimi-K2.7-Code-4bit 恢复：可考虑切回双模型架构（GLM 编排 + Kimi 执行），解除 M147/M149.3 阻塞\n")
+        f.write(f"- 跑 `bash scripts/quality_gate.sh` 验证 tool-calling 契约\n")
+        f.write(f"- 跑 `python3 scripts/e2e_m147_10tasks.py` 重试 E2E 10-task\n")
+    # 控制台高亮输出
+    print(f"  📢 检测到模型恢复事件 → {notice_path}")
+    for r in recoveries:
+        print(f"     ✅ {r['model']}: {r['prev_error']} → ready ({r['curr_latency_s']}s)")
+
+
 def main():
     now_ts = ts()
     now_human = ts_human()
@@ -205,11 +276,18 @@ def main():
     tests = scan_tests()
     deviation = compute_deviation(state)
 
+    # M154.2：读上一次心跳的模型状态，用于恢复检测
+    prev_models = load_prev_model_state()
+
     # 模型探针（只读，不扰动）
     models = {
         "GLM-5.2-fp8": probe_model("mlx-community/GLM-5.2-fp8"),
         "Kimi-K2.7-Code-4bit": probe_model("mlx-community/Kimi-K2.7-Code-4bit"),
     }
+
+    # M154.2：检测恢复事件并写通知
+    recoveries = detect_recovery(models, prev_models)
+    write_recovery_notice(recoveries, now_ts, now_human)
 
     report = {
         "timestamp": now_human,
@@ -280,7 +358,9 @@ def main():
     log_path = os.path.join(REPORTS_DIR, "heartbeat.log")
     with open(log_path, "a") as f:
         ready_count = sum(1 for m in models.values() if m["ready"])
-        f.write(f"[{now_human}] risk={deviation['risk_level']} | completion={deviation['completion_pct']}% | doing={len(state.get('doing',[]))} blocked={len(state.get('blocked',[]))} | models={ready_count}/2 ready | git_dirty={git.get('dirty_files',0)} commit_age={git.get('commit_age_min','?')}min\n")
+        # M154.2：恢复事件高亮标记
+        recovery_mark = f" | 📢 RECOVERY={','.join(r['model'].split('-')[0] for r in recoveries)}" if recoveries else ""
+        f.write(f"[{now_human}] risk={deviation['risk_level']} | completion={deviation['completion_pct']}% | doing={len(state.get('doing',[]))} blocked={len(state.get('blocked',[]))} | models={ready_count}/2 ready | git_dirty={git.get('dirty_files',0)} commit_age={git.get('commit_age_min','?')}min{recovery_mark}\n")
 
     # 追加结构化历史
     hist_path = os.path.join(REPORTS_DIR, "heartbeat_history.jsonl")

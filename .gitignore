@@ -84,6 +84,11 @@ reports/heartbeat_*.md
 reports/heartbeat.log
 reports/heartbeat_history.jsonl
 reports/heartbeat_loop.log
+reports/recovery_*.md
+
+# ---- 循环测试常态化产物（M154.1） ----
+reports/cyclic_test_loop.log
+reports/cyclic_test_history.jsonl
 
 # ---- Trae 编辑器产物 ----
 .trae/

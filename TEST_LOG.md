@@ -4630,3 +4630,81 @@ v11 启动后日志 `/tmp/m147_e2e_v11.log` 在系统重启后丢失，无法确
 
 PID 60450 + 子进程，从 12:21 到 19:25 已生成 45+ 份 `reports/heartbeat_*.md`，每 10 分钟一次。
 风险等级持续 `high`（1 blocked + 1 doing + 1 open known_issue），commit_age 已重置为 0。
+
+---
+
+## M154 · 质量保障常态化 + Kimi 恢复检测 + 覆盖率深化（2026-07-25 19:55）
+
+> ✅ 验收通过：循环测试常态化 + Kimi 恢复自动通知 + 前端覆盖率 51.57%→73.53%
+
+### 1. M154.1 循环测试常态化
+
+**脚本**：`scripts/cyclic_test_loop.sh`
+**启动**：`CYCLIC_DELAY_S=3600 nohup bash scripts/cyclic_test_loop.sh >> reports/cyclic_test_loop.log 2>&1 &`
+**参数**：延迟 1h 首次跑（避开 M154.3），每 6h 跑一次 `loop_test.sh 3 --quick`（3 轮 quick 模式，连续 2 轮全绿提前收尾）
+**进程**：PID 13808
+**产出**：`reports/cyclic_test_loop.log` + `reports/cyclic_test_history.jsonl`（.gitignore 排除）
+
+### 2. M154.2 Kimi 恢复检测
+
+**改动**：`scripts/heartbeat.py` 新增 3 函数
+- `load_prev_model_state()`：读 `heartbeat_history.jsonl` 最后一行的 models 字段
+- `detect_recovery(models, prev_models)`：对比 prev/curr，检测 not ready→ready，首次运行空 prev 不触发
+- `write_recovery_notice(recoveries, ts, human_ts)`：写 `reports/recovery_*.md` 通知 + 控制台高亮
+
+**摘要行增强**：`heartbeat.log` 加 `📢 RECOVERY=<model>` 标记
+
+**5 场景测试全通过**：
+| 场景 | 输入 | 期望 | 结果 |
+|---|---|---|---|
+| Kimi 恢复 | prev Kimi 404, curr Kimi ready | 1 事件 | ✅ |
+| 双模型恢复 | prev 都 not ready, curr 都 ready | 2 事件 | ✅ |
+| 无恢复 | prev/curr 都 ready | 0 事件 | ✅ |
+| GLM 故障 | prev GLM ready, curr GLM not ready | 0 事件（故障不触发恢复） | ✅ |
+| 首次运行空 prev | prev={}, curr 都 ready | 0 事件（无对比基准） | ✅ |
+
+### 3. M154.3 前端覆盖率深化（子 agent 并行）
+
+**子 agent**：da490387 + 2e7160b6（并行启动，合并成果）
+**新增 12 测试文件 254 用例**：
+
+| 文件 | 用例数 | 源文件覆盖率 |
+|---|---|---|
+| ResizeHandle.test.tsx | 8 | 0%→100% |
+| PlanCard.test.tsx | 7 | 0%→100% |
+| Launcher.test.tsx | 8 | 0%→100% |
+| TerminalDrawer.test.tsx | 7 | 0%→100% |
+| CommandPalette.test.tsx | 29 | 0%→100% |
+| Plugins.test.tsx | 24 | 0%→100% |
+| PtyTerminal.test.tsx | 13 | 0%→77.14% |
+| ContextPanel.test.tsx | 70 | 0%→100%（496 行最大空白补齐） |
+| useTheme.test.ts | 9 | 0%→94.44% |
+| native.test.ts | 22 | 0%→100% |
+| mock.test.ts | 14 | 0%→100% |
+| api.test.ts | 43 | 0%→96.37% |
+
+**覆盖率提升**：
+| 指标 | 任务前 | 任务后 | 变化 |
+|---|---|---|---|
+| Lines | 51.57% | 73.53% | +21.96pp |
+| Branches | 83.57% | 89.85% | +6.28pp |
+| Functions | 54.83% | 70.49% | +15.66pp |
+| 测试数 | 183 | 437 | +254 |
+
+### 4. M154.4 全量回归
+
+```
+== [G0] shell lint ==  ✅ 无陷阱
+== [G1] pytest full ==  ✅ 1639 passed / 0 failed / 7 skipped  (py_cov 82.93%)
+== [G3] vitest + cov ==  ✅ 437 passed / 0 failed  fe_lines=73.53%
+== [G4] tsc ==  ✅ 0 errors
+== [G5] vite build ==  ✅ ok
+质量门禁：通过 ✅
+```
+
+### 5. 后台任务持续运行
+
+| 任务 | PID | 频率 | 状态 |
+|---|---|---|---|
+| heartbeat.py | 60450 | 每 10min | 运行中（含 M154.2 恢复检测） |
+| cyclic_test_loop.sh | 13808 | 每 6h | 运行中（延迟 1h 首次跑） |
