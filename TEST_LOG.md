@@ -4708,3 +4708,125 @@ PID 60450 + 子进程，从 12:21 到 19:25 已生成 45+ 份 `reports/heartbeat
 |---|---|---|---|
 | heartbeat.py | 60450 | 每 10min | 运行中（含 M154.2 恢复检测） |
 | cyclic_test_loop.sh | 13808 | 每 6h | 运行中（延迟 1h 首次跑） |
+
+---
+
+## M155 · 覆盖率再深化（2026-07-25）
+
+### 目标
+
+在 M154 基线（前端 73.53% / 后端 openhands_worker 54.79%）上继续深化覆盖率，
+针对最低覆盖的核心组件补测试，目标 80%+。
+
+### M155.1 FactoryPanel.tsx 覆盖率 23.39% → 100% lines
+
+新增 40 个测试用例，覆盖：
+- 工厂列表渲染（空态/有数据/未知 status/进度 0）
+- CreateFactoryCard（成功/失败/Error/非 Error/取消/maxTasks NaN 回退）
+- FactoryDetailCard（running/paused/error 三状态/暂停/恢复/防重复点击/返回）
+- Roadmap + TaskRow（attempts>1/展开/折叠/verify_cmd=["true"] 边界）
+- ResultRow（展开/折叠 + completed/failed 列表）
+- RCA 历史折叠区（展开触发 load/空态/chips 排序/倒序时间线/单项展开）
+- 质量趋势折叠区（improving/stable/degrading/unknown/delta=0/维度值高亮）
+- 面板外壳（关闭/刷新/未打开不渲染）
+
+```bash
+$ npx vitest run src/components/FactoryPanel.test.tsx --coverage
+  FactoryPanel.tsx |     100 |     94.8 |     100 |     100 |
+ Test Files  1 passed (1)
+      Tests  42 passed (42)
+```
+
+### M155.2 Conversation.tsx 覆盖率 45.16% → 96.5% lines
+
+新增 53 个测试用例，覆盖：
+- StatusBanner 全状态（idle/running+progress=0/running+progress>0/done/review/error）
+- ErrorBanner + ApprovalCard（默认 risk/有 reason/approve/reject/disabled）
+- Turn 各 role（user/worker/supervisor+model/overseer/verify+ok/system）+ verdict meter
+- ToolRow 各 tool（terminal/file_editor/browser/search）+ 各 status + 展开/折叠
+- ToolChild（file_change/browser/output 图标）
+- 新线程视图（有项目/无项目 hero）
+- + 菜单（三项交互/已有文本时拼接）
+- @ 提及（过滤/键盘 ArrowDown/Up/Enter/Escape/选择）
+- composer Enter/Shift+Enter
+- 项目选择器（空态/列表/新建/导入/失败/Escape/Enter 提交）
+- 停止按钮 + 模型/模式 select + 沙盒按钮
+- composerPrefill 行内评论回填
+
+```bash
+$ npx vitest run src/components/Conversation.test.tsx --coverage
+  Conversation.tsx |    96.5 |    91.34 |   89.74 |    96.5 |
+ Test Files  1 passed (1)
+      Tests  58 passed (58)
+```
+
+### M155.3 store.tsx 覆盖率 62.24% → 94.74% lines
+
+新增 61 个测试用例，覆盖：
+- 项目文件操作（refreshProjects/openProject/createProject/openFile/closeFile 成功+失败）
+- browser render + git diff（成功/失败/非 Error 转字符串）
+- 工厂详情/RCA/质量（selectFactory/createFactory/resume/pause/loadFactoryRcaHistory/loadFactoryQualityTrend + M9 running 轮询）
+- 会话切换与任务（selectSession/sendTask/cancelTask/sendApproval 有/无 session）
+- WebSocket 事件流（onOpen/onClose/onError + terminal/browser/file_change/plan/status/error/approval_request/rca/verifier_verdict/approval_result/tool_result/message/unknown + lastEventId 更新）
+- 移动端抽屉（setMobileSidebarOpen/setMobilePanelOpen）
+- Assistant 历史/轮询（approve/reject 失败 + refreshAssistantHistory fail-open）
+
+```bash
+$ npx vitest run src/store.test.tsx --coverage
+  store.tsx |   94.74 |    93.87 |   88.89 |   94.74 |
+ Test Files  1 passed (1)
+      Tests  87 passed (87)
+```
+
+### M155.4 openhands_worker.py 覆盖率 54.79% → 97.26% lines
+
+新建 `tests/test_openhands_worker_translate.py`，37 个测试用例，覆盖：
+- `_sum_conversation_usage`（空/无 metrics/多 model 累加/None acc）
+- `MessageEvent` 翻译（agent/system 角色 + 多 TextContent 拼接 + 空 content）
+- `ActionEvent` 翻译（tool_call + thought 摘要 + file_editor file_change 透传 + new_str 兜底）
+- `ObservationEvent` 翻译（tool_result + terminal 事件 + browser 事件 + error 状态 + content 列表拼接）
+- 异常路径（翻译失败 → error 事件 + event_kind）
+- `_on_event` 线程安全（20 并发不丢事件）+ `events` 属性拷贝
+- `_default_agent_api_key`（env 优先/file 读取/缺失/不可读 OSError）
+- `run` 方法（happy path + 违规检测 + 子任务模式 + 异常路径）
+- `_build_condenser`（默认禁用 + env 启用）
+
+```bash
+$ PYTHONPATH=src python -m pytest tests/test_openhands_worker_translate.py --cov=executor.openhands_worker --cov-report=term-missing
+  src/executor/openhands_worker.py     219      6    97%
+  Required test coverage of 80.0% reached. Total coverage: 97.26%
+  68 passed
+```
+
+### M155.5 全量回归
+
+```bash
+$ bash scripts/quality_gate.sh
+== [G0] shell lint ==                         ✅ 无陷阱
+== [G1] pytest full ==                        ✅ 1676 passed / 0 failed / 7 skipped  (py_cov 83.56%)
+== [G3] vitest + cov ==                       ✅ 591 passed / 0 failed  fe_lines=85.26%
+== [G4] tsc --noEmit ==                       ✅ 0 errors
+== [G5] vite build ==                         ✅ ok
+质量门禁：通过 ✅
+```
+
+### 覆盖率总览
+
+| 指标 | M154 基线 | M155 后 | 变化 |
+|---|---|---|---|
+| 前端 Lines | 73.53% | 85.26% | +11.73pp |
+| 前端 Branches | 89.85% | 92.21% | +2.36pp |
+| 前端 Functions | 70.49% | 82.84% | +12.35pp |
+| 前端测试数 | 437 | 591 | +154 |
+| Python 覆盖率 | 82.89% | 83.56% | +0.67pp |
+| Python 测试数 | 1639 | 1676 | +37 |
+| openhands_worker.py | 54.79% | 97.26% | +42.47pp |
+
+### 单文件覆盖率提升明细
+
+| 文件 | 前 | 后 | 新增用例 |
+|---|---|---|---|
+| FactoryPanel.tsx | 23.39% | 100% | +40 |
+| Conversation.tsx | 45.16% | 96.5% | +53 |
+| store.tsx | 62.24% | 94.74% | +61 |
+| openhands_worker.py | 54.79% | 97.26% | +37 |

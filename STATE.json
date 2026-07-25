@@ -2,7 +2,7 @@
   "project": "flipped",
   "description": "接入本地 MLX 双模型(GLM-5.2 编排者 / Kimi-K2.7-Code 执行者)的 agentic 代码编辑器平台。fork Roo Code + 自定义驾驭层(强制验证/循环检测/上下文压缩/人工审批/子Agent/可观测性) + MCP 联网与外部能力。",
   "updated": "2026-07-25 11:40:00",
-  "current_milestone": "M154 done（质量保障常态化 + Kimi 恢复检测 + 覆盖率深化 51.57%→73.53%）。项目完成度 155/156 = 99.4%（M147 blocked 架构级瓶颈 + 2 open known_issues 同源）。心跳监控 + 循环测试常态化后台运行中。下一步：等 Kimi 恢复（heartbeat.py 自动检测通知）→ 切回双模型架构 → 解除 M147/M149.3 阻塞。",
+  "current_milestone": "M155 done（覆盖率再深化：前端 73.53%→85.26% + 后端 openhands_worker 54.79%→97.26%）。项目完成度 156/157 = 99.4%（M147 blocked 架构级瓶颈）。全量门禁通过：py=1676 passed, fe=591 passed, tsc=0, build=ok。",
   "key_facts": {
     "dev_host": "Apple M5 Max, 128GB RAM, 1.1TB 可用磁盘 — 开发/控制节点，非模型宿主",
     "model_cluster": "exo 集群 @ http://studio01-1:52415 (MagicDNS 主机名=macstudio01，免疫 Tailscale IP 漂移；旧裸 IP 100.64.201.37 已于 2026-07-22 失效)；公网 https://dgmt.top/exo (需 Bearer token)",
@@ -3001,6 +3001,67 @@
         "branches": 89.85,
         "functions": 70.49,
         "tests": 437
+      }
+    },
+    "M155": {
+      "title": "覆盖率再深化：前端 73.53%→85.26% + 后端 openhands_worker 54.79%→97.26%",
+      "status": "done",
+      "subtasks": {
+        "M155.1": {
+          "title": "FactoryPanel.tsx 覆盖率 23.39%→100% lines（+40 测试用例）",
+          "status": "done",
+          "coverage_before": "23.39%",
+          "coverage_after": "100%",
+          "tests_added": 40
+        },
+        "M155.2": {
+          "title": "Conversation.tsx 覆盖率 45.16%→96.5% lines（+53 测试用例）",
+          "status": "done",
+          "coverage_before": "45.16%",
+          "coverage_after": "96.5%",
+          "tests_added": 53
+        },
+        "M155.3": {
+          "title": "store.tsx 覆盖率 62.24%→94.74% lines（+61 测试用例）",
+          "status": "done",
+          "coverage_before": "62.24%",
+          "coverage_after": "94.74%",
+          "tests_added": 61
+        },
+        "M155.4": {
+          "title": "openhands_worker.py 覆盖率 54.79%→97.26% lines（+37 测试用例）",
+          "status": "done",
+          "coverage_before": "54.79%",
+          "coverage_after": "97.26%",
+          "tests_added": 37,
+          "test_file": "tests/test_openhands_worker_translate.py",
+          "covered_branches": [
+            "_sum_conversation_usage（空/无 metrics/多 model 累加/None acc）",
+            "MessageEvent 翻译（agent/system 角色 + 多 TextContent 拼接 + 空 content）",
+            "ActionEvent 翻译（tool_call + thought 摘要 + file_editor file_change 透传 + new_str 兜底）",
+            "ObservationEvent 翻译（tool_result + terminal 事件 + browser 事件 + error 状态 + content 列表拼接）",
+            "异常路径（翻译失败 → error 事件）",
+            "_on_event 线程安全 + events 属性拷贝",
+            "_default_agent_api_key（env/file/缺失/不可读）",
+            "run 方法（happy path + 违规 + 子任务模式 + 异常）",
+            "_build_condenser（默认禁用 + env 启用）"
+          ]
+        },
+        "M155.5": {
+          "title": "全量回归 + STATE.json/TEST_LOG.md 更新 + commit",
+          "status": "done",
+          "regression": "quality_gate.sh 全绿：py=1676 passed, fe=591 passed, tsc=0, build=ok"
+        }
+      },
+      "coverage_summary": {
+        "frontend_lines_before": "73.53%",
+        "frontend_lines_after": "85.26%",
+        "frontend_tests_before": 437,
+        "frontend_tests_after": 591,
+        "backend_openhands_worker_before": "54.79%",
+        "backend_openhands_worker_after": "97.26%",
+        "python_coverage_before": "82.89%",
+        "python_coverage_after": "83.56%"
       }
     }
   },

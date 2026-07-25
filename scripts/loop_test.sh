@@ -117,7 +117,8 @@ echo "  趋势汇总（最近 $MAX_ROUNDS 轮）:"
 if [ -f "$HISTORY" ]; then
   python3 -c "
 import json
-rows=[json.loads(l) for l in open('$HISTORY') if l.strip()]
+# M155 修复：只读最后 MAX_ROUNDS 行，避免历史迭代数据混入当前趋势汇总
+rows=[json.loads(l) for l in open('$HISTORY') if l.strip()][-$MAX_ROUNDS:]
 print(f\"  {'轮次':<6}{'门禁':<6}{'py_passed':<12}{'py_cov':<10}{'fe_passed':<10}{'fe_lines':<10}{'tsc':<6}{'build':<6}\")
 for r in rows:
     print(f\"  {r.get('round','?'):<6}{'✅' if r.get('gate_pass') else '❌':<6}{r.get('py_passed','-'):<12}{str(r.get('py_coverage','-'))+'%':<10}{r.get('fe_passed','-'):<10}{str(r.get('fe_lines_cov','-'))+'%':<10}{r.get('tsc_errors','-'):<6}{r.get('build_ok','-'):<6}\")
