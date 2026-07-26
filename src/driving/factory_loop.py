@@ -728,6 +728,9 @@ def default_planner(state: FactoryState) -> list[FactoryTask]:
         # 后处理：强制把每个任务的 verify_cmd 规整为单元素数组（防御 GLM 偶发不守约束）
         for t in rm.tasks:
             t.verify_cmd = _sanitize_verify_cmd(t.verify_cmd)
+        # M156.16：把 verify_cmd 注入 task_description 作为验收标准
+        # 让 worker 知道该实现哪些函数/签名，避免 planner 与 worker 对函数名理解不一致
+        _inject_verify_criteria(rm.tasks)
         return rm.tasks
     except Exception as e:  # noqa: BLE001 失败兜底：用确定性 roadmap
         import sys
@@ -738,6 +741,26 @@ def default_planner(state: FactoryState) -> list[FactoryTask]:
         for t in tasks:
             t.feedback = f"(planner fail-open: {e}) {t.feedback}"
         return tasks
+
+
+def _inject_verify_criteria(tasks: list[FactoryTask]) -> None:
+    """M156.16: 把 verify_cmd 作为验收标准追加到 task_description 末尾。
+
+    E2E r4 实测：planner 生成 verify_cmd 检查 `utils.clean_string(' a ')=='a'`，
+    但 task_description 只说"字符串处理函数"未指定函数名 → worker 创建了
+    `truncate_text` 而非 `clean_string` → verify_cmd 必败 → circuit_breaker。
+
+    修复：把 verify_cmd 追加到 description 末尾，worker 看到验收命令就知道
+    该实现哪些函数/签名。幂等：已有"验收标准"/"验收命令"标记则跳过。
+    """
+    for t in tasks:
+        if not t.verify_cmd:
+            continue
+        # 幂等：已有验收标准标记则跳过
+        if "验收标准" in t.description or "验收命令" in t.description:
+            continue
+        cmd = t.verify_cmd[0] if isinstance(t.verify_cmd, list) else str(t.verify_cmd)
+        t.description = f"{t.description}\n\n验收标准（必须通过）: {cmd}"
 
 
 def _sanitize_verify_cmd(cmd: list[str]) -> list[str]:

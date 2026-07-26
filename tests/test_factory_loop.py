@@ -19,6 +19,7 @@ from driving.factory_loop import (  # noqa: E402
     TaskResult,
     TaskStatus,
     _deterministic_roadmap,
+    _inject_verify_criteria,
     _next_task,
     _wrap_with_design_quality,
     default_planner,
@@ -646,6 +647,51 @@ def test_deterministic_roadmap_uses_python3_not_python():
             # 更精确：不能出现裸 "python -c"（必须是 "python3 -c"）
             assert "python -c" not in cmd, \
                 f"任务 {t.id} verify_cmd 不应用裸 python -c: {cmd}"
+
+
+# ---- M156.16 · verify_cmd 注入 task_description（验收标准对齐） ----
+
+
+def test_inject_verify_criteria_appends_verify_cmd_to_description():
+    """M156.16: verify_cmd 作为验收标准注入 task_description。
+
+    E2E r4 实测：planner 生成 verify_cmd 检查 `utils.clean_string(' a ')=='a'`，
+    但 task_description 只说"字符串处理函数"未指定函数名 → worker 创建了
+    `truncate_text` 而非 `clean_string` → verify_cmd 必败 → circuit_breaker。
+    修复：把 verify_cmd 追加到 task_description 末尾作为"验收标准"，
+    worker 看到验收命令就知道该实现哪些函数/签名。
+    """
+    task = FactoryTask(
+        id="task1",
+        description="创建utils.py(含字符串处理与日期格式化函数)",
+        verify_cmd=['python3 -c "import utils; assert utils.clean_string(\' a \')==\'a\'"'],
+    )
+    _inject_verify_criteria([task])
+    assert "验收标准" in task.description or "验收命令" in task.description
+    assert "clean_string" in task.description
+
+
+def test_inject_verify_criteria_no_verify_cmd_no_change():
+    """verify_cmd 为空时不应修改 description。"""
+    task = FactoryTask(
+        id="task1",
+        description="创建文件",
+        verify_cmd=[],
+    )
+    _inject_verify_criteria([task])
+    assert task.description == "创建文件"
+
+
+def test_inject_verify_criteria_idempotent():
+    """重复注入不应重复追加（已有验收标准标记则跳过）。"""
+    task = FactoryTask(
+        id="task1",
+        description="创建文件\n\n验收标准: python3 -c \"import os\"",
+        verify_cmd=['python3 -c "import os"'],
+    )
+    original = task.description
+    _inject_verify_criteria([task])
+    assert task.description == original
 
 
 # ---- M94 factory_loop RCA + Gold Memory 集成 ----
