@@ -5499,3 +5499,60 @@ PYTHONPATH=src python -m pytest tests/ -q
 M147-A E2E r6 可启动验证修复效果。
 
 ---
+
+## M156.17 · E2E r6 修复确认（2026-07-27 01:20）
+
+### 测试环境
+
+- E2E r6 (PID 7486), FLIPPED_E2E_TAG=_r6
+- 工作目录: /Users/wangzhenyu/projects/flipped_m147_e2e_r6
+- DB: data/factory_m147_e2e_r6.db
+- 前置探针: 首 token 3.1s ✅ 数据面健康
+
+### 关键结果
+
+```
+[5] verify_result  task=task_2 verified=True  stop=verified  ← M147-A E2E 历史首胜！
+[6] task_done      task=task_2 stop=verified
+[4] verify_result  task=task_1 verified=False stop=circuit_breaker attempt=1
+[8] verify_result  task=task_1 verified=False stop=circuit_breaker attempt=2
+```
+
+### task_2 verified=True 分析
+
+- worker 正确创建 utils.py（含 clean() 和 format_date() 函数）
+- sandbox_verifier（M156.17 修复后）正确翻译 host→container 路径
+- verify_cmd `python3 -c "import utils; assert utils.clean(' a ')=='a'"` 在容器内通过
+- **M156.17 修复确认生效**
+
+### task_1 失败分析（真实代码缺陷，非基础设施问题）
+
+worker 创建了 config.py（749 bytes），但 verify_cmd 失败：
+
+```python
+# worker 实现：
+env_key = f"APP_{key.upper()}"  # 查 APP_K（大写）
+
+# verify_cmd 期望：
+os.environ['APP_k'] = 'env'      # 设 APP_k（小写）
+assert c.get('k') == 'env'       # 失败！返回 'v' 而非 'env'
+```
+
+手动执行确认：
+```
+step 1 PASS: set('k','v') → get('k')=='v'
+step 2 FAIL: os.environ['APP_k']='env' → get('k') returns 'v' (not 'env')
+```
+
+**结论**：task_1 失败是 worker 代码语义与 verify_cmd 不匹配（env var 大小写），
+不是路径翻译或基础设施问题。verify 步骤正确地捕获了这个真实缺陷。
+
+### 对比 r5 → r6
+
+| 指标 | r5 (修复前) | r6 (修复后) |
+|------|-------------|-------------|
+| verify_pass | 0 | 1 (task_2) |
+| verify_fail 原因 | 路径翻译 bug | 真实代码缺陷 |
+| circuit_breaker 根因 | 基础设施 | 代码语义 |
+
+---
