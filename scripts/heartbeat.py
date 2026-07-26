@@ -31,6 +31,7 @@ os.chdir(ROOT)
 sys.path.insert(0, os.path.join(ROOT, "src"))
 
 from driving.factory_health import detect_stuck_factories  # noqa: E402
+from driving.auto_resume import maybe_auto_resume  # noqa: E402
 
 REPORTS_DIR = os.path.join(ROOT, "reports")
 os.makedirs(REPORTS_DIR, exist_ok=True)
@@ -303,7 +304,11 @@ def write_stuck_notice(stuck: list, now_ts: str, now_human: str) -> None:
         f.write(f"- 检查对应 factory 的进程是否存活（`ps aux | grep factory`）\n")
         f.write(f"- 如有 circuit_breaker_task：可跑 `python3 scripts/resume_factory.py <factory_id>` 尝试恢复\n")
         f.write(f"- 如 stale_updated_at：检查是否有崩溃的 OpenHands 容器（`docker ps -a | grep flipped-oh`）\n")
-        f.write(f"- 自动恢复未启用（FLIPPED_HEARTBEAT_AUTO_RESUME 默认关），需人工介入\n")
+        auto_on = os.environ.get("FLIPPED_HEARTBEAT_AUTO_RESUME", "") == "1"
+        if auto_on:
+            f.write(f"- ✅ 自动恢复已启用（FLIPPED_HEARTBEAT_AUTO_RESUME=1）：有 circuit_breaker_task 的工厂会被自动恢复\n")
+        else:
+            f.write(f"- 自动恢复未启用（FLIPPED_HEARTBEAT_AUTO_RESUME 默认关），需人工介入\n")
     # 控制台高亮输出
     print(f"  ⚠️ 检测到 {len(stuck)} 个卡住/可恢复工厂 → {notice_path}")
     for s in stuck:
@@ -336,6 +341,16 @@ def main():
     stuck = detect_stuck_factories(stale_minutes=30)
     write_stuck_notice(stuck, now_ts, now_human)
 
+    # M158.4：门控自动恢复（FLIPPED_HEARTBEAT_AUTO_RESUME=1 时对 cb 工厂自动调 resume）
+    auto_resume_results = maybe_auto_resume(
+        stuck, now_ts=now_ts, now_human=now_human, reports_dir=REPORTS_DIR,
+    )
+    if auto_resume_results:
+        print(f"  🔄 自动恢复 {len(auto_resume_results)} 个工厂（M158.4 门控）")
+        for r in auto_resume_results:
+            mark = "✓" if r.get("exit_code") == 0 else "⚠"
+            print(f"     {mark} {r['factory_id']}: action={r['action']} exit={r.get('exit_code')}")
+
     report = {
         "timestamp": now_human,
         "state": state,
@@ -344,6 +359,7 @@ def main():
         "tests": tests,
         "deviation": deviation,
         "stuck_factories": stuck,
+        "auto_resume": auto_resume_results,
     }
 
     # 写单次报告
@@ -402,13 +418,25 @@ def main():
             for b in blockers:
                 f.write(f"- ⚠️ {b}\n")
 
+        # M158.4：自动恢复结果章节（仅当有结果时）
+        if auto_resume_results:
+            f.write(f"\n## 7. 自动恢复结果（M158.4）\n\n")
+            f.write(f"FLIPPED_HEARTBEAT_AUTO_RESUME=1，本次恢复 {len(auto_resume_results)} 个工厂：\n\n")
+            for r in auto_resume_results:
+                mark = "✅" if r.get("exit_code") == 0 else "⚠️"
+                f.write(f"- {mark} **{r['factory_id']}**: action={r['action']} exit_code={r.get('exit_code')}\n")
+                if r.get("stderr"):
+                    f.write(f"  - stderr: `{r['stderr'][:150]}`\n")
+
     # 追加摘要到 log
     log_path = os.path.join(REPORTS_DIR, "heartbeat.log")
     with open(log_path, "a") as f:
         ready_count = sum(1 for m in models.values() if m["ready"])
         # M154.2：恢复事件高亮标记
         recovery_mark = f" | 📢 RECOVERY={','.join(r['model'].split('-')[0] for r in recoveries)}" if recoveries else ""
-        f.write(f"[{now_human}] risk={deviation['risk_level']} | completion={deviation['completion_pct']}% | doing={len(state.get('doing',[]))} blocked={len(state.get('blocked',[]))} | models={ready_count}/2 ready | git_dirty={git.get('dirty_files',0)} commit_age={git.get('commit_age_min','?')}min{recovery_mark}\n")
+        # M158.4：自动恢复标记
+        auto_mark = f" | 🔄 AUTO_RESUME={len(auto_resume_results)}" if auto_resume_results else ""
+        f.write(f"[{now_human}] risk={deviation['risk_level']} | completion={deviation['completion_pct']}% | doing={len(state.get('doing',[]))} blocked={len(state.get('blocked',[]))} | models={ready_count}/2 ready | git_dirty={git.get('dirty_files',0)} commit_age={git.get('commit_age_min','?')}min{recovery_mark}{auto_mark}\n")
 
     # 追加结构化历史
     hist_path = os.path.join(REPORTS_DIR, "heartbeat_history.jsonl")

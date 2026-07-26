@@ -6786,3 +6786,61 @@ $ .venv/bin/python -m pytest tests/ -x -q --tb=line --ignore=tests/test_e2e_repa
 **结论**：M158 done。主动监护闭环三件套就位：检测（factory_health）→ 告警（heartbeat write_stuck_notice）→ 恢复（resume_factory CLI）。设计原则：检测纯只读 fail-open，恢复需人工触发（FLIPPED_HEARTBEAT_AUTO_RESUME 默认关，不自动批量恢复）。
 
 ---
+
+## 2026-07-27 · M158.4 auto_resume 门控 + conftest.py 路径修复
+
+**M158 闭环完整版**：把"检测→告警→人工恢复"升级为"检测→告警→可选自动恢复"。
+
+### M158.4 — auto_resume 门控（8 TDD 用例）
+
+```bash
+$ .venv/bin/python -m pytest tests/test_auto_resume.py -v --tb=short
+tests/test_auto_resume.py::test_gate_off_no_action PASSED
+tests/test_auto_resume.py::test_gate_on_no_circuit_breaker_no_action PASSED
+tests/test_auto_resume.py::test_gate_on_with_circuit_breaker_triggers_resume PASSED
+tests/test_auto_resume.py::test_done_status_not_auto_resumed PASSED
+tests/test_auto_resume.py::test_max_limit_prevents_storm PASSED
+tests/test_auto_resume.py::test_subprocess_timeout_doesnt_crash PASSED
+tests/test_auto_resume.py::test_subprocess_failure_recorded_not_raised PASSED
+tests/test_auto_resume.py::test_report_written PASSED
+============================== 8 passed in 0.03s ==============================
+```
+
+覆盖：门控关/开、cb 筛选、done 幂等跳过、防风暴 MAX 限制、subprocess 超时/失败不崩溃心跳、报告写入。
+
+### 安全设计
+
+- **默认关**：`FLIPPED_HEARTBEAT_AUTO_RESUME` 未设/非 1 时不动作
+- **只恢复 cb 信号**：纯 `stale_updated_at` 不自动恢复（可能是真崩溃，需人工检查 `ps`/`docker ps`）
+- **done 幂等**：已完成的工厂即使有历史 cb 任务也不恢复
+- **防风暴**：`FLIPPED_HEARTBEAT_AUTO_RESUME_MAX` 默认 1，单次心跳最多恢复 N 个
+- **subprocess 隔离**：resume 崩溃不拖垮心跳进程
+- **超时保护**：`FLIPPED_HEARTBEAT_AUTO_RESUME_TIMEOUT` 默认 300s
+- **留痕**：结果写 `reports/auto_resume_*.md`
+
+### conftest.py 路径修复（副作用收益）
+
+发现 `test_factory_health.py` 单独跑会 `ModuleNotFoundError: No module named 'driving'`——之前靠别的测试先加 src 到 sys.path 才能跑（脆弱依赖）。新增 root `conftest.py` 统一注入 `src/` 到 sys.path，消除该系统性问题：
+
+```bash
+$ .venv/bin/python -m pytest tests/test_factory_health.py -q  # 单独跑
+11 passed in 2.12s  # 之前会 ImportError
+```
+
+### 全量回归
+
+```bash
+$ .venv/bin/python -m pytest tests/ -x -q --tb=line --ignore=tests/test_e2e_repair_loop.py --ignore=tests/test_golden_path_e2e.py
+1884 passed, 10 skipped in 101.28s
+```
+
+- **1884 passed**（基线 1876 + M158.4 新增 8 个 auto_resume 用例）
+- **0 failed / 0 退化**
+
+**结论**：M158 主动监护闭环完整版 done。三件套 + 门控就位：
+1. `factory_health.py` 检测（只读 fail-open）
+2. `heartbeat.py` 告警（write_stuck_notice + 动态文案反映门控状态）
+3. `resume_factory.py` 人工恢复 CLI（--dry-run + 退出码语义）
+4. `auto_resume.py` 可选自动恢复门控（subprocess 隔离 + 防风暴 + 超时保护）
+
+---

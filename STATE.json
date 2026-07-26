@@ -2,7 +2,7 @@
   "project": "flipped",
   "description": "接入本地 MLX 双模型(GLM-5.2 编排者 / Kimi-K2.7-Code 执行者)的 agentic 代码编辑器平台。fork Roo Code + 自定义驾驭层(强制验证/循环检测/上下文压缩/人工审批/子Agent/可观测性) + MCP 联网与外部能力。",
   "updated": "2026-07-27 01:23:58",
-  "current_milestone": "M147 done（E2E r6 历史首胜 task_2 verified=True）+ M157 done（六维度测试策略优化 + D-0015 修复 + 3 个回归守卫）。M147-A.4 熔断子任务正式收口（KI-20260721 resolved，M156 双模型恢复解除瓶颈）。DEFECT_LOG D-0001~D-0015 全部 fixed。下一步：全量回归验证 D-0015 修复 0 退化 + 推进 TEST_STRATEGY_OPTIMIZATION.md Phase 8（后端 0% 模块补测）。。M158 done（M5 主动监护闭环：factory_health 检测 + heartbeat 告警 + resume_factory 恢复，8+11 TDD 用例 + 全量 1876 passed）。",
+  "current_milestone": "M147 done（E2E r6 历史首胜 task_2 verified=True）+ M157 done（六维度测试策略优化 + D-0015 修复 + 3 个回归守卫）。M147-A.4 熔断子任务正式收口（KI-20260721 resolved，M156 双模型恢复解除瓶颈）。DEFECT_LOG D-0001~D-0015 全部 fixed。下一步：全量回归验证 D-0015 修复 0 退化 + 推进 TEST_STRATEGY_OPTIMIZATION.md Phase 8（后端 0% 模块补测）。。M158 done（M5 主动监护闭环完整版：factory_health 检测 + heartbeat 告警 + resume_factory 恢复 + auto_resume 门控，8+11+8 TDD 用例 + 全量 1884 passed）。",
   "key_facts": {
     "dev_host": "Apple M5 Max, 128GB RAM, 1.1TB 可用磁盘 — 开发/控制节点，非模型宿主",
     "model_cluster": "exo 集群 @ http://studio01-1:52415 (MagicDNS 主机名=macstudio01，免疫 Tailscale IP 漂移；旧裸 IP 100.64.201.37 已于 2026-07-22 失效)；公网 https://dgmt.top/exo (需 Bearer token)",
@@ -3175,14 +3175,32 @@
           ],
           "tests": "8 个 TDD 用例：not_found/already_done/dry_run/success/error+paused parametrize/kwargs 转发/no_args",
           "exit_codes": "0=done/dry-run, 1=resume 后非 done, 2=工厂不存在/参数错误"
+        },
+        "M158.4": {
+          "title": "auto_resume 门控 — FLIPPED_HEARTBEAT_AUTO_RESUME=1 时自动恢复 cb 工厂",
+          "status": "done",
+          "files": [
+            "src/driving/auto_resume.py",
+            "tests/test_auto_resume.py",
+            "scripts/heartbeat.py",
+            "conftest.py"
+          ],
+          "tests": "8 个 TDD 用例：gate_off/no_cb_triggers/done_skip/max_limit/timeout/fail_exit/report_written",
+          "design": "subprocess 隔离（resume 崩溃不拖垮心跳）+ 防风暴（MAX 默认 1）+ 超时保护（默认 300s）+ 只恢复 cb 信号（stale 需人工检查进程/容器）+ done 幂等跳过 + 结果写 reports/auto_resume_*.md 留痕",
+          "env_vars": {
+            "FLIPPED_HEARTBEAT_AUTO_RESUME": "1 启用，其他/未设 = 关（默认关）",
+            "FLIPPED_HEARTBEAT_AUTO_RESUME_MAX": "单次心跳最多恢复几个（默认 1）",
+            "FLIPPED_HEARTBEAT_AUTO_RESUME_TIMEOUT": "单次 resume 超时秒数（默认 300）"
+          },
+          "side_effect": "新增 conftest.py 统一注入 src/ 到 sys.path，修复 test_factory_health.py 等单独跑 ImportError 的脆弱依赖"
         }
       },
       "verification": {
-        "unit_tests": "tests/test_resume_factory_script.py 8 passed + tests/test_factory_health.py 11 passed",
-        "regression": "全量 pytest 1876 passed / 10 skipped / 0 failed (100.29s)",
+        "unit_tests": "tests/test_resume_factory_script.py 8 passed + tests/test_factory_health.py 11 passed + tests/test_auto_resume.py 8 passed",
+        "regression": "全量 pytest 1884 passed / 10 skipped / 0 failed (101.28s)",
         "integration_smoke": "resume_factory.py factory-2b332a5f --dry-run 对真实 DB 正确加载 paused 状态 + detect_stuck_factories 真实 DB 检测到 13 个有信号工厂"
       },
-      "completed_at": "2026-07-26T20:44:32.780932+00:00"
+      "completed_at": "2026-07-26T20:52:32.688103+00:00"
     }
   },
   "architecture_decisions": [
