@@ -5163,3 +5163,170 @@ EOF
 
 **M156.13 路径翻译修复是 M147-A E2E 的关键阻碍解除**。worker 层已验证可在容器内
 正确创建文件。剩余问题（planner 超时、task 预算）是配置调优，不影响 M156.13 的正确性。
+
+---
+
+## M156.14 · verify_cmd 引号内 assert 误拦修复（safety 白名单 shlex 重写）
+
+**日期**：2026-07-26 09:00
+**状态**：done
+**前置**：M156.13 路径翻译修复后，M147-A E2E 第二轮跑起来，但 3 个任务全部
+`circuit_breaker` 失败。
+
+### 症状
+
+`data/factory_m147_e2e.db` 的 `failed_json` 显示 det-task-1/2/3 全部
+`stop_reason=circuit_breaker`，feedback 都是：
+
+```
+command blocked: command not in whitelist: assert
+```
+
+worker（Kimi）实际已经把文件做对了（output.log 显示 45.7s 完成 `conf/__init__.py`
+创建），但 orchestrator 跑 verify_cmd 时被 safety 白名单拦下，整条 verify 失败 →
+circuit_breaker。
+
+### 根因（结构化 debug）
+
+**预期**：`python -c "import os; assert os.path.isfile('/x')"` 应被放行——`;` 和
+`assert` 都在 python 脚本字符串内，不是 shell 操作符。
+
+**实际**：`_extract_command_tokens` 用朴素正则
+`re.split(r"\s*(?:;|&&|\|\||\|)\s*", cmd)` 切分，不识别 shell 引号，切成：
+- `python -c "import os`
+- `assert os.path.isfile('/x')"`
+
+第二个 segment 的 base = `assert`，不在 `SAFE_BASE_COMMANDS` → 拒绝。
+
+**最小复现**：
+```python
+>>> _extract_command_tokens('python -c "import os; assert os.path.isfile(\'/x\')"')
+['python', 'assert']  # 错！应该是 ['python']
+>>> is_safe_command('python -c "import os; assert os.path.isfile(\'/x\')"')
+(False, 'command not in whitelist: assert')
+```
+
+### 修复
+
+`src/driving/safety.py`：
+
+1. `_extract_command_tokens` 改用 `shlex.shlex(cmd, posix=True, punctuation_chars=";&|")`
+   解析。shlex 的 `punctuation_chars` 让 `; & |` 作为独立 token 出现，**但仅在引号外
+   生效**——引号内的 `;` 是字符串字面量，不会被切。
+2. 新增 `_first_cmd_of_segment(words)` helper：从 segment 的 token 列表里取首个真正
+   命令（跳过前缀变量赋值和 shell 控制关键字）。
+3. 保留旧逻辑为 `_extract_command_tokens_legacy`，作为 shlex 抛 `ValueError`（引号不
+   匹配等）时的保守退化路径——比直接放行安全。
+
+```python
+def _extract_command_tokens(cmd: str) -> list[str]:
+    if not cmd or not cmd.strip():
+        return []
+    try:
+        lexer = shlex.shlex(cmd, posix=True, punctuation_chars=";&|")
+        lexer.whitespace_split = True
+        toks = list(lexer)
+    except ValueError:
+        return _extract_command_tokens_legacy(cmd)
+    tokens: list[str] = []
+    seg_words: list[str] = []
+    for tok in toks:
+        if tok in (";", "&", "&&", "|", "||"):
+            tokens.extend(_first_cmd_of_segment(seg_words))
+            seg_words = []
+            continue
+        seg_words.append(tok)
+    tokens.extend(_first_cmd_of_segment(seg_words))
+    return tokens
+```
+
+### TDD 证据
+
+`tests/test_safety.py` 新增 4 个测试（红→绿）：
+
+```python
+def test_is_safe_command_python_c_with_semicolon_and_assert():
+    cmds = [
+        'python -c "import os; assert os.path.isfile(\'/tmp/x\')"',
+        'python -c "import config; assert hasattr(config, \'load_config\'), \'missing\'"',
+        'python -c "import cli; assert hasattr(cli, \'parse_args\')"',
+        'python3 -c "import os; assert os.path.isdir(\'/tmp\')"',
+    ]
+    for c in cmds:
+        ok, reason = is_safe_command(c)
+        assert ok, f"应放行 {c!r}, 拒绝原因: {reason}"
+
+
+def test_is_safe_command_bash_c_with_embedded_ops_still_safe():
+    cmd = 'bash -c "f=/tmp/x; test -f \\"$f\\" && grep -q \'foo\' \\"$f\\""'
+    ok, reason = is_safe_command(cmd)
+    assert ok, f"应放行: {reason}"
+
+
+def test_is_safe_command_real_compound_outside_quotes_still_blocks():
+    ok, reason = is_safe_command('python -c "print(1)" ; evil_cmd arg')
+    assert not ok
+    assert "evil_cmd" in reason
+
+
+def test_is_safe_command_bare_assert_still_blocked():
+    ok, reason = is_safe_command("assert 1==1")
+    assert not ok
+    assert "assert" in reason
+```
+
+**红阶段**（修复前）：
+```
+FAILED tests/test_safety.py::test_is_safe_command_python_c_with_semicolon_and_assert
+AssertionError: 应放行 'python -c "import os; assert os.path.isfile(\'/tmp/x\')"',
+拒绝原因: command not in whitelist: assert
+1 failed, 20 passed
+```
+
+**绿阶段**（修复后）：
+```
+21 passed in 0.03s
+```
+
+### 全量回归（M156.14 验证）
+
+```bash
+$ PYTHONPATH=src .venv/bin/python -m pytest tests/ --cov=src --cov-report=term --cov-report=json:coverage.json -q
+1697 passed, 2 skipped in 152.31s
+Coverage: 83.67% (≥ 80% floor)
+```
+
+```bash
+$ cd console && npm run test -- --run
+Test Files  28 passed (28)
+Tests  591 passed (591)
+```
+
+```bash
+$ cd console && npx tsc -b --noEmit  # exit 0
+$ cd console && npm run build        # ✓ built in 645ms
+```
+
+### 真实 verify_cmd 验证
+
+```bash
+$ PYTHONPATH=src .venv/bin/python -c "..."
+✓ PASS  python -c "import os; assert os.path.isfile('/Users/.../pyproject.toml'), ..."
+  tokens=['python']
+✓ PASS  python -c "import config; assert hasattr(config, 'load_config'), ..."
+  tokens=['python']
+✓ PASS  python -c "import cli; assert hasattr(cli, 'parse_args'), ..."
+  tokens=['python']
+✗ BLOCK  python -c "print(1)" ; evil_cmd arg   # 引号外复合仍拦
+  tokens=['python', 'evil_cmd']
+✗ BLOCK  assert 1==1                            # 裸 assert 仍拦
+  tokens=['assert']
+```
+
+### 结论
+
+**M156.14 是 M147-A E2E 第三轮的关键阻碍解除**。verify_cmd 白名单解析器现在正确
+识别 shell 引号，planner 生成的 `python -c "..."` 形式 verify_cmd 不再被误拦。
+M147-A E2E 可重跑（建议先停掉当前还在 attempt 2 的 E2E 进程，重跑以加载新代码）。
+
+---

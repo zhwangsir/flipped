@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import os
 import re
+import shlex
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -56,7 +57,70 @@ def _extract_command_tokens(cmd: str) -> list[str]:
     Handles:
     - Variable assignments as prefixes (f=/path; actual_cmd ...)
     - Compound commands joined by ; && || |
+    - Shell quoting (single/double quotes) — operators inside quotes are NOT
+      treated as shell operators. This is critical for ``python -c "import os;
+      assert os.path.isfile('/x')"`` where the ``;`` and ``assert`` are inside
+      the python script, not shell operators. (M156.14)
+
     Returns list of base command tokens (basename, no path) to validate.
+    """
+    if not cmd or not cmd.strip():
+        return []
+    # 用 shlex 解析：punctuation_chars 让 ; & | 作为独立 token 出现，
+    # 但仅在引号外生效——引号内的 ; & | 被当成字符串字面量。
+    # posix=True 启用 POSIX 引用语义（'...' 字面量、"..." 允许 \" 转义）。
+    # whitespace_split=True 让普通空白作为分隔符。
+    try:
+        lexer = shlex.shlex(cmd, posix=True, punctuation_chars=";&|")
+        lexer.whitespace_split = True
+        toks = list(lexer)
+    except ValueError:
+        # 引号不匹配等解析失败：保守退化到旧朴素切分（仍能拦未知命令，
+        # 只是会误拦引号内带 ; 的合法命令——比直接放行安全）。
+        return _extract_command_tokens_legacy(cmd)
+
+    # 按操作符切 segment；每个 segment 取首个非赋值、非关键字 token 作为命令。
+    tokens: list[str] = []
+    seg_words: list[str] = []
+    for tok in toks:
+        if tok in (";", "&", "&&", "|", "||"):
+            tokens.extend(_first_cmd_of_segment(seg_words))
+            seg_words = []
+            continue
+        seg_words.append(tok)
+    tokens.extend(_first_cmd_of_segment(seg_words))
+    return tokens
+
+
+def _first_cmd_of_segment(words: list[str]) -> list[str]:
+    """从一个 segment 的 token 列表里取首个真正的命令 base name。
+
+    跳过前缀变量赋值（f=value）和 shell 控制关键字（then/do/...）。
+    返回空列表表示该 segment 没有命令（纯赋值或纯关键字）。
+    """
+    if not words:
+        return []
+    i = 0
+    while i < len(words) and _ASSIGN_RE.match(words[i]):
+        i += 1
+    if i >= len(words):
+        return []
+    cmd_tok = words[i]
+    if cmd_tok in _SHELL_KEYWORDS:
+        for w in words[i + 1:]:
+            if w not in _SHELL_KEYWORDS:
+                cmd_tok = w
+                break
+        else:
+            return []
+    return [cmd_tok.split("/")[-1]]
+
+
+def _extract_command_tokens_legacy(cmd: str) -> list[str]:
+    """旧版（朴素正则切分）作为 shlex 解析失败时的退化路径。
+
+    不识别引号——会误把 ``python -c "import os; assert ..."`` 切错。
+    仅在 shlex 抛 ValueError（引号不匹配等）时使用，确保保守拒绝。
     """
     parts = re.split(r"\s*(?:;|&&|\|\||\|)\s*", cmd)
     tokens: list[str] = []

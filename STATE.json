@@ -2,7 +2,7 @@
   "project": "flipped",
   "description": "接入本地 MLX 双模型(GLM-5.2 编排者 / Kimi-K2.7-Code 执行者)的 agentic 代码编辑器平台。fork Roo Code + 自定义驾驭层(强制验证/循环检测/上下文压缩/人工审批/子Agent/可观测性) + MCP 联网与外部能力。",
   "updated": "2026-07-26 08:35:00",
-  "current_milestone": "M156.13 done（OpenHandsWorker 路径翻译修复）。M156.12 verify_cmd 裸 assert 修复后，smoke test 发现 worker（Kimi）在容器里用宿主机路径 mkdir → Permission denied → 浪费全部迭代。根因：task_description 含 state.cwd（host 路径 /Users/.../projects/X），但容器挂载点是 /projects/X。修复：OpenHandsWorker._translate_paths_in_text 在 send_message 前翻译路径。smoke test 验证 Kimi 30s 成功创建文件。全量门禁通过：py=1628 passed/2 skipped, fe=591 passed, tsc=0。遗留：GLM planner 180s 超时（fail-open 兜底）、task_timeout 300s 太短（E2E 应用 10800s），均为配置调优不影响 M156.13 正确性。M147-A E2E 关键阻碍已解除，可重跑。",
+  "current_milestone": "M156.14 done（verify_cmd 引号内 assert 误拦修复 · safety shlex 重写）。M147-A E2E 第二轮 3 任务全 circuit_breaker 根因已定位修复：safety._extract_command_tokens 用朴素正则切分不识别引号，把 python -c \"import os; assert ...\" 引号内的 ; 当 shell 操作符，切出 ['python', 'assert'] → assert 不在白名单 → verify_cmd 被拦 → worker 做对了也通不过验收 → circuit_breaker。修复：shlex(punctuation_chars=';&|', posix=True) 重写，引号内操作符不再误切。TDD 4 测试 红绿全过。全量门禁：py=1697/2 skipped, fe=591, tsc=0, build ok。M147-A E2E 第三轮可重跑（前置阻碍已解除）。",
   "key_facts": {
     "dev_host": "Apple M5 Max, 128GB RAM, 1.1TB 可用磁盘 — 开发/控制节点，非模型宿主",
     "model_cluster": "exo 集群 @ http://studio01-1:52415 (MagicDNS 主机名=macstudio01，免疫 Tailscale IP 漂移；旧裸 IP 100.64.201.37 已于 2026-07-22 失效)；公网 https://dgmt.top/exo (需 Bearer token)",
@@ -3130,6 +3130,12 @@
           "note": "M156.12 修复后 smoke test 发现 worker（Kimi）在容器里用宿主机路径 mkdir /Users/wangzhenyu/projects/X → Permission denied → 浪费全部迭代。根因：task_description 含 state.cwd（host 路径），但 OpenHands 容器挂载 $HOME/projects:/projects。修复：OpenHandsWorker._translate_paths_in_text 在 conversation.send_message 前翻译路径。7 个单测全通过。smoke test 验证 Kimi 30s 成功在 /projects/flipped_smoke_m156 创建 hello/__init__.py。全量门禁：py=1628 passed/2 skipped, fe=591 passed, tsc=0。遗留：GLM planner 180s 超时（fail-open 兜底）、task_timeout 300s 太短（E2E 应用 10800s）。M147-A E2E 关键阻碍已解除。"
         }
       }
+    },
+    "M156.14_verify_cmd_quoted_assert": {
+      "title": "verify_cmd 引号内 assert 误拦修复（safety 白名单 shlex 重写）",
+      "status": "done",
+      "note": "M147-A E2E 第二轮 circuit_breaker 根因：safety._extract_command_tokens 用朴素正则 re.split(r'\\s*(?:;|&&|\\|\\||\\|)\\s*') 切分命令，不识别 shell 引号，把 python -c \"import os; assert os.path.isfile('/x')\" 引号内的 ; 当 shell 操作符，切出 ['python', 'assert']，assert 不在 SAFE_BASE_COMMANDS → 整条 verify_cmd 被拦 → worker 做对了也通不过验收 → circuit_breaker。3 个任务（det-task-1/2/3）全部因此失败。修复：用 shlex(punctuation_chars=';&|', posix=True) 重写切分逻辑，引号内的 ; & | 不再被当操作符。新增 _first_cmd_of_segment helper + _extract_command_tokens_legacy 退化路径（shlex 解析失败时保守退化到旧逻辑）。TDD：4 个新测试（python -c with assert / bash -c with embedded ops / 引号外复合仍拦 / 裸 assert 仍拦），红阶段复现成功，绿阶段全过。全量门禁：py=1697 passed/2 skipped/0 failed (cov 83.67%), fe=591 passed, tsc=0, build=ok。M147-A E2E 第三轮可重跑（前置阻碍已解除）。",
+      "completed_at": "2026-07-26 09:01:31"
     }
   },
   "architecture_decisions": [
