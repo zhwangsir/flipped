@@ -116,3 +116,61 @@ def test_empty_cwd_falls_back_to_working_dir():
                                    workspace_factory=_FakeWorkspace.factory(result))
     verify(["pytest", "-q"], "")
     assert _FakeWorkspace.last["calls"][0]["cwd"] == "/projects/fallback"
+
+
+# ---------- M156.17: host→container 路径翻译 ----------
+
+
+def test_host_path_translated_to_container_path():
+    """M156.17: factory_loop 传入 host 路径(/Users/.../projects/X)，sandbox_verifier
+    应翻译为容器路径(/projects/X)再执行 verify_cmd。
+
+    E2E r5 根因：factory_loop 把 state.cwd(host 路径)直接传给 make_sandbox_verifier
+    的 working_dir，sandbox 内不存在该路径 → verify_cmd 在不存在的 cwd 执行 →
+    import 失败 → circuit_breaker。修复：在 sandbox_verify 内部翻译 host→container。
+    """
+    result = _FakeResult(exit_code=0, stdout="PASS", stderr="", timeout_occurred=False)
+    verify = make_sandbox_verifier(
+        "http://localhost:8000",
+        "/Users/wangzhenyu/projects/flipped_m147_e2e_r5",  # host 路径
+        "key",
+        workspace_factory=_FakeWorkspace.factory(result),
+    )
+    verify(["python3", "-c", "import config"],
+           "/Users/wangzhenyu/projects/flipped_m147_e2e_r5")  # host 路径
+
+    # workspace 初始化时应翻译为容器路径
+    assert _FakeWorkspace.last["init"]["working_dir"] == "/projects/flipped_m147_e2e_r5"
+    # execute_command 的 cwd 也应翻译
+    assert _FakeWorkspace.last["calls"][0]["cwd"] == "/projects/flipped_m147_e2e_r5"
+
+
+def test_container_path_passed_through_unchanged():
+    """已是容器路径(/projects/X)时不做变换（幂等）。"""
+    result = _FakeResult(exit_code=0, stdout="", stderr="", timeout_occurred=False)
+    verify = make_sandbox_verifier("h", "/projects/demo",
+                                   workspace_factory=_FakeWorkspace.factory(result))
+    verify(["true"], "/projects/demo")
+    assert _FakeWorkspace.last["init"]["working_dir"] == "/projects/demo"
+    assert _FakeWorkspace.last["calls"][0]["cwd"] == "/projects/demo"
+
+
+def test_non_projects_host_path_left_unchanged():
+    """不在 $HOME/projects/ 下的路径原样返回（不翻译）。"""
+    result = _FakeResult(exit_code=0, stdout="", stderr="", timeout_occurred=False)
+    verify = make_sandbox_verifier("h", "/tmp/foo",
+                                   workspace_factory=_FakeWorkspace.factory(result))
+    verify(["true"], "/tmp/foo")
+    assert _FakeWorkspace.last["init"]["working_dir"] == "/tmp/foo"
+    assert _FakeWorkspace.last["calls"][0]["cwd"] == "/tmp/foo"
+
+
+def test_empty_cwd_falls_back_to_translated_working_dir():
+    """cwd 为空时 fallback 到 working_dir，且 working_dir 已翻译为容器路径。"""
+    result = _FakeResult(exit_code=0, stdout="", stderr="", timeout_occurred=False)
+    verify = make_sandbox_verifier(
+        "h", "/Users/wangzhenyu/projects/demo",
+        workspace_factory=_FakeWorkspace.factory(result),
+    )
+    verify(["true"], "")
+    assert _FakeWorkspace.last["calls"][0]["cwd"] == "/projects/demo"

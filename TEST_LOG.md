@@ -5421,3 +5421,81 @@ verify_cmd 用 python3（与 macOS 宿主机环境对齐）。
 M147-A E2E r4 可重跑。
 
 ---
+
+## M156.17 · sandbox_verify 路径翻译修复（2026-07-27 01:10）
+
+### 根因诊断
+
+M147-A E2E r5 实测：两个 task（config.py + utils.py）均 circuit_breaker（iteration=2）。
+但手动在宿主机执行同一 verify_cmd **全部 PASS**：
+
+```bash
+$ cd /Users/wangzhenyu/projects/flipped_m147_e2e_r5
+$ python3 -c "import config; c=config.Config(); c.set('k','v'); assert c.get('k')=='v'"
+# PASS（无输出 = 成功）
+$ python3 -c "import utils; assert utils.clean_str(' A_b ')=='a_b'; assert utils.format_date('2023-01-01','%Y/%m/%d')=='2023/01/01'"
+# PASS
+```
+
+worker 创建的文件内容完全正确（函数名/签名与 verify_cmd 对齐），问题出在
+**sandbox_verifier 执行 verify_cmd 时的 cwd 不匹配**：
+
+- `factory_loop.py:968` 把 `state.cwd`（宿主机路径 `/Users/wangzhenyu/projects/X`）
+  直接传给 `make_sandbox_verifier(working_dir=...)`
+- `sandbox_verify.py:63` 在容器内 `ws.execute_command(cmd, cwd=host_path)`
+- 容器内不存在 `/Users/wangzhenyu/projects/X`（只挂载了 `/projects/X`）
+- → `python3 -c "import config"` 找不到模块 → verify 返回 False
+- → iteration 达到 max_iterations=2 → circuit_breaker
+
+### 修复
+
+`sandbox_verify.py` 新增 `_to_container_path()` 函数（与 `openhands_worker._to_container_path`
+同逻辑），把 `$HOME/projects/X` 翻译为 `/projects/X`：
+
+```python
+def _to_container_path(host_path: str) -> str:
+    if not host_path:
+        return host_path
+    home = os.path.expanduser("~")
+    projects_host = os.path.join(home, "projects")
+    norm_host = os.path.normpath(projects_host)
+    norm_cwd = os.path.normpath(host_path)
+    if norm_cwd == norm_host:
+        return "/projects"
+    if norm_cwd.startswith(norm_host + os.sep):
+        rel = os.path.relpath(norm_cwd, norm_host)
+        return f"/projects/{rel}"
+    return host_path
+```
+
+在 `make_sandbox_verifier` 中两处应用：
+1. `container_working_dir = _to_container_path(working_dir)` — 初始化时翻译
+2. `container_cwd = _to_container_path(cwd) if cwd else container_working_dir` — verify 时翻译
+
+### TDD 证据
+
+红阶段（修复前）：
+```
+FAILED tests/test_sandbox_verify.py::test_host_path_translated_to_container_path
+  AssertionError: assert '/Users/wang...d_m147_e2e_r5' == '/projects/fl...d_m147_e2e_r5'
+```
+
+绿阶段（修复后）：
+```
+tests/test_sandbox_verify.py::test_host_path_translated_to_container_path PASSED
+tests/test_sandbox_verify.py::test_container_path_passed_through_unchanged PASSED
+tests/test_sandbox_verify.py::test_non_projects_host_path_left_unchanged PASSED
+tests/test_sandbox_verify.py::test_empty_cwd_falls_back_to_translated_working_dir PASSED
+11 passed in 0.14s
+```
+
+### 全量门禁
+
+```
+PYTHONPATH=src python -m pytest tests/ -q
+1712 passed, 2 skipped in 95.44s
+```
+
+M147-A E2E r6 可启动验证修复效果。
+
+---

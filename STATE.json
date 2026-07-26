@@ -1,8 +1,8 @@
 {
   "project": "flipped",
   "description": "接入本地 MLX 双模型(GLM-5.2 编排者 / Kimi-K2.7-Code 执行者)的 agentic 代码编辑器平台。fork Roo Code + 自定义驾驭层(强制验证/循环检测/上下文压缩/人工审批/子Agent/可观测性) + MCP 联网与外部能力。",
-  "updated": "2026-07-26 08:35:00",
-  "current_milestone": "M156.15 done（GLM planner thinking-off + JSON trailing comma repair + verify_cmd python3）。M147-A E2E r3 全任务 circuit_breaker 根因三连击已定位修复：① planner _direct_glm_tool_call 硬编码 enable_thinking=True（M149.6 已实测 GLM-5.2-fp8 thinking on 必乱码，worker 已关但 planner 漏关）→ GLM 输出重复循环 + trailing comma → _parse_raw_response 解析失败 → fail-open 确定性 roadmap；② _parse_raw_response 用 json.loads 不接受 trailing comma（GLM 重复循环后尾部必带 ,}）→ 解析失败 → “空响应”；③ 确定性 roadmap verify_cmd 用 `python -c`（macOS 无 python 命令，只有 python3）→ command not found exit=127 → 验收必败 → circuit_breaker。修复：① 新增 _planner_enable_thinking() 默认 False（FLIPPED_PLANNER_ENABLE_THINKING 可开）；② 新增 _repair_json_trailing_commas() 在 json.loads 前剥离 ,} 和 ,]；③ 全部 python → python3（含 planner prompt 示例）。TDD 8 测试红绿全过。全量门禁：py=1705/2 skipped, fe=591, tsc=0, build ok。M147-A E2E r4 可重跑。",
+  "updated": "2026-07-27 01:06:02",
+  "current_milestone": "M156.17 done（sandbox_verify 路径翻译修复）。M147-A E2E r5 根因：factory_loop 把 state.cwd（宿主机路径 /Users/.../projects/X）直接传给 make_sandbox_verifier 的 working_dir，容器内不存在该路径 → verify_cmd 在不存在的 cwd 执行 → import 失败 → circuit_breaker（iteration=2）。手动在 host 上执行同一 verify_cmd 却 PASS，证实是路径环境不一致而非代码缺陷。修复：sandbox_verify.py 新增 _to_container_path() 把 $HOME/projects/X 翻译为 /projects/X（与 openhands_worker 同逻辑），应用到 working_dir 初始化和 verify 的 cwd 参数。TDD 4 新测试红绿全过。全量门禁 1711 passed。M147-A E2E r6 待启动验证修复效果。",
   "key_facts": {
     "dev_host": "Apple M5 Max, 128GB RAM, 1.1TB 可用磁盘 — 开发/控制节点，非模型宿主",
     "model_cluster": "exo 集群 @ http://studio01-1:52415 (MagicDNS 主机名=macstudio01，免疫 Tailscale IP 漂移；旧裸 IP 100.64.201.37 已于 2026-07-22 失效)；公网 https://dgmt.top/exo (需 Bearer token)",
@@ -3412,5 +3412,11 @@
       "status": "running",
       "start_cmd": "colima start && docker start flipped-oh-canvas (或 bash scripts/dev_up.sh)"
     }
-  ]
+  ],
+  "M156.17_sandbox_verify_path_translation": {
+    "title": "sandbox_verify 路径翻译：host→container /projects/<名>",
+    "status": "done",
+    "note": "M147-A E2E r5 根因：factory_loop 把 state.cwd（宿主机路径 /Users/wangzhenyu/projects/flipped_m147_e2e_r5）直接传给 make_sandbox_verifier 的 working_dir。sandbox_verify 在容器内执行 verify_cmd 时用这个 host 路径作为 cwd，但容器内不存在该路径（容器只看到 /projects/flipped_m147_e2e_r5）→ python3 -c 'import config' 找不到模块 → verify 返回 False → iteration 达到 max_iterations=2 → circuit_breaker。手动在 host 上执行同一 verify_cmd 却 PASS，证实是路径环境不一致而非代码缺陷。修复：在 sandbox_verify.py 新增 _to_container_path() 函数（与 openhands_worker._to_container_path 同逻辑），把 $HOME/projects/X 翻译为 /projects/X，应用到 working_dir 初始化和 verify 的 cwd 参数。TDD 4 新测试：host path 翻译为 container path / container path 幂等不变 / 非 projects 路径原样返回 / 空 cwd fallback 到翻译后 working_dir。红阶段确认失败，绿阶段全过。全量门禁 1711 passed。",
+    "completed_at": "2026-07-27 01:06:02"
+  }
 }

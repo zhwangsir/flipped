@@ -6,11 +6,16 @@ node_modules 等)。旧默认 verifier 在 host `subprocess` 跑、而 cwd 又�
 在容器内执行,cwd=沙盒路径天然成立,cwd 不匹配的 bug 随之消失;并保留安全闸
 (命令白/黑名单 + 高风险拦截),与 host 默认 verifier 同等约束。
 
+M156.17：factory_loop 传入的 working_dir/cwd 是宿主机路径(`$HOME/projects/X`)，
+但容器内只看到 `/projects/X`。此处做 host→container 翻译，与 openhands_worker
+的 `_to_container_path` 同逻辑，确保 verify_cmd 在正确的容器 cwd 下执行。
+
 verifier 签名与 orchestrator 的 `VerifierFn` 一致:`(cmd: list, cwd: str) -> (ok, output)`。
 `workspace_factory` 可注入 → 单测无需真沙盒。
 """
 from __future__ import annotations
 
+import os
 from typing import Any, Callable, Protocol
 
 from driving.approval import classify_risk
@@ -19,6 +24,28 @@ from driving.safety import is_safe_command
 # verifier 返回 (是否通过, 尾部输出)
 Verifier = Callable[[list, str], "tuple[bool, str]"]
 _OUTPUT_TAIL = 2000
+
+
+def _to_container_path(host_path: str) -> str:
+    """把宿主机路径转成 OpenHands 容器内可见路径（M156.17）。
+
+    dev_up.sh 挂载 `$HOME/projects:/projects`，所以宿主机
+    `$HOME/projects/X` 在容器内是 `/projects/X`。其它路径原样返回。
+    与 openhands_worker._to_container_path 同逻辑，确保 verify_cmd
+    在容器内能找到正确的 cwd。
+    """
+    if not host_path:
+        return host_path
+    home = os.path.expanduser("~")
+    projects_host = os.path.join(home, "projects")
+    norm_host = os.path.normpath(projects_host)
+    norm_cwd = os.path.normpath(host_path)
+    if norm_cwd == norm_host:
+        return "/projects"
+    if norm_cwd.startswith(norm_host + os.sep):
+        rel = os.path.relpath(norm_cwd, norm_host)
+        return f"/projects/{rel}"
+    return host_path
 
 
 class _Workspace(Protocol):
@@ -39,11 +66,14 @@ def make_sandbox_verifier(
 
     Args:
         agent_host: OpenHands agent-server 地址(容器暴露的 HTTP 端点)。
-        working_dir: 沙盒内工作目录(/projects/<名>);cwd 缺省时用它。
+        working_dir: 沙盒内工作目录。接受宿主机路径(`$HOME/projects/X`)或
+            容器路径(`/projects/X`)，内部统一翻译为容器路径（M156.17）。
         api_key: agent-server 鉴权。
         timeout: 单次验收命令超时(秒)。
         workspace_factory: RemoteWorkspace 构造器,测试可注入假实现。
     """
+    # M156.17：working_dir 可能是 factory_loop 传入的宿主机路径，翻译为容器路径
+    container_working_dir = _to_container_path(working_dir)
 
     def verify(cmd: list, cwd: str) -> "tuple[bool, str]":
         command_str = " ".join(cmd)
@@ -58,9 +88,11 @@ def make_sandbox_verifier(
             from openhands.sdk.workspace.remote.base import RemoteWorkspace
             factory = RemoteWorkspace
 
-        ws = factory(host=agent_host, working_dir=working_dir, api_key=api_key)
+        # M156.17：cwd 也可能是宿主机路径，翻译为容器路径；空则 fallback 到 working_dir
+        container_cwd = _to_container_path(cwd) if cwd else container_working_dir
+        ws = factory(host=agent_host, working_dir=container_working_dir, api_key=api_key)
         with ws:
-            result = ws.execute_command(command_str, cwd=cwd or working_dir, timeout=timeout)
+            result = ws.execute_command(command_str, cwd=container_cwd, timeout=timeout)
 
         stdout = getattr(result, "stdout", "") or ""
         stderr = getattr(result, "stderr", "") or ""
