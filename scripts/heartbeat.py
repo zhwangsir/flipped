@@ -27,6 +27,11 @@ from datetime import datetime, timezone
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 os.chdir(ROOT)
 
+# 让 scripts/ 入口能 import src/driving 业务模块（factory_health 等）
+sys.path.insert(0, os.path.join(ROOT, "src"))
+
+from driving.factory_health import detect_stuck_factories  # noqa: E402
+
 REPORTS_DIR = os.path.join(ROOT, "reports")
 os.makedirs(REPORTS_DIR, exist_ok=True)
 
@@ -267,6 +272,44 @@ def write_recovery_notice(recoveries: list, now_ts: str, now_human: str) -> None
         print(f"     ✅ {r['model']}: {r['prev_error']} → ready ({r['curr_latency_s']}s)")
 
 
+def write_stuck_notice(stuck: list, now_ts: str, now_human: str) -> None:
+    """M5 产线化 — 检测到卡住/可恢复工厂时写通知到 reports/stuck_*.md。
+
+    只写建议动作，不自动执行 resume（安全：不扰动产线）。
+    自动 resume 需 FLIPPED_HEARTBEAT_AUTO_RESUME=1 门控，另作实现。
+    """
+    if not stuck:
+        return
+    notice_path = os.path.join(REPORTS_DIR, f"stuck_{now_ts}.md")
+    with open(notice_path, "w") as f:
+        f.write(f"# 长任务健康告警 · {now_human}\n\n")
+        f.write(f"检测到 {len(stuck)} 个工厂有风险信号（M5 主动监护）：\n\n")
+        for s in stuck:
+            f.write(f"## ⚠️ {s['factory_id']}\n\n")
+            f.write(f"- **状态**: {s['status']}\n")
+            f.write(f"- **目标**: {s.get('product_goal', '?')[:80]}\n")
+            f.write(f"- **工作目录**: {s.get('cwd', '?')}\n")
+            if s.get("minutes_since_update") is not None:
+                f.write(f"- **上次更新**: {s['minutes_since_update']} 分钟前\n")
+            f.write(f"- **信号**: {', '.join(s['signals'])}\n")
+            if s.get("circuit_breaker_tasks"):
+                f.write(f"- **可恢复任务**:\n")
+                for cb in s["circuit_breaker_tasks"]:
+                    f.write(f"  - `{cb['task_id']}` stop_reason={cb['stop_reason']} summary={cb.get('summary','')[:60]}\n")
+            if s.get("running_tasks"):
+                f.write(f"- **卡住的任务**: {', '.join(s['running_tasks'])}\n")
+            f.write(f"\n")
+        f.write(f"## 建议动作\n\n")
+        f.write(f"- 检查对应 factory 的进程是否存活（`ps aux | grep factory`）\n")
+        f.write(f"- 如有 circuit_breaker_task：可跑 `python3 scripts/resume_factory.py <factory_id>` 尝试恢复\n")
+        f.write(f"- 如 stale_updated_at：检查是否有崩溃的 OpenHands 容器（`docker ps -a | grep flipped-oh`）\n")
+        f.write(f"- 自动恢复未启用（FLIPPED_HEARTBEAT_AUTO_RESUME 默认关），需人工介入\n")
+    # 控制台高亮输出
+    print(f"  ⚠️ 检测到 {len(stuck)} 个卡住/可恢复工厂 → {notice_path}")
+    for s in stuck:
+        print(f"     ⚠️ {s['factory_id']}: {', '.join(s['signals'])}")
+
+
 def main():
     now_ts = ts()
     now_human = ts_human()
@@ -289,6 +332,10 @@ def main():
     recoveries = detect_recovery(models, prev_models)
     write_recovery_notice(recoveries, now_ts, now_human)
 
+    # M5 产线化：检测卡住/可恢复的工厂（主动监护）
+    stuck = detect_stuck_factories(stale_minutes=30)
+    write_stuck_notice(stuck, now_ts, now_human)
+
     report = {
         "timestamp": now_human,
         "state": state,
@@ -296,6 +343,7 @@ def main():
         "models": models,
         "tests": tests,
         "deviation": deviation,
+        "stuck_factories": stuck,
     }
 
     # 写单次报告
