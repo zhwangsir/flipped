@@ -2,7 +2,7 @@
   "project": "flipped",
   "description": "接入本地 MLX 双模型(GLM-5.2 编排者 / Kimi-K2.7-Code 执行者)的 agentic 代码编辑器平台。fork Roo Code + 自定义驾驭层(强制验证/循环检测/上下文压缩/人工审批/子Agent/可观测性) + MCP 联网与外部能力。",
   "updated": "2026-07-26 08:35:00",
-  "current_milestone": "M156.14 done（verify_cmd 引号内 assert 误拦修复 · safety shlex 重写）。M147-A E2E 第二轮 3 任务全 circuit_breaker 根因已定位修复：safety._extract_command_tokens 用朴素正则切分不识别引号，把 python -c \"import os; assert ...\" 引号内的 ; 当 shell 操作符，切出 ['python', 'assert'] → assert 不在白名单 → verify_cmd 被拦 → worker 做对了也通不过验收 → circuit_breaker。修复：shlex(punctuation_chars=';&|', posix=True) 重写，引号内操作符不再误切。TDD 4 测试 红绿全过。全量门禁：py=1697/2 skipped, fe=591, tsc=0, build ok。M147-A E2E 第三轮可重跑（前置阻碍已解除）。",
+  "current_milestone": "M156.15 done（GLM planner thinking-off + JSON trailing comma repair + verify_cmd python3）。M147-A E2E r3 全任务 circuit_breaker 根因三连击已定位修复：① planner _direct_glm_tool_call 硬编码 enable_thinking=True（M149.6 已实测 GLM-5.2-fp8 thinking on 必乱码，worker 已关但 planner 漏关）→ GLM 输出重复循环 + trailing comma → _parse_raw_response 解析失败 → fail-open 确定性 roadmap；② _parse_raw_response 用 json.loads 不接受 trailing comma（GLM 重复循环后尾部必带 ,}）→ 解析失败 → “空响应”；③ 确定性 roadmap verify_cmd 用 `python -c`（macOS 无 python 命令，只有 python3）→ command not found exit=127 → 验收必败 → circuit_breaker。修复：① 新增 _planner_enable_thinking() 默认 False（FLIPPED_PLANNER_ENABLE_THINKING 可开）；② 新增 _repair_json_trailing_commas() 在 json.loads 前剥离 ,} 和 ,]；③ 全部 python → python3（含 planner prompt 示例）。TDD 8 测试红绿全过。全量门禁：py=1705/2 skipped, fe=591, tsc=0, build ok。M147-A E2E r4 可重跑。",
   "key_facts": {
     "dev_host": "Apple M5 Max, 128GB RAM, 1.1TB 可用磁盘 — 开发/控制节点，非模型宿主",
     "model_cluster": "exo 集群 @ http://studio01-1:52415 (MagicDNS 主机名=macstudio01，免疫 Tailscale IP 漂移；旧裸 IP 100.64.201.37 已于 2026-07-22 失效)；公网 https://dgmt.top/exo (需 Bearer token)",
@@ -3136,6 +3136,12 @@
       "status": "done",
       "note": "M147-A E2E 第二轮 circuit_breaker 根因：safety._extract_command_tokens 用朴素正则 re.split(r'\\s*(?:;|&&|\\|\\||\\|)\\s*') 切分命令，不识别 shell 引号，把 python -c \"import os; assert os.path.isfile('/x')\" 引号内的 ; 当 shell 操作符，切出 ['python', 'assert']，assert 不在 SAFE_BASE_COMMANDS → 整条 verify_cmd 被拦 → worker 做对了也通不过验收 → circuit_breaker。3 个任务（det-task-1/2/3）全部因此失败。修复：用 shlex(punctuation_chars=';&|', posix=True) 重写切分逻辑，引号内的 ; & | 不再被当操作符。新增 _first_cmd_of_segment helper + _extract_command_tokens_legacy 退化路径（shlex 解析失败时保守退化到旧逻辑）。TDD：4 个新测试（python -c with assert / bash -c with embedded ops / 引号外复合仍拦 / 裸 assert 仍拦），红阶段复现成功，绿阶段全过。全量门禁：py=1697 passed/2 skipped/0 failed (cov 83.67%), fe=591 passed, tsc=0, build=ok。M147-A E2E 第三轮可重跑（前置阻碍已解除）。",
       "completed_at": "2026-07-26 09:01:31"
+    },
+    "M156.15_planner_thinking_off_json_repair_python3": {
+      "title": "GLM planner thinking-off + JSON trailing comma repair + verify_cmd python3",
+      "status": "done",
+      "note": "M147-A E2E r3 全任务 circuit_breaker 根因三连击修复。① planner _direct_glm_tool_call 硬编码 enable_thinking=True（M149.6 已实测 GLM-5.2-fp8 thinking on 必乱码：content 出现 'depends': 'task2' 重复 10+ 次后 trailing comma → JSON 解析失败；worker 已在 M149.6 默认关 thinking 但 planner 漏关）→ fail-open 确定性 roadmap。修复：新增 _planner_enable_thinking() 默认 False（FLIPPED_PLANNER_ENABLE_THINKING=1/true/on/yes 可开，与 worker FLIPPED_WORKER_ENABLE_THINKING 对齐）。② _parse_raw_response 用 json.loads 不接受 trailing comma（Python JSON 标准严格）→ 解析失败 → '空响应'。修复：新增 _repair_json_trailing_commas() 用正则 ,(\\s*[}\\]]) → \\1 在 json.loads 前剥离 ,} 和 ,]（允许中间空白/换行）。③ 确定性 roadmap verify_cmd 用 `python -c`（macOS 宿主机无 python 命令，只有 /opt/homebrew/bin/python3）→ subprocess.run shell=True → /bin/sh → command not found: python → exit=127 → 验收必败 → circuit_breaker。修复：全部 f'python -c' → f'python3 -c'（含 Python/Web/默认三套 deterministic roadmap 共 24 条 verify_cmd + planner prompt 示例 6 处）。TDD：8 个新测试（_planner_enable_thinking 默认 False/env enables/env disables + trailing comma before } / before ] / markdown code fence / repetition loop 复现 + deterministic roadmap uses python3），红阶段全失败复现成功，绿阶段全过。全量门禁：py=1705 passed/2 skipped/0 failed, fe=591 passed, tsc=0 errors, build=ok。M147-A E2E r4 可重跑（三连击根因全部解除）。",
+      "completed_at": "2026-07-26 11:42:00"
     }
   },
   "architecture_decisions": [
@@ -3369,7 +3375,7 @@
     {
       "id": "KI-20260726-verify-assert-whitelist",
       "date": "2026-07-26",
-      "status": "open",
+      "status": "resolved",
       "severity": "P1",
       "title": "verify_cmd 裸 assert 被 safety 白名单拦截（M147-A E2E 下一阻碍）",
       "note": "M156.11 smoke test 发现：GLM planner 生成 verify_cmd 时偶发用裸 `assert \"...\" == \"$(python hello.py)\"`（assert 不是 shell 命令），被 safety.is_safe_command 的 SAFE_BASE_COMMANDS 白名单拦截 → verify circuit_breaker → task failed。worker 实际已正确创建文件（hello.py 134 bytes 内容正确），纯 verify 层问题。_sanitize_verify_cmd 处理了裸 pytest/多行/多元素但没处理裸 assert。修复方向：A) _sanitize_verify_cmd 检测裸 assert 改写 python -c（shell $() 替换难通用）；B) planner prompt 强约束 verify_cmd 必须以 python -c/python -m pytest/bash 开头；C) safety 白名单加 assert（治标）。修完后可跑完整 M147-A E2E。",
@@ -3377,7 +3383,9 @@
         "M147",
         "M156"
       ],
-      "opened_at": "2026-07-26"
+      "opened_at": "2026-07-26",
+      "resolved_at": "2026-07-26 19:12:22",
+      "resolution": "M156.14 修复：safety._extract_command_tokens 改用 shlex 重写，引号内 assert 不再误拦。8 条 verify_cmd 全部放行验证通过。"
     }
   ],
   "background_jobs": [

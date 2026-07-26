@@ -116,10 +116,11 @@ def test_sanitize_python_c_with_assert_not_affected():
 
 
 def test_planner_prompt_forbids_bare_assert():
-    """M156.12：planner prompt 必须含禁止裸 assert 的规则。"""
+    """M156.12：planner prompt 必须含禁止裸 assert 的规则。
+    M156.15c：python → python3（macOS 无 python 命令）。"""
     import inspect
     from driving.factory_loop import default_planner
 
     src = inspect.getsource(default_planner)
     assert "裸 assert" in src
-    assert "python -c / python -m pytest / bash / test" in src
+    assert "python3 -c / python3 -m pytest / bash / test" in src

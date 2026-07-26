@@ -448,6 +448,136 @@ def test_supervisor_prompt_window_constraint():
     assert "第一轮写文件" in prompt
 
 
+# ---- M156.15 · GLM planner thinking-off + JSON repair ----
+
+
+def test_planner_enable_thinking_default_false(monkeypatch):
+    """M156.15a: GLM-5.2-fp8 planner 默认 thinking off。
+
+    M149.6 实测 GLM-5.2-fp8 enable_thinking=True → 重复循环/乱码
+    （E2E r3 实测：content 出现 "depends": "task2" 重复 10+ 次后 trailing comma
+    → JSON 解析失败 → planner fail-open → 确定性 roadmap → circuit_breaker）。
+    worker 已在 M149.6 默认关 thinking（FLIPPED_WORKER_ENABLE_THINKING），
+    但 planner 的 _direct_glm_tool_call 仍硬编码 True —— 这是 M147-A E2E r3 全任务
+    circuit_breaker 的根因。M156.15 修复：planner 也默认关，与 worker 对齐。
+    """
+    monkeypatch.delenv("FLIPPED_PLANNER_ENABLE_THINKING", raising=False)
+    from driving.orchestrator import _planner_enable_thinking
+    assert _planner_enable_thinking() is False
+
+
+def test_planner_enable_thinking_env_enables(monkeypatch):
+    """FLIPPED_PLANNER_ENABLE_THINKING=1/true/on/yes → True。"""
+    from driving.orchestrator import _planner_enable_thinking
+    for raw in ("1", "true", "on", "yes", "TRUE", " On "):
+        monkeypatch.setenv("FLIPPED_PLANNER_ENABLE_THINKING", raw)
+        assert _planner_enable_thinking() is True, raw
+
+
+def test_planner_enable_thinking_env_disables(monkeypatch):
+    """0/false/off/no（大小写不敏感、首尾空白容忍）→ False。"""
+    from driving.orchestrator import _planner_enable_thinking
+    for raw in ("0", "false", "off", "no", "FALSE", " Off ", "NO"):
+        monkeypatch.setenv("FLIPPED_PLANNER_ENABLE_THINKING", raw)
+        assert _planner_enable_thinking() is False, raw
+
+
+# ---- M156.15b · JSON repair（trailing comma + markdown code fence） ----
+
+
+def test_parse_raw_response_handles_trailing_comma_before_brace():
+    """M156.15b: GLM thinking on 时输出 trailing comma → JSON 非法。
+
+    E2E r3 实测 GLM 输出形如：
+      {"tasks": [{"id": "task1", "depends": "task2",}]}
+    Python json.loads 不接受 trailing comma → 解析失败 → "空响应"。
+    修复：_parse_raw_response 在 json.loads 前剥离 }, ] 前的 trailing comma。
+    """
+    from types import SimpleNamespace
+    from driving.orchestrator import _parse_raw_response
+    from pydantic import BaseModel
+
+    class _Schema(BaseModel):
+        a: int = 0
+        b: int = 0
+
+    # trailing comma before }
+    raw = SimpleNamespace(content='{"a": 1, "b": 2,}', tool_calls=[])
+    result = _parse_raw_response(raw, _Schema)
+    assert result is not None
+    assert result.a == 1
+    assert result.b == 2
+
+
+def test_parse_raw_response_handles_trailing_comma_before_bracket():
+    """trailing comma before ] 也应修复。"""
+    from types import SimpleNamespace
+    from driving.orchestrator import _parse_raw_response
+    from pydantic import BaseModel
+
+    class _Schema(BaseModel):
+        items: list[str] = []
+
+    raw = SimpleNamespace(content='{"items": ["a", "b",]}', tool_calls=[])
+    result = _parse_raw_response(raw, _Schema)
+    assert result is not None
+    assert result.items == ["a", "b"]
+
+
+def test_parse_raw_response_handles_markdown_code_fence():
+    """GLM 常把 JSON 包在 ```json ... ``` 里——贪婪正则已能处理，但验证不破。"""
+    from types import SimpleNamespace
+    from driving.orchestrator import _parse_raw_response
+    from pydantic import BaseModel
+
+    class _Schema(BaseModel):
+        a: int = 0
+
+    raw = SimpleNamespace(content='```json\n{"a": 42}\n```', tool_calls=[])
+    result = _parse_raw_response(raw, _Schema)
+    assert result is not None
+    assert result.a == 42
+
+
+def test_parse_raw_response_handles_repetition_loop_with_trailing_comma():
+    """E2E r3 真实故障复现：GLM thinking on → "depends" 重复 10+ 次后 trailing comma。
+
+    content 尾部形如：
+      ... "depends": "task2",
+      "depends": "task1",
+      "depends": "task2",
+    }
+    修复后应能解析出前面的有效字段（duplicate keys 取 last，trailing comma 剥离）。
+    """
+    from types import SimpleNamespace
+    from driving.orchestrator import _parse_raw_response
+    from pydantic import BaseModel
+
+    class _Schema(BaseModel):
+        id: str = ""
+        depends: str = ""
+
+    # 模拟 E2E r3 的真实 GLM 输出（简化版）
+    content = (
+        '```json\n'
+        '{\n'
+        '  "id": "task1",\n'
+        '  "depends": "task2",\n'
+        '  "depends": "task1",\n'
+        '  "depends": "task2",\n'
+        '  "depends": "task1",\n'
+        '  "depends": "task2",\n'
+        '}\n'
+        '```'
+    )
+    raw = SimpleNamespace(content=content, tool_calls=[])
+    result = _parse_raw_response(raw, _Schema)
+    assert result is not None, "应能解析带 trailing comma + duplicate keys 的 GLM 输出"
+    assert result.id == "task1"
+    # duplicate keys: json.loads 取 last → "task2"
+    assert result.depends == "task2"
+
+
 if __name__ == "__main__":
     for fn in (test_happy_dispatch_work_oversee_verify, test_supervisor_believe_done_skips_worker,
                test_overseer_abort, test_overseer_replan_then_pass, test_forced_verify_retry,

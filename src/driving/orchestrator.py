@@ -223,10 +223,25 @@ def _parse_raw_response(raw, schema_cls):
             return _coerce_schema(data, schema_cls)
     for cand in candidates:
         try:
-            return _coerce_schema(json.loads(cand), schema_cls)
+            return _coerce_schema(json.loads(_repair_json_trailing_commas(cand)), schema_cls)
         except Exception:
             continue
     return None
+
+
+def _repair_json_trailing_commas(text: str) -> str:
+    r"""M156.15b: 剥离 JSON 里的 trailing comma（}, ] 前的逗号）。
+
+    GLM-5.2-fp8 thinking on 时偶发重复循环，输出形如：
+      {"id": "task1", "depends": "task2", "depends": "task1",}
+    Python json.loads 不接受 trailing comma → 解析失败 → "空响应"。
+    这里在 json.loads 前用正则剥离 `,}` 和 `,]`（允许中间有空白/换行）。
+
+    注意：只剥离引号外的逗号——引号内的 `,}` 不应被修改。
+    用简单正则 `,(\s*[}\]])` 替换为 `\1` 在 99% 场景够用（GLM 的 trailing comma
+    总是在键值对末尾、结构符号前），且不会误伤引号内文本（引号内的 `,}` 极罕见）。
+    """
+    return re.sub(r",(\s*[}\]])", r"\1", text)
 
 
 def _coerce_schema(data: dict, schema_cls):
@@ -325,6 +340,19 @@ def _invoke_structured(llm, schema_cls, prompt: str, *, max_retries: int = 2):
     raise last_err or RuntimeError("structured output failed after retries")
 
 
+def _planner_enable_thinking() -> bool:
+    """M156.15: GLM-5.2-fp8 planner thinking 控制（与 worker 对齐）。
+
+    M149.6 实测 GLM-5.2-fp8 enable_thinking=True → 重复循环/乱码
+    （E2E r3 实测：planner 输出 "depends": "task2" 重复 10+ 次后 trailing comma
+    → JSON 解析失败 → fail-open 确定性 roadmap → 全任务 circuit_breaker）。
+    worker 已在 M149.6 默认关 thinking（FLIPPED_WORKER_ENABLE_THINKING），
+    planner 此处补齐：默认 False，FLIPPED_PLANNER_ENABLE_THINKING=1/true/on/yes 可开。
+    """
+    raw = os.environ.get("FLIPPED_PLANNER_ENABLE_THINKING", "false").strip().lower()
+    return raw in ("1", "true", "on", "yes")
+
+
 def _direct_glm_tool_call(llm, schema_cls, prompt: str, *, max_retries: int = 1):
     """直调 GLM /v1/chat/completions，纯文本模式输出 JSON，自己解析。
 
@@ -374,8 +402,9 @@ def _direct_glm_tool_call(llm, schema_cls, prompt: str, *, max_retries: int = 1)
             req_body = {
                 "model": model,
                 "messages": [{"role": "user", "content": full_prompt}],
-                # M131 质量优先：开启深度推理，reasoning_content 独立字段不占 content 预算
-                "enable_thinking": True,
+                # M156.15: thinking 默认关（GLM-5.2-fp8 thinking on → 重复循环/乱码）
+                # FLIPPED_PLANNER_ENABLE_THINKING=1 可开（与 worker 对齐）
+                "enable_thinking": _planner_enable_thinking(),
                 "temperature": 0.1,
             }
             # 不传 max_tokens：让模型自然完成，不人为截断

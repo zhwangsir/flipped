@@ -626,6 +626,28 @@ def test_deterministic_roadmap_all_verify_cmds_check_content():
         assert "index.html" in t.verify_cmd[0], f"任务 {t.id} 验收命令应检查 index.html"
 
 
+# ---- M156.15c · deterministic roadmap verify_cmd 使用 python3 ----
+
+
+def test_deterministic_roadmap_uses_python3_not_python():
+    """M156.15c: deterministic roadmap verify_cmd 必须用 python3 不是 python。
+
+    E2E r3 实测：宿主机 macOS 无 `python`（只有 `/opt/homebrew/bin/python3`），
+    verify_cmd 用 `python -c "..."` → command not found → exit 127 → 验收失败
+    → 3 次重试全败 → circuit_breaker。改用 `python3` 与宿主机环境对齐。
+    """
+    with tempfile.TemporaryDirectory() as d:
+        tasks = _deterministic_roadmap("做一个 Python CLI 工具", d)
+    for t in tasks:
+        for cmd in t.verify_cmd:
+            # 必须用 python3，不能裸 python（macOS 无 python 命令）
+            assert "python3" in cmd or "python -" not in cmd, \
+                f"任务 {t.id} verify_cmd 应使用 python3 而非 python: {cmd}"
+            # 更精确：不能出现裸 "python -c"（必须是 "python3 -c"）
+            assert "python -c" not in cmd, \
+                f"任务 {t.id} verify_cmd 不应用裸 python -c: {cmd}"
+
+
 # ---- M94 factory_loop RCA + Gold Memory 集成 ----
 
 def test_m94_factory_loop_uses_analyze_failure_with_memory(tmp_db, tmp_cwd):

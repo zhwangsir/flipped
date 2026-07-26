@@ -475,7 +475,7 @@ def _deterministic_roadmap(product_goal: str, cwd: str) -> list[FactoryTask]:
                 id="det-task-1",
                 description=f"创建项目结构（{goal_short}）：__init__.py、pyproject.toml、README.md",
                 verify_cmd=[
-                    f"python -c \"import os; assert os.path.isfile('{safe_cwd}/pyproject.toml'), 'pyproject.toml not found'\""
+                    f"python3 -c \"import os; assert os.path.isfile('{safe_cwd}/pyproject.toml'), 'pyproject.toml not found'\""
                 ],
                 feedback="(确定性 fallback: 创建 Python 项目基础结构)",
             ),
@@ -483,7 +483,7 @@ def _deterministic_roadmap(product_goal: str, cwd: str) -> list[FactoryTask]:
                 id="det-task-2",
                 description="创建配置管理模块（config.py）：支持 JSON 配置文件读写",
                 verify_cmd=[
-                    f"python -c \"import config; assert hasattr(config, 'load_config'), 'config module missing'\""
+                    f"python3 -c \"import config; assert hasattr(config, 'load_config'), 'config module missing'\""
                 ],
                 feedback="(确定性 fallback: 创建配置管理模块)",
             ),
@@ -491,7 +491,7 @@ def _deterministic_roadmap(product_goal: str, cwd: str) -> list[FactoryTask]:
                 id="det-task-3",
                 description="创建命令行解析模块（cli.py）：使用 argparse 实现子命令",
                 verify_cmd=[
-                    f"python -c \"import cli; assert hasattr(cli, 'parse_args'), 'cli module missing'\""
+                    f"python3 -c \"import cli; assert hasattr(cli, 'parse_args'), 'cli module missing'\""
                 ],
                 feedback="(确定性 fallback: 创建命令行解析模块)",
             ),
@@ -499,7 +499,7 @@ def _deterministic_roadmap(product_goal: str, cwd: str) -> list[FactoryTask]:
                 id="det-task-4",
                 description="创建主入口（main.py）：整合所有模块，提供统一 CLI 入口",
                 verify_cmd=[
-                    f"python -c \"import main; assert hasattr(main, 'main'), 'main module missing'\""
+                    f"python3 -c \"import main; assert hasattr(main, 'main'), 'main module missing'\""
                 ],
                 feedback="(确定性 fallback: 创建主入口)",
             ),
@@ -507,7 +507,7 @@ def _deterministic_roadmap(product_goal: str, cwd: str) -> list[FactoryTask]:
                 id="det-task-5",
                 description="创建测试套件（tests/）：每个模块配独立 pytest 测试文件",
                 verify_cmd=[
-                    f"python -c \"import os; assert os.path.isdir('{safe_cwd}/tests'), 'tests dir missing'\""
+                    f"python3 -c \"import os; assert os.path.isdir('{safe_cwd}/tests'), 'tests dir missing'\""
                 ],
                 feedback="(确定性 fallback: 创建测试套件)",
             ),
@@ -515,7 +515,7 @@ def _deterministic_roadmap(product_goal: str, cwd: str) -> list[FactoryTask]:
                 id="det-task-6",
                 description="创建日志模块（logging.py）：结构化日志输出、日志级别",
                 verify_cmd=[
-                    f"python -c \"import logging; assert hasattr(logging, 'setup_logger'), 'logging module missing'\""
+                    f"python3 -c \"import logging; assert hasattr(logging, 'setup_logger'), 'logging module missing'\""
                 ],
                 feedback="(确定性 fallback: 创建日志模块)",
             ),
@@ -523,7 +523,7 @@ def _deterministic_roadmap(product_goal: str, cwd: str) -> list[FactoryTask]:
                 id="det-task-7",
                 description="创建 HTTP 客户端模块（http_client.py）：超时配置、重试机制",
                 verify_cmd=[
-                    f"python -c \"import http_client; assert hasattr(http_client, 'request'), 'http_client module missing'\""
+                    f"python3 -c \"import http_client; assert hasattr(http_client, 'request'), 'http_client module missing'\""
                 ],
                 feedback="(确定性 fallback: 创建 HTTP 客户端模块)",
             ),
@@ -531,7 +531,7 @@ def _deterministic_roadmap(product_goal: str, cwd: str) -> list[FactoryTask]:
                 id="det-task-8",
                 description="创建数据验证模块（validation.py）：数据格式校验、错误处理",
                 verify_cmd=[
-                    f"python -c \"import validation; assert hasattr(validation, 'validate'), 'validation module missing'\""
+                    f"python3 -c \"import validation; assert hasattr(validation, 'validate'), 'validation module missing'\""
                 ],
                 feedback="(确定性 fallback: 创建数据验证模块)",
             ),
@@ -543,7 +543,7 @@ def _deterministic_roadmap(product_goal: str, cwd: str) -> list[FactoryTask]:
                 id="det-task-1",
                 description=f"创建 index.html 基础结构（{goal_short}）：lang/meta viewport/header/main/footer",
                 verify_cmd=[
-                    f"python -c \"import os; assert os.path.isfile('{safe_cwd}/index.html'), 'index.html not found'\""
+                    f"python3 -c \"import os; assert os.path.isfile('{safe_cwd}/index.html'), 'index.html not found'\""
                 ],
                 feedback="(确定性 fallback: 创建基础 HTML 结构)",
             ),
@@ -551,7 +551,7 @@ def _deterministic_roadmap(product_goal: str, cwd: str) -> list[FactoryTask]:
                 id="det-task-2",
                 description="添加 CSS 变量系统（:root --color-* 变量、配色不超过 5 种）",
                 verify_cmd=[
-                    f"python -c \"f=open('{safe_cwd}/index.html'); c=f.read(); assert ':root' in c or '--color' in c, 'no CSS variables'; f.close()\""
+                    f"python3 -c \"f=open('{safe_cwd}/index.html'); c=f.read(); assert ':root' in c or '--color' in c, 'no CSS variables'; f.close()\""
                 ],
                 feedback="(确定性 fallback: 添加 CSS 样式系统)",
             ),
@@ -559,7 +559,7 @@ def _deterministic_roadmap(product_goal: str, cwd: str) -> list[FactoryTask]:
                 id="det-task-3",
                 description="添加 hero 首屏区块（主视觉标题 + CTA 按钮 + 副标题）",
                 verify_cmd=[
-                    f"python -c \"f=open('{safe_cwd}/index.html'); c=f.read(); assert '<button' in c or '<a ' in c, 'no interactive elements'; f.close()\""
+                    f"python3 -c \"f=open('{safe_cwd}/index.html'); c=f.read(); assert '<button' in c or '<a ' in c, 'no interactive elements'; f.close()\""
                 ],
                 feedback="(确定性 fallback: 添加 hero 首屏区块)",
             ),
@@ -567,7 +567,7 @@ def _deterministic_roadmap(product_goal: str, cwd: str) -> list[FactoryTask]:
                 id="det-task-4",
                 description="添加响应式布局（@media 断点、移动端适配）",
                 verify_cmd=[
-                    f"python -c \"f=open('{safe_cwd}/index.html'); c=f.read(); assert '@media' in c, 'no responsive breakpoints'; f.close()\""
+                    f"python3 -c \"f=open('{safe_cwd}/index.html'); c=f.read(); assert '@media' in c, 'no responsive breakpoints'; f.close()\""
                 ],
                 feedback="(确定性 fallback: 添加响应式布局)",
             ),
@@ -575,7 +575,7 @@ def _deterministic_roadmap(product_goal: str, cwd: str) -> list[FactoryTask]:
                 id="det-task-5",
                 description="添加无障碍属性（aria-label、img alt、html lang、focus-visible）",
                 verify_cmd=[
-                    f"python -c \"f=open('{safe_cwd}/index.html'); c=f.read(); assert 'aria-' in c or 'alt=' in c, 'no a11y attributes'; f.close()\""
+                    f"python3 -c \"f=open('{safe_cwd}/index.html'); c=f.read(); assert 'aria-' in c or 'alt=' in c, 'no a11y attributes'; f.close()\""
                 ],
                 feedback="(确定性 fallback: 添加无障碍属性)",
             ),
@@ -583,7 +583,7 @@ def _deterministic_roadmap(product_goal: str, cwd: str) -> list[FactoryTask]:
                 id="det-task-6",
                 description="添加微交互动画（transition/transform/opacity，呼吸式动效）",
                 verify_cmd=[
-                    f"python -c \"f=open('{safe_cwd}/index.html'); c=f.read(); assert 'transition' in c or 'animation' in c, 'no animations'; f.close()\""
+                    f"python3 -c \"f=open('{safe_cwd}/index.html'); c=f.read(); assert 'transition' in c or 'animation' in c, 'no animations'; f.close()\""
                 ],
                 feedback="(确定性 fallback: 添加微交互动画)",
             ),
@@ -591,7 +591,7 @@ def _deterministic_roadmap(product_goal: str, cwd: str) -> list[FactoryTask]:
                 id="det-task-7",
                 description="添加交互组件状态（hover/focus/disabled/active 样式）",
                 verify_cmd=[
-                    f"python -c \"f=open('{safe_cwd}/index.html'); c=f.read(); assert ':hover' in c or ':focus' in c, 'no component states'; f.close()\""
+                    f"python3 -c \"f=open('{safe_cwd}/index.html'); c=f.read(); assert ':hover' in c or ':focus' in c, 'no component states'; f.close()\""
                 ],
                 feedback="(确定性 fallback: 添加组件状态样式)",
             ),
@@ -599,7 +599,7 @@ def _deterministic_roadmap(product_goal: str, cwd: str) -> list[FactoryTask]:
                 id="det-task-8",
                 description="添加语义内容区块（article/nav/section + h1-h3 标题层级）",
                 verify_cmd=[
-                    f"python -c \"f=open('{safe_cwd}/index.html'); c=f.read(); assert '<h1' in c or '<h2' in c, 'no heading hierarchy'; f.close()\""
+                    f"python3 -c \"f=open('{safe_cwd}/index.html'); c=f.read(); assert '<h1' in c or '<h2' in c, 'no heading hierarchy'; f.close()\""
                 ],
                 feedback="(确定性 fallback: 添加语义内容区块)",
             ),
@@ -610,7 +610,7 @@ def _deterministic_roadmap(product_goal: str, cwd: str) -> list[FactoryTask]:
             id="det-task-1",
             description=f"创建基础项目结构（{goal_short}）：目录组织、README.md",
             verify_cmd=[
-                f"python -c \"import os; assert os.path.isfile('{safe_cwd}/README.md'), 'README.md not found'\""
+                f"python3 -c \"import os; assert os.path.isfile('{safe_cwd}/README.md'), 'README.md not found'\""
             ],
             feedback="(确定性 fallback: 创建基础项目结构)",
         ),
@@ -618,7 +618,7 @@ def _deterministic_roadmap(product_goal: str, cwd: str) -> list[FactoryTask]:
             id="det-task-2",
             description="创建核心模块（core.py）：基础功能实现",
             verify_cmd=[
-                f"python -c \"import os; assert os.path.isfile('{safe_cwd}/core.py'), 'core.py not found'\""
+                f"python3 -c \"import os; assert os.path.isfile('{safe_cwd}/core.py'), 'core.py not found'\""
             ],
             feedback="(确定性 fallback: 创建核心模块)",
         ),
@@ -626,7 +626,7 @@ def _deterministic_roadmap(product_goal: str, cwd: str) -> list[FactoryTask]:
             id="det-task-3",
             description="创建测试文件（test_core.py）：核心功能单元测试",
             verify_cmd=[
-                f"python -c \"import os; assert os.path.isfile('{safe_cwd}/test_core.py'), 'test_core.py not found'\""
+                f"python3 -c \"import os; assert os.path.isfile('{safe_cwd}/test_core.py'), 'test_core.py not found'\""
             ],
             feedback="(确定性 fallback: 创建测试文件)",
         ),
@@ -634,7 +634,7 @@ def _deterministic_roadmap(product_goal: str, cwd: str) -> list[FactoryTask]:
             id="det-task-4",
             description="创建配置文件（config.yaml）：项目配置管理",
             verify_cmd=[
-                f"python -c \"import os; assert os.path.isfile('{safe_cwd}/config.yaml'), 'config.yaml not found'\""
+                f"python3 -c \"import os; assert os.path.isfile('{safe_cwd}/config.yaml'), 'config.yaml not found'\""
             ],
             feedback="(确定性 fallback: 创建配置文件)",
         ),
@@ -642,7 +642,7 @@ def _deterministic_roadmap(product_goal: str, cwd: str) -> list[FactoryTask]:
             id="det-task-5",
             description="创建文档（docs/）：项目文档目录",
             verify_cmd=[
-                f"python -c \"import os; assert os.path.isdir('{safe_cwd}/docs'), 'docs dir missing'\""
+                f"python3 -c \"import os; assert os.path.isdir('{safe_cwd}/docs'), 'docs dir missing'\""
             ],
             feedback="(确定性 fallback: 创建文档目录)",
         ),
@@ -650,7 +650,7 @@ def _deterministic_roadmap(product_goal: str, cwd: str) -> list[FactoryTask]:
             id="det-task-6",
             description="创建工具函数（utils.py）：通用工具函数集合",
             verify_cmd=[
-                f"python -c \"import os; assert os.path.isfile('{safe_cwd}/utils.py'), 'utils.py not found'\""
+                f"python3 -c \"import os; assert os.path.isfile('{safe_cwd}/utils.py'), 'utils.py not found'\""
             ],
             feedback="(确定性 fallback: 创建工具函数)",
         ),
@@ -658,7 +658,7 @@ def _deterministic_roadmap(product_goal: str, cwd: str) -> list[FactoryTask]:
             id="det-task-7",
             description="创建示例（examples/）：使用示例目录",
             verify_cmd=[
-                f"python -c \"import os; assert os.path.isdir('{safe_cwd}/examples'), 'examples dir missing'\""
+                f"python3 -c \"import os; assert os.path.isdir('{safe_cwd}/examples'), 'examples dir missing'\""
             ],
             feedback="(确定性 fallback: 创建示例目录)",
         ),
@@ -666,7 +666,7 @@ def _deterministic_roadmap(product_goal: str, cwd: str) -> list[FactoryTask]:
             id="det-task-8",
             description="创建 Makefile：项目构建和运行命令",
             verify_cmd=[
-                f"python -c \"import os; assert os.path.isfile('{safe_cwd}/Makefile'), 'Makefile not found'\""
+                f"python3 -c \"import os; assert os.path.isfile('{safe_cwd}/Makefile'), 'Makefile not found'\""
             ],
             feedback="(确定性 fallback: 创建 Makefile)",
         ),
@@ -712,16 +712,16 @@ def default_planner(state: FactoryState) -> list[FactoryTask]:
         f"{memory_hint}\n"
         "verify_cmd 硬性规则（违反会导致验收熔断，必须遵守）：\n"
         "1. verify_cmd 数组只有一个元素，即一条单行 shell 命令。\n"
-        "2. 禁止多行命令、禁止用 && 连接多条命令、禁止用 python -c 传多行代码。\n"
-        "3. 正确示例：['python -m pytest tests/test_calc.py -q']、['python -c \"import calc; assert calc.add(1,2)==3\"']、"
+        "2. 禁止多行命令、禁止用 && 连接多条命令、禁止用 python3 -c 传多行代码。\n"
+        "3. 正确示例：['python3 -m pytest tests/test_calc.py -q']、['python3 -c \"import calc; assert calc.add(1,2)==3\"']、"
         "['bash -c \"node -e \\\"assert(require(\\'./add\\')(1,2)===3)\\\"\"']\n"
-        "4. 错误示例：['python -c \"def f():\\n  pass\\n\\nf()\" && pytest']（多行+连接，会熔断）\n"
+        "4. 错误示例：['python3 -c \"def f():\\n  pass\\n\\nf()\" && pytest']（多行+连接，会熔断）\n"
         "5. 若需要多步验证，写成一条调用测试脚本的命令：['bash scripts/verify_task1.sh']\n"
-        "6. 禁止用裸 pytest 命令（沙箱 PATH 里没有 pytest 可执行文件）；必须用 python -m pytest。\n"
+        "6. 禁止用裸 pytest 命令（沙箱 PATH 里没有 pytest 可执行文件）；必须用 python3 -m pytest。\n"
         "7. 禁止用裸 assert 命令（assert 是 Python 关键字不是 shell 命令，会被 safety 白名单拦截）。"
-        "verify_cmd 必须以 python -c / python -m pytest / bash / test 开头。\n"
-        "   错误示例：['assert \"hello\" == \"$(python hello.py)\"']（裸 assert 会熔断）\n"
-        "   正确示例：['python -c \"import subprocess; r=subprocess.run([\\'python\\',\\'hello.py\\'],capture_output=True,text=True); assert r.stdout.strip()==\\'hello\\'\"']"
+        "verify_cmd 必须以 python3 -c / python3 -m pytest / bash / test 开头。\n"
+        "   错误示例：['assert \"hello\" == \"$(python3 hello.py)\"']（裸 assert 会熔断）\n"
+        "   正确示例：['python3 -c \"import subprocess; r=subprocess.run([\\'python3\\',\\'hello.py\\'],capture_output=True,text=True); assert r.stdout.strip()==\\'hello\\'\"']"
     )
     try:
         rm = _invoke_structured(_make_llm("architect"), Roadmap, msg)

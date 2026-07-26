@@ -5330,3 +5330,94 @@ $ PYTHONPATH=src .venv/bin/python -c "..."
 M147-A E2E 可重跑（建议先停掉当前还在 attempt 2 的 E2E 进程，重跑以加载新代码）。
 
 ---
+
+## M156.15 · GLM planner thinking-off + JSON trailing comma repair + verify_cmd python3
+
+**日期**: 2026-07-26 11:42
+**里程碑**: M156.15_planner_thinking_off_json_repair_python3
+**状态**: done
+
+### 根因三连击（M147-A E2E r3 全任务 circuit_breaker）
+
+M147-A E2E r3 启动后 3 个任务全部 circuit_breaker（iteration=2, attempt=1）。
+DB 事件日志显示 `stop_reason: "circuit_breaker"`，日志显示 GLM planner
+`[glm_fallback] 空响应: finish_reason=stop content_len=1393` → `fail-open: RuntimeError:
+structured output failed: direct_glm_fallback=returned None (GLM 空响应)`。
+
+逐层定位出三个串联根因：
+
+#### 根因 ①: planner enable_thinking=True → GLM 重复循环/乱码
+
+`_direct_glm_tool_call` 硬编码 `"enable_thinking": True`（M131 质量优先配置），
+但 M149.6 已实测 GLM-5.2-fp8 thinking on 必乱码。worker 已在 M149.6 默认关 thinking
+（`FLIPPED_WORKER_ENABLE_THINKING` 默认 false），但 **planner 漏关**。
+
+GLM 输出实测（content 头 300 + 尾 300）:
+```
+头: ```json\n{\n  "tasks": [\n    {\n      "id": "task1",\n      "description": "...",
+尾: "depends": "task2",\n      "depends": "task1",\n      "depends": "task2",\n    }\n  ]\n}\n```
+```
+
+→ `"depends"` 重复 10+ 次后 trailing comma → JSON 非法 → `_parse_raw_response` 返回 None
+→ "空响应" → planner fail-open 到确定性 roadmap。
+
+**修复**: 新增 `_planner_enable_thinking()` 函数（orchestrator.py:328）:
+```python
+def _planner_enable_thinking() -> bool:
+    raw = os.environ.get("FLIPPED_PLANNER_ENABLE_THINKING", "false").strip().lower()
+    return raw in ("1", "true", "on", "yes")
+```
+`_direct_glm_tool_call` 的 `req_body["enable_thinking"]` 改为 `_planner_enable_thinking()`。
+
+#### 根因 ②: _parse_raw_response 不接受 trailing comma
+
+Python `json.loads` 严格遵守 JSON 标准，不接受 `,}` 和 `,]`。
+GLM 重复循环后尾部必带 trailing comma → `json.loads` 抛 `JSONDecodeError`
+→ `_parse_raw_response` 返回 None → "空响应"。
+
+**修复**: 新增 `_repair_json_trailing_commas()` 函数（orchestrator.py:232）:
+```python
+def _repair_json_trailing_commas(text: str) -> str:
+    return re.sub(r",(\s*[}\]])", r"\1", text)
+```
+在 `json.loads` 前调用，剥离 `}` 和 `]` 前的 trailing comma。
+
+#### 根因 ③: 确定性 roadmap verify_cmd 用 `python` 而非 `python3`
+
+macOS 宿主机无 `python` 命令（只有 `/opt/homebrew/bin/python3`）。
+`_safe_default_verifier` 用 `subprocess.run(command_str, shell=True, cwd=cwd)`
+→ `/bin/sh` → `python: command not found` → exit=127 → 验收必败 → circuit_breaker。
+
+确定性 roadmap 共 24 条 verify_cmd（Python 8 + Web 8 + 默认 8）全部用 `f"python -c \"...`
++ planner prompt 6 处示例也用 `python -c`。
+
+**修复**: 全部 `f"python -c \"` → `f"python3 -c \"`（含 planner prompt 示例）。
+
+### TDD 测试
+
+8 个新测试（红阶段全失败复现，绿阶段全过）:
+
+1. `test_planner_enable_thinking_default_false` — 默认 False
+2. `test_planner_enable_thinking_env_enables` — env=1/true/on/yes → True
+3. `test_planner_enable_thinking_env_disables` — env=0/false/off/no → False
+4. `test_parse_raw_response_handles_trailing_comma_before_brace` — `,}` 剥离
+5. `test_parse_raw_response_handles_trailing_comma_before_bracket` — `,]` 剥离
+6. `test_parse_raw_response_handles_markdown_code_fence` — ```` ```json {...} ``` ```` 解析
+7. `test_parse_raw_response_handles_repetition_loop_with_trailing_comma` — E2E r3 真实故障复现
+8. `test_deterministic_roadmap_uses_python3_not_python` — verify_cmd 用 python3
+
+### 全量门禁
+
+```
+Python:  1705 passed, 2 skipped (95.76s)
+Vitest:  591 passed (8.68s)
+TSC:     0 errors
+Build:   ✓ built in 679ms
+```
+
+**M156.15 是 M147-A E2E r4 的关键阻碍解除**。三连击根因全部修复：
+planner thinking 默认关（与 worker 对齐）、JSON trailing comma 容错、
+verify_cmd 用 python3（与 macOS 宿主机环境对齐）。
+M147-A E2E r4 可重跑。
+
+---
