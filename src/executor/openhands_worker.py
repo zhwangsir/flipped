@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import os
+import re
 import threading
 import time
 from typing import Any
@@ -235,6 +236,30 @@ class OpenHandsWorker:
             rel = os.path.relpath(norm_cwd, norm_host)
             return f"/projects/{rel}"
         return host_path
+
+    @classmethod
+    def _translate_paths_in_text(cls, text: str) -> str:
+        """把文本里出现的宿主机 $HOME/projects 路径翻译成容器内 /projects 路径。
+
+        M156.13：planner/fail-open 构造的 task_description 含 state.cwd（宿主机
+        路径如 /Users/wangzhenyu/projects/X），但 OpenHands 容器只看到 /projects/X。
+        直接发给 Kimi → 它按 host 路径 mkdir → Permission denied → 浪费所有迭代。
+
+        策略：把 $HOME/projects 和它下面的子路径都替换成 /projects 对应路径。
+        用正则做最长匹配，避免短前缀误替换。
+        """
+        if not text:
+            return text
+        home = os.path.expanduser("~")
+        projects_host = os.path.normpath(os.path.join(home, "projects"))
+        # 用 re.escape 防止路径里的特殊字符（如 .）被当正则元字符
+        # (?![\w]) 负向前瞻：确保 projects 后面不是字母/数字/下划线，
+        # 避免误匹配 projects_other / projectsX 等。
+        pattern = re.escape(projects_host) + r"(?![\w])(\/[^\s'\"\)]*)?"
+        def _replacer(m: re.Match) -> str:
+            suffix = m.group(1) or ""
+            return f"/projects{suffix}"
+        return re.sub(pattern, _replacer, text)
 
     @staticmethod
     def _default_agent_api_key() -> str:
@@ -469,6 +494,11 @@ class OpenHandsWorker:
                 )
                 self._emit(EventType.status, Role.system,
                            {"status": "running", "progress": 10, "note": "派发任务到沙盒"})
+                # M156.13：把 task_description 里的宿主机路径翻译成容器内路径。
+                # planner/fail-open 构造的描述含 state.cwd（宿主机路径如
+                # /Users/wangzhenyu/projects/X），但 OpenHands 容器只看到 /projects/X。
+                # 不翻译 → Kimi 按 host 路径 mkdir → Permission denied → 浪费迭代。
+                task_description = self._translate_paths_in_text(task_description)
                 conversation.send_message(task_description, sender="flipped-supervisor")
                 conversation.run(blocking=True, poll_interval=1.0, timeout=self.timeout)
                 violations = audit_openhands_events(self._events)

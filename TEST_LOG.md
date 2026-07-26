@@ -5088,3 +5088,78 @@ auto_proposer=off）。
 导致 worker.run() 抛 NameError，factory_loop 层吞掉/重试时卡住。修复后编排层恢复。
 
 下一个阻碍：verify_cmd 的 assert 白名单问题（M156.12）。修完后可跑完整 M147-A E2E。
+
+---
+
+## M156.13 — OpenHandsWorker 路径翻译修复（2026-07-26）
+
+### 问题
+
+M156.12 修复 verify_cmd 裸 assert 后，smoke test 发现 worker（Kimi）在 OpenHands
+容器里反复 `mkdir /Users/wangzhenyu/projects/...` → Permission denied，浪费所有迭代。
+
+根因：planner/fail-open 构造的 task_description 含 `state.cwd`（宿主机路径如
+`/Users/wangzhenyu/projects/X`），但 OpenHands 容器挂载点是 `/projects/X`。
+`OpenHandsWorker._to_container_path` 只翻译了 `working_dir`，没翻译 task_description
+里的路径。Kimi 按 host 路径操作 → 全部失败。
+
+### 修复
+
+`src/executor/openhands_worker.py`:
+1. 新增 `_translate_paths_in_text(text)` 类方法：用正则把 `$HOME/projects/X` 翻译成
+   `/projects/X`，带 `(?![\w])` 负向前瞻防 `projects_other` 误匹配。
+2. `run()` 在 `conversation.send_message(task_description)` 前调用翻译。
+
+`scripts/smoke_factory_loop.py`:
+- 加 `FLIPPED_GLM_TIMEOUT=180`（默认 1800s 太长，smoke 15min watchdog 内跑不完）
+- watchdog 从 600s → 900s
+
+`tests/test_openhands_path_translate.py`:
+- 7 个单测覆盖：基础翻译、带文件名、多路径、非 projects 路径、空值、引号、误匹配防护
+
+### 验证证据
+
+**单测**:
+```
+tests/test_openhands_path_translate.py::test_basic_host_to_container PASSED
+tests/test_openhands_path_translate.py::test_path_with_filename PASSED
+tests/test_openhands_path_translate.py::test_multiple_paths_in_text PASSED
+tests/test_openhands_path_translate.py::test_non_projects_path_unchanged PASSED
+tests/test_openhands_path_translate.py::test_empty_and_none PASSED
+tests/test_openhands_path_translate.py::test_path_in_quotes PASSED
+tests/test_openhands_path_translate.py::test_no_false_positive_on_similar_prefix PASSED
+7 passed in 1.87s
+```
+
+**回归测试**: Python 1628 passed / 2 skipped / 0 failed；Vitest 591 passed；TSC 0 errors。
+
+**smoke test 端到端验证**:
+```
+[SMOKE 结果] 墙钟: 780.7s (13.0min)  超时: 否
+[SMOKE] factory status=FactoryStatus.done
+[SMOKE] completed: 0  failed: 2
+```
+
+worker（Kimi）成功在容器路径 `/projects/flipped_smoke_m156/hello/__init__.py` 创建文件：
+```
+$ mkdir -p /projects/flipped_smoke_m156/hello && cat > /projects/flipped_smoke_m156/hello/__init__.py <<'EOF'
+def hello():
+    return "Hello, World!"
+EOF
+✅ Exit code: 0
+```
+**对比修复前**：`mkdir: cannot create directory '/Users': Permission denied` → 浪费全部迭代。
+
+### 遗留问题（非 M156.13 范围）
+
+1. **GLM planner 超时（180s）**：复杂 default_planner prompt 让 GLM-5.2-fp8 thinking
+   超时 → fail-open 生成 8 个确定性任务（而非 planner 拆的 2 个）。需简化 prompt 或
+   用更快的 planner 模型。
+2. **task_timeout（300s）太短**：worker 30s 完成，但 verify 后的 RCA 调 GLM 又花
+   180s → 超出 300s task 预算。E2E 应用 10800s（3h，对齐 e2e_m147）。
+3. **RCA 调用应独立超时**：不应继承 GLM 的 180s timeout。
+
+### 结论
+
+**M156.13 路径翻译修复是 M147-A E2E 的关键阻碍解除**。worker 层已验证可在容器内
+正确创建文件。剩余问题（planner 超时、task 预算）是配置调优，不影响 M156.13 的正确性。

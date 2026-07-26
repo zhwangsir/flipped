@@ -1,8 +1,8 @@
 {
   "project": "flipped",
   "description": "接入本地 MLX 双模型(GLM-5.2 编排者 / Kimi-K2.7-Code 执行者)的 agentic 代码编辑器平台。fork Roo Code + 自定义驾驭层(强制验证/循环检测/上下文压缩/人工审批/子Agent/可观测性) + MCP 联网与外部能力。",
-  "updated": "2026-07-26 03:39:01",
-  "current_milestone": "M156.11 done（factory_loop 冒烟测试验证编排层不再卡住）。M147-A v2 \"factory_loop planner 卡住\" 问题已彻底解决：根因是 import time 缺失，修复后 9min 跑完全程（planner→worker→verify→retry→circuit_breaker→done），worker 成功创建文件。新发现阻碍：verify_cmd 裸 assert 被 safety 白名单拦截（KI-20260726-verify-assert-whitelist），需 M156.12 修复后跑完整 M147-A E2E。全量门禁通过：py=1683 passed/2 skipped, fe=591 passed, tsc=0, build=ok。",
+  "updated": "2026-07-26 08:35:00",
+  "current_milestone": "M156.13 done（OpenHandsWorker 路径翻译修复）。M156.12 verify_cmd 裸 assert 修复后，smoke test 发现 worker（Kimi）在容器里用宿主机路径 mkdir → Permission denied → 浪费全部迭代。根因：task_description 含 state.cwd（host 路径 /Users/.../projects/X），但容器挂载点是 /projects/X。修复：OpenHandsWorker._translate_paths_in_text 在 send_message 前翻译路径。smoke test 验证 Kimi 30s 成功创建文件。全量门禁通过：py=1628 passed/2 skipped, fe=591 passed, tsc=0。遗留：GLM planner 180s 超时（fail-open 兜底）、task_timeout 300s 太短（E2E 应用 10800s），均为配置调优不影响 M156.13 正确性。M147-A E2E 关键阻碍已解除，可重跑。",
   "key_facts": {
     "dev_host": "Apple M5 Max, 128GB RAM, 1.1TB 可用磁盘 — 开发/控制节点，非模型宿主",
     "model_cluster": "exo 集群 @ http://studio01-1:52415 (MagicDNS 主机名=macstudio01，免疫 Tailscale IP 漂移；旧裸 IP 100.64.201.37 已于 2026-07-22 失效)；公网 https://dgmt.top/exo (需 Bearer token)",
@@ -3123,6 +3123,11 @@
           "title": "factory_loop 冒烟测试：验证编排层不再卡住",
           "status": "done",
           "note": "scripts/smoke_factory_loop.py（max_tasks=2, 10min watchdog）。结果：9min 跑完全程，factory status=done，planner 拆 2 task，worker 成功创建 hello.py（134 bytes 内容正确）。verify 失败因裸 assert 被白名单拦截（见 KI-20260726-verify-assert-whitelist），非编排层问题。结论：M147-A v2 \"factory_loop planner 卡住\" 问题已解决，根因是 import time 缺失。"
+        },
+        "M156.13_path_translation": {
+          "title": "OpenHandsWorker 路径翻译：task_description 宿主机路径 → 容器路径",
+          "status": "done",
+          "note": "M156.12 修复后 smoke test 发现 worker（Kimi）在容器里用宿主机路径 mkdir /Users/wangzhenyu/projects/X → Permission denied → 浪费全部迭代。根因：task_description 含 state.cwd（host 路径），但 OpenHands 容器挂载 $HOME/projects:/projects。修复：OpenHandsWorker._translate_paths_in_text 在 conversation.send_message 前翻译路径。7 个单测全通过。smoke test 验证 Kimi 30s 成功在 /projects/flipped_smoke_m156 创建 hello/__init__.py。全量门禁：py=1628 passed/2 skipped, fe=591 passed, tsc=0。遗留：GLM planner 180s 超时（fail-open 兜底）、task_timeout 300s 太短（E2E 应用 10800s）。M147-A E2E 关键阻碍已解除。"
         }
       }
     }

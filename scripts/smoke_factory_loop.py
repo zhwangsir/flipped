@@ -25,7 +25,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
-WATCHDOG_SECONDS = int(os.environ.get("FLIPPED_SMOKE_WATCHDOG", "600"))
+WATCHDOG_SECONDS = int(os.environ.get("FLIPPED_SMOKE_WATCHDOG", "900"))
 
 
 class _WatchdogTimeout(BaseException):
@@ -63,6 +63,9 @@ def main() -> int:
     os.environ.setdefault("FLIPPED_ARCHITECT_MODEL", "mlx-community/GLM-5.2-fp8")
     # thinking 关（M149.6 决策，Kimi 也保持一致避免变量）
     os.environ["FLIPPED_WORKER_ENABLE_THINKING"] = "0"
+    # M156.13: GLM planner 超时 180s（默认 1800s=30min 太长，smoke 10min watchdog 内跑不完）。
+    # 实测简单 prompt 60s，复杂 default_planner prompt 可能 2-3min，180s 留足裕量。
+    os.environ.setdefault("FLIPPED_GLM_TIMEOUT", "180")
     # 关 auto_proposer：roadmap 跑完就停，不要无限生成新任务
     os.environ["FLIPPED_AUTO_PROPOSER"] = "0"
     # 单任务超时 300s（smoke 任务简单，5min 足够）
