@@ -17,7 +17,12 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export function fetchSessions(): Promise<Session[]> {
-  return api<Session[]>('/sessions');
+  // M163.1 纵深防御：后端畸形响应（非数组，如 {} / null）不应让 UI 白屏。
+  // api() 仅做 TS 类型断言、无运行时校验，故在此显式兜底。
+  // 呼应 e2e/error-handling/malformed-response.spec.ts:67（store 应兜底）。
+  return api<Session[]>('/sessions').then((data) =>
+    Array.isArray(data) ? data : []
+  );
 }
 
 export function createSession(title: string, mode = 'agent'): Promise<Session> {

@@ -5,6 +5,13 @@
  * 确保工厂面板集成未破坏既有 Console 结构。
  */
 import { test, expect } from '@playwright/test';
+import { mockEmptyApi } from './compatibility/mock-api';
+
+// 拦截 :8011 API 返回空态，让主壳层（含 .center 中栏）在无后端时也能完整渲染。
+// 不加 mock 时 sessions 拉取失败 → 中栏不渲染 → "主体三列布局渲染" 用例失败。
+test.beforeEach(async ({ page }) => {
+  await mockEmptyApi(page);
+});
 
 test.describe('Console 主壳 · 基础渲染', () => {
   test('页面加载且标题可见', async ({ page }) => {
@@ -28,7 +35,9 @@ test.describe('Console 主壳 · 基础渲染', () => {
   });
 
   test('主体三列布局渲染', async ({ page }) => {
-    await page.goto('/');
+    // .center 只在 factory 路由（Conversation）渲染；'/' 默认路由渲染 Assistant（无 .center）。
+    // M151.5 引入 hash 路由后，3 列 shell 移至 #/factory，故导航到此路由测三列布局。
+    await page.goto('/#/factory');
     await expect(page.locator('.sidebar')).toBeVisible();
     await expect(page.locator('.center')).toBeVisible();
   });

@@ -6,9 +6,21 @@
  * 只读操作不产生副作用；写操作使用独立测试工厂并在测试后清理。
  */
 import { test, expect } from '@playwright/test';
+import { isBackendAvailable } from './fixtures/backend-available';
 
 const API_BASE = 'http://127.0.0.1:8011';
 const API = `${API_BASE}/api/v1/factories`;
+
+// 环境门控：本文件用 Playwright `request` context 直连 :8011，page.route 无法拦截。
+// 后端在时跑真集成，后端不在时显式 skip（诚实降级，非伪装通过）。
+// 项目先例：console.spec.ts 的 E2E_MOCK_APPROVAL 门控。
+let backendAvailable = false;
+test.beforeAll(async () => {
+  backendAvailable = await isBackendAvailable();
+});
+test.beforeEach(async () => {
+  test.skip(!backendAvailable, '本测试需真实后端 :8011，当前不可达——后端启动后自动恢复运行');
+});
 
 test.describe('工厂 API · 只读端点', () => {
   test('GET /factories 返回数组', async ({ request }) => {

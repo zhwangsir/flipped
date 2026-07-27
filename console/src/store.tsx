@@ -245,7 +245,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const refreshSessions = useCallback(async () => {
     try {
       const list = await fetchSessions();
-      setSessions(list);
+      // M163.1 防御：fetchSessions 已做 Array.isArray 兜底，此处二次守卫
+      // 确保任何调用路径（含未来直接 setSessions 的改动）都不会让 Sidebar 的
+      // sessions.filter 崩溃。呼应 e2e/error-handling/malformed-response.spec.ts:67。
+      setSessions(Array.isArray(list) ? list : []);
     } catch (e) {
       setError(String(e));
     }

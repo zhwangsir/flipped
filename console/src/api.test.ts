@@ -330,7 +330,31 @@ describe('api — 错误处理', () => {
 
   it('500 响应抛出 HTTP 500', async () => {
     mockFetch(async () => errResponse(500, 'server error'));
-    await expect(fetchMetrics()).rejects.toThrow('HTTP 500: server error');
+    await expect(fetchMetrics()).rejects.toThrow('HTTP 500');
+  });
+});
+
+// M163.1 — 畸形响应降级：后端返回非数组 sessions 时，fetchSessions 应回退为 []，
+// 而非把对象/原始值原样传出导致下游 .filter/.map 崩溃。
+// 钉的行为：呼应 e2e/error-handling/malformed-response.spec.ts:67（store 应兜底）。
+describe('api — 畸形响应降级 (M163.1)', () => {
+  it('fetchSessions 返回对象而非数组 → 降级为 []', async () => {
+    mockFetch(async () => okResponse({ not: 'an array' }));
+    const result = await fetchSessions();
+    expect(Array.isArray(result)).toBe(true);
+    expect(result).toEqual([]);
+  });
+
+  it('fetchSessions 返回 null → 降级为 []', async () => {
+    mockFetch(async () => okResponse(null));
+    const result = await fetchSessions();
+    expect(result).toEqual([]);
+  });
+
+  it('fetchSessions 返回合法数组 → 原样透传（不误伤正常路径）', async () => {
+    mockFetch(async () => okResponse([{ id: 's1' }]));
+    const result = await fetchSessions();
+    expect(result).toEqual([{ id: 's1' }]);
   });
 });
 
@@ -369,7 +393,8 @@ describe('api — connectEvents WebSocket', () => {
       get: () => handlers.message,
       set: (v) => { handlers.message = v || undefined; },
     });
-    const Ctor = vi.fn(() => ws) as unknown as { new (url: string): typeof ws; OPEN: number; CONNECTING: number; CLOSING: number; CLOSED: number };
+    // Vitest 4：箭头函数无 [[Construct]]，构造函数 mock 必须用 function 关键字
+    const Ctor = vi.fn(function () { return ws; }) as unknown as { new (url: string): typeof ws; OPEN: number; CONNECTING: number; CLOSING: number; CLOSED: number };
     Ctor.OPEN = 1;
     Ctor.CONNECTING = 0;
     Ctor.CLOSING = 2;

@@ -3,6 +3,13 @@
  * 覆盖用户核心诉求："右侧应是一个侧边栏(窄图标栏)"。
  */
 import { test, expect, type Page } from '@playwright/test';
+import { mockEmptyApi } from './compatibility/mock-api';
+
+// 拦截 :8011 API 返回空态，让三栏布局（含 .center）在无后端时完整渲染。
+// 不加 mock 时 sessions 拉取失败 → 中栏不渲染 → "三栏同时可见" 用例失败。
+test.beforeEach(async ({ page }) => {
+  await mockEmptyApi(page);
+});
 
 async function collapseContextPanel(page: Page) {
   await page.goto('/');
@@ -14,7 +21,9 @@ async function collapseContextPanel(page: Page) {
 
 test.describe('布局 · 三栏结构', () => {
   test('侧栏 / 对话区 / 上下文面板同时可见', async ({ page }) => {
-    await page.goto('/');
+    // .center 只在 factory 路由（Conversation）渲染；'/' 默认路由渲染 Assistant（无 .center）。
+    // M151.5 引入 hash 路由后，3 列 shell 移至 #/factory，故导航到此路由测三栏同时可见。
+    await page.goto('/#/factory');
     await expect(page.locator('.sidebar')).toBeVisible();
     await expect(page.locator('.center')).toBeVisible();
     await expect(page.locator('.context')).toBeVisible();

@@ -3,6 +3,14 @@
  * 目标：零 React 警告(如 key 重复)、零未捕获异常。
  */
 import { test, expect, type Page } from '@playwright/test';
+import { mockBackend } from './accessibility/helpers';
+
+// 拦截 :8011 HTTP API，让前端 fetch 不再产生 net::ERR_CONNECTION_REFUSED 噪音。
+// 这样 console.error 断言才能真正捕获 React 警告/未捕获异常等被测代码的问题，
+// 而不是被后端不可达的环境噪音淹没。WS 连接仍会失败，由下方 IGNORE_PATTERNS 兜底。
+test.beforeEach(async ({ page }) => {
+  await mockBackend(page);
+});
 
 /** 已知无害噪音(按需扩充,每条需注明原因) */
 const IGNORE_PATTERNS: RegExp[] = [
@@ -10,6 +18,8 @@ const IGNORE_PATTERNS: RegExp[] = [
   /favicon/i, // favicon 404
   /WebSocket.*(failed|closed|reconnect)/i, // 后端 WS 未连接时的重试噪音(本地无后端场景)
   /vite.*hmr/i, // Vite HMR 日志
+  /Failed to load resource.*8011/i, // dev 无后端时 WS upgrade 到 :8011 的连接失败噪音
+  /net::ERR_CONNECTION_REFUSED/i, // 同上兜底：WS 重建时 :8011 不可达的网络错误
 ];
 
 interface Collected {

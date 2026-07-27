@@ -14,6 +14,13 @@
  */
 import { test, expect } from '@playwright/test';
 import { FactoryPanelPage } from './pages/FactoryPanel';
+import { mockBackend } from './accessibility/helpers';
+
+// 拦截所有 :8011 API，提供确定性工厂数据（列表 1 条 + 详情含 1 条任务）。
+// 让断言聚焦面板渲染逻辑，而非真实后端数据是否存在。
+test.beforeEach(async ({ page }) => {
+  await mockBackend(page);
+});
 
 test.describe('工厂面板 · 导航与可见性', () => {
   test('侧栏「工厂」按钮打开面板', async ({ page }) => {
@@ -47,7 +54,7 @@ test.describe('工厂面板 · 列表渲染', () => {
     const fp = new FactoryPanelPage(page);
     await page.goto('/');
     await fp.open();
-    // 等待列表加载（后端有 factory-863fb58e）
+    // 等待列表加载（mock 提供 a11y-factory-1）
     await expect(fp.factoryCards.first()).toBeVisible({ timeout: 10000 });
     const count = await fp.factoryCards.count();
     expect(count).toBeGreaterThan(0);
