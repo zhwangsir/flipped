@@ -29,6 +29,7 @@ failures / gold_memory / skills / infinite_loop 八个默认库收敛为 data/fl
 from __future__ import annotations
 
 import argparse
+import os
 import re
 import sqlite3
 import sys
@@ -37,8 +38,16 @@ from datetime import datetime
 from pathlib import Path
 from typing import Callable
 
+ROOT = Path(__file__).resolve().parent.parent
+
+# M164 · venv 自举：若 .venv 存在且当前不是 venv Python，自动重启自己。
+# 否则用系统 Python 跑会因缺 langgraph 等依赖崩溃（scripts 设计为可 cron/直接跑，不能假设 venv 已激活）。
+_VENV_PY = str(ROOT / ".venv" / "bin" / "python3")
+if os.path.exists(_VENV_PY) and os.path.realpath(sys.executable) != os.path.realpath(_VENV_PY):
+    os.execv(_VENV_PY, [_VENV_PY] + sys.argv)
+
 # sys.path 注入 src/（对齐 scripts/verify_m99_gold_memory_loop.py 的做法）
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
+sys.path.insert(0, str(ROOT / "src"))
 
 from driving.db import connect, default_db_path  # noqa: E402
 

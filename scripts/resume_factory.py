@@ -31,6 +31,13 @@ import os
 import sys
 from typing import Sequence
 
+# M164 · venv 自举：若 .venv 存在且当前不是 venv Python，自动重启自己。
+# 否则用系统 Python 跑会因缺 langgraph 等依赖崩溃（scripts 设计为可 cron/直接跑，不能假设 venv 已激活）。
+_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_VENV_PY = os.path.join(_ROOT, ".venv", "bin", "python3")
+if os.path.exists(_VENV_PY) and os.path.realpath(sys.executable) != os.path.realpath(_VENV_PY):
+    os.execv(_VENV_PY, [_VENV_PY] + sys.argv)
+
 
 def _setup_path() -> None:
     """把 src/ 加入 sys.path 以便 import driving.*。

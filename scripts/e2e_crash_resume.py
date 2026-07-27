@@ -28,6 +28,13 @@ FACTORY_ID = "e2e-crash-resume"
 TASK_IDS = ("t1", "t2", "t3")
 SRC_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src"))
 
+# M164 · venv 自举：若 .venv 存在且当前不是 venv Python，自动重启自己。
+# 否则用系统 Python 跑会因缺 langgraph 等依赖崩溃（子进程继承 sys.executable，必须先自举父进程）。
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_VENV_PY = os.path.join(ROOT, ".venv", "bin", "python3")
+if os.path.exists(_VENV_PY) and os.path.realpath(sys.executable) != os.path.realpath(_VENV_PY):
+    os.execv(_VENV_PY, [_VENV_PY] + sys.argv)
+
 # 子进程内联代码：mode="slow"（写 marker + sleep）或 "fast"（marker 已存在则跳过）。
 CHILD_CODE = '''
 import os, sys, time

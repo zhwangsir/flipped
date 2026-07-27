@@ -20,6 +20,13 @@ from datetime import datetime
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+
+# M164 · venv 自举：若 .venv 存在且当前不是 venv Python，自动重启自己。
+# 否则用系统 Python 跑会因缺 langgraph 等依赖崩溃（scripts 设计为可 cron/直接跑，不能假设 venv 已激活）。
+_VENV_PY = str(ROOT / ".venv" / "bin" / "python3")
+if os.path.exists(_VENV_PY) and os.path.realpath(sys.executable) != os.path.realpath(_VENV_PY):
+    os.execv(_VENV_PY, [_VENV_PY] + sys.argv)
+
 sys.path.insert(0, str(ROOT / "src"))
 
 # M149.7：默认 12h（GLM-fp8 单任务实测 1-1.5h×10 任务 MP=1 串行），env 可覆盖
