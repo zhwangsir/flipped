@@ -47,7 +47,7 @@ class VisualDiffResult:
 def _viewport_hash(cwd: str, viewport: tuple[int, int] | None) -> str:
     """生成基线文件名 hash（基于 cwd + viewport）。"""
     key = f"{cwd}:{viewport or 'default'}"
-    return hashlib.md5(key.encode()).hexdigest()[:12]
+    return hashlib.md5(key.encode(), usedforsecurity=False).hexdigest()[:12]
 
 
 def _baseline_path(cwd: str, viewport: tuple[int, int] | None = None) -> Path:

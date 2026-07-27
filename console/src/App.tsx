@@ -1,8 +1,7 @@
 import "./styles/app.css";
-import { useEffect, useState, type CSSProperties } from "react";
+import { lazy, Suspense, useEffect, useState, type CSSProperties } from "react";
 import { Sidebar } from "./components/Sidebar";
 import { TopBar } from "./components/TopBar";
-import { Conversation } from "./components/Conversation";
 import { ContextPanel } from "./components/ContextPanel";
 import { Launcher } from "./components/Launcher";
 import { ResizeHandle } from "./components/ResizeHandle";
@@ -10,11 +9,36 @@ import { CommandPalette } from "./components/CommandPalette";
 import { Settings } from "./components/Settings";
 import { Plugins } from "./components/Plugins";
 import { TerminalDrawer } from "./components/TerminalDrawer";
-import { FactoryPanel } from "./components/FactoryPanel";
 import { Assistant } from "./views/Assistant";
 import { AppProvider, useApp } from "./store";
 import { useHashRoute } from "./router";
 import { IconPlus, IconChat, IconGear, IconLayout } from "./icons";
+
+// D-0014 修复：路由级 code-split —— Factory 视图组件懒加载，不进 entry chunk。
+// Assistant 视图（#/ 首屏）同步加载，Factory 视图（#/factory）按需加载。
+// FactoryPanel 是 overlay（默认 factoryOpen=false），用 store 状态外部门控：
+// factoryOpen=false 时不渲染 LazyFactoryPanel → 整个 chunk 不加载。
+// Conversation 是 factory 路由主区，route==='factory' 时才渲染 → 自然按需加载。
+const Conversation = lazy(() =>
+  import("./components/Conversation").then((m) => ({ default: m.Conversation }))
+);
+const FactoryPanel = lazy(() =>
+  import("./components/FactoryPanel").then((m) => ({ default: m.FactoryPanel }))
+);
+
+/** Suspense fallback：极简加载态（不引起布局偏移）。 */
+function ViewFallback({ label }: { label: string }) {
+  return (
+    <div
+      className="lazy-view-fallback"
+      role="status"
+      aria-live="polite"
+      data-testid="lazy-view-fallback"
+    >
+      {label}
+    </div>
+  );
+}
 
 const SIDEBAR_MIN = 200;
 const SIDEBAR_MAX = 460;
@@ -39,7 +63,7 @@ function writeNum(key: string, v: number) {
 }
 
 function AppShell() {
-  const { sidebarCollapsed, showContext, mobileSidebarOpen, setMobileSidebarOpen, mobilePanelOpen, setMobilePanelOpen, createSession, setSettingsOpen, setActiveView, setFactoryOpen } = useApp();
+  const { sidebarCollapsed, showContext, mobileSidebarOpen, setMobileSidebarOpen, mobilePanelOpen, setMobilePanelOpen, createSession, setSettingsOpen, setActiveView, setFactoryOpen, factoryOpen } = useApp();
   const [sidebarW, setSidebarW] = useState(() => readNum("flipped-sidebar-w", 272));
   const [contextW, setContextW] = useState(() => readNum("flipped-context-w", 468));
 
@@ -78,7 +102,13 @@ function AppShell() {
       <TopBar />
       <div className="body">
         <Sidebar />
-        {route === "factory" ? <Conversation /> : <Assistant />}
+        {route === "factory" ? (
+          <Suspense fallback={<ViewFallback label="加载工厂…" />}>
+            <Conversation />
+          </Suspense>
+        ) : (
+          <Assistant />
+        )}
         {showContext ? <ContextPanel /> : <Launcher />}
         {!sidebarCollapsed && (
           <ResizeHandle
@@ -147,7 +177,14 @@ function AppShell() {
       <CommandPalette />
       <Settings />
       <Plugins />
-      <FactoryPanel />
+      {/* D-0014：factoryOpen 外部门控 —— Assistant 首屏不加载 FactoryPanel chunk。
+          FactoryPanel 内部仍有 factoryOpen 检查（return null），这里是双层保险：
+          外层阻止 chunk 加载，内层阻止 DOM 渲染。 */}
+      {factoryOpen && (
+        <Suspense fallback={null}>
+          <FactoryPanel />
+        </Suspense>
+      )}
     </div>
   );
 }

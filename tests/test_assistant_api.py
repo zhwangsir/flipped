@@ -252,3 +252,243 @@ def test_assistant_router_does_not_break_existing_sessions_endpoint(client):
     assert r.status_code == 200
     sessions = r.json()
     assert any(s["title"] == "via assistant" for s in sessions)
+
+
+# ====================================================================
+# 补测：把 assistant.py 覆盖率从 80% 提升到 90%+
+# 覆盖目标行：146, 222, 297, 318-320, 330-370
+# ====================================================================
+
+# ---------- _events_to_turns 孤儿 tool_result（第 146 行）----------
+
+def test_events_to_turns_orphan_tool_result_without_preceding_tool_call():
+    """孤儿 tool_result（无前置 tool_call）→ 单独成 tool turn（覆盖第 146 行）。
+
+    构造事件流：先发一条 user message，再直接发 tool_result（无前置 tool_call）。
+    预期 tool_result 走 else 分支，单独折叠成一个 tool turn。
+    """
+    from api.assistant import _events_to_turns
+    from api.schemas import Event, EventType, Role
+
+    events = [
+        Event(id="s-000001", session_id="s", type=EventType.message, agent=Role.user,
+              payload={"text": "hi"}),
+        # 直接发 tool_result，没有前置 tool_call → 触发第 146 行 else 分支
+        Event(id="s-000002", session_id="s", type=EventType.tool_result, agent=Role.worker,
+              payload={"tool": "orphan_tool", "status": "ok", "summary": "stale result"}),
+    ]
+    turns = _events_to_turns(events)
+    # user message + orphan tool turn
+    assert len(turns) == 2
+    assert turns[0].role == "user"
+    assert turns[0].text == "hi"
+    assert turns[1].role == "tool"
+    assert turns[1].tools[0]["tool"] == "orphan_tool"
+    assert turns[1].tools[0]["status"] == "ok"
+    assert turns[1].tools[0]["summary"] == "stale result"
+
+
+# ---------- send message 非法 mode 422（第 222 行）----------
+
+def test_assistant_message_invalid_mode_returns_422(client):
+    """send message 时 body 传 mode=bogus → 422（覆盖第 222 行）。
+
+    既有 test_assistant_session_create_invalid_mode_returns_422 测的是 create session 端点，
+    此处补测 send message 端点的同型校验（mode 取自 body 或 session）。
+    """
+    sid = client.post("/api/v1/assistant/sessions",
+                      json={"title": "t"}).json()["id"]
+    r = client.post(f"/api/v1/assistant/sessions/{sid}/messages",
+                    json={"text": "hi", "mode": "bogus"})
+    assert r.status_code == 422
+
+
+# ---------- approve 409 守卫 + _has_pending_approval False 分支（第 297, 318-320 行）----------
+
+def test_assistant_approve_without_any_approval_events_returns_409(client):
+    """session 存在但事件流中无任何 approval 事件 → 409（覆盖第 297 行 + 第 320 行 return False）。
+
+    _has_pending_approval 扫描事件流，既无 approval_request 也无 approval_result 时
+    循环走完返回 False → _do_decision 抛 409。
+    """
+    sid = client.post("/api/v1/assistant/sessions",
+                      json={"title": "t"}).json()["id"]
+    r = client.post(f"/api/v1/assistant/sessions/{sid}/approve")
+    assert r.status_code == 409
+    assert "no pending approval_request" in r.json()["detail"]
+
+
+def test_assistant_approve_after_approval_result_returns_409(client):
+    """approval_request 后已发 approval_result → 409（覆盖第 318-319 行 return False）。
+
+    事件流：approval_request → approval_result。_has_pending_approval 从后往前扫，
+    先遇到 approval_result → 返回 False → 409（已回答过的 request 不再 pending）。
+    """
+    sid = client.post("/api/v1/assistant/sessions",
+                      json={"title": "t"}).json()["id"]
+    from api.main import bus
+    from api.schemas import EventType, Role
+    bus.emit(sid, EventType.approval_request, Role.system,
+             {"action": "rm -rf /tmp/x", "reason": "high risk"})
+    bus.emit(sid, EventType.approval_result, Role.system,
+             {"decision": "approve", "note": "已放行"})
+    r = client.post(f"/api/v1/assistant/sessions/{sid}/approve")
+    assert r.status_code == 409
+
+
+# ---------- _resume_with_decision 各分支（第 330-370 行）----------
+
+def test_resume_with_decision_session_not_found_returns_early(client):
+    """session 不存在 → 早退不报错（覆盖第 333-335 行）。
+
+    _resume_with_decision 取不到 session 时直接 return，不调 resume_orchestrated。
+    """
+    import asyncio
+    from api.assistant import _resume_with_decision
+    # 不应抛异常，也不应调到 resume_orchestrated
+    asyncio.run(_resume_with_decision("sess-nope", "approve"))
+
+
+def test_resume_with_decision_final_none_sets_error_status(client, monkeypatch):
+    """final is None → status=error + emit error event（覆盖第 357-361 行）。
+
+    resume_orchestrated 返回 None 表示无 checkpoint，应将状态置 error 并发 error 事件。
+    """
+    sid = client.post("/api/v1/assistant/sessions",
+                      json={"title": "t"}).json()["id"]
+
+    def _fake_resume(*args, **kwargs):
+        return None
+    monkeypatch.setattr("driving.orchestrator.resume_orchestrated", _fake_resume)
+
+    import asyncio
+    from api.assistant import _resume_with_decision
+    asyncio.run(_resume_with_decision(sid, "approve"))
+
+    from api.main import store
+    from api.schemas import SessionStatus
+    session = store.get(sid)
+    assert session.status == SessionStatus.error
+    events = store.events(sid)
+    assert any(e.type == "error" for e in events)
+
+
+def test_resume_with_decision_final_verified_sets_done_status(client, monkeypatch):
+    """final.get('verified')=True → status=done（覆盖第 362-363 行）。"""
+    sid = client.post("/api/v1/assistant/sessions",
+                      json={"title": "t"}).json()["id"]
+
+    def _fake_resume(*args, **kwargs):
+        return {"verified": True, "stop_reason": None}
+    monkeypatch.setattr("driving.orchestrator.resume_orchestrated", _fake_resume)
+
+    import asyncio
+    from api.assistant import _resume_with_decision
+    asyncio.run(_resume_with_decision(sid, "approve"))
+
+    from api.main import store
+    from api.schemas import SessionStatus
+    session = store.get(sid)
+    assert session.status == SessionStatus.done
+
+
+@pytest.mark.parametrize("stop_reason",
+                         ["worker_error", "overseer_abort", "loop_detected", "circuit_breaker"])
+def test_resume_with_decision_final_error_stop_reason_sets_error_status(client, monkeypatch, stop_reason):
+    """final.stop_reason 属于错误类 → status=error（覆盖第 364-365 行，4 种 stop_reason 全覆盖）。"""
+    sid = client.post("/api/v1/assistant/sessions",
+                      json={"title": "t"}).json()["id"]
+
+    def _fake_resume(*args, **kwargs):
+        return {"verified": False, "stop_reason": stop_reason}
+    monkeypatch.setattr("driving.orchestrator.resume_orchestrated", _fake_resume)
+
+    import asyncio
+    from api.assistant import _resume_with_decision
+    asyncio.run(_resume_with_decision(sid, "approve"))
+
+    from api.main import store
+    from api.schemas import SessionStatus
+    session = store.get(sid)
+    assert session.status == SessionStatus.error
+
+
+def test_resume_with_decision_final_other_sets_review_status(client, monkeypatch):
+    """final 既非 verified 也非错误 stop_reason → status=review（覆盖第 366-367 行）。"""
+    sid = client.post("/api/v1/assistant/sessions",
+                      json={"title": "t"}).json()["id"]
+
+    def _fake_resume(*args, **kwargs):
+        return {"verified": False, "stop_reason": "awaiting_approval"}
+    monkeypatch.setattr("driving.orchestrator.resume_orchestrated", _fake_resume)
+
+    import asyncio
+    from api.assistant import _resume_with_decision
+    asyncio.run(_resume_with_decision(sid, "approve"))
+
+    from api.main import store
+    from api.schemas import SessionStatus
+    session = store.get(sid)
+    assert session.status == SessionStatus.review
+
+
+def test_resume_with_decision_exception_sets_error_status(client, monkeypatch):
+    """resume_orchestrated 抛异常 → status=error + emit error event（覆盖第 368-370 行）。"""
+    sid = client.post("/api/v1/assistant/sessions",
+                      json={"title": "t"}).json()["id"]
+
+    def _fake_resume(*args, **kwargs):
+        raise RuntimeError("boom")
+    monkeypatch.setattr("driving.orchestrator.resume_orchestrated", _fake_resume)
+
+    import asyncio
+    from api.assistant import _resume_with_decision
+    asyncio.run(_resume_with_decision(sid, "approve"))
+
+    from api.main import store
+    from api.schemas import SessionStatus
+    session = store.get(sid)
+    assert session.status == SessionStatus.error
+    events = store.events(sid)
+    error_events = [e for e in events if e.type == "error"]
+    assert len(error_events) >= 1
+    assert "resume failed: boom" in error_events[-1].payload["message"]
+
+
+def test_resume_with_decision_real_nodes_branch(client, monkeypatch):
+    """FLIPPED_MOCK_ORCHESTRATOR 未设 → 走 _build_real_nodes 分支（覆盖第 349-356 行）。
+
+    默认 fixture 设 FLIPPED_MOCK_ORCHESTRATOR=1 走 mock 分支（341-348）；
+    本测试 delenv 后走 real 分支，mock _build_real_nodes 避免真实沙盒/executor 导入。
+    """
+    sid = client.post("/api/v1/assistant/sessions",
+                      json={"title": "t"}).json()["id"]
+
+    # 切换到 real 分支
+    monkeypatch.delenv("FLIPPED_MOCK_ORCHESTRATOR")
+
+    _fake_nodes_called = {"called": False}
+
+    def _fake_build(session_id, cwd, verify_cmd):
+        _fake_nodes_called["called"] = True
+        return {
+            "supervisor": lambda s: {},
+            "worker": lambda s: {},
+            "overseer": lambda s: {},
+            "verifier": lambda c, w: (True, "ok"),
+        }
+    monkeypatch.setattr("api.main._build_real_nodes", _fake_build)
+
+    def _fake_resume(*args, **kwargs):
+        return {"verified": True, "stop_reason": None}
+    monkeypatch.setattr("driving.orchestrator.resume_orchestrated", _fake_resume)
+
+    import asyncio
+    from api.assistant import _resume_with_decision
+    asyncio.run(_resume_with_decision(sid, "approve"))
+
+    assert _fake_nodes_called["called"] is True
+    from api.main import store
+    from api.schemas import SessionStatus
+    session = store.get(sid)
+    assert session.status == SessionStatus.done

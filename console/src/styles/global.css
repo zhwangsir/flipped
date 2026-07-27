@@ -80,6 +80,20 @@ a:focus-visible,
   font-feature-settings: "ss01", "cv01";
 }
 
+/* D-0014 · 路由级 code-split 的 Suspense fallback：极简加载态。
+   不引起布局偏移（占满父容器、居中文字），与 [role=status] 配合读屏。 */
+.lazy-view-fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  min-height: 120px;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  animation: breathe-soft var(--dur-slow) var(--ease) infinite;
+}
+
 @keyframes pulse-dot {
   0%,
   100% {

@@ -5693,6 +5693,14 @@ select.set-select-native option {
   opacity: 0.5;
   cursor: not-allowed;
 }
+/* D-0011 修复：textarea 显式 focus-visible 样式（键盘用户可见焦点环）。
+   之前依赖外层 .composer-wrap:focus-within 的 border 变化，但 textarea 自身 outline:none
+   导致键盘 Tab 停点无可见焦点（[kb:focus-visible] 警告）。
+   与 .assistant-tool .tool-head:focus-visible 同色（var(--assistant-indigo)）。 */
+.assistant-composer textarea:focus-visible {
+  outline: 2px solid var(--assistant-indigo);
+  outline-offset: -2px;
+}
 .assistant-composer .composer-bar {
   display: flex;
   align-items: center;

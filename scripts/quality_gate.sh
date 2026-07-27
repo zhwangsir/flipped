@@ -24,6 +24,46 @@ fail=0
 pass(){ echo "  ✅ $1"; }
 bad(){ echo "  ❌ $1"; fail=1; }
 
+# ---------- M157.10 · 结构化失败信号配置 ----------
+# 阈值环境变量（可被外部覆盖，测试/调试用）
+PY_COV_FLOOR="${FLIPPED_PY_COV_FLOOR:-80}"        # Python 覆盖率下限（.coveragerc fail_under=80）
+FE_COV_FLOOR="${FLIPPED_FE_COV_FLOOR:-28}"        # 前端行覆盖率下限（vitest threshold）
+# findings.jsonl 路径（测试可重定向到 tmp_path，避免污染仓库 reports/）
+FINDINGS_PATH="${FLIPPED_FINDINGS_PATH:-reports/findings.jsonl}"
+
+# emit_finding：往 findings.jsonl 追加一行结构化 JSON（rule 白名单见 _emit_finding.py）
+# 用法：emit_finding <RULE> <LOCATION> <EXPECTED> <ACTUAL> <SUGGESTED_FIX> <RETRYABLE>
+emit_finding(){
+  FLIPPED_FINDINGS_PATH="$FINDINGS_PATH" python3 scripts/_emit_finding.py \
+    --rule "$1" \
+    --location "$2" \
+    --expected "$3" \
+    --actual "$4" \
+    --suggested-fix "$5" \
+    --retryable "$6" \
+    || echo "  ⚠️ _emit_finding 写入失败（rule=$1）" >&2
+}
+
+# 测试/调试用失败注入钩子：设 FLIPPED_QG_INJECT_FAILURE=<RULE> 强制 emit 对应 finding 并 fail
+# 仅用于自动化测试，不破坏真实代码（生产环境不设此变量）
+INJECT_FAILURE="${FLIPPED_QG_INJECT_FAILURE:-}"
+
+# 每次运行开头清空 findings.jsonl（只反映本次运行；mkdir -p 容错 reports/ 不存在）
+# 放在 INJECT_FAILURE emit 之前，保证注入的 finding 是本次运行的第一条
+mkdir -p "$(dirname "$FINDINGS_PATH")" 2>/dev/null || true
+: > "$FINDINGS_PATH" 2>/dev/null || true
+
+if [ -n "$INJECT_FAILURE" ]; then
+  echo "  ⚠️ 检测到 FLIPPED_QG_INJECT_FAILURE=${INJECT_FAILURE}（测试钩子，强制失败）" >&2
+  emit_finding "$INJECT_FAILURE" \
+    "injected:FLIPPED_QG_INJECT_FAILURE" \
+    "no injection (unset FLIPPED_QG_INJECT_FAILURE)" \
+    "injected failure ($INJECT_FAILURE)" \
+    "unset FLIPPED_QG_INJECT_FAILURE and rerun quality_gate.sh" \
+    "true"
+  fail=1
+fi
+
 # 指标收集（写 quality_metrics.json）
 METRICS_TMP=$(mktemp)
 echo "{}" > "$METRICS_TMP"
@@ -48,6 +88,12 @@ if bash scripts/check_shell_lint.sh >&2; then
 else
   bad "shell lint 发现 \$VAR<非 ASCII> 陷阱（见上方）"
   record shell_lint "0"
+  emit_finding "QG_SHELL_LINT_FAILED" \
+    "scripts/check_shell_lint.sh" \
+    "no \$VAR<non-ascii> traps" \
+    "shell lint exit non-zero (见上方 stderr)" \
+    "见上方 shell lint 输出，按提示修复 \$VAR<全角字符> 陷阱（变量加引号/用 \${VAR:-default}）" \
+    "true"
 fi
 
 # ---------- G1 · Python pytest（全量或快速子集） ----------
@@ -95,6 +141,12 @@ if [ "$PYTEST_EXIT" -eq 0 ]; then
   pass "pytest 通过（passed=$PY_PASSED skipped=$PY_SKIPPED failed=${PY_FAILED}）"
 else
   bad "pytest 失败（passed=$PY_PASSED failed=${PY_FAILED}）"
+  emit_finding "QG_PYTEST_FAILED" \
+    "tests/" \
+    "pytest exit 0" \
+    "exit=${PYTEST_EXIT} passed=${PY_PASSED} failed=${PY_FAILED} skipped=${PY_SKIPPED}" \
+    "见上方 pytest 输出，定位 FAILED 用例并修复（先读 traceback，再改实现，禁止 --skip/注释测试）" \
+    "true"
 fi
 
 # ---------- G2 · Python 覆盖率（fail_under=80 由 .coveragerc 强制） ----------
@@ -104,10 +156,16 @@ if [ $NOCOV = 0 ] && [ $QUICK = 0 ] && [ -f coverage.json ]; then
   record py_coverage "$PY_COV"
   # .coveragerc fail_under=80 已让 pytest 退出码非 0，这里只做阈值报告
   PY_COV_INT=${PY_COV%.*}
-  if [ "${PY_COV_INT:-0}" -ge 80 ]; then
-    pass "Python 覆盖率 ${PY_COV}%（≥ 80% floor）"
+  if [ "${PY_COV_INT:-0}" -ge "${PY_COV_FLOOR}" ]; then
+    pass "Python 覆盖率 ${PY_COV}%（≥ ${PY_COV_FLOOR}% floor）"
   else
-    bad "Python 覆盖率 ${PY_COV}%（< 80% floor）"
+    bad "Python 覆盖率 ${PY_COV}%（< ${PY_COV_FLOOR}% floor）"
+    emit_finding "QG_PY_COVERAGE_BELOW_FLOOR" \
+      "src/" \
+      ">= ${PY_COV_FLOOR}% (FLIPPED_PY_COV_FLOOR)" \
+      "${PY_COV}%" \
+      "见 coverage.json uncovered lines，补测试到低覆盖模块（当前最低：failure_kb.py/knowledge_graph.py）；或调低 FLIPPED_PY_COV_FLOOR（不建议）" \
+      "true"
   fi
 fi
 
@@ -140,6 +198,7 @@ record fe_passed "$V_PASSED"
 record fe_failed "$V_FAILED"
 
 # 前端覆盖率（从 json-summary 读）
+FE_LINES=""
 if [ $NOCOV = 0 ] && [ -f console/coverage/coverage-summary.json ]; then
   FE_LINES=$(python3 -c "import json; d=json.load(open('console/coverage/coverage-summary.json'))['total']; print(round(d['lines']['pct'],2))" 2>/dev/null || echo "0")
   record fe_lines_cov "$FE_LINES"
@@ -149,6 +208,28 @@ if [ "$VITEST_EXIT" -eq 0 ]; then
   pass "vitest 通过（passed=$V_PASSED failed=${V_FAILED}）"
 else
   bad "vitest 失败（passed=$V_PASSED failed=${V_FAILED}）"
+  emit_finding "QG_VITEST_FAILED" \
+    "console/" \
+    "vitest exit 0" \
+    "exit=${VITEST_EXIT} passed=${V_PASSED} failed=${V_FAILED}" \
+    "见上方 vitest 输出，定位 failed 用例并修复（先读断言差异，再改组件/handler）" \
+    "true"
+fi
+
+# 前端覆盖率阈值检查（独立于 vitest 通过与否；coverage-summary.json 可能来自上次运行）
+if [ -n "$FE_LINES" ]; then
+  FE_LINES_INT="${FE_LINES%.*}"
+  if [ "${FE_LINES_INT:-0}" -ge "${FE_COV_FLOOR}" ]; then
+    pass "前端行覆盖率 ${FE_LINES}%（≥ ${FE_COV_FLOOR}% floor）"
+  else
+    bad "前端行覆盖率 ${FE_LINES}%（< ${FE_COV_FLOOR}% floor）"
+    emit_finding "QG_FE_COVERAGE_BELOW_FLOOR" \
+      "console/src/" \
+      ">= ${FE_COV_FLOOR}% (FLIPPED_FE_COV_FLOOR)" \
+      "${FE_LINES}%" \
+      "见 console/coverage/ 未覆盖文件，补组件测试；或调低 FLIPPED_FE_COV_FLOOR（不建议）" \
+      "true"
+  fi
 fi
 
 # ---------- G4 · TypeScript 类型检查 ----------
@@ -160,6 +241,12 @@ if ( cd console && npx tsc --noEmit ) 2>&1 | tee /dev/stderr; then
 else
   bad "tsc 报错"
   record tsc_errors "1"
+  emit_finding "QG_TSC_ERRORS" \
+    "console/src/" \
+    "0 tsc errors" \
+    "tsc exit non-zero (见上方 stderr)" \
+    "见上方 tsc 输出，按 TS2322/TS2345 等错误码修类型注解；先读报错行号定位文件" \
+    "true"
 fi
 
 # ---------- G5 · vite build ----------
@@ -172,6 +259,12 @@ else
   bad "vite build 失败（见 /tmp/quality_gate_build.log）"
   tail -5 /tmp/quality_gate_build.log >&2
   record build_ok "0"
+  emit_finding "QG_BUILD_FAILED" \
+    "console/" \
+    "vite build exit 0" \
+    "build exit non-zero (见 /tmp/quality_gate_build.log 末尾)" \
+    "读 /tmp/quality_gate_build.log 全文定位错误（常见：import 路径错/未安装依赖/语法错误）；先修第一个错误再重跑" \
+    "true"
 fi
 
 # ---------- 汇总 ----------
@@ -189,10 +282,29 @@ for k in ['shell_lint','py_passed','py_failed','py_skipped','py_coverage','fe_pa
     if k in m: print(f'    {k}: {m[k]}')
 "
 
+# M157.10 · 结构化失败信号汇总（机器可读 findings.jsonl + 人类可读 rule 列表）
+if [ -f "$FINDINGS_PATH" ]; then
+  # grep -c 总会输出数字（即使退出码 1=无匹配）；|| echo 会双输出 "0\n0"，故只用 ${:-0} 兜底空值
+  FINDING_COUNT=$(grep -c . "$FINDINGS_PATH" 2>/dev/null)
+  FINDING_COUNT="${FINDING_COUNT:-0}"
+  if [ "${FINDING_COUNT:-0}" -gt 0 ]; then
+    echo "  结构化失败信号 ($FINDINGS_PATH, $FINDING_COUNT 条):"
+    python3 -c "
+import json,sys
+for ln in open('$FINDINGS_PATH'):
+    ln=ln.strip()
+    if not ln: continue
+    o=json.loads(ln)
+    print(f'    - [{o[\"rule\"]}] {o[\"location\"]}  expected={o[\"expected\"]!r} actual={o[\"actual\"]!r} retryable={o[\"retryable\"]}')
+    print(f'      fix: {o[\"suggested_fix\"]}')
+" 2>/dev/null || echo "    (findings.jsonl 解析失败，见原始文件)"
+  fi
+fi
+
 if [ $fail -eq 0 ]; then
   echo "  质量门禁：通过 ✅"
 else
-  echo "  质量门禁：未通过 ❌（见上方 ❌ 项）"
+  echo "  质量门禁：未通过 ❌（见上方 ❌ 项 + $FINDINGS_PATH 结构化信号）"
 fi
 echo "============================================================"
 exit $fail

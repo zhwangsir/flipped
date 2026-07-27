@@ -13,6 +13,9 @@ export default defineConfig({
       provider: 'v8',
       reporter: ['text', 'text-summary', 'json-summary', 'html'],
       reportsDirectory: './coverage',
+      // Vitest 4 移除 coverage.all（默认只报告被加载的文件）。
+      // 显式 include 确保未加载的源文件也纳入覆盖率分母（与 v2/v3 行为一致）。
+      include: ['src/**/*.{ts,tsx}'],
       // 质量门禁 floor（当前基线 29.36% lines，留 1% 余量防回归）。
       // 目标值 50% lines（TEST_PLAN.md 追踪，循环测试逐轮抬升，非硬门禁）。
       thresholds: {

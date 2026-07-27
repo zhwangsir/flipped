@@ -7,7 +7,7 @@
  * - Bento Grid 风格卡片，16px gap，rounded-lg，hairline border
  * - 动效：stagger fade-in, hover lift translateY(-1px)
  */
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useApp } from "../store";
 import { navigate } from "../router";
 import { formatWhen } from "../types";
@@ -51,6 +51,21 @@ export function FactoryPanel() {
   const [actionBusy, setActionBusy] = useState(false);
   const [actionErr, setActionErr] = useState("");
 
+  // D-0012 修复：overlay 挂载时绑 document keydown Escape → 关闭面板。
+  // 与 Settings.tsx D-0010 修复同模式（document 级监听，无需焦点落在面板内）。
+  // 关闭动作与关闭按钮一致：navigate("assistant") 切回主路由 + setFactoryOpen(false)。
+  useEffect(() => {
+    if (!factoryOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        navigate("assistant");
+        setFactoryOpen(false);
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [factoryOpen, setFactoryOpen]);
+
   if (!factoryOpen) return null;
 
   const errText = (e: unknown) =>
@@ -86,8 +101,16 @@ export function FactoryPanel() {
   };
 
   return (
-    <div className="factory-overlay" data-testid="factory-panel">
-      <header className="factory-head">
+    <div
+      className="factory-overlay"
+      data-testid="factory-panel"
+      role="dialog"
+      aria-modal="true"
+      aria-label="工厂面板"
+    >
+      {/* D-0007 修复：<header> → <div>：避免与 TopBar 的 <header className="topbar">
+          形成 landmark-unique 冲突（两个 banner landmark）。factory-head 仅作样式容器。 */}
+      <div className="factory-head">
         <div className="factory-head-title">
           <IconFactory size={18} />
           <span>工厂</span>
@@ -102,7 +125,7 @@ export function FactoryPanel() {
         <button className="icon-btn ghost" onClick={() => { navigate("assistant"); setFactoryOpen(false); }} aria-label="关闭">
           <IconX size={16} />
         </button>
-      </header>
+      </div>
 
       <div className="factory-body">
         {showCreate && (
@@ -175,7 +198,9 @@ function CreateFactoryCard({
 }) {
   return (
     <div className="factory-create" style={{ animationDelay: "0ms" }}>
-      <h3 className="factory-create-title">新建工厂</h3>
+      {/* D-0008 修复：h3 → h2，让新建表单标题成为面板内首级标题，
+          满足 axe-core heading-order 规则（不跳级）。 */}
+      <h2 className="factory-create-title">新建工厂</h2>
       <label className="factory-field">
         <span>产品目标</span>
         <textarea

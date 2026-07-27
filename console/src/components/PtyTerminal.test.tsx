@@ -93,10 +93,22 @@ beforeEach(() => {
 
 function renderWithWs() {
   const ws = makeWsMock();
-  const Ctor = vi.fn(() => ws) as unknown as { new (url: string): typeof ws; OPEN: number };
+  // Vitest 4：箭头函数无 [[Construct]]，构造函数 mock 必须用 function 关键字
+  const Ctor = vi.fn(function () { return ws; }) as unknown as { new (url: string): typeof ws; OPEN: number };
   Ctor.OPEN = 1;
   vi.stubGlobal('WebSocket', Ctor);
   return { ws, Ctor };
+}
+
+/** D-0014: PtyTerminal 的 xterm 改为 dynamic import 后，Terminal 创建是异步的。
+ *  vi.dynamicImportSettled() 等待所有 dynamic import 完成；
+ *  额外 flush 微任务确保 setup() 内 await 链全部走完。 */
+async function settleImports() {
+  await vi.dynamicImportSettled();
+  // setup() 内 await 链：Promise.all(import) → await import(css) → 同步创建 Terminal
+  // dynamicImportSettled 等待 import 完成，但后续同步代码可能还需 1-2 轮微任务
+  await Promise.resolve();
+  await Promise.resolve();
 }
 
 describe('PtyTerminal — web 模式(isTauri=false)', () => {
@@ -107,10 +119,11 @@ describe('PtyTerminal — web 模式(isTauri=false)', () => {
     expect(termInstances.length).toBe(0);
   });
 
-  it('active=true 时创建 xterm Terminal 并连接 WebSocket', () => {
+  it('active=true 时创建 xterm Terminal 并连接 WebSocket', async () => {
     const { ws, Ctor } = renderWithWs();
     mockedIsTauri.mockReturnValue(false);
     render(<PtyTerminal active={true} />);
+    await settleImports();
     expect(termInstances.length).toBe(1);
     expect(Ctor).toHaveBeenCalledTimes(1);
     // WS URL 形如 ws://127.0.0.1:8011/api/v1/terminal
@@ -119,28 +132,31 @@ describe('PtyTerminal — web 模式(isTauri=false)', () => {
     void ws;
   });
 
-  it('WebSocket onopen 后发送初始 resize 并设置 readyRef', () => {
+  it('WebSocket onopen 后发送初始 resize 并设置 readyRef', async () => {
     const { ws } = renderWithWs();
     mockedIsTauri.mockReturnValue(false);
     render(<PtyTerminal active={true} />);
+    await settleImports();
     ws.readyState = 1;
     ws.onopen?.();
     // 第一条消息是初始 resize
     expect(ws.send).toHaveBeenCalledWith(JSON.stringify({ r: [80, 24] }));
   });
 
-  it('WebSocket onmessage 把数据写入 term.write', () => {
+  it('WebSocket onmessage 把数据写入 term.write', async () => {
     const { ws } = renderWithWs();
     mockedIsTauri.mockReturnValue(false);
     render(<PtyTerminal active={true} />);
+    await settleImports();
     ws.onmessage?.({ data: 'hello world' });
     expect(termInstances[0].write).toHaveBeenCalledWith('hello world');
   });
 
-  it('WebSocket onclose 写入断开提示', () => {
+  it('WebSocket onclose 写入断开提示', async () => {
     const { ws } = renderWithWs();
     mockedIsTauri.mockReturnValue(false);
     render(<PtyTerminal active={true} />);
+    await settleImports();
     ws.onclose?.();
     // 写入断开提示(包含 ANSI 颜色码)
     const calls = (termInstances[0].write as unknown as { mock: { calls: string[][] } }).mock.calls;
@@ -148,10 +164,11 @@ describe('PtyTerminal — web 模式(isTauri=false)', () => {
     expect(last).toContain('终端已断开');
   });
 
-  it('term.onData 在 web 模式下通过 ws.send 发送 {d}', () => {
+  it('term.onData 在 web 模式下通过 ws.send 发送 {d}', async () => {
     const { ws } = renderWithWs();
     mockedIsTauri.mockReturnValue(false);
     render(<PtyTerminal active={true} />);
+    await settleImports();
     ws.readyState = 1;
     // 触发 term.onData 回调
     const inst = termInstances[0] as unknown as { _onData: (d: string) => void };
@@ -159,10 +176,11 @@ describe('PtyTerminal — web 模式(isTauri=false)', () => {
     expect(ws.send).toHaveBeenCalledWith(JSON.stringify({ d: 'ls\r' }));
   });
 
-  it('term.onData 在 ws 未 OPEN 时不发送', () => {
+  it('term.onData 在 ws 未 OPEN 时不发送', async () => {
     const { ws } = renderWithWs();
     mockedIsTauri.mockReturnValue(false);
     render(<PtyTerminal active={true} />);
+    await settleImports();
     ws.readyState = 0; // CONNECTING
     const inst = termInstances[0] as unknown as { _onData: (d: string) => void };
     inst._onData('x');
@@ -171,10 +189,11 @@ describe('PtyTerminal — web 模式(isTauri=false)', () => {
     expect(calls).not.toContain(JSON.stringify({ d: 'x' }));
   });
 
-  it('term.onResize 在 web 模式下通过 ws.send 发送 {r:[cols,rows]}', () => {
+  it('term.onResize 在 web 模式下通过 ws.send 发送 {r:[cols,rows]}', async () => {
     const { ws } = renderWithWs();
     mockedIsTauri.mockReturnValue(false);
     render(<PtyTerminal active={true} />);
+    await settleImports();
     ws.readyState = 1;
     const inst = termInstances[0] as unknown as { _onResize: (e: { cols: number; rows: number }) => void };
     inst._onResize({ cols: 100, rows: 30 });
@@ -189,10 +208,11 @@ describe('PtyTerminal — web 模式(isTauri=false)', () => {
     expect(holder?.className).toContain('my-panel');
   });
 
-  it('窗口 resize 事件触发 fit(需要 active=true 且就绪)', () => {
+  it('窗口 resize 事件触发 fit(需要 active=true 且就绪)', async () => {
     const { ws } = renderWithWs();
     mockedIsTauri.mockReturnValue(false);
     render(<PtyTerminal active={true} />);
+    await settleImports();
     // 模拟就绪
     ws.readyState = 1;
     ws.onopen?.();
@@ -207,6 +227,7 @@ describe('PtyTerminal — 主题热切换', () => {
     const { ws } = renderWithWs();
     mockedIsTauri.mockReturnValue(false);
     render(<PtyTerminal active={true} />);
+    await settleImports();
     // 先让 ws 就绪,设置 termRef.current
     ws.readyState = 1;
     ws.onopen?.();
@@ -221,18 +242,20 @@ describe('PtyTerminal — 主题热切换', () => {
 });
 
 describe('PtyTerminal — 卸载清理', () => {
-  it('组件卸载后 ws.close 被调用', () => {
+  it('组件卸载后 ws.close 被调用', async () => {
     const { ws } = renderWithWs();
     mockedIsTauri.mockReturnValue(false);
     const { unmount } = render(<PtyTerminal active={true} />);
+    await settleImports();
     unmount();
     expect(ws.close).toHaveBeenCalled();
   });
 
-  it('组件卸载后 term.dispose 被调用', () => {
+  it('组件卸载后 term.dispose 被调用', async () => {
     renderWithWs();
     mockedIsTauri.mockReturnValue(false);
     const { unmount } = render(<PtyTerminal active={true} />);
+    await settleImports();
     unmount();
     expect(termInstances[0].dispose).toHaveBeenCalled();
   });

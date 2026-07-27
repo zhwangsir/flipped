@@ -174,8 +174,8 @@ def _file_signature(files: dict[str, str]) -> str:
     try:
         content = ""
         for k in sorted(files.keys()):
-            content += f"{k}:{hashlib.md5(files[k].encode()).hexdigest()[:8]};"
-        return hashlib.md5(content.encode()).hexdigest()[:12]
+            content += f"{k}:{hashlib.md5(files[k].encode(), usedforsecurity=False).hexdigest()[:8]};"
+        return hashlib.md5(content.encode(), usedforsecurity=False).hexdigest()[:12]
     except Exception:
         return ""
 

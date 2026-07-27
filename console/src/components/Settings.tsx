@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import { useState, useEffect, type ReactNode } from 'react';
 import { useApp } from '../store';
 import { useTheme } from '../hooks/useTheme';
 import {
@@ -86,6 +86,17 @@ export function Settings() {
   const [nav, setNav] = useState<NavId>('general');
   const [workMode, setWorkMode] = useState(() => readPref('workmode', 'coding'));
   const [fileOpenTarget, setFileOpenTarget] = useState(() => readPref('file-open-target', 'editor'));
+
+  // D-0010 修复：抽屉打开时绑 document keydown Escape → 关闭，与 Sidebar 项目菜单同模式。
+  // 监听挂在 document 级，无需焦点落在面板内即可触发。
+  useEffect(() => {
+    if (!settingsOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setSettingsOpen(false);
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [settingsOpen, setSettingsOpen]);
 
   if (!settingsOpen) return null;
 

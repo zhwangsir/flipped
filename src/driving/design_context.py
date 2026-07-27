@@ -2114,7 +2114,7 @@ def auto_fix_inline_styles(cwd: str) -> bool:
                 return full_tag[:style_match.start()] + full_tag[style_match.end():]
 
             # 生成 class 名（基于 style 内容的 hash）
-            style_hash = _hashlib.md5(style_content.encode()).hexdigest()[:8]
+            style_hash = _hashlib.md5(style_content.encode(), usedforsecurity=False).hexdigest()[:8]
             class_name = f"auto-style-{style_hash}"
 
             # 记录 CSS 规则（去重）

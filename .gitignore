@@ -57,6 +57,7 @@ console/playwright-report/
 data/rag/
 
 .sessions.json
+.sessions.perf.json
 .devlogs/
 projects/
 desktop/node_modules/
@@ -67,6 +68,7 @@ config/mcp_servers.json
 
 # M137 迁移备份(二进制, 不入库)
 data/*.bak-*
+data/*.db.bak.*
 
 # ---- 测试 / 覆盖率 / 质量门禁产物（M153） ----
 .coverage
@@ -77,6 +79,9 @@ htmlcov/
 console/coverage/
 quality_metrics.json
 quality_metrics_history.jsonl
+
+# ---- M157.10 结构化失败信号产物（quality_gate.sh 每次运行清空+重写） ----
+reports/findings.jsonl
 
 # ---- 心跳监控报告产物（M153） ----
 # 脚本本身入库，运行时生成的报告/日志不入库
@@ -89,6 +94,21 @@ reports/recovery_*.md
 # ---- 循环测试常态化产物（M154.1） ----
 reports/cyclic_test_loop.log
 reports/cyclic_test_history.jsonl
+
+# ---- 性能测试产物（TEST_STRATEGY_OPTIMIZATION.md §2） ----
+reports/perf/
+
+# ---- M164 补: 心跳/安全扫描/测试报告产物（生成物不入库） ----
+reports/stuck_*.md
+reports/e2e_*.md
+reports/bandit.json
+reports/npm-audit.json
+reports/pip-audit.json
+reports/secrets.json
+reports/benchmark.json
+reports/coverage_full.json
+reports/lighthouse-*.json
+console/reports/
 
 # ---- Trae 编辑器产物 ----
 .trae/

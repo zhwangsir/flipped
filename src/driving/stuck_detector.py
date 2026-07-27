@@ -87,7 +87,7 @@ class StuckDetector:
 
         # 信号 3：失败摘要高度相似（hash 相同）
         if n >= 2:
-            hashes = [hashlib.md5(s.encode()).hexdigest()[:8] for s in self._summaries[-3:]]
+            hashes = [hashlib.md5(s.encode(), usedforsecurity=False).hexdigest()[:8] for s in self._summaries[-3:]]
             if len(set(hashes)) == 1 and len(hashes) >= 2:
                 return StuckSignal(
                     is_stuck=True,

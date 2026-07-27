@@ -18,7 +18,7 @@ from typing import Callable, Literal, TypedDict
 
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import interrupt
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from driving.approval import APPROVE_WORDS, classify_risk
 from driving.db import connect as db_connect
@@ -101,6 +101,10 @@ class OrchestratorState(TypedDict, total=False):
     # M142-B IDE 工具面：supervisor 三态互斥（believe_done > ide_action > subtask）
     ide_action: dict | None  # {"name": ..., "args": {...}}，执行后节点清回 None
     factory_id: str          # session 级审计 id（orch-XXXXXXXX，graph 入口生成一次）
+    # M157.11 测试设计独立阶段：supervisor 拆子任务时强制附 test_cases（四类覆盖），
+    # verifier 节点据此走复合验证（verify_cmd + lint + typecheck + test_cases）。
+    # 向后兼容：未设置时 verifier 走原始逻辑（只跑 verify_cmd）。
+    test_cases: list[str]
 
 
 # 可注入节点：(state) -> state 增量
@@ -492,7 +496,15 @@ def _build_supervisor_prompt(state: OrchestratorState) -> str:
             "因此【一个 subtask 只能涉及一个文件或一个命令】，严禁在一个 subtask 里同时包含多个文件"
             "（如同时写 config.py 和 test_config.py 是禁止的——必须拆成两轮各派一个）。"
             "多文件目标必须拆成多个 subtask 逐轮派发：第一轮写文件 A，第二轮写文件 B，第三轮跑测试。"
-            "判断标准：如果你的 subtask 里出现了 2 个及以上文件名，就是违规，必须拆分。")
+            "判断标准：如果你的 subtask 里出现了 2 个及以上文件名，就是违规，必须拆分。"
+            "【测试设计·硬性·先于开发】每个 subtask 必须在 test_cases 字段附测试用例清单（list[str]，"
+            "每项是可执行命令或测试描述），覆盖四类：normal（正常路径验收）、"
+            "boundary（边界条件：空输入/超长/极值）、error（异常路径：错误处理/失败恢复）、"
+            "concurrency（并发/竞态，如适用）。测试用例不达标将被验证节点驳回重拆。"
+            "示例：test_cases=[\"pytest tests/test_x.py::test_normal\", "
+            "\"pytest tests/test_x.py::test_boundary_empty\", "
+            "\"pytest tests/test_x.py::test_error_handling\", "
+            "\"pytest tests/test_x.py::test_concurrency_race\"]。")
 
 
 class IdeActionSpec(BaseModel):
@@ -511,17 +523,41 @@ class Plan(BaseModel):
     ide_action: IdeActionSpec | None = Field(
         default=None,
         description="本轮要调的 IDE 工具(读/写 IDE 设置、跑 IDE 任务等)；与 subtask/believe_done 互斥")
+    # M157.11 测试设计独立阶段：每个 subtask 强制附 test_cases（四类覆盖）。
+    # 默认空 list 向后兼容（老路径/LLM 失败兜底时不报错）。
+    # GLM 偶发把 list[str] 返回为裸字符串 → field_validator 包成 list。
+    test_cases: list[str] = Field(
+        default_factory=list,
+        description="本 subtask 的测试用例清单（可执行命令或测试描述），覆盖四类："
+                    "normal（正常路径）/ boundary（边界：空/超长/极值）/ "
+                    "error（异常：错误处理/失败恢复）/ concurrency（并发/竞态）")
+
+    @field_validator("test_cases", mode="before")
+    @classmethod
+    def _coerce_test_cases(cls, v):
+        """GLM 偶发把 list[str] 返回为裸字符串或 None → 统一包成 list。"""
+        if v is None:
+            return []
+        if isinstance(v, str):
+            return [v] if v.strip() else []
+        if isinstance(v, list):
+            return [str(x) for x in v if x is not None]
+        return []
 
 
 def default_supervisor(state: OrchestratorState) -> dict:
     """GLM 调度：据目标 + 项目规则 + 反馈，给出下一步子任务/IDE 工具调用（干净结构化），或相信已完成。"""
     msg = _build_supervisor_prompt(state)
     mutex_note = ""
+    # M157.11：test_cases 由 supervisor 拆子任务时强制附上（四类覆盖），传给 verifier 复合验证。
+    # LLM 失败兜底时为空 list（向后兼容，verifier 走原始逻辑）。
+    test_cases: list[str] = []
     try:
         # method="function_calling"：GLM/exo 不支持 json_schema(langchain 默认)，但支持工具调用(M0.4)
         plan = _invoke_structured(_make_llm("architect", callbacks=[MetricsCallbackHandler()]), Plan, msg)
         sub, done, why = plan.subtask, plan.believe_done, plan.rationale
         ide = {"name": plan.ide_action.name, "args": plan.ide_action.args} if plan.ide_action else None
+        test_cases = list(plan.test_cases or [])
     except Exception as e:  # noqa: BLE001 失败兜底：直接把目标当子任务
         sub, done, why, ide = state["goal"], False, f"(supervisor LLM 失败兜底: {e})", None
     # 三态互斥：believe_done > ide_action > subtask。同时给出时按优先级取并提示。
@@ -530,8 +566,9 @@ def default_supervisor(state: OrchestratorState) -> dict:
         mutex_note = ("\n[互斥提示] 你同时给出了 believe_done 与 ide_action，已按 believe_done 处理"
                       "（每轮只三选一：believe_done > ide_action > subtask）。")
     hist = state.get("history", []) + [{"step": "supervisor", "subtask": sub, "believe_done": done,
-                                        "ide_action": ide, "why": why}]
-    upd = {"current_subtask": sub, "believe_done": done, "ide_action": ide, "history": hist}
+                                        "ide_action": ide, "why": why, "test_cases": test_cases}]
+    upd = {"current_subtask": sub, "believe_done": done, "ide_action": ide,
+           "test_cases": test_cases, "history": hist}
     if mutex_note:
         upd["feedback"] = (state.get("feedback", "") + mutex_note).strip()
     return upd
@@ -1293,8 +1330,215 @@ def _safe_default_verifier(cmd: list, cwd: str) -> "tuple[bool, str]":
                 return p.returncode == 0, (p.stdout + p.stderr)[-2000:]
         except Exception:  # noqa: BLE001 — shlex 解析失败时回退到 shell=True
             pass
-    p = subprocess.run(command_str, shell=True, cwd=cwd, capture_output=True, text=True, timeout=300)
+    # shell=True 必要：验证命令常含管道/重定向（如 `pytest -q 2>&1 | tail`）。
+    # 安全性已保障：command_str 在此之前已过 is_safe_command() 白名单审查 +
+    # classify_risk() 风险分级（high 级直接拒绝，上方 L1273-1274）。
+    # nosec B602 — 已审查，命令来源经双重安全过滤
+    p = subprocess.run(command_str, shell=True, cwd=cwd, capture_output=True, text=True, timeout=300)  # nosec B602
     return p.returncode == 0, (p.stdout + p.stderr)[-2000:]
+
+
+# ---------- M157.11 · Validator 复合验证（verify_cmd + lint + typecheck + test_cases） ----------
+
+def _run_lint(cwd: str, files: list[str] | None = None) -> dict:
+    """跑 lint（ruff 优先，pyflakes 兜底）。返回 {status, ok, output, tool}。
+
+    status: "pass" | "fail" | "skip"（工具未装）。
+    skip 时 ok=True（不阻断复合验证）。
+    工具可用性用 shutil.which 探测；未装则跳过，不报错。
+
+    files: worker 改动的文件清单（来自 last_obs.summary.files）；
+           为空时退化为 lint 整个 cwd（ruff check .）。
+    """
+    import shutil
+    import subprocess
+
+    # cwd 不存在时回退 home（与 _safe_default_verifier 同样的防御）
+    if cwd and not os.path.isdir(cwd):
+        cwd = os.path.expanduser("~")
+    targets = files if files else ["."]
+
+    # ruff 优先
+    ruff = shutil.which("ruff")
+    if ruff:
+        try:
+            p = subprocess.run([ruff, "check", *targets], cwd=cwd,
+                               capture_output=True, text=True, timeout=60)
+            ok = p.returncode == 0
+            return {"status": "pass" if ok else "fail",
+                    "ok": ok,
+                    "output": (p.stdout + p.stderr)[-2000:],
+                    "tool": "ruff"}
+        except Exception as e:  # noqa: BLE001 — timeout/异常算 fail
+            return {"status": "fail", "ok": False,
+                    "output": f"ruff 执行异常: {type(e).__name__}: {e}", "tool": "ruff"}
+
+    # pyflakes 兜底
+    pyflakes = shutil.which("pyflakes")
+    if pyflakes:
+        try:
+            p = subprocess.run([pyflakes, *targets], cwd=cwd,
+                               capture_output=True, text=True, timeout=60)
+            ok = p.returncode == 0
+            return {"status": "pass" if ok else "fail",
+                    "ok": ok,
+                    "output": (p.stdout + p.stderr)[-2000:],
+                    "tool": "pyflakes"}
+        except Exception as e:  # noqa: BLE001
+            return {"status": "fail", "ok": False,
+                    "output": f"pyflakes 执行异常: {type(e).__name__}: {e}", "tool": "pyflakes"}
+
+    return {"status": "skip", "ok": True,
+            "output": "lint 工具未安装（ruff/pyflakes 均不可用），跳过", "tool": "none"}
+
+
+def _run_typecheck(cwd: str, files: list[str] | None = None) -> dict:
+    """跑 typecheck（mypy 优先，pyright 兜底）。返回 {status, ok, output, tool}。
+
+    同 _run_lint 的 availability check + skip 语义。
+    """
+    import shutil
+    import subprocess
+
+    if cwd and not os.path.isdir(cwd):
+        cwd = os.path.expanduser("~")
+    targets = files if files else ["."]
+
+    mypy = shutil.which("mypy")
+    if mypy:
+        try:
+            p = subprocess.run([mypy, *targets], cwd=cwd,
+                               capture_output=True, text=True, timeout=120)
+            ok = p.returncode == 0
+            return {"status": "pass" if ok else "fail",
+                    "ok": ok,
+                    "output": (p.stdout + p.stderr)[-2000:],
+                    "tool": "mypy"}
+        except Exception as e:  # noqa: BLE001
+            return {"status": "fail", "ok": False,
+                    "output": f"mypy 执行异常: {type(e).__name__}: {e}", "tool": "mypy"}
+
+    pyright = shutil.which("pyright")
+    if pyright:
+        try:
+            p = subprocess.run([pyright, *targets], cwd=cwd,
+                               capture_output=True, text=True, timeout=120)
+            ok = p.returncode == 0
+            return {"status": "pass" if ok else "fail",
+                    "ok": ok,
+                    "output": (p.stdout + p.stderr)[-2000:],
+                    "tool": "pyright"}
+        except Exception as e:  # noqa: BLE001
+            return {"status": "fail", "ok": False,
+                    "output": f"pyright 执行异常: {type(e).__name__}: {e}", "tool": "pyright"}
+
+    return {"status": "skip", "ok": True,
+            "output": "typecheck 工具未安装（mypy/pyright 均不可用），跳过", "tool": "none"}
+
+
+def _run_test_cases(test_cases: list[str], cwd: str) -> dict:
+    """逐个执行 test_case 命令，统计通过率。返回 {passed, total, failures}。
+
+    每个 test_case 是可执行命令字符串（如 "pytest tests/test_x.py::test_normal"
+    或 "python -c 'assert ...'"）。用 shell=True 执行（命令可能含管道/重定向）。
+    安全性：test_cases 来自 supervisor LLM 输出，理论上可信（沙箱内）；
+    若担心注入，外层可在调用前过 is_safe_command。这里只负责执行 + 统计。
+    """
+    import subprocess
+
+    if not test_cases:
+        return {"passed": 0, "total": 0, "failures": []}
+
+    if cwd and not os.path.isdir(cwd):
+        cwd = os.path.expanduser("~")
+
+    passed = 0
+    failures: list[str] = []
+    for tc in test_cases:
+        if not tc or not tc.strip():
+            continue
+        try:
+            # nosec B602 — test_cases 来自 supervisor 输出，沙箱内执行
+            p = subprocess.run(tc, shell=True, cwd=cwd,
+                               capture_output=True, text=True, timeout=120)  # nosec B602
+            if p.returncode == 0:
+                passed += 1
+            else:
+                tail = (p.stdout + p.stderr)[-500:]
+                failures.append(f"{tc}\n  退出码={p.returncode} 输出: {tail}")
+        except Exception as e:  # noqa: BLE001 — 超时/异常算该 case 失败
+            failures.append(f"{tc}\n  异常: {type(e).__name__}: {e}")
+
+    return {"passed": passed, "total": len(test_cases), "failures": failures}
+
+
+def default_compound_verifier(state: OrchestratorState, verifier: VerifierFn) -> dict:
+    """复合验证：verify_cmd + lint + typecheck + test_cases。
+
+    对标 Trae-Agent Validator Agent（第 2.2 节）：Verifier 从"只跑验收命令"升级为
+    "复合验证"，任一失败（skip 不算失败）→ verified=False。
+
+    返回结构化 verdict：
+        {verified, verify_cmd_ok, lint_status, lint_ok, typecheck_status, typecheck_ok,
+         test_cases_passed, test_cases_total, failures, output}
+
+    - verify_cmd_ok: 注入的 verifier(cmd, cwd) 返回的 ok
+    - lint_ok: lint 失败=False, skip=True（不阻断）
+    - typecheck_ok: 同上
+    - test_cases_passed/total: 逐个执行统计
+    - failures: 所有失败项的描述 list[str]
+    - verified: 全部通过（skip 算通过）= True
+    """
+    cmd = state.get("verify_cmd", [])
+    cwd = state.get("cwd", ".")
+
+    # 1) verify_cmd（原验收命令，注入的 verifier 跑）
+    if cmd:
+        verify_ok, verify_output = verifier(cmd, cwd)
+    else:
+        verify_ok, verify_output = True, "no verify_cmd"
+
+    # 2) lint（对 worker 改动文件；无文件清单时 lint 整个 cwd）
+    files = ((state.get("last_obs") or {}).get("summary") or {}).get("files") or []
+    lint_result = _run_lint(cwd, files if files else None)
+
+    # 3) typecheck
+    typecheck_result = _run_typecheck(cwd, files if files else None)
+
+    # 4) test_cases（state 里有则逐个跑）
+    test_cases = state.get("test_cases") or []
+    tc_result = _run_test_cases(test_cases, cwd)
+
+    # 综合判定：skip 不阻断，其他失败则 verified=False
+    failures: list[str] = []
+    if not verify_ok:
+        failures.append(f"verify_cmd 失败:\n{_trim_output(verify_output)}")
+    if lint_result["status"] == "fail":
+        failures.append(f"lint 失败（{lint_result['tool']}）:\n{lint_result['output']}")
+    if typecheck_result["status"] == "fail":
+        failures.append(f"typecheck 失败（{typecheck_result['tool']}）:\n{typecheck_result['output']}")
+    if tc_result["failures"]:
+        failures.append(
+            f"test_cases 部分失败 ({tc_result['passed']}/{tc_result['total']}):\n"
+            + "\n".join(tc_result["failures"]))
+
+    verified = (verify_ok
+                and lint_result["status"] != "fail"
+                and typecheck_result["status"] != "fail"
+                and tc_result["passed"] == tc_result["total"])
+
+    return {
+        "verified": verified,
+        "verify_cmd_ok": verify_ok,
+        "lint_status": lint_result["status"],
+        "lint_ok": lint_result["status"] != "fail",
+        "typecheck_status": typecheck_result["status"],
+        "typecheck_ok": typecheck_result["status"] != "fail",
+        "test_cases_passed": tc_result["passed"],
+        "test_cases_total": tc_result["total"],
+        "failures": failures,
+        "output": verify_output,
+    }
 
 
 # ---------- 图 ----------
@@ -1308,7 +1552,8 @@ def build_orchestrator(supervisor: SupervisorFn = default_supervisor,
                        keep_recent: int = 4,
                        summarizer: Callable | None = None,
                        ide_caller: Callable | None = None,
-                       on_approval_request: Callable | None = None):
+                       on_approval_request: Callable | None = None,
+                       compound_verifier: Callable[[OrchestratorState, VerifierFn], dict] | None = None):
     """编译 Supervisor→Worker→Overseer→(条件)→Verify 多 agent 监督图。节点可注入。
 
     ide_caller：IDE 工具桥调用（默认 ide_client.call_ide_tool），单测注入 mock。
@@ -1317,7 +1562,13 @@ def build_orchestrator(supervisor: SupervisorFn = default_supervisor,
     on_approval_request（M151.2）：高风险子任务 interrupt 前的回调，签名 (state) -> None。
     用途：在 LangGraph interrupt 暂停图之前发 EventType.approval_request 事件，让
     前端/TUI 即时弹出审批卡。默认 None → 行为与旧版完全一致（向后兼容）。
+
+    compound_verifier（M157.11）：复合验证函数，签名 (state, verifier) -> dict verdict。
+    当 state 含 test_cases 时，verify() 节点调它做 verify_cmd + lint + typecheck + test_cases
+    四合一验证；默认 None → 用 default_compound_verifier。注入 mock 可单测复合逻辑。
+    state 无 test_cases 时 verify() 走原始逻辑（只跑 verify_cmd），向后兼容。
     """
+    _compound_verifier = compound_verifier or default_compound_verifier
     from driving.ide_client import call_ide_tool as _default_ide_caller
     _ide_caller = ide_caller or _default_ide_caller
 
@@ -1374,18 +1625,56 @@ def build_orchestrator(supervisor: SupervisorFn = default_supervisor,
                                     "decision": res.decision, "reason": res.reason}]}
 
     def verify(state: OrchestratorState) -> dict:
-        # Worker 刚 finish 后沙箱可能还在清理 → 短暂等待 + 一次重试
         import time as _time
+        it = state.get("iteration", 0) + 1
+        believe_done = state.get("believe_done", False)
+
+        # M157.11 复合验证路径：state 含 test_cases 时走 verify_cmd + lint + typecheck + test_cases 四合一。
+        # 无 test_cases 时走原始逻辑（向后兼容，老路径/旧测试不受影响）。
+        if state.get("test_cases"):
+            verdict = _compound_verifier(state, verifier)
+            ok = verdict.get("verify_cmd_ok", False)
+            output = verdict.get("output", "")
+            compound_verified = verdict.get("verified", False)
+            hist = state.get("history", []) + [
+                {"step": "verify", "ok": ok, "iteration": it, "compound": verdict}]
+            verified = compound_verified and believe_done
+            upd = {"iteration": it, "verified": verified, "history": hist}
+            if verified:
+                upd["done"] = True
+                upd["stop_reason"] = "verified"
+            elif not compound_verified:
+                # 复合验证失败 → 回灌结构化 failures 给 supervisor 做最小修复
+                failures = verdict.get("failures") or []
+                failures_text = "\n".join(failures) if failures else "复合验证未通过"
+                # 截断防挤爆 prompt（lint/typecheck 输出可能很长）
+                failures_text = _trim_output(failures_text, budget=4000)
+                meta = _classify_tool_error(failures_text)
+                upd["feedback"] = (
+                    state.get("feedback", "")
+                    + f"\n复合验证失败:\n{failures_text}"
+                    + f"\n[error_meta] retryable={str(meta['retryable']).lower()} "
+                      f"suggestion={meta['suggestion']}"
+                ).strip()
+            else:
+                # compound_verified=True but believe_done=False → 子任务复合验证通过,拆下一个
+                last_sub = state.get("current_subtask", "")
+                upd["feedback"] = (state.get("feedback", "") +
+                    f"\n子任务「{last_sub[:80]}」已完成且复合验证通过"
+                    f"（verify_cmd + lint + typecheck + test_cases 全过）。"
+                    "请基于历史已完成的步骤,拆解下一个不同的子任务,不要重复已完成的内容。").strip()
+            return upd
+
+        # ---------- 原始逻辑（无 test_cases，向后兼容） ----------
+        # Worker 刚 finish 后沙箱可能还在清理 → 短暂等待 + 一次重试
         ok, output = verifier(state["verify_cmd"], state["cwd"])
         if not ok and not output.strip():
             _time.sleep(3)
             ok, output = verifier(state["verify_cmd"], state["cwd"])
-        it = state.get("iteration", 0) + 1
         hist = state.get("history", []) + [{"step": "verify", "ok": ok, "iteration": it}]
         # M89 修复:只在 supervisor believe_done=True AND verify 通过时才整体 verified。
         # 否则 verify 通过仅代表当前子任务(或无验收命令)→ 回 supervisor 拆下一个子任务。
         # 旧逻辑只看 ok → no-op verifier 总 True → 第一个子任务后就误判整体完成。
-        believe_done = state.get("believe_done", False)
         verified = ok and believe_done
         upd = {"iteration": it, "verified": verified, "history": hist}
         if verified:

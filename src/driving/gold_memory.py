@@ -138,9 +138,9 @@ def _signature(description: str) -> str:
     # 英文词 > 1 字符，中文单字保留
     words = [w for w in words if w not in stop and (len(w) > 1 or "\u4e00" <= w <= "\u9fff")]
     if not words:
-        return hashlib.md5(description.encode()).hexdigest()[:12]
+        return hashlib.md5(description.encode(), usedforsecurity=False).hexdigest()[:12]
     # 排序后 hash，保证顺序无关
-    return hashlib.md5("|".join(sorted(set(words))).encode()).hexdigest()[:12]
+    return hashlib.md5("|".join(sorted(set(words))).encode(), usedforsecurity=False).hexdigest()[:12]
 
 
 @dataclass

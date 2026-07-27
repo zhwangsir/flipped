@@ -64,6 +64,7 @@ done
 * **证据留痕**：把关键测试输出追加写入 `TEST_LOG.md`（命令 + 输出摘要 + 结论）。
 * **红线**：测试失败时，不准注释掉测试、不准把断言改宽松来"骗过"、不准 `--skip`。要么修代码，要么如实上报这是已知缺陷。
 * **结构化 debug**：定位问题时按"预期 vs 实际 + 最小复现"组织——先写清期望行为、实际行为、能稳定复现的最小用例，再分析根因、给修复方案，而不是上来就乱打补丁。
+* **强制 verify-quality Skill**（M157.10）：每个里程碑完成前，**必须**调用 verify-quality Skill（`.claude/skills/verify-quality/SKILL.md`），跑 `bash scripts/quality_gate.sh` 并检查 `reports/findings.jsonl`，不得仅凭"看起来对"标记完成。Skill 的 6 字段（Trigger/Scope/Criteria/Evidence/Repair/Exit）定义了从"被动跑门禁"到"主动验证 + 结构化失败信号驱动修复"的闭环：失败时读 `findings.jsonl` 的 `rule+location+expected+actual+suggested_fix` 定位修复，重跑验证；最多 `FLIPPED_MAX_VERIFY_LOOPS`（默认 3）次仍失败则升级人工（对齐 §6 熔断）。这是 §1.2"验证靠运行不靠看起来对"的代码级强制手段。
 
 ## 4. 记忆与状态管理
 

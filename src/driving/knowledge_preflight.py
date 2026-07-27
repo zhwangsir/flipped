@@ -94,7 +94,7 @@ class KnowledgeCache:
         self._cache: dict[str, CacheEntry] = {}
 
     def _make_key(self, query: str) -> str:
-        return hashlib.md5(query.encode()).hexdigest()
+        return hashlib.md5(query.encode(), usedforsecurity=False).hexdigest()
 
     def get(self, query: str) -> list[SearchResult] | None:
         key = self._make_key(query)

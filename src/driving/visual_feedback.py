@@ -169,7 +169,7 @@ class VisualFeedbackLoop:
         """计算文件哈希。"""
         try:
             with open(path, "rb") as f:
-                return hashlib.md5(f.read()).hexdigest()[:16]
+                return hashlib.md5(f.read(), usedforsecurity=False).hexdigest()[:16]
         except Exception:
             return ""
 

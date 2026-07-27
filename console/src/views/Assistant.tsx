@@ -129,8 +129,10 @@ export function Assistant() {
     // 不抛错,不假装成功 —— 静默忽略,由后续里程碑接线
   };
 
+  // D-0007 修复：<section> → <main>，让 Assistant 视图成为页面的 main landmark。
+  // Conversation.tsx（factory 路由）继续用 <section>，二者互斥渲染，不冲突。
   return (
-    <section className='view-assistant' data-testid='view-assistant'>
+    <main className='view-assistant' data-testid='view-assistant'>
       <MessageStream turns={turns} sessionId={selectedSessionId} />
       {assistantError && (
         <div className='assistant-empty' style={{ padding: '6px 28px', color: 'var(--assistant-coral)' }}>
@@ -149,6 +151,6 @@ export function Assistant() {
         model={selectedModel}
         onModelChange={setModel}
       />
-    </section>
+    </main>
   );
 }

@@ -57,6 +57,18 @@ def _resume_factory_script() -> str:
     return str(root / "scripts" / "resume_factory.py")
 
 
+def _build_resume_args(factory_id: str) -> list[str]:
+    """构造 resume_factory.py 的 subprocess 调用参数。
+
+    FLIPPED_AUTO_RESUME_DRY_RUN=1 时加 --dry-run，用于 E2E 验证场景：
+    验证完整调用链（detect→filter→subprocess→report）但不真正调 LLM 改 DB。
+    """
+    args = [sys.executable, _resume_factory_script(), factory_id]
+    if os.environ.get("FLIPPED_AUTO_RESUME_DRY_RUN", "") == "1":
+        args.append("--dry-run")
+    return args
+
+
 def _filter_resumable(stuck: list[dict]) -> list[dict]:
     """筛选可自动恢复的工厂：有 circuit_breaker_task 信号 且 非 done。
 
@@ -109,14 +121,13 @@ def maybe_auto_resume(
     resumable = resumable[:max_n]
 
     timeout = _timeout_seconds()
-    script = _resume_factory_script()
 
     results = []
     for s in resumable:
         factory_id = s["factory_id"]
         try:
             cp = subprocess.run(
-                [sys.executable, script, factory_id],
+                _build_resume_args(factory_id),
                 capture_output=True,
                 text=True,
                 timeout=timeout,

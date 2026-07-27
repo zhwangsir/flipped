@@ -230,3 +230,44 @@ def test_report_written(monkeypatch, tmp_path):
     content = reports[0].read_text()
     assert "fac-report" in content
     assert "exit_code" in content or "0" in content
+
+
+# --------------------------------------------------------------------
+# 9. FLIPPED_AUTO_RESUME_DRY_RUN=1 → subprocess 加 --dry-run
+# --------------------------------------------------------------------
+def test_dry_run_env_adds_dry_run_flag(monkeypatch, tmp_path):
+    """FLIPPED_AUTO_RESUME_DRY_RUN=1 → subprocess args 含 --dry-run（E2E 验证用）。"""
+    monkeypatch.setenv("FLIPPED_HEARTBEAT_AUTO_RESUME", "1")
+    monkeypatch.setenv("FLIPPED_AUTO_RESUME_DRY_RUN", "1")
+    captured = {}
+
+    def _fake_run(args, **kw):
+        captured["args"] = args
+        return _FakeCompletedProcess(returncode=0)
+
+    monkeypatch.setattr("driving.auto_resume.subprocess.run", _fake_run)
+    stuck = [_stuck_entry(factory_id="fac-dry")]
+    maybe_auto_resume(stuck, now_ts="20260727_0100",
+                      now_human="2026-07-27 01:00", reports_dir=str(tmp_path))
+    assert "--dry-run" in captured["args"]
+    assert "fac-dry" in captured["args"]
+
+
+# --------------------------------------------------------------------
+# 10. 无 DRY_RUN 环境变量 → subprocess 不带 --dry-run（生产行为）
+# --------------------------------------------------------------------
+def test_no_dry_run_env_no_dry_run_flag(monkeypatch, tmp_path):
+    """未设 FLIPPED_AUTO_RESUME_DRY_RUN → subprocess 不带 --dry-run（生产行为）。"""
+    monkeypatch.setenv("FLIPPED_HEARTBEAT_AUTO_RESUME", "1")
+    monkeypatch.delenv("FLIPPED_AUTO_RESUME_DRY_RUN", raising=False)
+    captured = {}
+
+    def _fake_run(args, **kw):
+        captured["args"] = args
+        return _FakeCompletedProcess(returncode=0)
+
+    monkeypatch.setattr("driving.auto_resume.subprocess.run", _fake_run)
+    stuck = [_stuck_entry(factory_id="fac-prod")]
+    maybe_auto_resume(stuck, now_ts="20260727_0100",
+                      now_human="2026-07-27 01:00", reports_dir=str(tmp_path))
+    assert "--dry-run" not in captured["args"]

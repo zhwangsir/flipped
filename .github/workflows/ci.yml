@@ -1,0 +1,154 @@
+# flipped · GitHub Actions CI 流水线（TEST_STRATEGY_OPTIMIZATION.md §5）
+#
+# 触发: push 到任意分支 / PR 到 main
+# 并行 jobs: quality-gate + security-scan + compatibility
+# 总耗时目标: quick < 5min, full < 30min
+
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: [main]
+
+jobs:
+  # ---------- Job 1: 质量门禁（功能 + 回归） ----------
+  quality-gate:
+    name: Quality Gate (pytest + vitest + tsc + build)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: console/package-lock.json
+
+      - name: Install Python deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest pytest-cov pytest-asyncio
+
+      - name: Install frontend deps
+        run: cd console && npm ci
+
+      - name: Run quality gate
+        run: bash scripts/quality_gate.sh
+        env:
+          PYTHONPATH: src
+
+      - name: Upload coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-${{ github.sha }}
+          path: |
+            coverage.json
+            console/coverage/
+            quality_metrics.json
+
+  # ---------- Job 2: 安全扫描 ----------
+  security-scan:
+    name: Security Scan (bandit + pip-audit + npm audit)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install security tools
+        run: |
+          pip install bandit pip-audit detect-secrets
+          pip install -r requirements.txt
+
+      - name: Install frontend deps
+        run: cd console && npm ci
+
+      - name: Run security scan
+        run: bash scripts/security_scan.sh
+
+      - name: Upload security reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-reports-${{ github.sha }}
+          path: reports/
+
+  # ---------- Job 3: 性能基准 ----------
+  performance-benchmark:
+    name: Performance Benchmark
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install deps
+        run: |
+          pip install -r requirements.txt
+          pip install pytest pytest-benchmark
+
+      - name: Run benchmarks
+        run: |
+          PYTHONPATH=src python -m pytest tests/benchmarks/ \
+            --benchmark-only \
+            --benchmark-json=reports/benchmark.json \
+            -q
+        continue-on-error: true  # 性能回归不阻断，只告警
+
+      - name: Upload benchmark results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-${{ github.sha }}
+          path: reports/benchmark.json
+
+  # ---------- Job 4: 跨浏览器兼容性 ----------
+  compatibility:
+    name: Cross-Browser E2E (${{ matrix.browser }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [chromium, firefox, webkit]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: console/package-lock.json
+
+      - name: Install frontend deps
+        run: cd console && npm ci
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps ${{ matrix.browser }}
+        working-directory: console
+
+      - name: Run E2E tests
+        run: npx playwright test --project=${{ matrix.browser }}
+        working-directory: console
+        continue-on-error: true  # E2E 不阻断初始集成
+        env:
+          CI: true

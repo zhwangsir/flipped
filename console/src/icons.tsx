@@ -9,6 +9,11 @@ const b = (size = 16) => ({
   strokeWidth: 1.6,
   strokeLinecap: "round" as const,
   strokeLinejoin: "round" as const,
+  // D-0009 修复：装饰性 SVG 统一 aria-hidden，避免屏幕阅读器读出 <path> 数据。
+  // 父按钮若有 aria-label/title，SVG 自动被忽略；裸 SVG 也由此覆盖。
+  // 用 boolean true（非字符串 "true"）满足 SVGProps Booleanish 类型约束；
+  // key 必须用连字符 "aria-hidden"（React 不转换 aria* camelCase，会渲染成 ariahidden）。
+  "aria-hidden": true as const,
 });
 
 export const IconPlus = ({ size }: P) => (

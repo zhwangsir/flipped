@@ -89,7 +89,7 @@ def _cosine_similarity(a: list[float], b: list[float]) -> float:
 
 def _signature(description: str, cause: str) -> str:
     key = f"{description.lower().strip()}:{cause}"
-    return hashlib.md5(key.encode()).hexdigest()[:16]
+    return hashlib.md5(key.encode(), usedforsecurity=False).hexdigest()[:16]
 
 
 @dataclass
@@ -342,7 +342,7 @@ def get_all_failures(
                 params.append(1 if resolved else 0)
             if conditions:
                 query += " WHERE " + " AND ".join(conditions)
-            query += " ORDER BY created_at DESC LIMIT ?"
+            query += " ORDER BY timestamp DESC LIMIT ?"
             params.append(limit)
             cursor.execute(query, params)
             rows = cursor.fetchall()

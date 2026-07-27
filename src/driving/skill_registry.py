@@ -99,8 +99,8 @@ def _signature(description: str, design_style: str) -> str:
         from driving.gold_memory import _signature as _gm_sig
         sig = _gm_sig(description)
     except Exception:
-        sig = hashlib.md5(description.lower().encode()).hexdigest()[:12]
-    return hashlib.md5(f"{sig}:{design_style}".encode()).hexdigest()[:16]
+        sig = hashlib.md5(description.lower().encode(), usedforsecurity=False).hexdigest()[:12]
+    return hashlib.md5(f"{sig}:{design_style}".encode(), usedforsecurity=False).hexdigest()[:16]
 
 
 @dataclass
