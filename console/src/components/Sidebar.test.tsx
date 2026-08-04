@@ -14,7 +14,7 @@ import { useApp } from '../store';
 import { navigate } from '../router';
 import { useTheme } from '../hooks/useTheme';
 import { revealProject } from '../api';
-import type { Session } from '../types';
+import type { Session, ScheduledTask } from '../types';
 
 const mockedUseApp = vi.mocked(useApp);
 const mockedNavigate = vi.mocked(navigate);
@@ -50,7 +50,34 @@ const baseState = {
   projectContext: null,
   projects: [] as { name: string; host: string; sandbox: string }[],
   openProject: vi.fn(async () => ({})),
+  // M178.2 — 已安排任务视图
+  tasks: [] as ScheduledTask[],
+  loadTasks: vi.fn(async () => {}),
+  addTask: vi.fn(async () => {}),
+  removeTask: vi.fn(async () => {}),
+  toggleTaskEnabled: vi.fn(async () => {}),
 };
+
+// M178.2 — 构造已安排任务
+function makeTask(partial: Partial<ScheduledTask> & { id: string }): ScheduledTask {
+  return {
+    title: partial.title ?? '任务',
+    prompt: partial.prompt ?? '做点事',
+    mode: partial.mode ?? 'agent',
+    model: partial.model ?? 'coder',
+    kind: partial.kind ?? 'once',
+    run_at: partial.run_at ?? null,
+    every_minutes: partial.every_minutes ?? null,
+    enabled: partial.enabled ?? true,
+    next_run_at: partial.next_run_at ?? null,
+    last_run_at: partial.last_run_at ?? null,
+    last_status: partial.last_status ?? null,
+    last_session_id: partial.last_session_id ?? null,
+    run_count: partial.run_count ?? 0,
+    created_at: partial.created_at ?? new Date(Date.now() - 60_000).toISOString(),
+    id: partial.id,
+  };
+}
 
 afterEach(() => {
   cleanup();
@@ -542,5 +569,193 @@ describe('Sidebar — 键盘可访问性', () => {
     const row = screen.getByText('其他键').closest('.thread') as HTMLElement;
     fireEvent.keyDown(row, { key: 'a' });
     expect(selectSession).not.toHaveBeenCalled();
+  });
+});
+
+// M178.2 — 已安排任务视图（ScheduledView，经 Sidebar「已安排」导航驱动）
+describe('Sidebar — 已安排任务视图 (M178.2)', () => {
+  const openScheduled = () => fireEvent.click(screen.getByText('已安排'));
+
+  it('空态渲染：无任务时显示原文案 + 新建任务按钮，进视图调 loadTasks', () => {
+    const loadTasks = vi.fn(async () => {});
+    mockedUseApp.mockReturnValue({ ...baseState, loadTasks } as never);
+    render(<Sidebar />);
+    openScheduled();
+
+    expect(screen.getByText('暂无已安排任务')).toBeTruthy();
+    expect(screen.getByText('在此处规划的任务将自动出现在这里')).toBeTruthy();
+    expect(screen.getByText('新建任务')).toBeTruthy();
+    expect(loadTasks).toHaveBeenCalled();
+  });
+
+  it('任务卡渲染：kind/mode 徽标 + 下次运行相对时间 + 已运行次数 + 状态点', () => {
+    const t = makeTask({
+      id: 't1',
+      title: '每日巡检',
+      kind: 'interval',
+      every_minutes: 30,
+      mode: 'agent',
+      next_run_at: new Date(Date.now() + 90 * 60_000).toISOString(),
+      last_status: 'done',
+      run_count: 7,
+    });
+    mockedUseApp.mockReturnValue({ ...baseState, tasks: [t] } as never);
+    render(<Sidebar />);
+    openScheduled();
+
+    expect(screen.getByText('每日巡检')).toBeTruthy();
+    expect(screen.getByText('每 30 分钟')).toBeTruthy();
+    expect(screen.getByText('agent')).toBeTruthy();
+    expect(screen.getByText('下次：1 小时后')).toBeTruthy();
+    expect(screen.getByText('已运行 7 次')).toBeTruthy();
+    // done → 绿点（dot ok 变体）
+    expect(document.querySelector('.sched-meta .dot.ok')).not.toBeNull();
+  });
+
+  it('停用任务显示「已停用」而非相对时间', () => {
+    const t = makeTask({ id: 't-off', title: '停掉的', enabled: false, next_run_at: null });
+    mockedUseApp.mockReturnValue({ ...baseState, tasks: [t] } as never);
+    render(<Sidebar />);
+    openScheduled();
+
+    expect(screen.getByText('下次：已停用')).toBeTruthy();
+    // 停用任务的操作按钮文案为「启用」
+    expect(screen.getByText('启用')).toBeTruthy();
+  });
+
+  it('新建表单 once 路径：提交调 addTask 带 kind=once 与 ISO run_at，成功后收起', async () => {
+    const addTask = vi.fn(async () => {});
+    mockedUseApp.mockReturnValue({ ...baseState, addTask } as never);
+    render(<Sidebar />);
+    openScheduled();
+    fireEvent.click(screen.getByText('新建任务'));
+
+    fireEvent.change(screen.getByLabelText('任务标题'), { target: { value: '上线前检查' } });
+    fireEvent.change(screen.getByLabelText('任务内容'), { target: { value: '跑全量测试并汇总' } });
+    fireEvent.change(screen.getByLabelText('运行时间'), { target: { value: '2026-08-06T10:30' } });
+    fireEvent.click(screen.getByText('创建'));
+
+    await vi.waitFor(() => expect(addTask).toHaveBeenCalledTimes(1));
+    expect(addTask).toHaveBeenCalledWith({
+      title: '上线前检查',
+      prompt: '跑全量测试并汇总',
+      mode: 'chat',
+      kind: 'once',
+      run_at: new Date('2026-08-06T10:30').toISOString(),
+      every_minutes: null,
+    });
+    // 成功后表单收起
+    await vi.waitFor(() => expect(screen.queryByLabelText('任务标题')).toBeNull());
+  });
+
+  it('新建表单 interval 路径：切「每隔 N 分钟」提交带 every_minutes', async () => {
+    const addTask = vi.fn(async () => {});
+    mockedUseApp.mockReturnValue({ ...baseState, addTask } as never);
+    render(<Sidebar />);
+    openScheduled();
+    fireEvent.click(screen.getByText('新建任务'));
+
+    fireEvent.change(screen.getByLabelText('任务标题'), { target: { value: '定时同步' } });
+    fireEvent.change(screen.getByLabelText('任务内容'), { target: { value: '同步知识库' } });
+    fireEvent.change(screen.getByLabelText('任务类型'), { target: { value: 'interval' } });
+    fireEvent.change(screen.getByLabelText('间隔分钟'), { target: { value: '45' } });
+    fireEvent.change(screen.getByLabelText('运行模式'), { target: { value: 'agent' } });
+    fireEvent.click(screen.getByText('创建'));
+
+    await vi.waitFor(() => expect(addTask).toHaveBeenCalledTimes(1));
+    expect(addTask).toHaveBeenCalledWith({
+      title: '定时同步',
+      prompt: '同步知识库',
+      mode: 'agent',
+      kind: 'interval',
+      run_at: null,
+      every_minutes: 45,
+    });
+  });
+
+  it('表单校验：once 未选时间不提交并红字提示', () => {
+    const addTask = vi.fn(async () => {});
+    mockedUseApp.mockReturnValue({ ...baseState, addTask } as never);
+    render(<Sidebar />);
+    openScheduled();
+    fireEvent.click(screen.getByText('新建任务'));
+
+    fireEvent.change(screen.getByLabelText('任务标题'), { target: { value: '缺时间' } });
+    fireEvent.change(screen.getByLabelText('任务内容'), { target: { value: 'x' } });
+    fireEvent.click(screen.getByText('创建'));
+
+    expect(addTask).not.toHaveBeenCalled();
+    expect(screen.getByRole('alert').textContent).toContain('请选择运行时间');
+  });
+
+  it('addTask 失败时表单下方红字提示且不收起', async () => {
+    const addTask = vi.fn(async () => {
+      throw new Error('HTTP 422: bad');
+    });
+    mockedUseApp.mockReturnValue({ ...baseState, addTask } as never);
+    render(<Sidebar />);
+    openScheduled();
+    fireEvent.click(screen.getByText('新建任务'));
+
+    fireEvent.change(screen.getByLabelText('任务标题'), { target: { value: '会失败' } });
+    fireEvent.change(screen.getByLabelText('任务内容'), { target: { value: 'x' } });
+    fireEvent.change(screen.getByLabelText('任务类型'), { target: { value: 'interval' } });
+    fireEvent.click(screen.getByText('创建'));
+
+    await vi.waitFor(() =>
+      expect(screen.getByRole('alert').textContent).toContain('HTTP 422')
+    );
+    // 表单仍在
+    expect(screen.getByLabelText('任务标题')).toBeTruthy();
+  });
+
+  it('启用/停用切换按钮调 toggleTaskEnabled(id, !enabled)', () => {
+    const toggleTaskEnabled = vi.fn(async () => {});
+    const t = makeTask({ id: 't-tog', title: '切换我', enabled: true });
+    mockedUseApp.mockReturnValue({ ...baseState, tasks: [t], toggleTaskEnabled } as never);
+    render(<Sidebar />);
+    openScheduled();
+
+    fireEvent.click(screen.getByText('停用'));
+    expect(toggleTaskEnabled).toHaveBeenCalledWith('t-tog', false);
+  });
+
+  it('删除需二次确认：首次点击出现确认文案，不调 removeTask；取消后复原', () => {
+    const removeTask = vi.fn(async () => {});
+    const t = makeTask({ id: 't-del', title: '删除我' });
+    mockedUseApp.mockReturnValue({ ...baseState, tasks: [t], removeTask } as never);
+    render(<Sidebar />);
+    openScheduled();
+
+    fireEvent.click(screen.getByText('删除'));
+    expect(screen.getByText('确认删除？')).toBeTruthy();
+    expect(removeTask).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByText('取消'));
+    expect(screen.queryByText('确认删除？')).toBeNull();
+    expect(removeTask).not.toHaveBeenCalled();
+  });
+
+  it('确认删除后调 removeTask(id)', async () => {
+    const removeTask = vi.fn(async () => {});
+    const t = makeTask({ id: 't-del2', title: '确认删我' });
+    mockedUseApp.mockReturnValue({ ...baseState, tasks: [t], removeTask } as never);
+    render(<Sidebar />);
+    openScheduled();
+
+    fireEvent.click(screen.getByText('删除'));
+    fireEvent.click(screen.getByText('确认'));
+    await vi.waitFor(() => expect(removeTask).toHaveBeenCalledWith('t-del2'));
+  });
+
+  it('last_session_id 非空时点标题调 selectSession(last_session_id)', () => {
+    const selectSession = vi.fn();
+    const t = makeTask({ id: 't-link', title: '有会话', last_session_id: 'sess-9' });
+    mockedUseApp.mockReturnValue({ ...baseState, tasks: [t], selectSession } as never);
+    render(<Sidebar />);
+    openScheduled();
+
+    fireEvent.click(screen.getByTitle('打开上次会话'));
+    expect(selectSession).toHaveBeenCalledWith('sess-9');
   });
 });

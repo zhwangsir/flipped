@@ -11,6 +11,7 @@ Supervisor(GLM 调度) + Worker(Kimi via cline 执行) + Overseer(GLM 专属监�
 """
 from __future__ import annotations
 
+import fnmatch
 import os
 import re
 import uuid
@@ -105,6 +106,8 @@ class OrchestratorState(TypedDict, total=False):
     # verifier 节点据此走复合验证（verify_cmd + lint + typecheck + test_cases）。
     # 向后兼容：未设置时 verifier 走原始逻辑（只跑 verify_cmd）。
     test_cases: list[str]
+    # M183 worker 规则注入：local_worker 本次注入的规则 id 列表，verify 节点据此记效果统计
+    worker_rules_applied: list[str]
 
 
 # 可注入节点：(state) -> state 增量
@@ -851,6 +854,22 @@ def local_worker(state: OrchestratorState) -> dict:
     _rules_short = project_rules[-300:] if project_rules and len(project_rules) > 300 else (project_rules or "")
     _feedback_short = feedback[:80] if feedback else ""
 
+    # M183: worker 规则注入（手动+自动），与 project_rules 合并共占 300 字符预算（M11.1）
+    _worker_rule_ids: list[str] = []
+    try:
+        from pathlib import Path as _P
+        from driving.worker_rules import (
+            WorkerRuleStats as _WRS, WorkerRuleStore as _WRStore, build_worker_rules_text,
+        )
+        _wr_db = _P(os.environ.get("FLIPPED_WORKER_RULES_PATH", "data/worker_rules.json"))
+        _wr_text, _worker_rule_ids = build_worker_rules_text(_WRStore(_wr_db).list(), max_chars=300)
+        if _wr_text:
+            _rules_short = (_wr_text + "\n" + _rules_short).strip()[:300] if _rules_short else _wr_text
+            _WRS(_P(os.environ.get("FLIPPED_WORKER_RULE_STATS_PATH",
+                                    "data/worker_rule_stats.json"))).record_applied(_worker_rule_ids)
+    except Exception:
+        _worker_rule_ids = []
+
     # M51: 读取已有文件结构，让 worker 在其基础上扩展而非从零生成。
     _file_ctx = _read_file_context(cwd)
 
@@ -1177,6 +1196,7 @@ def local_worker(state: OrchestratorState) -> dict:
             {"step": "worker", "summary": {"tool_calls": tool_calls, "files": files_written},
              "signature": sig, "error": not ok}],
         "worker_error": not ok,
+        "worker_rules_applied": _worker_rule_ids,  # M183
     }
 
 
@@ -1527,6 +1547,15 @@ def default_compound_verifier(state: OrchestratorState, verifier: VerifierFn) ->
                 and typecheck_result["status"] != "fail"
                 and tc_result["passed"] == tc_result["total"])
 
+    try:  # M183: worker 规则效果统计（fail-open）
+        from pathlib import Path as _P2
+        from driving.worker_rules import WorkerRuleStats as _WRS2
+        _WRS2(_P2(os.environ.get("FLIPPED_WORKER_RULE_STATS_PATH",
+                                 "data/worker_rule_stats.json"))).record_outcome(
+            state.get("worker_rules_applied", []), bool(verified))
+    except Exception:
+        pass
+
     return {
         "verified": verified,
         "verify_cmd_ok": verify_ok,
@@ -1639,6 +1668,14 @@ def build_orchestrator(supervisor: SupervisorFn = default_supervisor,
             hist = state.get("history", []) + [
                 {"step": "verify", "ok": ok, "iteration": it, "compound": verdict}]
             verified = compound_verified and believe_done
+            try:  # M183: worker 规则效果统计（fail-open）
+                from pathlib import Path as _P2
+                from driving.worker_rules import WorkerRuleStats as _WRS2
+                _WRS2(_P2(os.environ.get("FLIPPED_WORKER_RULE_STATS_PATH",
+                                         "data/worker_rule_stats.json"))).record_outcome(
+                    state.get("worker_rules_applied", []), bool(verified))
+            except Exception:
+                pass
             upd = {"iteration": it, "verified": verified, "history": hist}
             if verified:
                 upd["done"] = True
@@ -1755,6 +1792,19 @@ def build_orchestrator(supervisor: SupervisorFn = default_supervisor,
     def approval_gate(state: OrchestratorState) -> dict:
         # 高风险子任务（逸出沙箱/不可逆，§7）在派给 worker 前硬暂停审批；require_approval=False 时直通
         if state.get("require_approval") and classify_risk(state.get("current_subtask", "")) == "high":
+            # M165.2b：宿主侧 L3 记忆放行——approve scope=always 持久化的 pattern
+            # （data/approval_grants.json，按 cwd key 隔离）fnmatch 命中当前子任务 → auto 直通。
+            # cwd 取 state["cwd"]（initial state 写入、随 checkpoint 持久化，drive/resume 两路同值），
+            # 与 assistant approve 端点写入时用的 session.cwd 是同一字符串。
+            # fail-open：任何读取异常都落入正常 interrupt 审批流。
+            try:
+                from driving.approval import load_host_grants
+                subtask = state.get("current_subtask", "")
+                for pat in load_host_grants(state.get("cwd") or ""):
+                    if fnmatch.fnmatchcase(subtask, pat):
+                        return {"approval_decision": "auto"}
+            except Exception:  # noqa: BLE001
+                pass
             # M151.2：interrupt 前发回调，让 API 层 emit approval_request 事件（前端/TUI 即时弹卡）
             if on_approval_request is not None:
                 try:

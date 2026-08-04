@@ -89,11 +89,8 @@ class EventBus:
         except Exception:
             pass
 
-    def emit(self, session_id: str, type_: EventType, agent: Role | None = None,
-             payload: dict[str, Any] | None = None, parent_id: str | None = None) -> Event:
-        """同步入口：先落盘，再异步广播。可在非 async 上下文调用。"""
-        event = self.store.add_event(session_id, type_, agent=agent,
-                                     payload=payload or {}, parent_id=parent_id)
+    def _broadcast(self, session_id: str, event: Event) -> None:
+        """异步广播：主循环 create_task / 工作线程 run_coroutine_threadsafe。"""
         # 尝试直接调度到当前事件循环
         try:
             loop = asyncio.get_running_loop()
@@ -102,6 +99,31 @@ class EventBus:
         except RuntimeError:
             # 无线程本地事件循环（如工作线程），若已注册主循环则通过线程安全方式投递
             self._schedule_publish(session_id, event)
+
+    def emit(self, session_id: str, type_: EventType, agent: Role | None = None,
+             payload: dict[str, Any] | None = None, parent_id: str | None = None) -> Event:
+        """同步入口：先落盘，再异步广播。可在非 async 上下文调用。"""
+        event = self.store.add_event(session_id, type_, agent=agent,
+                                     payload=payload or {}, parent_id=parent_id)
+        self._broadcast(session_id, event)
+        return event
+
+    def emit_transient(self, session_id: str, type_: EventType, agent: Role | None = None,
+                       payload: dict[str, Any] | None = None, parent_id: str | None = None) -> Event:
+        """同步入口：只广播、不落盘（M166 transient 事件，如 token 流式分片）。
+
+        id 置空串：前端以 truthy ev.id 记录断点续传位点，空串可避免 transient
+        事件污染续传游标（也不进 store，回放/历史天然不可见）。
+        """
+        event = Event(
+            id="",
+            session_id=session_id,
+            type=type_,
+            agent=agent,
+            payload=payload or {},
+            parent_id=parent_id,
+        )
+        self._broadcast(session_id, event)
         return event
 
 

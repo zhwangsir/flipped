@@ -23,6 +23,11 @@ class VectorStore(abc.ABC):
         ...
 
     @abc.abstractmethod
+    def upsert_documents(self, docs: list[dict[str, Any]]) -> list[str]:
+        """幂等写入；doc 可带 'id'（缺省退回 uuid4），同 id 覆盖。返回 id 列表。"""
+        ...
+
+    @abc.abstractmethod
     def query(self, text: str, n_results: int = 5, filter: dict[str, Any] | None = None) -> list[dict[str, Any]]:
         """语义检索，返回 [{id, text, metadata, distance}] 列表。"""
         ...
@@ -65,6 +70,21 @@ class ChromaVectorStore(VectorStore):
         embeddings = self.embedding.embed(texts)
         metadatas = [d.get("metadata") or {} for d in docs]
         self._collection.add(
+            ids=ids,
+            embeddings=embeddings,
+            documents=texts,
+            metadatas=metadatas,
+        )
+        return ids
+
+    def upsert_documents(self, docs: list[dict[str, Any]]) -> list[str]:
+        if not docs:
+            return []
+        ids = [str(d.get("id") or uuid.uuid4()) for d in docs]
+        texts = [str(d.get("text", "")) for d in docs]
+        embeddings = self.embedding.embed(texts)
+        metadatas = [d.get("metadata") or None for d in docs]
+        self._collection.upsert(
             ids=ids,
             embeddings=embeddings,
             documents=texts,

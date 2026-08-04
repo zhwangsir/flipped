@@ -131,6 +131,17 @@ RESPONSE_MODEL_ALLOWLIST: frozenset[str] = frozenset({
     # 契约已命名但本测试的启发式只认直接 BaseModel 子类，故登记。
     # approve/reject 已补 response_model=DecisionResponse，不需要 allowlist。
     "GET /api/v1/assistant/sessions/{session_id}/history",
+    # M178.1 · GET /tasks 返回 list[ScheduledTaskResponse]（命名模型，list 包裹），同上登记。
+    "GET /api/v1/tasks",
+    # M181 · 移动远程控制：HTML 页与 QR SVG 直出 Response（非 JSON 媒体），
+    # 无 Pydantic response_model 可挂；其余 5 端点均有命名模型。
+    "GET /remote/{token}",
+    "GET /api/v1/remote/{token}/qr.svg",
+    # M182 · Bot Channel：企业微信回调协议要求明文直出（URL 验证回解密 echostr、
+    # 消息回调回 "success"），PlainTextResponse 无 Pydantic 模型可挂；
+    # 其余 3 端点（telegram webhook / channels / test）均有命名模型。
+    "GET /api/v1/bot/wecom/callback",
+    "POST /api/v1/bot/wecom/callback",
 })
 
 

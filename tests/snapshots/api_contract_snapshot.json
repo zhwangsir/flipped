@@ -2,7 +2,7 @@
   "components": {
     "schemas": {
       "AssistantTurn": {
-        "description": "对话 turn 视图：把事件流折叠成 user/assistant/tool/approval 四类。",
+        "description": "对话 turn 视图：把事件流折叠成 user/assistant/tool/approval/goal 五类。",
         "properties": {
           "approval": {
             "anyOf": [
@@ -19,6 +19,44 @@
           "created_at": {
             "title": "Created At",
             "type": "string"
+          },
+          "event_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Event Id"
+          },
+          "goal": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Goal"
+          },
+          "refs": {
+            "anyOf": [
+              {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Refs"
           },
           "role": {
             "title": "Role",
@@ -43,6 +81,20 @@
             "title": "Tools",
             "type": "array"
           },
+          "usage": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "integer"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Usage"
+          },
           "verdict": {
             "anyOf": [
               {
@@ -63,6 +115,145 @@
         "title": "AssistantTurn",
         "type": "object"
       },
+      "BotChannelStatusEntry": {
+        "description": "单平台通道状态（GET /bot/channels 条目，与前端 BotChannelInfo 对齐）。",
+        "properties": {
+          "configured": {
+            "title": "Configured",
+            "type": "boolean"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "error_count": {
+            "title": "Error Count",
+            "type": "integer"
+          },
+          "inbound_count": {
+            "title": "Inbound Count",
+            "type": "integer"
+          },
+          "last_error": {
+            "title": "Last Error",
+            "type": "string"
+          },
+          "last_inbound_at": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Inbound At"
+          },
+          "last_outbound_at": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Outbound At"
+          },
+          "outbound_count": {
+            "title": "Outbound Count",
+            "type": "integer"
+          },
+          "platform": {
+            "title": "Platform",
+            "type": "string"
+          }
+        },
+        "required": [
+          "platform",
+          "enabled",
+          "configured",
+          "inbound_count",
+          "outbound_count",
+          "error_count",
+          "last_inbound_at",
+          "last_outbound_at",
+          "last_error"
+        ],
+        "title": "BotChannelStatusEntry",
+        "type": "object"
+      },
+      "BotChannelsResponse": {
+        "description": "通道状态列表。",
+        "properties": {
+          "channels": {
+            "items": {
+              "$ref": "#/components/schemas/BotChannelStatusEntry"
+            },
+            "title": "Channels",
+            "type": "array"
+          }
+        },
+        "required": [
+          "channels"
+        ],
+        "title": "BotChannelsResponse",
+        "type": "object"
+      },
+      "BotTestRequest": {
+        "description": "测试消息请求（发到该平台最近绑定的 chat）。",
+        "properties": {
+          "text": {
+            "maxLength": 4000,
+            "minLength": 1,
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "title": "BotTestRequest",
+        "type": "object"
+      },
+      "BotTestResponse": {
+        "description": "测试消息结果（send 失败走 502 JSONResponse，此模型仅 ok=True 路径）。",
+        "properties": {
+          "error": {
+            "default": "",
+            "title": "Error",
+            "type": "string"
+          },
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "BotTestResponse",
+        "type": "object"
+      },
+      "BotWebhookResponse": {
+        "description": "webhook 受理回执（handled=False = 非文本/无 message，已忽略不重试）。",
+        "properties": {
+          "handled": {
+            "title": "Handled",
+            "type": "boolean"
+          },
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "ok",
+          "handled"
+        ],
+        "title": "BotWebhookResponse",
+        "type": "object"
+      },
       "BrowserRenderRequest": {
         "properties": {
           "url": {
@@ -76,6 +267,111 @@
           "url"
         ],
         "title": "BrowserRenderRequest",
+        "type": "object"
+      },
+      "CallToolRequest": {
+        "description": "POST /mcp/tools/{name}/call 请求体。session_id 仅长工具必填。",
+        "properties": {
+          "arguments": {
+            "additionalProperties": true,
+            "title": "Arguments",
+            "type": "object"
+          },
+          "session_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Session Id"
+          }
+        },
+        "title": "CallToolRequest",
+        "type": "object"
+      },
+      "CallToolResponse": {
+        "description": "POST /mcp/tools/{name}/call 响应。\n\n快工具：ok + result / error（HTTP 200）。\n长工具：ok + accepted + session_id（HTTP 202，由路由据 accepted 置状态码）。",
+        "properties": {
+          "accepted": {
+            "default": false,
+            "title": "Accepted",
+            "type": "boolean"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "result": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Result"
+          },
+          "session_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Session Id"
+          },
+          "tool": {
+            "title": "Tool",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ok",
+          "tool"
+        ],
+        "title": "CallToolResponse",
+        "type": "object"
+      },
+      "CompactResponse": {
+        "description": "compact 端点响应（M165.1b）：摘要已生成并作为 supervisor message 落库。",
+        "properties": {
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "session_id": {
+            "title": "Session Id",
+            "type": "string"
+          },
+          "summary": {
+            "title": "Summary",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ok",
+          "session_id",
+          "summary"
+        ],
+        "title": "CompactResponse",
         "type": "object"
       },
       "CreateFactoryRequest": {
@@ -112,6 +408,83 @@
         "title": "CreateFactoryRequest",
         "type": "object"
       },
+      "CreateGoalRequest": {
+        "description": "创建 goal 自循环请求（M176）：目标驱动逐轮派发 + judge 校验。",
+        "properties": {
+          "max_iterations": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Iterations"
+          },
+          "mode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mode"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "objective": {
+            "minLength": 1,
+            "title": "Objective",
+            "type": "string"
+          }
+        },
+        "required": [
+          "objective"
+        ],
+        "title": "CreateGoalRequest",
+        "type": "object"
+      },
+      "CreateGoalResponse": {
+        "description": "goal 派发响应：wrapper task_id + 生效的最大轮数。",
+        "properties": {
+          "max_iterations": {
+            "title": "Max Iterations",
+            "type": "integer"
+          },
+          "objective": {
+            "title": "Objective",
+            "type": "string"
+          },
+          "session_id": {
+            "title": "Session Id",
+            "type": "string"
+          },
+          "task_id": {
+            "title": "Task Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "task_id",
+          "session_id",
+          "objective",
+          "max_iterations"
+        ],
+        "title": "CreateGoalResponse",
+        "type": "object"
+      },
       "CreateSessionRequest": {
         "description": "创建助手会话请求。",
         "properties": {
@@ -145,6 +518,22 @@
         "title": "CreateSessionRequest",
         "type": "object"
       },
+      "DecisionRequest": {
+        "description": "approve/reject 可选请求体（M165.2b）。\n\nscope=once（缺省）：仅本次放行；scope=always：approve 时把最近 pending\napproval_request 的 action 作为 pattern 持久化到宿主侧 grants\n（data/approval_grants.json），后续同 cwd 命中自动直通。reject 忽略 scope。",
+        "properties": {
+          "scope": {
+            "default": "once",
+            "enum": [
+              "once",
+              "always"
+            ],
+            "title": "Scope",
+            "type": "string"
+          }
+        },
+        "title": "DecisionRequest",
+        "type": "object"
+      },
       "DecisionResponse": {
         "description": "approve/reject 端点响应：决策已受理 + 异步 resume 派发。",
         "properties": {
@@ -167,6 +556,78 @@
           "decision"
         ],
         "title": "DecisionResponse",
+        "type": "object"
+      },
+      "EditMessageRequest": {
+        "description": "编辑重跑请求（M174）：截断目标 user 消息及其后事件，以新文本重派发。",
+        "properties": {
+          "mode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mode"
+          },
+          "restore_files": {
+            "default": true,
+            "title": "Restore Files",
+            "type": "boolean"
+          },
+          "text": {
+            "minLength": 1,
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "title": "EditMessageRequest",
+        "type": "object"
+      },
+      "EditMessageResponse": {
+        "description": "编辑重跑响应：截断条数 + 文件还原结果 + 新 task_id。",
+        "properties": {
+          "deleted": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Deleted",
+            "type": "array"
+          },
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "restored": {
+            "default": false,
+            "title": "Restored",
+            "type": "boolean"
+          },
+          "session_id": {
+            "title": "Session Id",
+            "type": "string"
+          },
+          "task_id": {
+            "title": "Task Id",
+            "type": "string"
+          },
+          "truncated": {
+            "title": "Truncated",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "ok",
+          "session_id",
+          "task_id",
+          "truncated"
+        ],
+        "title": "EditMessageResponse",
         "type": "object"
       },
       "Event": {
@@ -232,11 +693,15 @@
           "status",
           "plan",
           "checkpoint",
+          "snapshot",
+          "usage",
           "approval_request",
           "approval_result",
           "error",
           "rca",
-          "verifier_verdict"
+          "verifier_verdict",
+          "token",
+          "goal"
         ],
         "title": "EventType",
         "type": "string"
@@ -313,6 +778,58 @@
           "updated_at"
         ],
         "title": "FactorySummary",
+        "type": "object"
+      },
+      "GoalInfoResponse": {
+        "additionalProperties": true,
+        "description": "GET /goal 响应（M176）：summarize_goal_events 从事件流重建的最新 goal 状态。\n\n键集由 goal.py 决定（objective/iteration/max_iterations/status/…），\nextra=allow 原样透传，B 队不与 A 队内部键名硬耦合。",
+        "properties": {
+          "iteration": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Iteration"
+          },
+          "max_iterations": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Iterations"
+          },
+          "objective": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Objective"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          }
+        },
+        "title": "GoalInfoResponse",
         "type": "object"
       },
       "HTTPValidationError": {
@@ -393,6 +910,365 @@
         "title": "MetricsResponse",
         "type": "object"
       },
+      "ProjectMapInfo": {
+        "description": "M173 · 项目结构地图（Zread 式全局概览）。",
+        "properties": {
+          "from_cache": {
+            "title": "From Cache",
+            "type": "boolean"
+          },
+          "generated_at": {
+            "title": "Generated At",
+            "type": "string"
+          },
+          "markdown": {
+            "title": "Markdown",
+            "type": "string"
+          },
+          "stack": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Stack",
+            "type": "array"
+          },
+          "stale": {
+            "title": "Stale",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "markdown",
+          "generated_at",
+          "stale",
+          "from_cache"
+        ],
+        "title": "ProjectMapInfo",
+        "type": "object"
+      },
+      "ProjectMapResponse": {
+        "description": "GET /project/map 与 POST /project/map/regenerate 的统一响应。",
+        "properties": {
+          "map": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProjectMapInfo"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "needs_project": {
+            "default": false,
+            "title": "Needs Project",
+            "type": "boolean"
+          }
+        },
+        "title": "ProjectMapResponse",
+        "type": "object"
+      },
+      "RemoteDecisionRequest": {
+        "description": "远程审批请求：放行 | 否决。",
+        "properties": {
+          "decision": {
+            "enum": [
+              "approve",
+              "reject"
+            ],
+            "title": "Decision",
+            "type": "string"
+          }
+        },
+        "required": [
+          "decision"
+        ],
+        "title": "RemoteDecisionRequest",
+        "type": "object"
+      },
+      "RemoteIssueRequest": {
+        "description": "签发远程链接请求：session_id 缺省 → 绑定最新会话。",
+        "properties": {
+          "session_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Session Id"
+          }
+        },
+        "title": "RemoteIssueRequest",
+        "type": "object"
+      },
+      "RemoteIssueResponse": {
+        "description": "签发响应：移动页 URL + QR 地址 + 绑定会话信息 + 回环提示。",
+        "properties": {
+          "expires_at": {
+            "title": "Expires At",
+            "type": "number"
+          },
+          "host_note": {
+            "title": "Host Note",
+            "type": "string"
+          },
+          "qr_url": {
+            "title": "Qr Url",
+            "type": "string"
+          },
+          "session_id": {
+            "title": "Session Id",
+            "type": "string"
+          },
+          "session_title": {
+            "title": "Session Title",
+            "type": "string"
+          },
+          "token": {
+            "title": "Token",
+            "type": "string"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "token",
+          "url",
+          "qr_url",
+          "session_id",
+          "session_title",
+          "expires_at",
+          "host_note"
+        ],
+        "title": "RemoteIssueResponse",
+        "type": "object"
+      },
+      "RemoteMessageRequest": {
+        "description": "远程发消息请求（与 console 发送同语义，仅文本）。",
+        "properties": {
+          "text": {
+            "maxLength": 8000,
+            "minLength": 1,
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "title": "RemoteMessageRequest",
+        "type": "object"
+      },
+      "RemoteRevokeResponse": {
+        "description": "撤销响应（幂等：token 存在与否都 ok=True）。",
+        "properties": {
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "RemoteRevokeResponse",
+        "type": "object"
+      },
+      "RemoteStateResponse": {
+        "description": "移动页轮询态：会话标识 + 状态徽标 + 尾 20 turns + pending 审批。",
+        "properties": {
+          "mode": {
+            "title": "Mode",
+            "type": "string"
+          },
+          "pending_approval": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pending Approval"
+          },
+          "session_id": {
+            "title": "Session Id",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "turns": {
+            "items": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "title": "Turns",
+            "type": "array"
+          }
+        },
+        "required": [
+          "session_id",
+          "title",
+          "mode",
+          "status",
+          "pending_approval",
+          "turns"
+        ],
+        "title": "RemoteStateResponse",
+        "type": "object"
+      },
+      "RevertRequest": {
+        "properties": {
+          "path": {
+            "minLength": 1,
+            "title": "Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "title": "RevertRequest",
+        "type": "object"
+      },
+      "RevertResponse": {
+        "properties": {
+          "action": {
+            "title": "Action",
+            "type": "string"
+          },
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ok",
+          "path",
+          "action"
+        ],
+        "title": "RevertResponse",
+        "type": "object"
+      },
+      "ReviewFinding": {
+        "properties": {
+          "line": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Line"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "severity": {
+            "title": "Severity",
+            "type": "string"
+          },
+          "suggestion": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Suggestion"
+          }
+        },
+        "required": [
+          "path",
+          "severity",
+          "message"
+        ],
+        "title": "ReviewFinding",
+        "type": "object"
+      },
+      "ReviewRequest": {
+        "properties": {
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          }
+        },
+        "title": "ReviewRequest",
+        "type": "object"
+      },
+      "ReviewResponse": {
+        "properties": {
+          "files_reviewed": {
+            "title": "Files Reviewed",
+            "type": "integer"
+          },
+          "findings": {
+            "items": {
+              "$ref": "#/components/schemas/ReviewFinding"
+            },
+            "title": "Findings",
+            "type": "array"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          }
+        },
+        "required": [
+          "findings",
+          "files_reviewed",
+          "model"
+        ],
+        "title": "ReviewResponse",
+        "type": "object"
+      },
       "Role": {
         "enum": [
           "user",
@@ -404,6 +1280,176 @@
         ],
         "title": "Role",
         "type": "string"
+      },
+      "RulesPutRequest": {
+        "properties": {
+          "content": {
+            "maxLength": 65536,
+            "title": "Content",
+            "type": "string"
+          }
+        },
+        "required": [
+          "content"
+        ],
+        "title": "RulesPutRequest",
+        "type": "object"
+      },
+      "RulesResponse": {
+        "properties": {
+          "files": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Files",
+            "type": "array"
+          },
+          "markdown": {
+            "title": "Markdown",
+            "type": "string"
+          },
+          "needs_project": {
+            "default": false,
+            "title": "Needs Project",
+            "type": "boolean"
+          },
+          "rules_content": {
+            "title": "Rules Content",
+            "type": "string"
+          },
+          "total_chars": {
+            "title": "Total Chars",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "files",
+          "markdown",
+          "total_chars",
+          "rules_content"
+        ],
+        "title": "RulesResponse",
+        "type": "object"
+      },
+      "ScheduledTaskResponse": {
+        "description": "已安排任务响应（镜像 tasks.ScheduledTask 全字段）。",
+        "properties": {
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "every_minutes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Every Minutes"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "last_run_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Run At"
+          },
+          "last_session_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Session Id"
+          },
+          "last_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Status"
+          },
+          "mode": {
+            "title": "Mode",
+            "type": "string"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "next_run_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Run At"
+          },
+          "prompt": {
+            "title": "Prompt",
+            "type": "string"
+          },
+          "run_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run At"
+          },
+          "run_count": {
+            "title": "Run Count",
+            "type": "integer"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "prompt",
+          "mode",
+          "model",
+          "kind",
+          "enabled",
+          "run_count",
+          "created_at"
+        ],
+        "title": "ScheduledTaskResponse",
+        "type": "object"
       },
       "SendMessageRequest": {
         "description": "发送消息请求。",
@@ -562,6 +1608,86 @@
         "title": "SessionStatus",
         "type": "string"
       },
+      "TaskCreateRequest": {
+        "description": "创建已安排任务请求（M178.1）。",
+        "properties": {
+          "every_minutes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Every Minutes"
+          },
+          "kind": {
+            "default": "once",
+            "enum": [
+              "once",
+              "interval"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "mode": {
+            "default": "chat",
+            "title": "Mode",
+            "type": "string"
+          },
+          "model": {
+            "default": "coder",
+            "title": "Model",
+            "type": "string"
+          },
+          "prompt": {
+            "minLength": 1,
+            "title": "Prompt",
+            "type": "string"
+          },
+          "run_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run At"
+          },
+          "title": {
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "prompt"
+        ],
+        "title": "TaskCreateRequest",
+        "type": "object"
+      },
+      "TaskDeleteResponse": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "ok",
+          "id"
+        ],
+        "title": "TaskDeleteResponse",
+        "type": "object"
+      },
       "TaskRequest": {
         "properties": {
           "context": {
@@ -606,6 +1732,78 @@
         "title": "TaskResponse",
         "type": "object"
       },
+      "ToolListResponse": {
+        "properties": {
+          "tools": {
+            "items": {
+              "$ref": "#/components/schemas/ToolSpec"
+            },
+            "title": "Tools",
+            "type": "array"
+          }
+        },
+        "required": [
+          "tools"
+        ],
+        "title": "ToolListResponse",
+        "type": "object"
+      },
+      "ToolSpec": {
+        "description": "GET /mcp/tools 的单个工具描述（内省 TOOLS 生成）。",
+        "properties": {
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "inputSchema": {
+            "additionalProperties": true,
+            "title": "Inputschema",
+            "type": "object"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "description",
+          "inputSchema"
+        ],
+        "title": "ToolSpec",
+        "type": "object"
+      },
+      "UndoResponse": {
+        "description": "undo 端点响应（M168.1）：已回滚到最近快照 + 删除 turn 内新增文件清单。",
+        "properties": {
+          "deleted": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Deleted",
+            "type": "array"
+          },
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "restored": {
+            "title": "Restored",
+            "type": "boolean"
+          },
+          "session_id": {
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ok",
+          "session_id",
+          "restored"
+        ],
+        "title": "UndoResponse",
+        "type": "object"
+      },
       "ValidationError": {
         "properties": {
           "loc": {
@@ -637,6 +1835,367 @@
           "type"
         ],
         "title": "ValidationError",
+        "type": "object"
+      },
+      "WorkerRule": {
+        "properties": {
+          "created_at": {
+            "title": "Created At",
+            "type": "number"
+          },
+          "enabled": {
+            "default": true,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "priority": {
+            "default": 50,
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Priority",
+            "type": "integer"
+          },
+          "scope": {
+            "default": "worker",
+            "enum": [
+              "worker",
+              "all"
+            ],
+            "title": "Scope",
+            "type": "string"
+          },
+          "source": {
+            "default": "manual",
+            "enum": [
+              "manual",
+              "auto"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "text"
+        ],
+        "title": "WorkerRule",
+        "type": "object"
+      },
+      "WorkerRuleAutoGenRequest": {
+        "description": "自动生成请求：failure_texts 缺省 → 失败知识库最近未解决条目。",
+        "properties": {
+          "failure_texts": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failure Texts"
+          }
+        },
+        "title": "WorkerRuleAutoGenRequest",
+        "type": "object"
+      },
+      "WorkerRuleAutoGenResponse": {
+        "description": "自动生成回执：added 为实际入库的规则，candidates 为候选条数。",
+        "properties": {
+          "added": {
+            "items": {
+              "$ref": "#/components/schemas/WorkerRule"
+            },
+            "title": "Added",
+            "type": "array"
+          },
+          "candidates": {
+            "title": "Candidates",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "added",
+          "candidates"
+        ],
+        "title": "WorkerRuleAutoGenResponse",
+        "type": "object"
+      },
+      "WorkerRuleCreateRequest": {
+        "description": "新建规则：text 必填（1..500，blocklist 由 WorkerRule 校验），scope 缺省 worker。",
+        "properties": {
+          "priority": {
+            "anyOf": [
+              {
+                "maximum": 100.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Priority"
+          },
+          "scope": {
+            "default": "worker",
+            "enum": [
+              "worker",
+              "all"
+            ],
+            "title": "Scope",
+            "type": "string"
+          },
+          "text": {
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "title": "WorkerRuleCreateRequest",
+        "type": "object"
+      },
+      "WorkerRuleDeleteResponse": {
+        "description": "删除回执。",
+        "properties": {
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "WorkerRuleDeleteResponse",
+        "type": "object"
+      },
+      "WorkerRuleRollbackRequest": {
+        "description": "回滚到指定版本。",
+        "properties": {
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "version"
+        ],
+        "title": "WorkerRuleRollbackRequest",
+        "type": "object"
+      },
+      "WorkerRuleRollbackResponse": {
+        "description": "回滚回执：version 为回滚后的新版本号（rollback 自身亦 bump）。",
+        "properties": {
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "ok",
+          "version"
+        ],
+        "title": "WorkerRuleRollbackResponse",
+        "type": "object"
+      },
+      "WorkerRuleStatEntry": {
+        "description": "单规则效果：applied=注入次；success/failure=对应 verify 通过/失败次。",
+        "properties": {
+          "applied": {
+            "title": "Applied",
+            "type": "integer"
+          },
+          "failure": {
+            "title": "Failure",
+            "type": "integer"
+          },
+          "success": {
+            "title": "Success",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "applied",
+          "success",
+          "failure"
+        ],
+        "title": "WorkerRuleStatEntry",
+        "type": "object"
+      },
+      "WorkerRuleStatsResponse": {
+        "description": "规则执行效果统计快照。",
+        "properties": {
+          "stats": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/WorkerRuleStatEntry"
+            },
+            "title": "Stats",
+            "type": "object"
+          },
+          "total_runs": {
+            "title": "Total Runs",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "stats",
+          "total_runs"
+        ],
+        "title": "WorkerRuleStatsResponse",
+        "type": "object"
+      },
+      "WorkerRuleToggleRequest": {
+        "description": "启停规则。",
+        "properties": {
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "enabled"
+        ],
+        "title": "WorkerRuleToggleRequest",
+        "type": "object"
+      },
+      "WorkerRuleUpdateRequest": {
+        "description": "更新规则：三字段全可选（None = 不动）。",
+        "properties": {
+          "priority": {
+            "anyOf": [
+              {
+                "maximum": 100.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Priority"
+          },
+          "scope": {
+            "anyOf": [
+              {
+                "enum": [
+                  "worker",
+                  "all"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scope"
+          },
+          "text": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text"
+          }
+        },
+        "title": "WorkerRuleUpdateRequest",
+        "type": "object"
+      },
+      "WorkerRuleVersionEntry": {
+        "description": "版本史元信息（不含快照全文）。",
+        "properties": {
+          "action": {
+            "title": "Action",
+            "type": "string"
+          },
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          },
+          "rule_count": {
+            "title": "Rule Count",
+            "type": "integer"
+          },
+          "ts": {
+            "title": "Ts",
+            "type": "number"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "version",
+          "ts",
+          "action",
+          "detail",
+          "rule_count"
+        ],
+        "title": "WorkerRuleVersionEntry",
+        "type": "object"
+      },
+      "WorkerRuleVersionsResponse": {
+        "description": "版本史列表。",
+        "properties": {
+          "versions": {
+            "items": {
+              "$ref": "#/components/schemas/WorkerRuleVersionEntry"
+            },
+            "title": "Versions",
+            "type": "array"
+          }
+        },
+        "required": [
+          "versions"
+        ],
+        "title": "WorkerRuleVersionsResponse",
+        "type": "object"
+      },
+      "WorkerRulesResponse": {
+        "description": "规则列表 + 当前版本号。",
+        "properties": {
+          "rules": {
+            "items": {
+              "$ref": "#/components/schemas/WorkerRule"
+            },
+            "title": "Rules",
+            "type": "array"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "version",
+          "rules"
+        ],
+        "title": "WorkerRulesResponse",
         "type": "object"
       }
     }
@@ -691,7 +2250,7 @@
     },
     "/api/v1/assistant/sessions/{session_id}/approve": {
       "post": {
-        "description": "审批放行 → 调 _resume_with_decision('approve') + 发 approval_result 事件。",
+        "description": "审批放行 → 调 _resume_with_decision('approve') + 发 approval_result 事件。\n\nM165.2b：可选 body {\"scope\": \"once\"|\"always\"}，无 body 向后兼容（=once）。\nscope=always 时把最近 pending approval_request 的 action 持久化到宿主侧 grants。",
         "operationId": "approve_assistant_api_v1_assistant_sessions__session_id__approve_post",
         "parameters": [
           {
@@ -704,6 +2263,23 @@
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/DecisionRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Req"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "content": {
@@ -727,6 +2303,143 @@
           }
         },
         "summary": "Approve Assistant",
+        "tags": [
+          "assistant"
+        ]
+      }
+    },
+    "/api/v1/assistant/sessions/{session_id}/compact": {
+      "post": {
+        "description": "把 message 事件折叠成 transcript → 摘要 → 以 supervisor message 落库（M165.1b）。\n\n404：session 不存在。409：事件流中无 message 事件（无可压缩内容）。\n摘要失败 → 502 且不 emit（fail-closed，别 emit 半截）。",
+        "operationId": "compact_assistant_api_v1_assistant_sessions__session_id__compact_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompactResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Compact Assistant",
+        "tags": [
+          "assistant"
+        ]
+      }
+    },
+    "/api/v1/assistant/sessions/{session_id}/goal": {
+      "get": {
+        "description": "从事件流重建最新 goal 状态（M176）。无 goal 事件 → 404。",
+        "operationId": "get_assistant_goal_api_v1_assistant_sessions__session_id__goal_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GoalInfoResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Assistant Goal",
+        "tags": [
+          "assistant"
+        ]
+      },
+      "post": {
+        "description": "创建 goal 自循环（M176，对标 ZCode Goal Mode）。\n\n- FLIPPED_GOAL=0 → 404（整体开关）；会话不存在 → 404；RUNNING_TASKS 守卫 → 409\n- mode 校验同 send（缺省沿用 session.mode）\n- emit message(user, {text, goal.started=True}) + goal set 事件\n- wrapper 协程注册为 RUNNING_TASKS 条目 → 既有 409 并发守卫与\n  /sessions/{id}/cancel 直接可停 goal，零新机制",
+        "operationId": "create_assistant_goal_api_v1_assistant_sessions__session_id__goal_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateGoalRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreateGoalResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Assistant Goal",
         "tags": [
           "assistant"
         ]
@@ -832,9 +2545,71 @@
         ]
       }
     },
+    "/api/v1/assistant/sessions/{session_id}/messages/{event_id}/edit": {
+      "post": {
+        "description": "编辑一条 user 消息并重跑（M174）：截断 + 可选文件还原 + 重新派发。\n\n流程（顺序钉死）：\n1. 404 会话不存在；404 事件不存在；422 事件非 (message 且 user)。\n2. 409 运行中（RUNNING_TASKS 未完成句柄）；409 pending approval。\n3. mode = (req.mode or session.mode).lower()，非法值 422。\n4. 截断前收集：目标事件之后第一条 snapshot（取 hash）+ 该快照之后所有\n   file_change(add/create) 的 path 清单。\n5. 有快照且 mode∈{auto,agent} 且 restore_files → git restore 回滚 tracked\n   （失败 500，fail-closed 不截断）+ 删除收集到的新增文件。\n6. store.truncate_from 截断（含目标消息本身）。\n7. 重派发（同 send_assistant_message 后半段，user 消息 payload 带 edited=True）。",
+        "operationId": "edit_assistant_message_api_v1_assistant_sessions__session_id__messages__event_id__edit_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EditMessageRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EditMessageResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Edit Assistant Message",
+        "tags": [
+          "assistant"
+        ]
+      }
+    },
     "/api/v1/assistant/sessions/{session_id}/reject": {
       "post": {
-        "description": "审批否决 → 调 _resume_with_decision('reject') + 发 approval_result 事件。",
+        "description": "审批否决 → 调 _resume_with_decision('reject') + 发 approval_result 事件。\n\nM165.2b：接受同样可选 body 保持端点形状一致，但 reject 忽略 scope（不落盘）。",
         "operationId": "reject_assistant_api_v1_assistant_sessions__session_id__reject_post",
         "parameters": [
           {
@@ -847,6 +2622,23 @@
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/DecisionRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Req"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "content": {
@@ -873,6 +2665,256 @@
         "tags": [
           "assistant"
         ]
+      }
+    },
+    "/api/v1/assistant/sessions/{session_id}/undo": {
+      "post": {
+        "description": "撤销最近一次助手 turn 的文件改动（M168.1，对标 opencode /undo）。\n\n机制：从事件流找最近一条未被 undo 覆盖的 snapshot 事件 →\n`git restore --source=<hash> -- .` 回滚 tracked 文件内容 →\n删除该快照之后 file_change(add/create) 的 turn 内新增文件（路径穿越防护）→\nemit undo 结果事件（message/system, payload.undo=True 记录已撤销 hash，多轮幂等）。\n\n守卫：404 会话不存在；409 运行中不能撤销；409 没有可撤销的改动；\n400 project_root 非 git 仓库；500 git restore 失败（带 stderr）。",
+        "operationId": "undo_assistant_api_v1_assistant_sessions__session_id__undo_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UndoResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Undo Assistant",
+        "tags": [
+          "assistant"
+        ]
+      }
+    },
+    "/api/v1/bot/channels": {
+      "get": {
+        "description": "通道状态监控：两平台计数/末次时间/末次错误（未配置也列出，前端引导配置）。",
+        "operationId": "bot_channels_api_v1_bot_channels_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BotChannelsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Bot Channels"
+      }
+    },
+    "/api/v1/bot/channels/{platform}/test": {
+      "post": {
+        "description": "发测试消息到该平台最近绑定的 chat：未知平台 404 / 未配置 400 / 无绑定 400 /\n发送失败 502 {ok:false,error}；成功 {ok:true} 并记 outbound 统计。",
+        "operationId": "bot_channel_test_api_v1_bot_channels__platform__test_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "platform",
+            "required": true,
+            "schema": {
+              "title": "Platform",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BotTestRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BotTestResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Bot Channel Test"
+      }
+    },
+    "/api/v1/bot/telegram/webhook": {
+      "post": {
+        "description": "Telegram webhook：secret 头验签（hmac 常量时间）；非文本消息 200 handled=False。\n\n未配置 token → 404（不暴露通道存在性）；secret 不符 → 403；解析后后台\ncreate_task 编排，立即 200（Telegram 重发窗口内绝不阻塞）。",
+        "operationId": "bot_telegram_webhook_api_v1_bot_telegram_webhook_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BotWebhookResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Bot Telegram Webhook"
+      }
+    },
+    "/api/v1/bot/wecom/callback": {
+      "get": {
+        "description": "企业微信回调 URL 验证：验签 → 解密 echostr → 明文直出（协议要求）。\n\n返回 PlainTextResponse 非 JSON，无 Pydantic 模型可挂 → 登记契约 allowlist。",
+        "operationId": "bot_wecom_verify_api_v1_bot_wecom_callback_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "msg_signature",
+            "required": true,
+            "schema": {
+              "title": "Msg Signature",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "timestamp",
+            "required": true,
+            "schema": {
+              "title": "Timestamp",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "nonce",
+            "required": true,
+            "schema": {
+              "title": "Nonce",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "echostr",
+            "required": true,
+            "schema": {
+              "title": "Echostr",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Bot Wecom Verify"
+      },
+      "post": {
+        "description": "企业微信消息回调：验签(用外层 Encrypt) → 解密 → 非文本/解密失败也回 \"success\"。\n\n协议要求无论处理结果都回明文 success（否则企业微信判定失败重推）；\n返回 PlainTextResponse → 登记契约 allowlist。",
+        "operationId": "bot_wecom_callback_api_v1_bot_wecom_callback_post",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "msg_signature",
+            "required": true,
+            "schema": {
+              "title": "Msg Signature",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "timestamp",
+            "required": true,
+            "schema": {
+              "title": "Timestamp",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "nonce",
+            "required": true,
+            "schema": {
+              "title": "Nonce",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Bot Wecom Callback"
       }
     },
     "/api/v1/browser/render": {
@@ -1393,6 +3435,75 @@
         "summary": "Toggle Mcp Server"
       }
     },
+    "/api/v1/mcp/tools": {
+      "get": {
+        "description": "工具清单：内省 mcp_server.tools.TOOLS 动态生成（不硬编码）；内省失败 500 明示。",
+        "operationId": "list_mcp_tools_api_v1_mcp_tools_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ToolListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Mcp Tools"
+      }
+    },
+    "/api/v1/mcp/tools/{name}/call": {
+      "post": {
+        "description": "编辑器直调 MCP 工具：快工具同步 200；长工具 202 后台跑，结果回灌会话事件流。",
+        "operationId": "call_mcp_tool_api_v1_mcp_tools__name__call_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CallToolRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CallToolResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Call Mcp Tool"
+      }
+    },
     "/api/v1/metrics": {
       "get": {
         "operationId": "metrics_api_v1_metrics_get",
@@ -1517,6 +3628,44 @@
         "summary": "Project Files"
       }
     },
+    "/api/v1/project/map": {
+      "get": {
+        "description": "活动项目的结构地图（带缓存）。无项目 → needs_project；生成失败 500 明示。",
+        "operationId": "project_map_api_v1_project_map_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectMapResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Project Map"
+      }
+    },
+    "/api/v1/project/map/regenerate": {
+      "post": {
+        "description": "强制重建项目结构地图（绕过缓存）。无项目 → needs_project；重建失败 500 明示。",
+        "operationId": "project_map_regenerate_api_v1_project_map_regenerate_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectMapResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Project Map Regenerate"
+      }
+    },
     "/api/v1/project/open": {
       "post": {
         "description": "打开/导入项目为活动项目。\n\n- 路径已在 ~/projects 下 → 直接设为活动;\n- 外部文件夹 → 拷进 ~/projects/<basename> 再设为活动(沙盒经 /projects 挂载才可访问)。\n  拷贝保留 .git(审查需要),排除 node_modules 等重依赖/构建产物。",
@@ -1579,6 +3728,140 @@
           }
         },
         "summary": "Project Reveal"
+      }
+    },
+    "/api/v1/project/revert": {
+      "post": {
+        "description": "逐文件回滚：tracked → git restore 回 HEAD；untracked → 删除。含路径穿越防护。",
+        "operationId": "project_revert_api_v1_project_revert_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RevertRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RevertResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Project Revert"
+      }
+    },
+    "/api/v1/project/review": {
+      "post": {
+        "description": "AI 代码评审：工作区 git diff → LLM → 结构化 findings（只读，不落盘）。",
+        "operationId": "project_review_api_v1_project_review_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReviewRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Project Review"
+      }
+    },
+    "/api/v1/project/rules": {
+      "get": {
+        "description": "活动项目的规则文档（多文件拼接 markdown + .flipped/rules.md 原文）。无项目 → needs_project。",
+        "operationId": "project_rules_get_api_v1_project_rules_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RulesResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Project Rules Get"
+      },
+      "put": {
+        "description": "写 .flipped/rules.md（固定相对路径，原子写）后重载返回。无项目 → 400。",
+        "operationId": "project_rules_put_api_v1_project_rules_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RulesPutRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RulesResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Project Rules Put"
       }
     },
     "/api/v1/project/verify": {
@@ -1683,6 +3966,263 @@
           }
         },
         "summary": "Get Failure Counter Endpoint"
+      }
+    },
+    "/api/v1/remote/sessions": {
+      "post": {
+        "description": "签发移动远程链接：token 绑定单会话（同 session 单活），返回 URL + QR 地址。\n\nsession_id 缺省 → 最新会话（created_at ISO 字符串降序取首）；无会话 → 400；\n指定不存在 → 404。host 为回环时 host_note 提示手机可能无法打开。",
+        "operationId": "issue_remote_session_api_v1_remote_sessions_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RemoteIssueRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RemoteIssueResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Issue Remote Session"
+      }
+    },
+    "/api/v1/remote/{token}": {
+      "delete": {
+        "description": "撤销远程链接（幂等：token 存在与否都 200）。",
+        "operationId": "remote_revoke_api_v1_remote__token__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "token",
+            "required": true,
+            "schema": {
+              "title": "Token",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RemoteRevokeResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Remote Revoke"
+      }
+    },
+    "/api/v1/remote/{token}/decision": {
+      "post": {
+        "description": "远程审批放行/否决（转发 _do_decision；无 pending approval → 409 透传）。",
+        "operationId": "remote_decision_api_v1_remote__token__decision_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "token",
+            "required": true,
+            "schema": {
+              "title": "Token",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RemoteDecisionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DecisionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Remote Decision"
+      }
+    },
+    "/api/v1/remote/{token}/message": {
+      "post": {
+        "description": "远程发消息 = console 发送同语义（转发 canonical handler；409 会话忙透传）。",
+        "operationId": "remote_message_api_v1_remote__token__message_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "token",
+            "required": true,
+            "schema": {
+              "title": "Token",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RemoteMessageRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessageResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Remote Message"
+      }
+    },
+    "/api/v1/remote/{token}/qr.svg": {
+      "get": {
+        "description": "远程链接的 QR（SVG 直出，前端 <img> 直挂，零 npm 依赖）。",
+        "operationId": "remote_qr_api_v1_remote__token__qr_svg_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "token",
+            "required": true,
+            "schema": {
+              "title": "Token",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Remote Qr"
+      }
+    },
+    "/api/v1/remote/{token}/state": {
+      "get": {
+        "description": "移动页轮询态：尾 20 条 user/assistant turns（text 截 2000）+ pending 审批标志。",
+        "operationId": "remote_state_api_v1_remote__token__state_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "token",
+            "required": true,
+            "schema": {
+              "title": "Token",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RemoteStateResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Remote State"
       }
     },
     "/api/v1/sessions": {
@@ -2021,6 +4561,511 @@
           }
         },
         "summary": "Create Task"
+      }
+    },
+    "/api/v1/tasks": {
+      "get": {
+        "description": "任务清单：next_run_at 升序，None 沉底（注册表 list 语义）。",
+        "operationId": "list_scheduled_tasks_api_v1_tasks_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ScheduledTaskResponse"
+                  },
+                  "title": "Response List Scheduled Tasks Api V1 Tasks Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Scheduled Tasks"
+      },
+      "post": {
+        "description": "创建已安排任务：once 必须有 run_at；interval 必须 every_minutes>=1。",
+        "operationId": "create_scheduled_task_api_v1_tasks_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TaskCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScheduledTaskResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Scheduled Task"
+      }
+    },
+    "/api/v1/tasks/{task_id}": {
+      "delete": {
+        "operationId": "delete_scheduled_task_api_v1_tasks__task_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "title": "Task Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskDeleteResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Scheduled Task"
+      }
+    },
+    "/api/v1/tasks/{task_id}/toggle": {
+      "post": {
+        "description": "启停任务：停用 → next_run_at=None；启用 → 按当前时刻重算。",
+        "operationId": "toggle_scheduled_task_api_v1_tasks__task_id__toggle_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "title": "Task Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "enabled",
+            "required": true,
+            "schema": {
+              "title": "Enabled",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScheduledTaskResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Toggle Scheduled Task"
+      }
+    },
+    "/api/v1/worker/rules": {
+      "get": {
+        "description": "规则列表 + 版本号（前端 WorkerRulesPanel mount 拉取）。",
+        "operationId": "worker_rules_list_api_v1_worker_rules_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkerRulesResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Worker Rules List"
+      },
+      "post": {
+        "description": "agent 通路手动注入：校验失败（长度/blocklist）→ 422。",
+        "operationId": "worker_rules_create_api_v1_worker_rules_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkerRuleCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkerRule"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Worker Rules Create"
+      }
+    },
+    "/api/v1/worker/rules/auto-generate": {
+      "post": {
+        "description": "auto 通路：失败文本 → 模板命中 → 去重 → 入库（source=\"auto\"，priority 默认 10）。\n\nfailure_texts 缺省时读失败知识库最近 20 条未解决记录；无候选 → added=[] 不报错。",
+        "operationId": "worker_rules_auto_generate_api_v1_worker_rules_auto_generate_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/WorkerRuleAutoGenRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Req"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkerRuleAutoGenResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Worker Rules Auto Generate"
+      }
+    },
+    "/api/v1/worker/rules/rollback": {
+      "post": {
+        "description": "回滚到指定版本快照；未知版本 → 404。回滚自身亦 bump version。",
+        "operationId": "worker_rules_rollback_api_v1_worker_rules_rollback_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkerRuleRollbackRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkerRuleRollbackResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Worker Rules Rollback"
+      }
+    },
+    "/api/v1/worker/rules/stats": {
+      "get": {
+        "description": "规则执行效果统计（orchestrator 注入/verify 节点实时累积）。",
+        "operationId": "worker_rules_stats_api_v1_worker_rules_stats_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkerRuleStatsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Worker Rules Stats"
+      }
+    },
+    "/api/v1/worker/rules/versions": {
+      "get": {
+        "description": "版本史（每次变更 bump + 快照，cap 20）。",
+        "operationId": "worker_rules_versions_api_v1_worker_rules_versions_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkerRuleVersionsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Worker Rules Versions"
+      }
+    },
+    "/api/v1/worker/rules/{rule_id}": {
+      "delete": {
+        "description": "删除规则；未知 id → 404。",
+        "operationId": "worker_rules_delete_api_v1_worker_rules__rule_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "rule_id",
+            "required": true,
+            "schema": {
+              "title": "Rule Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkerRuleDeleteResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Worker Rules Delete"
+      },
+      "put": {
+        "description": "更新规则文本/优先级/作用域（重走 WorkerRule 校验）；未知 id → 404。",
+        "operationId": "worker_rules_update_api_v1_worker_rules__rule_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "rule_id",
+            "required": true,
+            "schema": {
+              "title": "Rule Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkerRuleUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkerRule"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Worker Rules Update"
+      }
+    },
+    "/api/v1/worker/rules/{rule_id}/toggle": {
+      "post": {
+        "description": "启停规则（停用即不再注入 prompt，保留供复启）；未知 id → 404。",
+        "operationId": "worker_rules_toggle_api_v1_worker_rules__rule_id__toggle_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "rule_id",
+            "required": true,
+            "schema": {
+              "title": "Rule Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkerRuleToggleRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkerRule"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Worker Rules Toggle"
+      }
+    },
+    "/remote/{token}": {
+      "get": {
+        "description": "手机扫码打开的远程控制页（自包含 HTML，无 API_PREFIX）。无效 token → 404 失效页。",
+        "operationId": "remote_page_remote__token__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "token",
+            "required": true,
+            "schema": {
+              "title": "Token",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Remote Page"
       }
     }
   }

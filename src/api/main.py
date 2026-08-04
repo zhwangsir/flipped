@@ -17,9 +17,10 @@ from pathlib import Path
 import httpx
 from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel, Field
 
 from .events import EventBus, get_bus
-from .schemas import BrowserRenderRequest, Event, EventType, HealthResponse, MetricsResponse, Role, Session, SessionStatus, TaskRequest, TaskResponse
+from .schemas import BrowserRenderRequest, Event, EventType, HealthResponse, MetricsResponse, ProjectMapResponse, Role, Session, SessionStatus, TaskRequest, TaskResponse
 from .session import SessionStore, store
 from driving.safety import validate_secrets
 from metrics import COLLECTOR
@@ -47,7 +48,16 @@ async def lifespan(app: FastAPI):
     for session in store.list():
         if session.status in (SessionStatus.running, SessionStatus.paused) and session.checkpoint_db_path:
             asyncio.create_task(_resume_orchestrator(session))
+    # M178.1：已安排任务定时扫描（FLIPPED_TASKS=0 不起 scheduler）
+    scheduler = (asyncio.create_task(_task_scheduler())
+                 if os.environ.get("FLIPPED_TASKS", "1") != "0" else None)
     yield
+    if scheduler is not None:
+        scheduler.cancel()
+        try:
+            await scheduler
+        except asyncio.CancelledError:
+            pass
     bus.set_loop(None)
     bus._connections.clear()
     store.save()
@@ -119,6 +129,31 @@ async def toggle_mcp_server(name: str, enabled: bool = Query(...)) -> dict[str, 
         return toggle_server(name, enabled)
     except KeyError:
         raise HTTPException(status_code=404, detail=f"unknown MCP server: {name}")
+
+
+# ---------- M170.1 · 编辑器直调 MCP 工具（薄路由，逻辑在 api/mcp_call.py） ----------
+
+from fastapi import Response as _Response  # 局部 import：本段自包含，不动顶部 import 行
+from . import mcp_call as _mcp_call
+from .mcp_call import CallToolRequest, CallToolResponse, ToolListResponse
+
+
+@app.get(f"{API_PREFIX}/mcp/tools", response_model=ToolListResponse)
+async def list_mcp_tools() -> dict[str, Any]:
+    """工具清单：内省 mcp_server.tools.TOOLS 动态生成（不硬编码）；内省失败 500 明示。"""
+    try:
+        return {"tools": _mcp_call.list_tool_specs()}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"MCP 工具内省失败: {e}")
+
+
+@app.post(f"{API_PREFIX}/mcp/tools/{{name}}/call", response_model=CallToolResponse)
+async def call_mcp_tool(name: str, req: CallToolRequest, response: _Response) -> CallToolResponse:
+    """编辑器直调 MCP 工具：快工具同步 200；长工具 202 后台跑，结果回灌会话事件流。"""
+    result = await _mcp_call.call_tool(name, req)
+    if result.accepted:
+        response.status_code = 202
+    return result
 
 
 # ---------- 项目上下文（Stage 3 — composer 上下文行 / 状态栏真实分支） ----------
@@ -310,6 +345,46 @@ def _parse_unified_diff(text: str) -> list[dict[str, Any]]:
     return files
 
 
+def _untracked_entries(root: Path) -> list[dict[str, Any]]:
+    """untracked 新文件清单（`git diff HEAD` 不覆盖它们，审查面板会漏掉 agent 新写的文件）。
+
+    每条 {"path", "added", "removed": 0, "lines": [], "untracked": True}；
+    二进制（utf-8 解码失败 / 含 \\x00 / > _FILE_MAX_BYTES）或单文件任何异常
+    → added=0 + "binary": True，绝不上抛。非 git repo / git 失败 → []。
+    按 path 字典序输出，保证确定性。
+    """
+    import subprocess
+
+    try:
+        out = subprocess.run(
+            ["git", "ls-files", "--others", "--exclude-standard"],
+            cwd=str(root), capture_output=True, text=True, timeout=10,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return []
+    if out.returncode != 0:
+        return []
+    entries: list[dict[str, Any]] = []
+    for rel in sorted(p.strip() for p in out.stdout.splitlines() if p.strip()):
+        entry: dict[str, Any] = {"path": rel, "added": 0, "removed": 0,
+                                 "lines": [], "untracked": True}
+        try:
+            f = root / rel
+            if f.stat().st_size > _FILE_MAX_BYTES:
+                entry["binary"] = True
+            else:
+                text = f.read_text(encoding="utf-8")
+                if "\x00" in text:
+                    entry["binary"] = True
+                else:
+                    entry["added"] = len(text.splitlines())
+        except Exception:  # noqa: BLE001 单文件任何异常 → binary 占位，绝不上抛
+            entry["added"] = 0
+            entry["binary"] = True
+        entries.append(entry)
+    return entries
+
+
 @app.post(f"{API_PREFIX}/project/reveal")
 async def project_reveal() -> dict[str, Any]:
     """在系统文件管理器中显示项目根目录（侧栏项目「⋯」菜单）。仅 macOS。"""
@@ -343,7 +418,185 @@ async def project_diff() -> dict[str, Any]:
     except (OSError, subprocess.SubprocessError) as e:
         raise HTTPException(status_code=500, detail=f"git diff 失败: {e}")
     files = _parse_unified_diff(out.stdout) if out.returncode == 0 else []
+    files += _untracked_entries(root)  # M177.1：git diff 不含 untracked，补上
     return {"files": files}
+
+
+# ---------- M177.1 · 逐文件回滚（Review 面板） ----------
+
+class RevertRequest(BaseModel):
+    path: str = Field(..., min_length=1)
+
+
+class RevertResponse(BaseModel):
+    ok: bool
+    path: str
+    action: str  # "restored" | "deleted"
+
+
+def _is_tracked(root: Path, rel: str) -> bool:
+    """`git ls-files --error-unmatch -- <rel>` rc==0 即 tracked；任何失败 → False。"""
+    import subprocess
+
+    try:
+        out = subprocess.run(
+            ["git", "ls-files", "--error-unmatch", "--", rel],
+            cwd=str(root), capture_output=True, text=True, timeout=10,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return out.returncode == 0
+
+
+def _git_restore_file(root: Path, rel: str) -> None:
+    """`git restore --source=HEAD --worktree -- <rel>`：worktree 回 HEAD（不碰 staging area）。
+
+    非零退出 → RuntimeError 带 stderr（写法参照 assistant._git_restore）。
+    """
+    import subprocess
+
+    try:
+        out = subprocess.run(
+            ["git", "restore", "--source=HEAD", "--worktree", "--", rel],
+            cwd=str(root), capture_output=True, text=True, timeout=10,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise RuntimeError(f"git restore 执行失败: {exc}") from exc
+    if out.returncode != 0:
+        raise RuntimeError(out.stderr.strip() or f"git restore exit {out.returncode}")
+
+
+@app.post(f"{API_PREFIX}/project/revert", response_model=RevertResponse)
+async def project_revert(req: RevertRequest) -> RevertResponse:
+    """逐文件回滚：tracked → git restore 回 HEAD；untracked → 删除。含路径穿越防护。"""
+    if os.environ.get("FLIPPED_REVIEW", "1") == "0":
+        raise HTTPException(status_code=404, detail="Review 功能已禁用")
+    root = ps.project_root()
+    if root is None:
+        raise HTTPException(status_code=400, detail="未选择项目")
+    target = (root / req.path).resolve()
+    root = root.resolve()
+    # 路径穿越防护：必须落在仓库根内（同 project_file）
+    if target != root and not str(target).startswith(str(root) + os.sep):
+        raise HTTPException(status_code=403, detail="path outside project")
+    if target == root or target.is_dir():
+        raise HTTPException(status_code=422, detail="不能回滚目录")
+    rel = target.relative_to(root).as_posix()
+    if await asyncio.to_thread(_is_tracked, root, rel):
+        try:
+            await asyncio.to_thread(_git_restore_file, root, rel)
+        except RuntimeError as e:
+            raise HTTPException(status_code=500, detail=str(e))
+        return RevertResponse(ok=True, path=rel, action="restored")
+    if not target.is_file():
+        raise HTTPException(status_code=404, detail="not a file")
+    await asyncio.to_thread(target.unlink)
+    return RevertResponse(ok=True, path=rel, action="deleted")
+
+
+# ---------- M179.1 · AI 代码评审（Review 面板「AI 评审」按钮） ----------
+
+class ReviewRequest(BaseModel):
+    model: str | None = None
+
+
+class ReviewFinding(BaseModel):
+    path: str
+    line: int | None = None
+    severity: str
+    message: str
+    suggestion: str | None = None
+
+
+class ReviewResponse(BaseModel):
+    findings: list[ReviewFinding]
+    files_reviewed: int
+    model: str
+    note: str | None = None
+
+
+@app.post(f"{API_PREFIX}/project/review", response_model=ReviewResponse)
+async def project_review(req: ReviewRequest) -> ReviewResponse:
+    """AI 代码评审：工作区 git diff → LLM → 结构化 findings（只读，不落盘）。"""
+    if os.environ.get("FLIPPED_AI_REVIEW", "1") == "0":
+        raise HTTPException(status_code=404, detail="AI 评审功能已禁用")
+    root = ps.project_root()
+    if root is None:
+        raise HTTPException(status_code=400, detail="未选择项目")
+    import subprocess
+
+    from driving.model_router import resolve_worker_model_config
+
+    from .review import (REVIEW_SYSTEM_PROMPT, ReviewParseError,
+                         build_review_prompt, parse_review_reply)
+
+    base_url, model = resolve_worker_model_config(req.model or "coder")
+    try:
+        out = await asyncio.to_thread(
+            subprocess.run,
+            ["git", "diff", "HEAD", "--no-color"],
+            cwd=str(root), capture_output=True, text=True, timeout=6,
+        )
+    except (OSError, subprocess.SubprocessError) as e:
+        raise HTTPException(status_code=500, detail=f"git diff 失败: {e}")
+    files = _parse_unified_diff(out.stdout) if out.returncode == 0 else []
+    files += await asyncio.to_thread(_untracked_entries, root)
+    if not files:
+        return ReviewResponse(findings=[], files_reviewed=0, model=model,
+                              note="工作区干净")
+    prompt = build_review_prompt(files)
+    try:
+        reply, _usage = await _llm_chat(base_url, model, REVIEW_SYSTEM_PROMPT, prompt)
+        findings = parse_review_reply(reply)
+    except ReviewParseError as e:
+        raise HTTPException(status_code=502, detail=f"评审结果解析失败: {e}")
+    except Exception as e:  # noqa: BLE001 LLM 调用任何失败 → 502，绝不返回伪造 findings
+        raise HTTPException(status_code=502, detail=f"评审模型调用失败: {e}")
+    return ReviewResponse(findings=findings, files_reviewed=len(files), model=model)
+
+
+# ---------- M180 · 项目规则系统（规则面板查看/编辑；chat/plan 注入见 _run_chat） ----------
+
+class RulesResponse(BaseModel):
+    files: list[str]
+    markdown: str
+    total_chars: int
+    rules_content: str
+    needs_project: bool = False
+
+
+class RulesPutRequest(BaseModel):
+    content: str = Field(max_length=65536)
+
+
+def _rules_payload(root: Path) -> RulesResponse:
+    """load_project_rules + rules_raw_content 组装响应（needs_project=False）。"""
+    from api.rules import load_project_rules, rules_raw_content
+    rules = load_project_rules(root)
+    return RulesResponse(
+        files=rules.files, markdown=rules.markdown, total_chars=rules.total_chars,
+        rules_content=rules_raw_content(root), needs_project=False)
+
+
+@app.get(f"{API_PREFIX}/project/rules", response_model=RulesResponse)
+async def project_rules_get() -> RulesResponse:
+    """活动项目的规则文档（多文件拼接 markdown + .flipped/rules.md 原文）。无项目 → needs_project。"""
+    root = ps.project_root()
+    if root is None:
+        return RulesResponse(files=[], markdown="", total_chars=0,
+                             rules_content="", needs_project=True)
+    return _rules_payload(root)
+
+
+@app.put(f"{API_PREFIX}/project/rules", response_model=RulesResponse)
+async def project_rules_put(req: RulesPutRequest) -> RulesResponse:
+    """写 .flipped/rules.md（固定相对路径，原子写）后重载返回。无项目 → 400。"""
+    root = ps.project_root()
+    if root is None:
+        raise HTTPException(status_code=400, detail="未选择项目")
+    from api.rules import write_project_rules
+    write_project_rules(root, req.content)
+    return _rules_payload(root)
 
 
 @app.get(f"{API_PREFIX}/project/verify")
@@ -380,6 +633,47 @@ async def project_file(path: str = Query(..., min_length=1)) -> dict[str, Any]:
     except (OSError, UnicodeDecodeError):
         raise HTTPException(status_code=415, detail="binary or unreadable file")
     return {"path": path, "content": content}
+
+
+# ---------- M173 · 项目结构地图（全局概览面板；chat/plan 注入见 _run_chat） ----------
+
+def _project_map_payload(m: Any) -> dict[str, Any]:
+    """ProjectMap → 前端契约形状（五字段）。"""
+    return {
+        "markdown": m.markdown,
+        "generated_at": m.generated_at,
+        "stale": m.stale,
+        "from_cache": m.from_cache,
+        "stack": m.stack,
+    }
+
+
+@app.get(f"{API_PREFIX}/project/map", response_model=ProjectMapResponse)
+async def project_map() -> dict[str, Any]:
+    """活动项目的结构地图（带缓存）。无项目 → needs_project；生成失败 500 明示。"""
+    root = ps.project_root()
+    if root is None:
+        return {"map": None, "needs_project": True}
+    try:
+        from api.project_map import get_project_map
+        m = get_project_map(root)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"项目地图生成失败: {e}")
+    return {"map": _project_map_payload(m), "needs_project": False}
+
+
+@app.post(f"{API_PREFIX}/project/map/regenerate", response_model=ProjectMapResponse)
+async def project_map_regenerate() -> dict[str, Any]:
+    """强制重建项目结构地图（绕过缓存）。无项目 → needs_project；重建失败 500 明示。"""
+    root = ps.project_root()
+    if root is None:
+        return {"map": None, "needs_project": True}
+    try:
+        from api.project_map import regenerate_project_map
+        m = regenerate_project_map(root)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"项目地图重建失败: {e}")
+    return {"map": _project_map_payload(m), "needs_project": False}
 
 
 # ---------- 浏览器真内核渲染（阶段②b — 右侧「浏览器」实时看效果 + 选中元素追踪） ----------
@@ -499,8 +793,16 @@ async def create_task(session_id: str, req: TaskRequest) -> TaskResponse:
         t = asyncio.create_task(_run_orchestrator(session_id, task_id, req))
     elif runner == "chat":
         # 对话/规划模式：直连本地模型，不启动沙盒
+        chat_kw: dict[str, Any] = {}
+        if "rag_auto" in req.context:  # M172：请求显式携带才覆盖，缺省走 _run_chat 默认 rag_auto=True
+            chat_kw["rag_auto"] = req.context["rag_auto"]
+        if "map_auto" in req.context:  # M173：同款，请求显式携带才覆盖，缺省走默认 map_auto=True
+            chat_kw["map_auto"] = req.context["map_auto"]
+        if "rules_auto" in req.context:  # M180：同款，请求显式携带才覆盖，缺省走默认 rules_auto=True
+            chat_kw["rules_auto"] = req.context["rules_auto"]
         t = asyncio.create_task(
-            _run_chat(session_id, task_id, req.description, req.context.get("model", "coder"), mode)
+            _run_chat(session_id, task_id, req.description, req.context.get("model", "coder"), mode,
+                      **chat_kw)
         )
     elif runner == "mock":
         t = asyncio.create_task(_mock_run(session_id, task_id, req.description))
@@ -836,8 +1138,13 @@ PLAN_SYSTEM = (
 )
 
 
-async def _llm_chat(base_url: str, model: str, system: str, user: str, timeout: float = 120.0) -> str:
-    """直连 OpenAI 兼容端点做一次非流式对话补全。"""
+async def _llm_chat(base_url: str, model: str, system: str, user: str,
+                    timeout: float = 120.0) -> tuple[str, dict | None]:
+    """直连 OpenAI 兼容端点做一次非流式对话补全。
+
+    M169：返回 (content, usage)；usage 取响应 usage 字段（dict 含
+    prompt_tokens/completion_tokens），缺失时 None。
+    """
     url = base_url.rstrip("/") + "/chat/completions"
     api_key = os.environ.get("EXO_API_KEY") or os.environ.get("OPENAI_API_KEY") or "dummy"
     payload = {
@@ -853,21 +1160,161 @@ async def _llm_chat(base_url: str, model: str, system: str, user: str, timeout: 
         resp = await client.post(url, json=payload, headers={"Authorization": f"Bearer {api_key}"})
         resp.raise_for_status()
         data = resp.json()
-    return data["choices"][0]["message"]["content"]
+    return data["choices"][0]["message"]["content"], data.get("usage")
 
 
-async def _run_chat(session_id: str, task_id: str, description: str, model_alias: str, mode: str) -> None:
-    """对话/规划模式：直连本地模型返回文本，不启动沙盒、不用工具。"""
+async def _llm_chat_stream(base_url: str, model: str, system: str, user: str,
+                           timeout: float = 120.0, usage_box: dict | None = None):
+    """直连 OpenAI 兼容端点做流式对话补全（SSE），逐 chunk yield 文本增量（M166）。
+
+    建流阶段（连接失败/非 200/请求本身）与迭代中途（断流）的异常都抛给调用方：
+    _run_chat 用「是否已产出 chunk」区分静默 fallback（建流失败）与断流清态（中途失败）。
+
+    M169：payload 带 stream_options.include_usage；末尾 choices=[] 的 usage 汇总
+    chunk 不 yield，写入 usage_box["usage"]（调用方传 dict 时）。
+    """
+    url = base_url.rstrip("/") + "/chat/completions"
+    api_key = os.environ.get("EXO_API_KEY") or os.environ.get("OPENAI_API_KEY") or "dummy"
+    payload = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": system},
+            {"role": "user", "content": user},
+        ],
+        "temperature": 0.3,
+        "stream": True,
+        "stream_options": {"include_usage": True},
+    }
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        async with client.stream("POST", url, json=payload,
+                                 headers={"Authorization": f"Bearer {api_key}"}) as resp:
+            resp.raise_for_status()
+            async for line in resp.aiter_lines():
+                if not line.startswith("data:"):
+                    continue
+                data = line[len("data:"):].strip()
+                if not data:
+                    continue
+                if data == "[DONE]":
+                    return
+                try:
+                    chunk = json.loads(data)
+                except json.JSONDecodeError:
+                    continue  # 坏行跳过，不中断流
+                choices = chunk.get("choices") or []
+                if not choices:
+                    # M169：usage 汇总 chunk（choices 为空）→ 写 usage_box，不当文本产出
+                    if usage_box is not None and isinstance(chunk.get("usage"), dict):
+                        usage_box["usage"] = chunk["usage"]
+                    continue
+                content = (choices[0].get("delta") or {}).get("content")
+                if content:
+                    yield content
+
+
+async def _run_chat(session_id: str, task_id: str, description: str, model_alias: str, mode: str,
+                    *, rag_auto: bool = True, map_auto: bool = True, rules_auto: bool = True) -> None:
+    """对话/规划模式：直连本地模型返回文本，不启动沙盒、不用工具。
+
+    M166：默认 token 级流式（FLIPPED_CHAT_STREAM=0 关闭）。
+    - 正常序列：token{text, seq:1..N, done:false}* → token{text:"", done:true} → 既有 message 落盘；
+    - 建流失败（未产出任何 chunk 即异常）→ 静默 fallback 非流式 _llm_chat，无 token 事件；
+    - 中途断流（已产出 chunk 后异常）→ token done=true 清前端流式态，再走既有 error 分支。
+    """
     from driving.model_router import resolve_worker_model_config
 
     base_url, model = resolve_worker_model_config(model_alias)
     system = PLAN_SYSTEM if mode == "plan" else CHAT_SYSTEM
+    # M172：chat/plan 自动注入 RAG 上下文（FLIPPED_RAG_AUTO=0 或请求级 rag_auto=False 关闭）。
+    # 全程 fail-open：RAG 任何故障都不让对话失败。
+    rag_ctx, rag_k = "", 0
+    if mode in ("chat", "plan") and rag_auto and os.environ.get("FLIPPED_RAG_AUTO", "1") != "0":
+        try:
+            from api.rag_context import build_rag_context
+            sess = store.get(session_id)
+            rag_ctx, rag_k = build_rag_context(description, project=getattr(sess, "project_name", None))
+        except Exception:  # noqa: BLE001 fail-open：注入失败=无注入
+            rag_ctx, rag_k = "", 0
+    if rag_ctx:
+        system = system + "\n\n" + rag_ctx
+    # M173：chat/plan 自动注入项目结构地图（FLIPPED_MAP_AUTO=0 或请求级 map_auto=False 关闭）。
+    # 全程 fail-open：地图任何故障都不让对话失败。
+    map_injected = False
+    if mode in ("chat", "plan") and map_auto and os.environ.get("FLIPPED_MAP_AUTO", "1") != "0":
+        try:
+            from api.project_map import get_project_map, MAP_INJECT_HEADER
+            root = ps.project_root()
+            if root is not None:
+                m = get_project_map(root, max_chars=1600)
+                if m.markdown:
+                    system += "\n\n" + MAP_INJECT_HEADER + "\n" + m.markdown
+                    map_injected = True
+        except Exception:  # noqa: BLE001 fail-open：注入失败=无注入
+            pass
+    # M180：chat/plan 自动注入项目规则（FLIPPED_RULES_AUTO=0 或请求级 rules_auto=False 关闭）。
+    # 全程 fail-open：规则装载任何故障都不让对话失败；空规则零注入。
+    if mode in ("chat", "plan") and rules_auto and os.environ.get("FLIPPED_RULES_AUTO", "1") != "0":
+        try:
+            from api.rules import RULES_INJECT_HEADER, load_project_rules
+            rules = load_project_rules(ps.project_root())
+            if rules.markdown:
+                system += "\n\n" + RULES_INJECT_HEADER + "\n" + rules.markdown
+        except Exception:  # noqa: BLE001 fail-open：注入失败=无注入
+            pass
     note = "规划" if mode == "plan" else "对话"
     bus.emit(session_id, EventType.status, Role.system,
              {"status": "running", "progress": 20, "note": f"{note}中（{model_alias}）"})
+
+    def _done_token(seq: int) -> None:
+        bus.emit_transient(session_id, EventType.token, Role.worker,
+                           {"text": "", "seq": seq, "done": True})
+
     try:
-        reply = await _llm_chat(base_url, model, system, description)
-        bus.emit(session_id, EventType.message, Role.worker, {"text": reply, "source": "agent"})
+        usage: dict | None = None
+        if os.environ.get("FLIPPED_CHAT_STREAM", "1") != "0":
+            chunks: list[str] = []
+            seq = 0
+            usage_box: dict = {}
+            try:
+                async for chunk in _llm_chat_stream(base_url, model, system, description,
+                                                    usage_box=usage_box):
+                    seq += 1
+                    chunks.append(chunk)
+                    bus.emit_transient(session_id, EventType.token, Role.worker,
+                                       {"text": chunk, "seq": seq, "done": False})
+            except Exception:
+                if chunks:
+                    # 中途断流：清前端流式态后交既有 error 分支
+                    _done_token(seq + 1)
+                    raise
+                # 建流失败：静默 fallback 非流式（无 token 事件，行为=现状）
+                reply, usage = await _llm_chat(base_url, model, system, description)
+            else:
+                _done_token(seq + 1)
+                reply = "".join(chunks)
+                usage = usage_box.get("usage")
+        else:
+            reply, usage = await _llm_chat(base_url, model, system, description)
+        payload: dict[str, Any] = {"text": reply, "source": "agent"}
+        if rag_k > 0:  # M172：仅命中 RAG 时附带 chunk 数，k==0 保持现状形状
+            payload["rag_chunks"] = rag_k
+        if map_injected:  # M173：仅实际注入地图时附带标记，未注入保持现状形状
+            payload["map_injected"] = True
+        bus.emit(session_id, EventType.message, Role.worker, payload)
+        # M169：per-turn token 用量事件（落盘，history 折叠进 assistant turn）+
+        # 补全局计数漏 chat/plan 的缺口；统计失败不影响主流程
+        if usage:
+            bus.emit(session_id, EventType.usage, Role.worker, {
+                "prompt": int(usage.get("prompt_tokens", 0) or 0),
+                "completion": int(usage.get("completion_tokens", 0) or 0),
+                "calls": 1, "source": mode})
+            try:
+                COLLECTOR.record_usage(
+                    prompt_tokens=int(usage.get("prompt_tokens", 0) or 0),
+                    completion_tokens=int(usage.get("completion_tokens", 0) or 0),
+                    calls=1)
+            except Exception:  # noqa: BLE001 统计失败不影响主流程
+                pass
         bus.emit(session_id, EventType.status, Role.system,
                  {"status": "done", "progress": 100, "note": f"{note}完成"})
         store.update_status(session_id, SessionStatus.done)
@@ -975,3 +1422,855 @@ async def _wait_for_event(session_id: str, event_type: EventType, timeout: float
                 return ev.payload
         await asyncio.sleep(0.2)
     return {}
+
+
+# ---------- M178.1 · 后台任务系统（已安排任务：注册表 + 定时派发） ----------
+
+from dataclasses import asdict as _asdict  # 局部 import：本段自包含，不动顶部 import 行
+from typing import Literal
+
+from .tasks import ScheduledTask, TaskRegistry, due_tasks
+
+_TASK_REGISTRY: TaskRegistry | None = None
+
+
+def _get_task_registry() -> TaskRegistry:
+    """任务注册表单例（惰性构造；路径 FLIPPED_TASKS_PATH，缺省 data/scheduled_tasks.json）。"""
+    global _TASK_REGISTRY
+    if _TASK_REGISTRY is None:
+        _TASK_REGISTRY = TaskRegistry(
+            Path(os.environ.get("FLIPPED_TASKS_PATH", "data/scheduled_tasks.json")))
+    return _TASK_REGISTRY
+
+
+class TaskCreateRequest(BaseModel):
+    """创建已安排任务请求（M178.1）。"""
+    title: str = Field(..., min_length=1)
+    prompt: str = Field(..., min_length=1)
+    mode: str = "chat"
+    model: str = "coder"
+    kind: Literal["once", "interval"] = "once"
+    run_at: str | None = None
+    every_minutes: int | None = None
+
+
+class ScheduledTaskResponse(BaseModel):
+    """已安排任务响应（镜像 tasks.ScheduledTask 全字段）。"""
+    id: str
+    title: str
+    prompt: str
+    mode: str
+    model: str
+    kind: str
+    run_at: str | None = None
+    every_minutes: int | None = None
+    enabled: bool
+    next_run_at: str | None = None
+    last_run_at: str | None = None
+    last_status: str | None = None
+    last_session_id: str | None = None
+    run_count: int
+    created_at: str
+
+
+class TaskDeleteResponse(BaseModel):
+    ok: bool
+    id: str
+
+
+_TASK_ALLOWED_MODES = {"auto", "agent", "chat", "plan"}
+
+
+def _tasks_feature_off() -> bool:
+    """整体开关：FLIPPED_TASKS=0 → 4 端点 404、scheduler 不启动（同 FLIPPED_GOAL 惯例）。"""
+    return os.environ.get("FLIPPED_TASKS", "1") == "0"
+
+
+@app.post(f"{API_PREFIX}/tasks", response_model=ScheduledTaskResponse, status_code=201)
+async def create_scheduled_task(req: TaskCreateRequest) -> dict:
+    """创建已安排任务：once 必须有 run_at；interval 必须 every_minutes>=1。"""
+    if _tasks_feature_off():
+        raise HTTPException(status_code=404, detail="任务功能已禁用")
+    if req.mode not in _TASK_ALLOWED_MODES:
+        raise HTTPException(status_code=422, detail=f"mode must be one of {_TASK_ALLOWED_MODES}")
+    if req.kind == "once" and not req.run_at:
+        raise HTTPException(status_code=422, detail="once 任务必须提供 run_at")
+    if req.kind == "interval" and (req.every_minutes is None or req.every_minutes < 1):
+        raise HTTPException(status_code=422, detail="interval 任务必须提供 every_minutes>=1")
+    task = _get_task_registry().add(
+        title=req.title, prompt=req.prompt, mode=req.mode, model=req.model,
+        kind=req.kind, run_at=req.run_at, every_minutes=req.every_minutes,
+        now=datetime.now(timezone.utc))
+    return _asdict(task)
+
+
+@app.get(f"{API_PREFIX}/tasks", response_model=list[ScheduledTaskResponse])
+async def list_scheduled_tasks() -> list[dict]:
+    """任务清单：next_run_at 升序，None 沉底（注册表 list 语义）。"""
+    if _tasks_feature_off():
+        raise HTTPException(status_code=404, detail="任务功能已禁用")
+    return [_asdict(t) for t in _get_task_registry().list()]
+
+
+@app.delete(f"{API_PREFIX}/tasks/{{task_id}}", response_model=TaskDeleteResponse)
+async def delete_scheduled_task(task_id: str) -> TaskDeleteResponse:
+    if _tasks_feature_off():
+        raise HTTPException(status_code=404, detail="任务功能已禁用")
+    if not _get_task_registry().remove(task_id):
+        raise HTTPException(status_code=404, detail="task not found")
+    return TaskDeleteResponse(ok=True, id=task_id)
+
+
+@app.post(f"{API_PREFIX}/tasks/{{task_id}}/toggle", response_model=ScheduledTaskResponse)
+async def toggle_scheduled_task(task_id: str, enabled: bool = Query(...)) -> dict:
+    """启停任务：停用 → next_run_at=None；启用 → 按当前时刻重算。"""
+    if _tasks_feature_off():
+        raise HTTPException(status_code=404, detail="任务功能已禁用")
+    task = _get_task_registry().toggle(task_id, enabled, now=datetime.now(timezone.utc))
+    if task is None:
+        raise HTTPException(status_code=404, detail="task not found")
+    return _asdict(task)
+
+
+async def _task_scheduler() -> None:
+    """M178.1 · 定时任务扫描循环：每 FLIPPED_TASKS_SCAN_S（默认 30s）扫 due 任务逐个派发。
+
+    单任务派发异常隔离（mark_run failed），循环自身任何异常都不崩（下轮继续）。
+    """
+    while True:
+        await asyncio.sleep(float(os.environ.get("FLIPPED_TASKS_SCAN_S", "30")))
+        try:
+            now = datetime.now(timezone.utc)
+            for task in due_tasks(_get_task_registry().list(), now):
+                try:
+                    await _dispatch_scheduled(task)
+                except Exception:  # noqa: BLE001 单任务异常绝不炸 scheduler
+                    try:
+                        _get_task_registry().mark_run(
+                            task.id, "failed", None, datetime.now(timezone.utc))
+                    except Exception:  # noqa: BLE001 落盘失败也继续
+                        pass
+        except Exception:  # noqa: BLE001 扫描循环容错，下轮继续
+            continue
+
+
+async def _dispatch_scheduled(task: ScheduledTask) -> None:
+    """派发一个到期任务：防重入 → 建会话 → 复刻 assistant 派发链 → mark_run。
+
+    派发链与 assistant.send_assistant_message 同语义（进程内直调，不 HTTP 自调）：
+    update_status running → emit status → emit user message → agent/auto 做
+    git shadow snapshot（M168.1 惯例，非 git 工作区仅提示不阻塞）→ TaskRequest →
+    模块级名取 _run_chat/_run_orchestrator（monkeypatch api.main.* 生效）→
+    create_task + RUNNING_TASKS 注册 + done_callback pop。git 调用经 to_thread 包裹。
+    """
+    from .assistant import _git_head, _git_snapshot
+
+    now = datetime.now(timezone.utc)
+    # 防重入：上次会话仍在跑 → 本轮记 skipped 不派
+    if task.last_session_id:
+        prev = RUNNING_TASKS.get(task.last_session_id)
+        if prev is not None and not prev.done():
+            _get_task_registry().mark_run(task.id, "skipped", None, now)
+            return
+    proj = ps.active_project()
+    session = store.create(
+        title=task.title, model=task.model, mode=task.mode,
+        project=proj["host"] if proj else None,
+        project_name=proj["name"] if proj else None,
+    )
+    sid = session.id
+    task_id = f"task-{now.strftime('%H%M%S')}-{uuid.uuid4().hex[:4]}"
+    store.update_status(sid, SessionStatus.running)
+    bus.emit(sid, EventType.status, Role.system,
+             {"status": "running", "progress": 0, "note": f"定时任务已派发 {task_id}"})
+    bus.emit(sid, EventType.message, Role.user, {"text": task.prompt})
+    if task.mode in ("auto", "agent"):
+        root = ps.project_root()
+        snap = await asyncio.to_thread(_git_snapshot, root) if root is not None else None
+        if snap:
+            head = await asyncio.to_thread(_git_head, root)
+            bus.emit(sid, EventType.snapshot, Role.system,
+                     {"snapshot": snap, "head": head, "task_id": task_id})
+        else:
+            bus.emit(sid, EventType.message, Role.system,
+                     {"text": "非 git 工作区，本轮改动不可撤销"})
+    task_req = TaskRequest(
+        description=task.prompt,
+        context={"mode": task.mode, "model": task.model,
+                 "orchestrator": {"require_approval": True}},
+    )
+    if task.mode in ("auto", "agent"):
+        coro = _run_orchestrator(sid, task_id, task_req)
+    else:  # chat / plan
+        coro = _run_chat(sid, task_id, task.prompt, task.model, task.mode)
+    t = asyncio.create_task(coro)
+    RUNNING_TASKS[sid] = t
+    t.add_done_callback(lambda _t, s=sid: RUNNING_TASKS.pop(s, None))
+    _get_task_registry().mark_run(task.id, "done", sid, now)
+
+
+# ---------- M181 · 移动远程控制（手机扫码查看进度/发消息/审批；纯逻辑在 api/remote.py） ----------
+
+import time  # 局部 import：本段自包含，不动顶部 import 行
+from typing import Literal
+
+from fastapi import Request, Response
+from fastapi.responses import HTMLResponse
+
+from .assistant import DecisionResponse, MessageResponse
+from .remote import RemoteRegistry, detect_lan_ip, mobile_page_html, qr_svg
+
+_REMOTE_REGISTRY: RemoteRegistry | None = None
+
+
+def _remote_registry() -> RemoteRegistry:
+    """远程 token 注册表单例（惰性构造；FLIPPED_REMOTE_DB / FLIPPED_REMOTE_TTL_S）。"""
+    global _REMOTE_REGISTRY
+    if _REMOTE_REGISTRY is None:
+        _REMOTE_REGISTRY = RemoteRegistry(
+            Path(os.environ.get("FLIPPED_REMOTE_DB", "data/remote_tokens.json")),
+            ttl_s=int(os.environ.get("FLIPPED_REMOTE_TTL_S", "1800")))
+    return _REMOTE_REGISTRY
+
+
+class RemoteIssueRequest(BaseModel):
+    """签发远程链接请求：session_id 缺省 → 绑定最新会话。"""
+    session_id: str | None = None
+
+
+class RemoteIssueResponse(BaseModel):
+    """签发响应：移动页 URL + QR 地址 + 绑定会话信息 + 回环提示。"""
+    token: str
+    url: str
+    qr_url: str
+    session_id: str
+    session_title: str
+    expires_at: float
+    host_note: str
+
+
+class RemoteStateResponse(BaseModel):
+    """移动页轮询态：会话标识 + 状态徽标 + 尾 20 turns + pending 审批。"""
+    session_id: str
+    title: str
+    mode: str
+    status: str
+    pending_approval: dict[str, str] | None
+    turns: list[dict[str, str]]
+
+
+class RemoteMessageRequest(BaseModel):
+    """远程发消息请求（与 console 发送同语义，仅文本）。"""
+    text: str = Field(min_length=1, max_length=8000)
+
+
+class RemoteDecisionRequest(BaseModel):
+    """远程审批请求：放行 | 否决。"""
+    decision: Literal["approve", "reject"]
+
+
+class RemoteRevokeResponse(BaseModel):
+    """撤销响应（幂等：token 存在与否都 ok=True）。"""
+    ok: bool
+
+
+_LOOPBACK_HOST_NOTE = (
+    "当前绑定回环地址，手机可能无法打开：请用 --host 0.0.0.0 起后端或设 FLIPPED_REMOTE_HOST")
+
+_REMOTE_GONE_HTML = (
+    "<!DOCTYPE html><html lang=\"zh-CN\"><head><meta charset=\"utf-8\">"
+    "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">"
+    "<title>链接已失效</title></head>"
+    "<body style=\"margin:0;min-height:100vh;display:flex;align-items:center;"
+    "justify-content:center;background:#0f1115;color:#a8adb8;"
+    "font-family:system-ui,-apple-system,sans-serif\">"
+    "<p>链接已失效</p></body></html>")
+
+
+def _remote_host() -> str:
+    """移动页 URL 的 host：FLIPPED_REMOTE_HOST 优先，否则主网卡 LAN IP。"""
+    return os.environ.get("FLIPPED_REMOTE_HOST") or detect_lan_ip()
+
+
+def _remote_page_url(request: Request, token: str) -> str:
+    """重建移动页 URL（port 取请求自带，与 issue 时一致）。"""
+    return f"http://{_remote_host()}:{request.url.port}/remote/{token}"
+
+
+def _resolve_remote_token(token: str):
+    """token 守卫：未知/过期一律 404（统一 detail，不区分，无 oracle）。"""
+    tok = _remote_registry().resolve(token, now=time.time())
+    if tok is None:
+        raise HTTPException(status_code=404, detail="remote token invalid")
+    return tok
+
+
+@app.post(f"{API_PREFIX}/remote/sessions", response_model=RemoteIssueResponse)
+async def issue_remote_session(req: RemoteIssueRequest, request: Request) -> RemoteIssueResponse:
+    """签发移动远程链接：token 绑定单会话（同 session 单活），返回 URL + QR 地址。
+
+    session_id 缺省 → 最新会话（created_at ISO 字符串降序取首）；无会话 → 400；
+    指定不存在 → 404。host 为回环时 host_note 提示手机可能无法打开。
+    """
+    if req.session_id:
+        session = store.get(req.session_id)
+        if session is None:
+            raise HTTPException(status_code=404, detail="session not found")
+    else:
+        sessions = sorted(store.list(), key=lambda s: s.created_at, reverse=True)
+        if not sessions:
+            raise HTTPException(status_code=400, detail="no session available")
+        session = sessions[0]
+    tok = _remote_registry().issue(session.id, now=time.time())
+    host = _remote_host()
+    return RemoteIssueResponse(
+        token=tok.token,
+        url=f"http://{host}:{request.url.port}/remote/{tok.token}",
+        qr_url=f"{API_PREFIX}/remote/{tok.token}/qr.svg",
+        session_id=session.id,
+        session_title=session.title,
+        expires_at=tok.expires_at,
+        host_note=_LOOPBACK_HOST_NOTE if host == "127.0.0.1" else "")
+
+
+@app.get(f"{API_PREFIX}/remote/{{token}}/state", response_model=RemoteStateResponse)
+async def remote_state(token: str) -> RemoteStateResponse:
+    """移动页轮询态：尾 20 条 user/assistant turns（text 截 2000）+ pending 审批标志。"""
+    from .assistant import _has_pending_approval, _latest_pending_action, get_assistant_history
+
+    tok = _resolve_remote_token(token)
+    session = store.get(tok.session_id)
+    if session is None:  # token 活着但会话被删 → 同 404 语义，不泄露细节
+        raise HTTPException(status_code=404, detail="remote token invalid")
+    history = await get_assistant_history(tok.session_id)
+    turns = [
+        {"role": t.role, "text": (t.text or "")[:2000]}
+        for t in history
+        if t.role in ("user", "assistant") and t.text
+    ][-20:]
+    pending_approval = None
+    if _has_pending_approval(store, tok.session_id):
+        pending_approval = {
+            "action": _latest_pending_action(store, tok.session_id) or "",
+            "reason": "高风险子任务，需人工放行",
+        }
+    status = session.status.value if hasattr(session.status, "value") else str(session.status)
+    return RemoteStateResponse(
+        session_id=session.id, title=session.title, mode=str(session.mode),
+        status=status, pending_approval=pending_approval, turns=turns)
+
+
+@app.post(f"{API_PREFIX}/remote/{{token}}/message", response_model=MessageResponse)
+async def remote_message(token: str, req: RemoteMessageRequest) -> MessageResponse:
+    """远程发消息 = console 发送同语义（转发 canonical handler；409 会话忙透传）。"""
+    from .assistant import SendMessageRequest, send_assistant_message
+
+    tok = _resolve_remote_token(token)
+    return await send_assistant_message(tok.session_id, SendMessageRequest(text=req.text))
+
+
+@app.post(f"{API_PREFIX}/remote/{{token}}/decision", response_model=DecisionResponse)
+async def remote_decision(token: str, req: RemoteDecisionRequest) -> DecisionResponse:
+    """远程审批放行/否决（转发 _do_decision；无 pending approval → 409 透传）。"""
+    from .assistant import _do_decision
+
+    tok = _resolve_remote_token(token)
+    return await _do_decision(tok.session_id, req.decision)
+
+
+@app.get("/remote/{token}", response_class=HTMLResponse)
+async def remote_page(token: str) -> HTMLResponse:
+    """手机扫码打开的远程控制页（自包含 HTML，无 API_PREFIX）。无效 token → 404 失效页。"""
+    if _remote_registry().resolve(token, now=time.time()) is None:
+        return HTMLResponse(_REMOTE_GONE_HTML, status_code=404)
+    return HTMLResponse(mobile_page_html(token))
+
+
+@app.get(f"{API_PREFIX}/remote/{{token}}/qr.svg")
+async def remote_qr(token: str, request: Request) -> Response:
+    """远程链接的 QR（SVG 直出，前端 <img> 直挂，零 npm 依赖）。"""
+    _resolve_remote_token(token)
+    return Response(qr_svg(_remote_page_url(request, token)), media_type="image/svg+xml")
+
+
+@app.delete(f"{API_PREFIX}/remote/{{token}}", response_model=RemoteRevokeResponse)
+async def remote_revoke(token: str) -> RemoteRevokeResponse:
+    """撤销远程链接（幂等：token 存在与否都 200）。"""
+    _remote_registry().revoke(token)
+    return RemoteRevokeResponse(ok=True)
+
+
+# ---------- M182 · Bot Channel（多平台接入：Telegram webhook + 企业微信应用回调） ----------
+# 纯逻辑在 api/bot_channel.py（身份映射/状态统计/入站编排）与 api/bot_telegram.py /
+# api/bot_wecom.py（平台协议）；本段只做 HTTP 接线。token/secret 全走 env，绝不进代码/日志。
+# FLIPPED_BOT=0 → 全部端点 404；平台 env 未配齐 → 对应 webhook/callback 404。
+
+from fastapi.responses import JSONResponse as _JSONResponse
+from fastapi.responses import PlainTextResponse as _PlainTextResponse
+
+from . import bot_telegram as _bot_tg
+from . import bot_wecom as _bot_wc
+from .bot_channel import (
+    BotSessionRegistry as _BotSessionRegistry,
+    ChannelStats as _ChannelStats,
+    UnifiedMessage as _UnifiedMessage,
+    bot_db_path as _bot_db_path,
+    bot_reply_timeout_s as _bot_reply_timeout_s,
+    bot_stats_db_path as _bot_stats_db_path,
+    handle_inbound as _bot_handle_inbound,
+    wait_for_reply as _bot_wait_for_reply,
+)
+
+_BOT_REGISTRY: _BotSessionRegistry | None = None
+_BOT_STATS: _ChannelStats | None = None
+
+
+class BotChannelStatusEntry(BaseModel):
+    """单平台通道状态（GET /bot/channels 条目，与前端 BotChannelInfo 对齐）。"""
+    platform: str
+    enabled: bool
+    configured: bool
+    inbound_count: int
+    outbound_count: int
+    error_count: int
+    last_inbound_at: float | None
+    last_outbound_at: float | None
+    last_error: str
+
+
+class BotChannelsResponse(BaseModel):
+    """通道状态列表。"""
+    channels: list[BotChannelStatusEntry]
+
+
+class BotWebhookResponse(BaseModel):
+    """webhook 受理回执（handled=False = 非文本/无 message，已忽略不重试）。"""
+    ok: bool
+    handled: bool
+
+
+class BotTestRequest(BaseModel):
+    """测试消息请求（发到该平台最近绑定的 chat）。"""
+    text: str = Field(min_length=1, max_length=4000)
+
+
+class BotTestResponse(BaseModel):
+    """测试消息结果（send 失败走 502 JSONResponse，此模型仅 ok=True 路径）。"""
+    ok: bool
+    error: str = ""
+
+
+def _bot_enabled() -> bool:
+    """Bot Channel 总开关：FLIPPED_BOT=0 → 全端点 404。"""
+    return os.environ.get("FLIPPED_BOT", "1") != "0"
+
+
+def _bot_sessions() -> _BotSessionRegistry:
+    """身份映射注册表单例（惰性构造；FLIPPED_BOT_DB 默认 data/bot_sessions.json）。"""
+    global _BOT_REGISTRY
+    if _BOT_REGISTRY is None:
+        _BOT_REGISTRY = _BotSessionRegistry(_bot_db_path())
+    return _BOT_REGISTRY
+
+
+def _bot_channel_stats() -> _ChannelStats:
+    """通道统计单例（惰性构造；FLIPPED_BOT_STATS_DB 默认 data/bot_stats.json）。"""
+    global _BOT_STATS
+    if _BOT_STATS is None:
+        _BOT_STATS = _ChannelStats(_bot_stats_db_path())
+    return _BOT_STATS
+
+
+def _bot_sender(platform: str):
+    """按平台构造 send(chat_id, text) 闭包；未知平台/未配置 → None。"""
+    if platform == "telegram":
+        if not _bot_tg.configured():
+            return None
+        sender = _bot_tg.TelegramSender(os.environ["FLIPPED_BOT_TELEGRAM_TOKEN"].strip())
+        return sender.send_message
+    if platform == "wecom":
+        if not _bot_wc.configured():
+            return None
+        sender = _bot_wc.WeComSender(
+            os.environ["FLIPPED_BOT_WECOM_CORP_ID"].strip(),
+            os.environ["FLIPPED_BOT_WECOM_SECRET"].strip(),
+            _bot_wc.agent_id())
+        return sender.send_message
+    return None
+
+
+def _wecom_crypto() -> _bot_wc.WeComCrypto:
+    """企业微信加解密器（调用前须已过 configured() 守卫）。"""
+    return _bot_wc.WeComCrypto(
+        os.environ["FLIPPED_BOT_WECOM_TOKEN"].strip(),
+        os.environ["FLIPPED_BOT_WECOM_AES_KEY"].strip(),
+        os.environ["FLIPPED_BOT_WECOM_CORP_ID"].strip())
+
+
+def _wecom_extract_encrypt(xml_text: str) -> str | None:
+    """从回调外层 XML 提取 <Encrypt>（畸形 → None）。"""
+    import xml.etree.ElementTree as ET
+
+    try:
+        root = ET.fromstring(xml_text)
+    except Exception:  # noqa: BLE001 畸形 XML 不炸
+        return None
+    if root is None:
+        return None
+    return root.findtext("Encrypt") or None
+
+
+async def _bot_run_inbound(msg: _UnifiedMessage) -> None:
+    """单条入站消息的编排任务（webhook 以 create_task 派发，绝不阻塞 200 回执）。
+
+    转发 canonical send_assistant_message（与 M181 remote 同模式，函数级 import），
+    baseline 在 dispatch 前快照，await_reply 轮询 history 等 baseline 后新 assistant turn。
+    """
+    from .assistant import SendMessageRequest, get_assistant_history, send_assistant_message
+
+    baselines: dict[str, int] = {}
+
+    async def create_session(title: str) -> str:
+        return store.create(title=title, mode="chat").id
+
+    async def dispatch(sid: str, text: str) -> None:
+        baselines[sid] = len(await get_assistant_history(sid))
+        await send_assistant_message(sid, SendMessageRequest(text=text))
+
+    async def await_reply(sid: str) -> str | None:
+        async def get_hist(s: str) -> list[dict]:
+            return [{"role": t.role, "text": t.text or ""}
+                    for t in await get_assistant_history(s)]
+
+        return await _bot_wait_for_reply(
+            get_hist, sid, baselines.get(sid, 0), _bot_reply_timeout_s())
+
+    async def send_reply(text: str) -> tuple[bool, str]:
+        sender = _bot_sender(msg.platform)
+        if sender is None:
+            return (False, f"platform not configured: {msg.platform}")
+        return await sender(msg.chat_id, text)
+
+    await _bot_handle_inbound(
+        msg, registry=_bot_sessions(), stats=_bot_channel_stats(),
+        create_session=create_session, dispatch=dispatch,
+        await_reply=await_reply, send_reply=send_reply)
+
+
+@app.post(f"{API_PREFIX}/bot/telegram/webhook", response_model=BotWebhookResponse)
+async def bot_telegram_webhook(request: Request) -> BotWebhookResponse:
+    """Telegram webhook：secret 头验签（hmac 常量时间）；非文本消息 200 handled=False。
+
+    未配置 token → 404（不暴露通道存在性）；secret 不符 → 403；解析后后台
+    create_task 编排，立即 200（Telegram 重发窗口内绝不阻塞）。
+    """
+    if not _bot_enabled() or not _bot_tg.configured():
+        raise HTTPException(status_code=404, detail="bot channel not configured")
+    secret = request.headers.get("X-Telegram-Bot-Api-Secret-Token")
+    if not _bot_tg.verify_secret(secret, _bot_tg.secret_configured()):
+        raise HTTPException(status_code=403, detail="invalid secret")
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001 非法 JSON 也回 200 handled=False，防 Telegram 重试风暴
+        return BotWebhookResponse(ok=True, handled=False)
+    msg = _bot_tg.parse_update(body)
+    if msg is None:
+        return BotWebhookResponse(ok=True, handled=False)
+    asyncio.create_task(_bot_run_inbound(msg))
+    return BotWebhookResponse(ok=True, handled=True)
+
+
+@app.get(f"{API_PREFIX}/bot/wecom/callback")
+async def bot_wecom_verify(msg_signature: str = Query(...), timestamp: str = Query(...),
+                           nonce: str = Query(...), echostr: str = Query(...)
+                           ) -> _PlainTextResponse:
+    """企业微信回调 URL 验证：验签 → 解密 echostr → 明文直出（协议要求）。
+
+    返回 PlainTextResponse 非 JSON，无 Pydantic 模型可挂 → 登记契约 allowlist。
+    """
+    if not _bot_enabled() or not _bot_wc.configured():
+        raise HTTPException(status_code=404, detail="bot channel not configured")
+    crypto = _wecom_crypto()
+    if not crypto.verify_signature(msg_signature, timestamp, nonce, echostr):
+        raise HTTPException(status_code=403, detail="invalid signature")
+    try:
+        plain = crypto.decrypt(echostr)
+    except ValueError:
+        raise HTTPException(status_code=403, detail="decrypt failed")
+    return _PlainTextResponse(plain)
+
+
+@app.post(f"{API_PREFIX}/bot/wecom/callback")
+async def bot_wecom_callback(request: Request, msg_signature: str = Query(...),
+                             timestamp: str = Query(...), nonce: str = Query(...)
+                             ) -> _PlainTextResponse:
+    """企业微信消息回调：验签(用外层 Encrypt) → 解密 → 非文本/解密失败也回 "success"。
+
+    协议要求无论处理结果都回明文 success（否则企业微信判定失败重推）；
+    返回 PlainTextResponse → 登记契约 allowlist。
+    """
+    if not _bot_enabled() or not _bot_wc.configured():
+        raise HTTPException(status_code=404, detail="bot channel not configured")
+    body = (await request.body()).decode("utf-8", errors="replace")
+    encrypt = _wecom_extract_encrypt(body)
+    crypto = _wecom_crypto()
+    if encrypt is None or not crypto.verify_signature(
+            msg_signature, timestamp, nonce, encrypt):
+        raise HTTPException(status_code=403, detail="invalid signature")
+    msg = None
+    try:
+        msg = _bot_wc.parse_callback_xml(crypto.decrypt(encrypt))
+    except ValueError:  # corp_id 尾缀不符 → 按无效消息吞掉回 success
+        msg = None
+    if msg is not None:
+        asyncio.create_task(_bot_run_inbound(msg))
+    return _PlainTextResponse("success")
+
+
+@app.get(f"{API_PREFIX}/bot/channels", response_model=BotChannelsResponse)
+async def bot_channels() -> BotChannelsResponse:
+    """通道状态监控：两平台计数/末次时间/末次错误（未配置也列出，前端引导配置）。"""
+    if not _bot_enabled():
+        raise HTTPException(status_code=404, detail="bot channel disabled")
+    configured = {"telegram": _bot_tg.configured(), "wecom": _bot_wc.configured()}
+    return BotChannelsResponse(channels=[
+        BotChannelStatusEntry(**vars(s))
+        for s in _bot_channel_stats().all_statuses(configured, enabled=True)
+    ])
+
+
+@app.post(f"{API_PREFIX}/bot/channels/{{platform}}/test", response_model=BotTestResponse)
+async def bot_channel_test(platform: str, req: BotTestRequest) -> BotTestResponse | _JSONResponse:
+    """发测试消息到该平台最近绑定的 chat：未知平台 404 / 未配置 400 / 无绑定 400 /
+    发送失败 502 {ok:false,error}；成功 {ok:true} 并记 outbound 统计。"""
+    if not _bot_enabled():
+        raise HTTPException(status_code=404, detail="bot channel disabled")
+    if platform not in ("telegram", "wecom"):
+        raise HTTPException(status_code=404, detail=f"unknown platform: {platform}")
+    sender = _bot_sender(platform)
+    if sender is None:
+        raise HTTPException(status_code=400, detail=f"platform not configured: {platform}")
+    chat_id = _bot_sessions().latest_chat_id(platform)
+    if chat_id is None:
+        raise HTTPException(status_code=400, detail=f"no bound chat for platform: {platform}")
+    ok, err = await sender(chat_id, req.text)
+    if not ok:
+        return _JSONResponse(status_code=502, content={"ok": False, "error": err})
+    _bot_channel_stats().record_outbound(platform)
+    return BotTestResponse(ok=True)
+
+
+# ---------- M183 · Worker 规则注入系统（agent 通路手动 CRUD + auto 通路自动生成） ----------
+# 纯逻辑在 driving/worker_rules.py（WorkerRule/Store/Stats/build/generate）；
+# orchestrator local_worker 注入 + verify 节点效果统计已在 B183 接线（fail-open）。
+# 本段只做 HTTP 接线。FLIPPED_WORKER_RULES=0 → 全部端点 404。
+# store/stats 每请求新实例（orchestrator 同进程并发写 stats 文件，缓存会读旧值）。
+
+from driving.worker_rules import (
+    WorkerRule as _WorkerRule,
+    WorkerRuleStats as _WorkerRuleStats,
+    WorkerRuleStore as _WorkerRuleStore,
+    generate_auto_rules as _generate_auto_rules,
+)
+
+
+class WorkerRuleCreateRequest(BaseModel):
+    """新建规则：text 必填（1..500，blocklist 由 WorkerRule 校验），scope 缺省 worker。"""
+    text: str = Field(min_length=1, max_length=500)
+    scope: Literal["worker", "all"] = "worker"
+    priority: int | None = Field(default=None, ge=0, le=100)
+
+
+class WorkerRuleUpdateRequest(BaseModel):
+    """更新规则：三字段全可选（None = 不动）。"""
+    text: str | None = Field(default=None, min_length=1, max_length=500)
+    priority: int | None = Field(default=None, ge=0, le=100)
+    scope: Literal["worker", "all"] | None = None
+
+
+class WorkerRuleToggleRequest(BaseModel):
+    """启停规则。"""
+    enabled: bool
+
+
+class WorkerRuleDeleteResponse(BaseModel):
+    """删除回执。"""
+    ok: bool
+
+
+class WorkerRulesResponse(BaseModel):
+    """规则列表 + 当前版本号。"""
+    version: int
+    rules: list[_WorkerRule]
+
+
+class WorkerRuleVersionEntry(BaseModel):
+    """版本史元信息（不含快照全文）。"""
+    version: int
+    ts: float
+    action: str
+    detail: str
+    rule_count: int
+
+
+class WorkerRuleVersionsResponse(BaseModel):
+    """版本史列表。"""
+    versions: list[WorkerRuleVersionEntry]
+
+
+class WorkerRuleRollbackRequest(BaseModel):
+    """回滚到指定版本。"""
+    version: int
+
+
+class WorkerRuleRollbackResponse(BaseModel):
+    """回滚回执：version 为回滚后的新版本号（rollback 自身亦 bump）。"""
+    ok: bool
+    version: int
+
+
+class WorkerRuleAutoGenRequest(BaseModel):
+    """自动生成请求：failure_texts 缺省 → 失败知识库最近未解决条目。"""
+    failure_texts: list[str] | None = None
+
+
+class WorkerRuleAutoGenResponse(BaseModel):
+    """自动生成回执：added 为实际入库的规则，candidates 为候选条数。"""
+    added: list[_WorkerRule]
+    candidates: int
+
+
+class WorkerRuleStatEntry(BaseModel):
+    """单规则效果：applied=注入次；success/failure=对应 verify 通过/失败次。"""
+    applied: int
+    success: int
+    failure: int
+
+
+class WorkerRuleStatsResponse(BaseModel):
+    """规则执行效果统计快照。"""
+    stats: dict[str, WorkerRuleStatEntry]
+    total_runs: int
+
+
+def _worker_rules_guard() -> None:
+    """总开关守卫：FLIPPED_WORKER_RULES=0 → 404。"""
+    if os.environ.get("FLIPPED_WORKER_RULES", "1") == "0":
+        raise HTTPException(status_code=404, detail="worker rules disabled")
+
+
+def _worker_rule_store() -> _WorkerRuleStore:
+    """每请求新实例（坏文件回退空不炸；FLIPPED_WORKER_RULES_PATH 默认 data/worker_rules.json）。"""
+    return _WorkerRuleStore(
+        Path(os.environ.get("FLIPPED_WORKER_RULES_PATH", "data/worker_rules.json")))
+
+
+def _worker_rule_stats() -> _WorkerRuleStats:
+    """每请求新实例（orchestrator verify 节点并发写，单例缓存会读旧值）。"""
+    return _WorkerRuleStats(
+        Path(os.environ.get("FLIPPED_WORKER_RULE_STATS_PATH", "data/worker_rule_stats.json")))
+
+
+def _recent_failure_texts(limit: int = 20) -> list[str]:
+    """auto 通路缺省数据源：失败知识库最近未解决条目（fail-open → []）。"""
+    try:
+        from driving.failure_kb import get_all_failures
+        entries = get_all_failures(limit=limit, resolved=False)
+        return [f"{e.cause} {e.error_detail}".strip() for e in entries]
+    except Exception:  # noqa: BLE001 fail-open
+        return []
+
+
+@app.get(f"{API_PREFIX}/worker/rules", response_model=WorkerRulesResponse)
+async def worker_rules_list() -> WorkerRulesResponse:
+    """规则列表 + 版本号（前端 WorkerRulesPanel mount 拉取）。"""
+    _worker_rules_guard()
+    store_ = _worker_rule_store()
+    return WorkerRulesResponse(version=store_.version, rules=store_.list())
+
+
+@app.post(f"{API_PREFIX}/worker/rules", response_model=_WorkerRule, status_code=201)
+async def worker_rules_create(req: WorkerRuleCreateRequest) -> _WorkerRule:
+    """agent 通路手动注入：校验失败（长度/blocklist）→ 422。"""
+    _worker_rules_guard()
+    try:
+        return _worker_rule_store().add(
+            req.text, scope=req.scope, source="manual", priority=req.priority)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+
+@app.put(f"{API_PREFIX}/worker/rules/{{rule_id}}", response_model=_WorkerRule)
+async def worker_rules_update(rule_id: str, req: WorkerRuleUpdateRequest) -> _WorkerRule:
+    """更新规则文本/优先级/作用域（重走 WorkerRule 校验）；未知 id → 404。"""
+    _worker_rules_guard()
+    try:
+        rule = _worker_rule_store().update(
+            rule_id, text=req.text, priority=req.priority, scope=req.scope)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    if rule is None:
+        raise HTTPException(status_code=404, detail="rule not found")
+    return rule
+
+
+@app.delete(f"{API_PREFIX}/worker/rules/{{rule_id}}", response_model=WorkerRuleDeleteResponse)
+async def worker_rules_delete(rule_id: str) -> WorkerRuleDeleteResponse:
+    """删除规则；未知 id → 404。"""
+    _worker_rules_guard()
+    if not _worker_rule_store().delete(rule_id):
+        raise HTTPException(status_code=404, detail="rule not found")
+    return WorkerRuleDeleteResponse(ok=True)
+
+
+@app.post(f"{API_PREFIX}/worker/rules/{{rule_id}}/toggle", response_model=_WorkerRule)
+async def worker_rules_toggle(rule_id: str, req: WorkerRuleToggleRequest) -> _WorkerRule:
+    """启停规则（停用即不再注入 prompt，保留供复启）；未知 id → 404。"""
+    _worker_rules_guard()
+    rule = _worker_rule_store().set_enabled(rule_id, req.enabled)
+    if rule is None:
+        raise HTTPException(status_code=404, detail="rule not found")
+    return rule
+
+
+@app.get(f"{API_PREFIX}/worker/rules/versions", response_model=WorkerRuleVersionsResponse)
+async def worker_rules_versions() -> WorkerRuleVersionsResponse:
+    """版本史（每次变更 bump + 快照，cap 20）。"""
+    _worker_rules_guard()
+    return WorkerRuleVersionsResponse(versions=[
+        WorkerRuleVersionEntry(**v) for v in _worker_rule_store().versions()])
+
+
+@app.post(f"{API_PREFIX}/worker/rules/rollback", response_model=WorkerRuleRollbackResponse)
+async def worker_rules_rollback(req: WorkerRuleRollbackRequest) -> WorkerRuleRollbackResponse:
+    """回滚到指定版本快照；未知版本 → 404。回滚自身亦 bump version。"""
+    _worker_rules_guard()
+    store_ = _worker_rule_store()
+    if not store_.rollback(req.version):
+        raise HTTPException(status_code=404, detail="version not found")
+    return WorkerRuleRollbackResponse(ok=True, version=store_.version)
+
+
+@app.post(f"{API_PREFIX}/worker/rules/auto-generate", response_model=WorkerRuleAutoGenResponse)
+async def worker_rules_auto_generate(
+        req: WorkerRuleAutoGenRequest | None = None) -> WorkerRuleAutoGenResponse:
+    """auto 通路：失败文本 → 模板命中 → 去重 → 入库（source="auto"，priority 默认 10）。
+
+    failure_texts 缺省时读失败知识库最近 20 条未解决记录；无候选 → added=[] 不报错。
+    """
+    _worker_rules_guard()
+    texts = req.failure_texts if req and req.failure_texts else _recent_failure_texts()
+    store_ = _worker_rule_store()
+    candidates = _generate_auto_rules(texts, store_.list())
+    added = [store_.add(text, source="auto") for text in candidates]
+    return WorkerRuleAutoGenResponse(added=added, candidates=len(candidates))
+
+
+@app.get(f"{API_PREFIX}/worker/rules/stats", response_model=WorkerRuleStatsResponse)
+async def worker_rules_stats() -> WorkerRuleStatsResponse:
+    """规则执行效果统计（orchestrator 注入/verify 节点实时累积）。"""
+    _worker_rules_guard()
+    snap = _worker_rule_stats().snapshot()
+    return WorkerRuleStatsResponse(
+        stats={k: WorkerRuleStatEntry(**v) for k, v in snap["stats"].items()},
+        total_runs=snap["total_runs"])

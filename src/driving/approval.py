@@ -148,6 +148,62 @@ def remember_grant(cwd: str, pattern: str) -> list:
     return grants
 
 
+# ---------------------------------------------------------------------------
+# M165.2b · 宿主侧 grants（assistant approve scope=always 持久化目标）
+#
+# 与项目级 <cwd>/.flipped/approvals.json 的区别：会话 cwd 可能是容器路径
+# （/projects/x 或 /workspace），绝不能往那里写。宿主侧统一落
+# data/approval_grants.json（相对项目根），结构 {"<cwd>": ["pattern1", ...]}，
+# cwd 作为 key 原样存字符串；orchestrator approval_gate 用同一 cwd 字符串读取匹配。
+# ---------------------------------------------------------------------------
+
+
+def host_grants_path() -> str:
+    """宿主侧 grants 文件路径：env FLIPPED_HOST_GRANTS 可覆盖，默认 data/approval_grants.json。"""
+    return os.environ.get("FLIPPED_HOST_GRANTS", "data/approval_grants.json")
+
+
+def load_host_grants(cwd: str) -> list:
+    """读取宿主侧 grants 文件中该 cwd 的 pattern 列表。缺失/损坏/结构不对 → 空列表（fail-open）。"""
+    try:
+        with open(host_grants_path(), encoding="utf-8") as f:
+            data = json.load(f)
+        if isinstance(data, dict):
+            patterns = data.get(cwd, [])
+            if isinstance(patterns, list):
+                return [p for p in patterns if isinstance(p, str)]
+        return []
+    except Exception:
+        return []
+
+
+def remember_host_grant(cwd: str, pattern: str) -> list:
+    """把 pattern 持久化到宿主侧 grants 文件（按 cwd key 隔离，幂等去重），返回该 cwd 完整列表。
+
+    整字典读出→改单 key→整字典写回，保留其他 cwd 的 grants；损坏文件自愈重写。
+    """
+    try:
+        with open(host_grants_path(), encoding="utf-8") as f:
+            data = json.load(f)
+        if not isinstance(data, dict):
+            data = {}
+    except Exception:
+        data = {}
+    grants = data.get(cwd)
+    if not isinstance(grants, list):
+        grants = []
+    grants = [p for p in grants if isinstance(p, str)]
+    if pattern not in grants:
+        grants.append(pattern)
+    data[cwd] = grants
+    parent = os.path.dirname(host_grants_path())
+    if parent:
+        os.makedirs(parent, exist_ok=True)
+    with open(host_grants_path(), "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+    return grants
+
+
 def evaluate_permission(
     action: str,
     *,

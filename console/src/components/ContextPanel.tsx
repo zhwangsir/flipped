@@ -1,10 +1,14 @@
 import { useState, useEffect, useRef, type ReactNode } from 'react';
 import { useApp } from '../store';
-import type { ChangedFile, FileNode, BrowserElement } from '../types';
+import type { ChangedFile, FileNode, BrowserElement, GitDiffFile, ReviewFinding } from '../types';
 import { renderMarkdown } from '../lib/markdown';
 import { isTauri, createBrowserWebview, updateBrowserWebview, closeBrowserWebview } from '../lib/native';
 import { PtyTerminal } from './PtyTerminal';
-import { IconFile, IconFolder, IconTerminal, IconBrowser, IconReview, IconChat, IconX, IconChevronDown, IconEye, IconCheck } from '../icons';
+import { ProjectMapPanel } from './ProjectMapPanel';
+import { RulesPanel } from './RulesPanel';
+import { IconFile, IconFolder, IconTerminal, IconBrowser, IconReview, IconChat, IconX, IconChevronDown, IconEye, IconCheck, IconMap, IconRefresh, IconSparkle, IconBot, IconWand } from '../icons';
+import { BotChannelPanel } from './BotChannelPanel';
+import { WorkerRulesPanel } from './WorkerRulesPanel';
 
 /** 递归文件树节点(阶段② — 右侧「文件」)。 */
 function FileTreeNode({ node, depth, activePath, onOpen }: {
@@ -211,12 +215,64 @@ function BrowserTab() {
   );
 }
 
+/** M179.2 — AI 评审单条 finding:severity 徽标 + message(:行号) + 建议次级行(只读展示)。 */
+const REVIEW_SEVERITY_LABEL: Record<ReviewFinding['severity'], string> = { high: '高', medium: '中', low: '低' };
+
+function ReviewFindingRow({ finding, showPath = false }: { finding: ReviewFinding; showPath?: boolean }) {
+  return (
+    <div className="review-finding">
+      <div className="review-finding-main">
+        <span className={`review-badge ${finding.severity}`}>
+          {REVIEW_SEVERITY_LABEL[finding.severity] ?? finding.severity}
+        </span>
+        {showPath && <span className="review-path">{finding.path}</span>}
+        <span className="review-msg">
+          {finding.message}
+          {finding.line != null && <span className="review-line">:{finding.line}</span>}
+        </span>
+      </div>
+      {finding.suggestion && <div className="review-suggestion">建议:{finding.suggestion}</div>}
+    </div>
+  );
+}
+
 /** 工作区真实 git diff 审查视图(阶段②c)。无会话变更时展示 `git diff HEAD` 的真 +/- diff。 */
 function GitDiffView() {
-  const { gitDiff, gitDiffLoading, loadGitDiff } = useApp();
+  const { gitDiff, gitDiffLoading, loadGitDiff, revertGitDiffFile, aiReview, runAiReview, clearAiReview } = useApp();
+  // M177.2 — 逐文件撤销:确认态/进行中/错误均组件本地管理,同一时刻只允许一个卡处于确认态
+  const [confirmingPath, setConfirmingPath] = useState<string | null>(null);
+  const [revertingPath, setRevertingPath] = useState<string | null>(null);
+  const [revertError, setRevertError] = useState<{ path: string; message: string } | null>(null);
   useEffect(() => {
     loadGitDiff();
   }, [loadGitDiff]);
+
+  const doRevert = async (f: GitDiffFile) => {
+    setRevertingPath(f.path);
+    setRevertError(null);
+    try {
+      await revertGitDiffFile(f.path);
+      setConfirmingPath(null);
+    } catch (e) {
+      setRevertError({ path: f.path, message: e instanceof Error ? e.message : String(e) });
+    } finally {
+      setRevertingPath(null);
+    }
+  };
+
+  // M179.2 — findings 按 path 分组;不在当前 diff 的 path 归到底部「其他文件」
+  const reviewResult = aiReview.result;
+  const findingsByPath = new Map<string, ReviewFinding[]>();
+  if (reviewResult) {
+    for (const fd of reviewResult.findings) {
+      const arr = findingsByPath.get(fd.path);
+      if (arr) arr.push(fd);
+      else findingsByPath.set(fd.path, [fd]);
+    }
+  }
+  const otherFindings = [...findingsByPath.entries()].filter(
+    ([p]) => !gitDiff.some((f) => f.path === p)
+  );
 
   if (gitDiffLoading && gitDiff.length === 0) {
     return <div className="side-empty">读取 git 变更…</div>;
@@ -236,28 +292,112 @@ function GitDiffView() {
         <button className="rdiff-refresh" onClick={() => loadGitDiff()} title="刷新">
           刷新
         </button>
+        <button
+          className="rdiff-refresh rdiff-review-btn"
+          onClick={() => runAiReview()}
+          disabled={aiReview.loading}
+          title="AI 评审"
+        >
+          <IconSparkle size={12} /> {aiReview.loading ? '评审中…' : 'AI 评审'}
+        </button>
       </div>
+      {aiReview.error && <div className="review-error">AI 评审失败:{aiReview.error}</div>}
+      {reviewResult && (
+        <div className="review-summary">
+          <IconSparkle size={12} />
+          <span>
+            {reviewResult.findings.length} 条建议 · 评审了 {reviewResult.files_reviewed} 个文件 · {reviewResult.model}
+          </span>
+          {reviewResult.note && <span className="review-note">{reviewResult.note}</span>}
+          <button className="review-clear" onClick={() => clearAiReview()} title="清除评审结果">
+            清除
+          </button>
+        </div>
+      )}
       {gitDiff.map((f) => (
         <div className="rdiff-file" key={f.path}>
           <div className="rdiff-fhead mono">
             <IconFile size={12} />
             <span className="rdiff-path">{f.path}</span>
+            {f.untracked && <span className="rdiff-badge new">新增</span>}
+            {f.binary && <span className="rdiff-badge bin">二进制</span>}
             <span className="rdiff-stat">
               <span className="add">+{f.added}</span> <span className="del">−{f.removed}</span>
             </span>
+            {confirmingPath === f.path ? (
+              <span className="rdiff-confirm">
+                <span className="rdiff-confirm-text">{f.untracked ? '删除该新文件？' : '还原到 HEAD？'}</span>
+                <button
+                  className="rdiff-confirm-danger"
+                  disabled={revertingPath === f.path}
+                  onClick={() => doRevert(f)}
+                >
+                  确认
+                </button>
+                <button
+                  className="rdiff-revert"
+                  disabled={revertingPath === f.path}
+                  onClick={() => {
+                    setConfirmingPath(null);
+                    setRevertError(null);
+                  }}
+                >
+                  取消
+                </button>
+              </span>
+            ) : (
+              <button
+                className="rdiff-revert"
+                title="撤销该文件变更"
+                onClick={() => {
+                  setConfirmingPath(f.path);
+                  setRevertError(null);
+                }}
+              >
+                <IconRefresh size={12} />
+              </button>
+            )}
           </div>
+          {revertError && revertError.path === f.path && (
+            <div className="rdiff-revert-error">{revertError.message}</div>
+          )}
           <div className="rdiff-body">
-            {f.lines.map((l, i) => (
-              <div className={'rdiff-row ' + l.type} key={i}>
-                <span className="rdiff-sign">
-                  {l.type === 'add' ? '+' : l.type === 'del' ? '-' : l.type === 'hunk' ? '' : ' '}
-                </span>
-                <span className="rdiff-tx">{l.text}</span>
-              </div>
+            {(findingsByPath.get(f.path) ?? []).map((fd, i) => (
+              <ReviewFindingRow key={i} finding={fd} />
             ))}
+            {f.lines.length === 0 ? (
+              <div className="rdiff-row empty">
+                <span className="rdiff-sign" />
+                <span className="rdiff-tx">
+                  {f.untracked ? '新文件 · 撤销将删除该文件' : f.binary ? '二进制文件不显示 diff' : '无 diff 内容'}
+                </span>
+              </div>
+            ) : (
+              f.lines.map((l, i) => (
+                <div className={'rdiff-row ' + l.type} key={i}>
+                  <span className="rdiff-sign">
+                    {l.type === 'add' ? '+' : l.type === 'del' ? '-' : l.type === 'hunk' ? '' : ' '}
+                  </span>
+                  <span className="rdiff-tx">{l.text}</span>
+                </div>
+              ))
+            )}
           </div>
         </div>
       ))}
+      {otherFindings.length > 0 && (
+        <div className="rdiff-file review-other">
+          <div className="rdiff-fhead mono">
+            <IconFile size={12} />
+            <span className="rdiff-path">其他文件</span>
+          </div>
+          <div className="rdiff-body">
+            {otherFindings.map(([path, list]) =>
+              list.map((fd, i) => <ReviewFindingRow key={`${path}-${i}`} finding={fd} showPath />)
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -388,6 +528,18 @@ export function ContextPanel() {
         <button className={'tab' + (tab === 'files' ? ' active' : '')} onClick={() => setTab('files')}>
           <IconFolder size={14} /> 文件
         </button>
+        <button className={'tab' + (tab === 'map' ? ' active' : '')} onClick={() => setTab('map')}>
+          <IconMap size={14} /> 地图
+        </button>
+        <button className={'tab' + (tab === 'rules' ? ' active' : '')} onClick={() => setTab('rules')}>
+          <IconFile size={14} /> 规则
+        </button>
+        <button className={'tab' + (tab === 'bot' ? ' active' : '')} onClick={() => setTab('bot')}>
+          <IconBot size={14} /> Bot
+        </button>
+        <button className={'tab' + (tab === 'worker' ? ' active' : '')} onClick={() => setTab('worker')}>
+          <IconWand size={14} /> Worker
+        </button>
       </div>
 
       <div className="panel-body">
@@ -490,6 +642,14 @@ export function ContextPanel() {
         {tab === 'term' && <PtyTerminal active={tab === 'term'} className="term-panel" />}
 
         {tab === 'browser' && <BrowserTab />}
+
+        {tab === 'map' && <ProjectMapPanel />}
+
+        {tab === 'rules' && <RulesPanel />}
+
+        {tab === 'bot' && <BotChannelPanel />}
+
+        {tab === 'worker' && <WorkerRulesPanel />}
       </div>
     </section>
   );

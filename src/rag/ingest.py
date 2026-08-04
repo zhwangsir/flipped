@@ -1,6 +1,9 @@
 """文档 ingest：文件、目录、纯文本 -> 向量库。"""
 from __future__ import annotations
 
+import hashlib
+import re
+import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -10,6 +13,10 @@ from rag.vector_store import ChromaVectorStore, VectorStore
 SUPPORTED_EXTS = {".txt", ".md", ".py", ".json", ".js", ".ts", ".html", ".css", ".yaml", ".yml"}
 DEFAULT_CHUNK_SIZE = 800
 DEFAULT_CHUNK_OVERLAP = 100
+CODE_EXTS = {".py", ".js", ".ts", ".html", ".css", ".yaml", ".yml", ".json"}
+
+_HEADING_RE = re.compile(r"^#{1,6}\s", re.MULTILINE)
+_BLANK_RUN_RE = re.compile(r"\n\s*\n+")
 
 
 def _chunk(text: str, chunk_size: int = DEFAULT_CHUNK_SIZE, overlap: int = DEFAULT_CHUNK_OVERLAP) -> list[str]:
@@ -24,21 +31,127 @@ def _chunk(text: str, chunk_size: int = DEFAULT_CHUNK_SIZE, overlap: int = DEFAU
     return chunks
 
 
+def _split_markdown(text: str) -> list[str]:
+    """按标题行切段，标题行归入其下段首。"""
+    sections: list[str] = []
+    current: list[str] = []
+    for line in text.split("\n"):
+        if _HEADING_RE.match(line):
+            if current:
+                sections.append("\n".join(current))
+            current = [line]
+        else:
+            current.append(line)
+    if current:
+        sections.append("\n".join(current))
+    return sections
+
+
+def _chunk_structured(
+    text: str,
+    ext: str,
+    chunk_size: int = DEFAULT_CHUNK_SIZE,
+    overlap: int = DEFAULT_CHUNK_OVERLAP,
+) -> list[str]:
+    """按文档结构分块：markdown 按标题、代码按空行，其余回退 _chunk 硬切。"""
+    if ext == ".md":
+        sections = _split_markdown(text)
+    elif ext in CODE_EXTS:
+        sections = _BLANK_RUN_RE.split(text)
+    else:
+        return _chunk(text, chunk_size, overlap)
+
+    sections = [s for s in sections if s.strip()]
+    chunks: list[str] = []
+
+    def emit(buf: str) -> None:
+        if len(buf) > chunk_size:
+            chunks.extend(_chunk(buf, chunk_size, overlap))
+        else:
+            chunks.append(buf)
+
+    current = ""
+    for sec in sections:
+        candidate = f"{current}\n{sec}" if current else sec
+        if current and len(candidate) > chunk_size:
+            emit(current)
+            current = sec
+        else:
+            current = candidate
+    if current:
+        emit(current)
+    return chunks
+
+
+def _git_files(base: Path, exts: set[str]) -> list[Path] | None:
+    """git repo 内返回 git 清单（含 gitignore 过滤）；任何异常返回 None 回退 rglob。"""
+    try:
+        probe = subprocess.run(
+            ["git", "-C", str(base), "rev-parse", "--is-inside-work-tree"],
+            capture_output=True, text=True, timeout=5,
+        )
+        if probe.returncode != 0 or probe.stdout.strip() != "true":
+            return None
+        top = subprocess.run(
+            ["git", "-C", str(base), "rev-parse", "--show-toplevel"],
+            capture_output=True, text=True, timeout=5,
+        )
+        if top.returncode != 0:
+            return None
+        toplevel = Path(top.stdout.strip()).resolve()
+        listing = subprocess.run(
+            ["git", "-C", str(toplevel), "ls-files", "-z", "--cached", "--others", "--exclude-standard"],
+            capture_output=True, text=True, timeout=5,
+        )
+        if listing.returncode != 0:
+            return None
+        files: list[Path] = []
+        for rel in listing.stdout.split("\0"):
+            if not rel:
+                continue
+            p = (toplevel / rel).resolve()
+            try:
+                p.relative_to(base)
+            except ValueError:
+                continue
+            if p.is_file() and p.suffix.lower() in exts:
+                files.append(p)
+        return files
+    except Exception:
+        return None
+
+
 def ingest_text(text: str, metadata: dict[str, Any] | None = None, *, store: VectorStore | None = None) -> list[str]:
     store = store or ChromaVectorStore()
     docs = [{"text": text, "metadata": metadata or {}}]
     return store.add_documents(docs)
 
 
-def ingest_file(path: str | Path, *, store: VectorStore | None = None) -> list[str]:
+def ingest_file(path: str | Path, *, store: VectorStore | None = None, project: str | None = None) -> list[str]:
     store = store or ChromaVectorStore()
     p = Path(path)
     if not p.exists():
         raise FileNotFoundError(path)
     text = p.read_text(encoding="utf-8", errors="ignore")
-    chunks = _chunk(text)
-    docs = [{"text": c, "metadata": {"source": str(p), "chunk": i}} for i, c in enumerate(chunks)]
-    return store.add_documents(docs)
+    if not text.strip():
+        return []
+    content_hash = hashlib.sha256(text.encode()).hexdigest()[:16]
+    chunks = _chunk_structured(text, p.suffix.lower())
+    docs = [
+        {
+            "id": f"{content_hash}:{i}",
+            "text": chunk,
+            "metadata": {
+                "source": str(p.resolve()),
+                "ext": p.suffix.lower(),
+                "chunk": i,
+                "project": project or "",
+                "content_hash": content_hash,
+            },
+        }
+        for i, chunk in enumerate(chunks)
+    ]
+    return store.upsert_documents(docs)
 
 
 def ingest_directory(
@@ -46,11 +159,17 @@ def ingest_directory(
     extensions: set[str] | None = None,
     *,
     store: VectorStore | None = None,
+    project: str | None = None,
 ) -> list[str]:
     store = store or ChromaVectorStore()
     exts = extensions or SUPPORTED_EXTS
+    base = Path(dir_path).resolve()
+    if project is None:
+        project = base.name
+    files = _git_files(base, exts)
+    if files is None:
+        files = [p for p in base.rglob("*") if p.is_file() and p.suffix.lower() in exts]
     ids: list[str] = []
-    for p in Path(dir_path).rglob("*"):
-        if p.is_file() and p.suffix.lower() in exts:
-            ids.extend(ingest_file(p, store=store))
+    for p in files:
+        ids.extend(ingest_file(p, store=store, project=project))
     return ids

@@ -1,527 +1,200 @@
-# M151 · 代码助手应用（TUI + Web 双形态，参考 claudecode/opencode/Kimi Code，Web 套 Codex 视觉）
-
-> 来源：用户要求开发一个代码助手应用，不需要打包，TUI + Web 双界面，参考 Kimi Code / opencode / claudecode 架构与体验，Web 视觉对齐 Codex 设计语言。
-> ✅ 验收通过（2026-07-25）：7 子任务全 done（M151.1–M151.7），TDD 共 41 例（pytest 25 + vitest 16）；verify_assistant.sh 6 步全绿（assistant 4 文件 pytest / console vitest 78 / tsc / vite build / 全量 pytest 1639 passed 7 skipped / 端到端 WS 事件通路）。不需要打包，dev 模式跑 `python -m src.tui.assistant` + `npm run dev`。证据见 TEST_LOG.md M151 节、STATE.json M151 条目。
-
-## 子任务
-- M151.1 后端 assistant router（TDD 12 例）：`/api/v1/assistant/*` 端点，复用 store/bus/RUNNING_TASKS/_run_orchestrator/_run_chat，DecisionResponse 命名 response_model，_events_to_turns 纯函数。
-- M151.2 审批 interrupt→resume 闭环（TDD 5 例）：build_orchestrator 加 on_approval_request 回调，resume_orchestrated 加 resume_value 参数（tasks.interrupts 精确判定），_resume_with_decision 接通真实 resume。
-- M151.3 单模型 GLM fallback 钉测试（TDD 4 例）：钉 _model_id_for_alias 全角色默认 GLM-5.2-fp8 / _make_llm / _run_chat / approve 端点单模型 env 通路。无生产代码改动。
-- M151.4 Console Assistant 视图 + Codex 配色（TDD 12 例）：三栏 MessageStream+Composer+ContextPanel，ToolCard 折叠卡 + ApprovalInline，tokens.css .view-assistant 作用域块。
-- M151.5 Console hash 路由 + 工厂视图保留（TDD 2 例）：router.ts parseHash/useHashRoute/navigate（不引 react-router），App.tsx route 驱动主区 + 同步 store。
-- M151.6 TUI Assistant（TDD 6 例）：AssistantTUIApp（StreamPane + ContextPane + InputBar + ApprovalOverlay），Codex 派生 ANSI 色，WS loop。
-- M151.7 全量回归 + verify_assistant.sh + 状态留痕：6 步验收脚本 + STATE/PLAN/TEST_LOG 更新 + 契约修复（DecisionResponse + history allowlist + api-types.d.ts 重生）。
-
-## 设计决策
-- **不需要打包**：dev 模式 `python -m src.tui.assistant` + `npm run dev`，无 Tauri/.dmg/签名。
-- **hash 路由不引 react-router**：`#/` → Assistant（默认），`#/factory` → 既有工厂 shell。hash 是顶层视图唯一真相源，同步 store（factoryOpen/activeView）。
-- **步级事件流**（非 token 级）：M151 用现有 WS Event 流（一个 Event = 一个 agent step）；token 级流式留 M152。
-- **M149 单模型路线复用**：M151.3 仅钉行为（无生产改动），防 Kimi 恢复时静默破坏。
-- **不删 FactoryPanel 等工厂组件**：只在默认 UI 不渲染，`#/factory` 仍可用。
-
-## P1 待办（不在本里程碑实现）
-- "Always" 持久化审批规则（当前 ApprovalInline 仅 Allow once / Reject 单次）。
-- /compact /mode /help /files slash 命令行为接线（当前仅 /clear 落地）。
-- 真实 step-level 事件流 → 前端增量渲染（当前 2.5s 轮询 /history）。
-- token 级流式（M152）。
-
----
-
-# M148 · 方向 D 收口：enable_thinking 开关 TDD 补全 + M3/M4 剩余项核查
-
-> 来源：用户选定方向 D（M147-A 记 blocked-by-hardware + enable_thinking env 开关 + 推进 M3/M4）。
-> ✅ 验收通过（2026-07-21）：M3/M4 剩余项核查确认全部 done（循环检测 M3.4 / 压缩 M3.7+M5.2 / 子Agent M3.6 / MCP+RAG M4），真正剩余仅外部门禁（Phase 3 壳 user-gated / M147-A 重试 hardware-gated）；开关 TDD +3 用例，定向 6 passed，全量 pytest 1599 passed/0 failed。证据见 TEST_LOG.md M148 节、STATE.json M148 条目 + KI-20260721-m147a-glm-bottleneck。
-
-## 子任务
-- M148.1 M3/M4 剩余项核查：复核 STATE.json 与 M141 侦察结论，确认无本机可自主推进的 M3/M4 编码项，不重复建设。
-- M148.2 开关 TDD：test_worker_knobs.py 新增 3 用例（默认 true 两入口一致 / 显式启用值 / 禁用值矩阵大小写+空白容忍）。
-
-## 解除门禁后的下一步（留给未来会话）
-- Kimi-K2.7-Code 在 exo 恢复 LAUNCH → `export FLIPPED_WORKER_ENABLE_THINKING=true` → 重跑 `scripts/e2e_m147_10tasks.py`（M147-A 重试）。
-- Phase 3 壳：需用户提供 Apple 证书后启动（D17：Windows 走 GitHub Actions 云构建）。
-
----
-
-# M146 · 逐按钮全量审查 + 反馈黑洞清零
-
-> 来源：用户指示「精确到每一个按钮，每一个细节，针对所有内容进行一个审查，确保整体项目完好」。
-> 方法：W1（console 全组件逐按钮）/W2（scripts+src/api 端点）双路复审 + 主代理逐条亲验（子代理产出含大量无证据臆测与已修项复读，全部以主代理亲验为准）。
-> ✅ 验收通过（2026-07-20）：17 项真实问题全修（P0×1 / P1×16），误报排除 12 项（逐条亲验证据）；pytest 1596 passed/0 failed、vitest 64/64、tsc/build 绿。证据见 TEST_LOG.md M146 节、STATE.json M146 条目。
-
-## 问题清单与修复（17 项，全部落地）
-
-### P0（数据/类型错误）
-1. **store.tsx factory 三动作类型错误**：create/resume/pause 端点返回 FactorySummary（无 roadmap/completed），代码当 FactoryDetail 直接入 state → 详情面板字段丢失。修：统一回拉 getFactoryDetail 再入 state。
-
-### P1（反馈黑洞 / 信任破坏 / 竞态）
-2. **Conversation 发送失败零反馈**：submit 无 catch，异常被吞。修：sendErr 错误行（.form-err）+ 输入保留 + busy 防重复。
-3. **Conversation 项目选择器搜索死输入框**：输入不过滤列表。修：visibleProjects 过滤 + 无匹配空态。
-4. **Sidebar 项目「⋯」菜单假按钮 ×5**：置顶/工作树/重命名/归档/移除仅 console.log。修：全部删除，仅留「在 Finder 中显示」（后端 API 落地后再接线恢复）。
-5. **FactoryPanel 创建/暂停/恢复失败静默 + 可连点重复提交**：修 createBusy/actionBusy + createErr/actionErr。
-6. **api.ts WebSocket 断线无重连**：修指数退避（1s→2s→…→10s）+ `?last_event_id=` 断点续传 + 主动关闭不重连；store 配 lastEventIdRef。
-7. **main.py create_task/resume_session 无并发守卫**：重复派发丢旧任务句柄/双 orchestrator 写同一 checkpoint。修：RUNNING_TASKS 追踪 + 409 + done_callback 清理 + task_id uuid 后缀防同秒撞名。
-8. **factory.py _BusAdapter.emit 静默 pass**：桥失效无痕。修：log.warning 留痕（fail-open 不破）。
-9. **session.py SessionStore 竞态**：bus.emit 可从工作线程调用（factory_loop），dict 读写无锁；save() 非原子写崩溃可写坏 JSON。修：threading.RLock 全覆盖 + tmp+os.replace 原子写 + _seq_of 兼容新旧事件 id 解析。
-10. **dev_down.sh `pkill -f vite` 过宽**：误杀本机所有 vite 项目。修：按 FLIPPED_CONSOLE_PORT（默认 5273）lsof 精确杀。
-11. **await_glm_capstone.sh 退出码契约缺失**：verified=false 也恒 exit 0，CI 判不出失败。修：按验证结果 exit 0/1。
-12-17. **async onClick 未 catch ×6（同类：unhandled rejection + 失败零反馈）**：Sidebar 删除会话（L129）/ 项目行内新建（L167）/ 全局新对话（L218）、Conversation 停止按钮（L540）/ 项目选择器点击（L622）、CommandPalette ⌘N（L57）。修：统一 `.catch(() => {})`，与既有 openProject 模式一致（失败时 UI 保持原状，不假装成功）。
-
-## 误报排除清单（子代理所报，亲验无问题）
-- toggleMcpServer：store 乐观更新 + 失败回滚，无需改。
-- refreshMcpServers / refreshFactories / loadGitDiff / selectFactory：store 内部已 catch。
-- handleApprove/handleReject：sendApproval 是同步 ws.send（未 OPEN 静默丢弃），不抛异常；try/finally 仅管 busy 复位，正确。
-- TopBar / Launcher / TerminalDrawer / Settings / PlanCard：全部纯本地 state，无 API。
-- submitPicker / importFolder：已有 try/catch + pickerErr 反馈。
-- scripts 全部 pkill：verify_m143（`$WS/user-data` 唯一隔离路径）/ dev_down uvicorn（带端口）均精确匹配。
-- main.py except 块：HTTPException 转化 / 默认值兜底 / WS 事件循环防崩，全合理。
-- subprocess.run in async 端点（project_context/reveal/diff）：带 3-6s timeout，本地工具型 API 并发极低，不改（收益<风险）。
-
-## 回归测试新增
-- Conversation.test.tsx ×5：发送失败显示错误行且输入保留 / 项目搜索过滤 / 无匹配空态 / 防重复提交 / 审批中禁发。
-- FactoryPanel.test.tsx ×2：创建失败显示错误且卡片不关闭 / 暂停失败显示错误。
-
-## 约束遵守
-- 零新依赖、零 API 契约变更（仅前端容错与后端守卫增强）。
-- 不 commit（用户规则：明确要求才提交）。
-
----
-
-# M145 · 全面问题排查 + 优化 + 验收
-
-> 来源：用户指示「检查还有哪些问题并进行优化，全面验收」。
-> ✅ 验收通过（2026-07-20）：七域侦察（STATE 未决 0 / 测试 skip 全合理环境门控 / src 无遗留 / 环境健康 / console 57/57+tsc+build 绿）→ 2 项优化落地：①schemas.py class Config→ConfigDict（pydantic 弃用 warning 2→0，全项目唯一处）②data/ 清 M144 e2e 废弃实验库 ×6（v1/serial/v2/v3，保留 v4 实证库与 bak 迁移备份）。全面复验：pytest 1596 passed/0 failed/0 warnings（80.44s）、vitest 57/57、IDE 桥 12/12、TUI 25。证据见 TEST_LOG.md M145 节、STATE.json M145 条目。
-
----
-
-# M144 · 全面优化三轨：IDE 桥矩阵补全 + TUI 打磨三件套 + 并行产线真实基准
-
-> 来源：用户指示「继续进行并全面优化」，按惯例 Agent 团队并行（W1/W2/W3 子代理），主代理汇总回归 + 留痕。
-> 侦察结论：W1 = M143 明示缺口（runTask/env.*/installExtension 未入真实矩阵）；W2 = M140 遗留四候选中未做的三个；W3 = M142-C 并行仅 mock 墙钟证据，OpenHands 容器 flipped-oh-canvas 已存在（docker start 幂等拉起），exo 集群在线（M142 GLM e2e 实证）。
-
-> ✅ W1 = M144-A 验收通过（2026-07-20）：verify_m143_ide_bridge.sh 沙箱内实跑 12/12 全绿——allow×5 真实执行且读回断言通过（runTask m144-echo / miseUse 落盘 .mise.toml python=3.12 / addDevcontainerFeature 落盘 features=[ghcr.io/devcontainers/features/python]），deny×1（rm -rf /）+ ask×4 全零执行（fontSize 仍 13 佐证），审计 10 事件按序全留痕，trap 清理无残留。汇总修复步骤编号缺口（拆 [7/12] 独立步）。M143 已知限制「runTask/env.*/installExtension 未入真实矩阵」正式收口。证据见 TEST_LOG.md M144-A 节、STATE.json M144-A 条目。
-
-> ✅ W2 = M144-B 验收通过（2026-07-20）：TUI 打磨三件套落地——事件时间线排序（(ts,seq) 有序插入，缺 ts 哨兵排尾）/ 状态过滤（1/2/3/4/0，渲染层过滤，与聚焦正交叠加，sub_title 标识）/ 搜索跳转（/ 前缀实时匹配，Enter 复用聚焦，Esc 取消，防误触全局 binding）。TDD 新增 10 用例，定向 25 passed（M140 15+10）。只读纪律不破、fail-open、零新依赖。证据见 TEST_LOG.md M144-B 节、STATE.json M144-B 条目。
-
-> ✅ W3 = M144-C 验收通过（2026-07-20）：真实 OpenHands + GLM/Kimi 跑 FLIPPED_MAX_PARALLEL=3——factory-5259cd09 终态 done，3/3 completed（attempts=1 全 verified），3 条 task_start 9.6ms 内并发启动（真实并发决定性证据），task_done 幂等键 7 条 0 重复，infra 事件 0 条，墙钟 908s < 1200s watchdog。真实跑暴露并修复 adaptive max_iter=1 熔断死锁（verified=ok AND believe_done 使 fresh 任务至少需 2 轮，adaptive_max_iter=max(2,·) 钳底）。全量 pytest 1596 passed/0 failed。证据见 TEST_LOG.md M144-C 节、STATE.json M144-C 条目。KNOWN-ISSUE：串行对照组未完成（v1 暴露死锁后废弃），加速比未量化；产物在 OpenHands 容器内验收。
-
-## W1 = M144-A · IDE 桥真实矩阵补全（verify_m143_ide_bridge.py 7→12 步）
-- workspace 加 `.vscode/tasks.json`（无害 echo 任务）；矩阵新增：
-  - allow 真实执行：ide.runTask（echo 任务）/ env.miseUse（写 .mise.toml 读回断言）/ env.addDevcontainerFeature（写 .devcontainer/devcontainer.json 读回断言 features）
-  - ask 零执行：ide.installExtension / ide.runCommand / env.rebuildDevcontainer
-  - 审计事件 4→10 条。
-- 陷阱警告：shell/python 字符串里 `$VAR` 后不得直接跟全角字符（一律 ${VAR}）。
-- 实跑 bash scripts/verify_m143_ide_bridge.sh 全绿；窗口闪现属预期（macOS 无真 headless）。
-
-## W2 = M144-B · TUI 打磨三件套（src/tui/app.py + tests/test_tui_monitor.py）
-- 事件时间线排序：EventLog 行前缀 HH:MM:SS 时间戳，多工厂事件交织时按事件时间有序插入（而非纯到达序）。
-- 状态过滤：1/2/3/4 = running/done/failed/paused，0=全部；DataTable 行过滤 + Header sub_title 显示当前过滤器；与 M140 聚焦过滤正交可叠加。
-- 搜索跳转：/ 进入前缀输入，实时匹配 factory_id 前缀，Enter 跳行并复用聚焦，Esc 取消。
-- TDD（Textual run_test pilot）；只读纪律不破（过滤/排序全在渲染层）。
-
-## W3 = M144-C · 并行产线真实基准（OpenHands + 真实 GLM/Kimi）
-- docker start flipped-oh-canvas + waitfor :8000/alive（幂等；起不来/exo 不可达则如实降级记录，禁谎报）。
-- scripts/e2e_m144_parallel.py：product_goal 明确要求 3 个完全独立小模块（a/b/c.py 各配 pytest），max_tasks=4，FLIPPED_MAX_PARALLEL=3 真实跑；记录墙钟 + task_done 事件幂等键无重复 + completed 无重复。
-- 不跑串行对照（成本×2）；与 M142 mock 墙钟证据互证即算通。watchdog 20min 防挂死。
-
-## 汇总：全量回归 + STATE/TEST_LOG/PLAN 留痕
-
----
-
-# M143 · 真实 IDE 桥运行时验收（M141/M142 已知限制收口）
-
-> ✅ 验收通过（2026-07-19）：verify_m143_ide_bridge.sh CORE 全绿——隔离 Extension Development Host（全隔离 user-data-dir/extensions-dir，~6s 桥就绪）× governed 五级管线 7/7 矩阵（真实读回标记值/allow 读+执行/deny 零执行/ask 零执行佐证/审计 4 事件）；trap 清理实证无残留；修复 shell 全角粘连陷阱 ×2。全量 pytest 1586 passed / 0 failed（与 M142 持平）。证据见 TEST_LOG.md M143 节、STATE.json M143 条目。已知限制：macOS 无真 headless（窗口闪现 ~10s）；runTask/env.*/installExtension 未纳入本轮真实矩阵。
-
-> 来源：用户从三候选（A 真实 IDE 桥 / B 真实工厂 10-task E2E / C 并行基准）选定 A。
-> 侦察结论：`code` CLI 1.129.0 可用；ide-extension out/ 已构建；M141 工具面 + M142 supervisor 接线均为注入式验证，**真实 VS Code 宿主从未端到端跑通**（TEST_LOG M141 节明示的限制）。
-
-## M143-A · verify_m143_ide_bridge.sh 一键验收
-- 隔离实例：`code --user-data-dir=$WS/user-data --extensions-dir=$WS/exts --extensionDevelopmentPath=$ROOT/ide-extension $WS`——不碰用户真实 VS Code 配置/插件。
-- 验收工作区：tmp 目录 + `.vscode/settings.json` 写已知标记值（editor.fontSize=13），扩展 onStartupFinished 自动激活起桥。
-- 轮询桥就绪（POST /tool ide.getSetting，超时 90s，隔离实例首启慢）。
-- CORE 验收矩阵（真实桥 + governed_ide_call 五级管线）：
-  1. 桥应答：POST /tool 200
-  2. allow 真实读：ide.getSetting editor.fontSize → 读回 13（证明桥+VS Code API 真实工作）
-  3. allow 真实执行：ide.openTerminal（无 command）→ ok（真实 IDE 开终端）
-  4. deny：ide.openTerminal `rm -rf /` → decision=deny、桥侧零调用（随后 getSetting 再通佐证桥无损）
-  5. ask：ide.updateSetting → decision=ask、不执行
-  6. 审计：allow+deny 各 1 条 ide_tool_call 事件落 tmp DB
-- 清理：pkill 精确匹配隔离实例（--user-data-dir=$WS 唯一）；失败也 trap 清理，不残留窗口。
-- 已知限制如实留痕（如 GUI 窗口闪现、macOS 无真 headless）。
-
-# 后续候选（M144+）：真实工厂 10-task E2E（需拉起 OpenHands）/ 并行基准 / TUI 打磨
-
-# M142 · 三轨并行：Phase 2 devcontainer 实跑 + supervisor IDE 接线 + factory 任务级并行
-
-> ✅ 验收通过（2026-07-19）：W1 verify_m142_devcontainer.sh CORE 全绿 + KNOWN-ISSUE 清零（postCreateCommand 模板 bug 已修）；W2 9 用例绿含真实 GLM e2e（全量中实跑非 skip）；W3 15 用例绿（墙钟/恰好一次/依赖/预算/崩溃恢复）。全量 pytest 1586 passed / 0 failed（净增 24）。证据见 TEST_LOG.md M142 节、STATE.json M142 条目。
-
-> 来源：用户一次选定三个方向，按惯例 Agent 团队并行（W1/W2/W3 子代理），主代理汇总回归 + 留痕。
-> 侦察结论：W1 模板仅静态校验（verify_phase2.sh 只查文件），运行时未验；W2 :4000 在跑（401=需 key，走 LITELLM_MASTER_KEY/EXO_API_KEY），supervisor Plan schema 无 IDE 通道；W3 factory `_next_task` 单任务串行，task_dag/parallel_executor 闲置。
-
-## W1 = M142-A · Phase 2 devcontainer 运行时验收
-- 装 @devcontainers/cli（若缺）；`devcontainer build`（--config 指 infra/env-templates/devcontainer.json）→ `up` → 容器内 `exec` 验证 python3.12 / node20 / rustc / java21 / mise 真实可用且版本对。
-- 网络按 D7：registry 走 daocloud 镜像（mcr.m.daocloud.io / ghcr.m.daocloud.io）；拉不动则如实降级记录（docker run 基础镜像手动验核心工具版本），禁止谎报。
-- 产出 `scripts/verify_m142_devcontainer.sh` 一键复跑；证据进 TEST_LOG.md。
-
-## W2 = M142-B · supervisor IDE 工具面接线（M141 续）
-- orchestrator.py：Plan schema 加可选 `ide_action: {name, args}`；`_build_supervisor_prompt` 注入 IDE_TOOL_REGISTRY 工具清单（名称+描述+必填参）；believe_done/subtask/ide_action 三态互斥（ide_action 优先于子任务派发？——设计：supervisor 每轮三选一：派子任务 / 调 IDE 工具 / believe_done）。
-- 新增 governed 执行路径：ide_action → governed_ide_call（M141）→ deny/ask 不执行、结果写 feedback 回灌 supervisor；allow 执行结果同样回灌。审计接 factory_events（session 级 factory_id 约定复用 sess-* 或 orch-*，勿新造）。
-- 单测全 mock（schema 解析/prompt 含工具清单/deny 回灌/allow 执行回灌）；真实 GLM e2e 1 场景（goal 需读 IDE 设置 → supervisor 输出 ide_action，caller mock 记录即算通——真实 LLM + 注入 caller）。
-- 高风险：改 orchestrator.py 核心，必须小步、全量回归零失败才算完。
-
-## W3 = M142-C · factory 任务级并行（并行执行、串行落账）
-- `_ready_tasks(state)`：返回所有依赖满足的 pending 任务（现有 _next_task 的单任务版推广）。
-- `FLIPPED_MAX_PARALLEL`（默认 1 = 现状零回归）：>1 时用 ThreadPoolExecutor 并行跑 orchestrator（LLM 耗时部分），主循环**串行**应用 task_done 副作用（completed 追加/事件/quality/memory），幂等键语义不变。
-- 共享 state 隔离：并行 worker 只读 state 快照，不直接改；落账只在主循环。DB 单行 JSON 写不并发。
-- 测试：mock orchestrator（慢任务+屏障）断言 N=3 并行时墙钟 < 串行；completed 无重复、事件幂等键各 1 条、depends_on 语义不破。
-
-## 汇总（主代理）
-- 三轨全量 pytest + 相关 verify 脚本；STATE.json M142 条目（3 子任务）+ TEST_LOG.md + PLAN.md 验收标记。
-
-## 约束
-- 各轨独立分支式小步，互不触碰对方文件（W1=infra+scripts；W2=orchestrator+其测试；W3=factory_loop+其测试）。
-- 网络/宿主受限处如实降级记录，禁止谎报（AGENTS.md §5）。
-- 不引新 Python 依赖。
-
----
-
-# M141 · IDE 控制面工具面接入驾驭层（M3 遗留首项）
-
-> 来源：用户选定「转向 M141，推进 M3 驾驭层剩余模块」。核查结论：循环检测(M3.4)/上下文压缩(M3.7+M5.2)/子Agent派发(M3.6)/M4 MCP+RAG 均已 done；M3 note 记录的真实遗留首项 = IDE 控制面 agent 桥接入。
-> 现状缺口：ide-extension TS 桥(127.0.0.1:39217 POST /tool, 9 工具)与 Python ide_client 均已建且各有单测，但 **orchestrator 编排层拿不到这套工具**——ide_client 全项目零调用方；工具未纳入 M136-E 五级权限管线；调用无 factory_events 审计。
-> 定位：纯本地确定性改动，TDD，不依赖模型。主代理直接做（M138/M140 小步模式）。真实 VS Code 宿主端到端验证受限（需扩展宿主），记为已知限制，由注入式单测兜底。
-> **验收结果（done）**：ide_tools.py（注册表9工具/render/governed_ide_call/审计）落地；test_ide_tools.py 24 用例 + ide_client 3 定向全绿；全量 pytest 1562 passed/0 failed（48.51s）。
-
-## 子任务
-
-### M141.1 · src/driving/ide_tools.py 工具注册表 + 动作渲染
-- `IDE_TOOL_REGISTRY`：9 工具（与 extension.ts 对齐）——ide.runTask/openTerminal/getSetting/updateSetting/installExtension/runCommand + env.addDevcontainerFeature/miseUse/rebuildDevcontainer；每项含 description/必填参数。
-- `render_ide_action(name, args) -> str`：把工具调用渲染成可评估动作串。关键：openTerminal 有 command 时渲染为命令本体（`rm -rf /` 直接进管线被判 deny）；rebuildDevcontainer 渲染 `devcontainer rebuild`；installExtension 渲染 `installExtension <id>`。
-- `IDE_RULES`：ide 专属规则叠加（getSetting/runTask/openTerminal 无命令/env 两个声明文件编辑 = allow；updateSetting/runCommand/installExtension = ask），与 DEFAULT_RULES 合并（deny>ask>allow 优先级不变）。
-- 未知工具名 → KeyError（注册表守门）。
-
-### M141.2 · governed_ide_call：五级管线 + 审计
-- `governed_ide_call(name, args, *, cwd=None, mode="default", caller=call_ide_tool, audit_conn=None, factory_id=None)`：
-  1. render → 2. evaluate_permission（IDE_RULES+DEFAULT_RULES 合并）→ 3. allow 才执行 caller；deny/ask 不执行。
-- 返回 `IdeCallResult{decision, level, reason, result, error}`（dataclass）；执行异常捕获进 error 不抛出（fail-open 桥不可用时调用方可判）。
-- 审计：audit_conn+factory_id 给定时 append_event(kind="ide_tool_call", payload={name,args,decision,level,reason})，天然 fail-open；deny/ask 也留痕（谁拦的、为什么）。
-
-### M141.3 · tests/test_ide_tools.py
-- 注册表与 extension.ts 工具名漂移守门（硬编码 9 名对照 + 必填参校验）。
-- render 映射全表；openTerminal 命令本体渲染（安全关键）。
-- 权限矩阵：deny（openTerminal `rm -rf /` / `sudo x`）、ask（installExtension / runCommand / updateSetting / rebuild）、allow（getSetting / runTask / 只读命令如 `git status` / env 声明编辑）。
-- governed 执行：注入 fake caller——allow 路径执行并回 result；deny/ask 路径 caller 零调用；caller 抛异常进 error。
-- 审计：tmp DB 断言 ide_tool_call 事件写入 + payload 含 decision/reason；无 audit_conn 不炸。
-
-### M141.4 · 全量回归 + 状态留痕
-- pytest 全量 + 定向 + STATE.json（M141 条目，含「VS Code 宿主运行时验证受限」已知限制）+ TEST_LOG.md + PLAN.md 验收标记。
-
-## 约束
-- 不动 extension.ts / ide_client.py 现有契约（POST /tool {name,args} ↔ {ok,result|error}）。
-- 不引新依赖；权限判定复用 approval.evaluate_permission，不另起炉灶。
-- 编排层 prompt 接线（supervisor 自主选用 IDE 工具）属模型侧验证，留待宿主环境，不在本里程碑。
-
----
-
-# M140 · TUI 监控台体验深化（打磨）
-
-> 来源：用户指示「继续进行打磨」。M139-B TUI 已落地但体验朴素（无着色分层/无进度可视化/无过滤聚焦），做体验深化。
-> 定位：纯本地确定性改动，TDD（Textual run_test pilot），不依赖模型。主代理直接做，参考 M138 小步模式。
-> **验收结果（done）**：TUI 用例 8→15 全绿；全量 pytest 1538 passed/0 failed（53.93s）；真实库冒烟 sub_title「15 工厂 · done 11 · paused 4」+ 进度条渲染正确。
-
-## 子任务
-
-### M140.1 · 状态着色 + 任务进度条列
-- DataTable status 列用 `Text` 着色：done=green / running=blue / failed=red / paused=yellow，未知不着色。
-- 新增 progress 列：10 格块字符条，done=绿块 / failed=红块 / pending=暗块 + 完成百分比；total=0 时占位。
-- 列序：factory_id / status / progress / tasks(done/failed/total) / updated_at。
-- 同步更新既有断言（row[2]→row[3]），新增 _progress_bar 纯函数单测。
-
-### M140.2 · 工厂聚焦过滤
-- DataTable 开 row cursor（zebra_stripes）；Enter 聚焦 cursor 行工厂，事件流只显示该厂；再按 Enter 或 Esc 取消。
-- 聚焦切换时清空事件区并按当前过滤重拉最近 50 条（app 内只读 SQL，fail-open，不动 event_log.py）。
-- 过滤期间其他工厂新事件仍推进 `_last_seq`（取消聚焦后不爆历史），只是不显示。
-- App.sub_title 显示「聚焦: <factory_id>」。
-- 测试：双工厂聚焦后 log 只有该厂事件 + 重拉历史可见 + 取消后他厂新事件恢复显示。
-
-### M140.3 · Header 聚合统计
-- 轮询刷新 App.sub_title（未聚焦时）：`N 工厂 · running X · done Y · failed Z · paused W`（零计数项省略）。
-- 测试：3 工厂不同状态 → sub_title 含计数。
-
-### M140.4 · 全量回归 + 状态留痕
-- pytest 全量 + TUI 定向 + STATE.json（M140 条目）+ TEST_LOG.md（实跑证据）。
-
-## 约束
-- 只读纪律不破：TUI 仍只 SELECT（聚焦重拉也只读），不 connect 不存在的 DB。
-- fail-open：着色/聚焦/聚合任何异常不得崩 TUI。
-- 不引新依赖（rich/textual 已有）。
-
----
-
-# M139 · 产线化双轨：崩溃恢复 E2E 硬化 + 全屏 TUI 监控台
-
-> 来源：用户选定「两者并行」。W1 = AGENTS.md M5 旗舰验收（长任务中途 kill -9 → resume → 副作用不重放）；W2 = Kimi/Grok 调研唯一判定「值得做未落地」的项。
-> 执行：两子代理并行（W1/W2），主代理汇总全量回归 + STATE/TEST_LOG + commit。
-> **验收结果（done）**：pytest 1531 passed 0 failed（主代理独立复验）；`verify_m139_crash_resume.sh` 一键复跑 PASS（kill -9 后 resume，幂等键各 1 条、marker 各 1 个、状态收敛 done）；TUI 8 headless 用例绿 + 真实库实跑 12 工厂多轮轮询无 traceback。
-
-## M139-A · 崩溃恢复 E2E（W1）
-
-现状地基（M136-A 已落地）：`factory_events` append-only 表 + 幂等键；`factory_start`/`task_start`/`task_done` 均有幂等键；task 完成副作用（completed 追加/worktree 合并/quality 打分/memory）由 `{factory_id}:{task_id}:done` 查重跳过（factory_loop.py L1317-1383）。
-
-子任务：
-1. **调查补漏**：resume（`run_factory_loop(factory_id=X)` → `load_factory_state`）后，崩溃时处于 running 的 task 如何被重置/重跑。预期行为：task 体重跑可接受，副作用必须幂等查重。用测试固化该行为。
-2. **进程内崩溃集成测试**：orchestrator_fn 在第 N 个 task 抛异常模拟崩溃 → 同 factory_id resume → 断言：factory done、completed 无重复、factory_events 中每 task 的 task_done 仅 1 条、context_summary/memory 副作用不重复追加。
-3. **真实 kill -9 E2E**：`scripts/e2e_crash_resume.py`——子进程跑 factory loop（文件标记型慢 orchestrator：每 task 写 marker 文件 + sleep，无 LLM 依赖）→ 父进程 kill -9 → resume 子进程（快速 orchestrator）→ 断言 marker 文件每 task 恰好 1 个、task_done 事件无重复、退出码 0。配 `scripts/verify_m139_crash_resume.sh` 一键复跑。
-4. 验收：新测试全绿 + 脚本实跑输出留存；全量 pytest 零回归。
-
-## M139-B · 全屏 TUI 监控台（W2）
-
-数据源：`data/flipped.db`（env `FLIPPED_DB` 可覆盖）的 `factory_states` + `factory_events`（`event_log.list_events(after_seq=...)` 增量轮询）。只读观察者，不侵入运行中 loop，跨进程可用。
-
-子任务：
-1. `pip install textual`（venv）；新增 `src/tui/` 包（`__init__.py` / `app.py` / `__main__.py`）。
-2. 面板：Header（factory 状态/进度）、事件流（kind 着色滚动）、roadmap 任务进度、Footer 快捷键（q 退出 / p 暂停轮询）。轮询 ~1s；DB 不存在/为空显示空态不崩溃。
-3. 入口：`PYTHONPATH=src python -m tui`。
-4. 测试：Textual `App.run_test()` pilot API 确定性测试——空库空态 / 写入事件后渲染 / after_seq 增量不重复 / 畸形 payload 不崩 / 暂停恢复。
-5. 验收：新测试全绿 + 全量零回归；实跑导出文本快照佐证（`textual` headless 导出）。
-
----
-
-# M138 · 全量回归真正绿 + M137 遗留清扫
-
-> 主题：修掉 test_factory_visual_regression 3 个长期失败的 mock 泄漏（a11y_lint 真实启动 Playwright 未被 mock），让全量 pytest 首次真正零失败；顺带清 M137 两处遗留。
-> 定位：小步快跑，三个独立子任务，均主代理直接做（不派子代理）。
-
-## 根因诊断（已实跑定位）
-
-`test_factory_visual_regression.py` 只 mock 了 `driving.visual_regression.make_visual_verifier`，但 verifier 装配链在 `factory_loop.py` L804-809：`combined_verifier_with_a11y(_base)` → `a11y_lint` 内部真实启动 **Playwright headless Chromium + 本地 HTTP 服务** 做 axe-core WCAG 扫描。测试环境无浏览器 → `ConnectError: [Errno 61]` → `_stub_drive_capture_verifier` 里 `verifier(...)` 抛异常 → `captured["verifier_result"]` 未赋值 → 断言失败。
-
-M134.2 验收时 Playwright 浏览器可用故 5/5；现在不可用故 3 失败。**不是该 skip 的环境依赖，是 mock 不完整**——test 4 已正确 mock 了 a11y/design_lint 两层，test 1/2/3 漏了。
-
-## 子任务
-
-### M138.1 · visual_regression 测试 mock 补全
-- test 1/2/3 补 mock `driving.a11y_lint.combined_verifier_with_a11y` + `driving.design_lint.combined_verifier`（照抄 test 4 的 mock 模式），让 verifier 链完全离线。
-- 顺带给 `_stub_drive_capture_verifier` 的 verifier 调用加 try/except，异常记入 captured（断言更鲁棒，失败信息更清晰）。
-- 验收：`pytest tests/test_factory_visual_regression.py` 5/5 绿（无浏览器环境）。
-
-### M138.2 · m10_integration 硬编码路径 tmp 化
-- `tests/test_m10_integration.py` 显式硬编码 `"data/gold_memory.db"`（M137 W1 报告：每次运行真实写该文件，在 data/ 留碎片）。改 tmp_path 注入。
-- 验收：该测试绿，且运行后 data/ 无新增 gold_memory.db。
-
-### M138.3 · checkpoint_db_path 死参处理
-- `run_factory_loop(checkpoint_db_path=...)`（factory_loop.py L976/1005）赋值后下游从未使用——真正写 checkpoint 的是 `default_orchestrator_fn` 内部（M137 W2 报告确认死参）。infinite_loop.py 仍传它。
-- 处理：**接线**而非删除（保留签名兼容）——把 `checkpoint_db_path` 透传进 orchestrator_fn 的 checkpoint 路径（若 orchestrator_fn 接受该参数）；若接线牵扯面大，则删除参数并同步清理 infinite_loop 调用方 + 测试。**先做最小调查再定**。
-- 验收：死参消除（要么真正生效、要么签名移除且调用方同步），全量零回归。
-- **实际决策（已落地）：删除**。调查结果：①`default_orchestrator_fn` L909 硬编码 `db_path=default_db_path()`，`OrchestratorFn` 协议为 `(task, state)` 不接受路径，接线需改协议+全部 mock orchestrator，牵扯面大；②M137 已决策 checkpoint 收敛统一库、thread_id 命名空间隔离，接线会复活 per-file 库违背该决策。故删除 `run_factory_loop.checkpoint_db_path` + `run_infinite_loop.factory_checkpoint_db_path`，同步清理 infinite_loop 调用方 + 8 个测试/脚本调用点（共 17 处 kwarg）。`api/schemas.py` 的 `session.checkpoint_db_path` 是 API 会话字段（另一套），不动。
-
-## 验收标准（M138 总）
-
-- [x] `pytest tests/` 全量**零失败**：1521 passed（首次真正绿，原 1518+3 环境依赖失败已修）
-- [x] data/ 运行测试后无碎片新增（仅 flipped.db + axe.min.js 缓存 + M137 .bak 备份）
-- [x] vitest 57 零回归 + console build ✓
-- [x] STATE.json / TEST_LOG.md 更新
-
----
-
-# M137 · SQLite 八库合并（M136 拆出项）
-
-> 来源：M136 计划「SQLite 八库合并风险高，与事件表工作互相干扰，拆到 M137」。
-> 主题：8 个默认 db 路径收敛为单一 `data/flipped.db`（env `FLIPPED_DB` 可覆盖），消除连接碎片，统一 pragma/WAL/迁移治理。
-
-## 现状盘点（8 默认路径 → 表）
-
-| db | 表 | 使用方 |
-|---|---|---|
-| factory.db | factory_states, factory_events | factory_loop.py, api/factory.py |
-| factory_checkpoints.db | checkpoints, writes | factory_loop.py (SqliteSaver) |
-| checkpoints.db | checkpoints, writes | orchestrator.py, api/main.py |
-| delegate_checkpoints.db | checkpoints, writes | stuck_detector.py |
-| failures.db | failures | failure_kb.py, repair_kb.py |
-| gold_memory.db | gold_memory | gold_memory.py, rca.py |
-| skills.db | skills | skill_registry/evolution/recommender.py |
-| infinite_loop.db | infinite_loops | infinite_loop.py |
-
-磁盘现存 5 个（factory/factory_checkpoints/failures/gold_memory/skills），其余 3 个为运行时默认、尚未落盘。
-
-## 关键冲突与对策
-
-1. **三个 LangGraph saver 库表名相同**（checkpoints/writes）→ 合并后共享表，**thread_id 命名空间区分**（orch-* / factory_id / deleg-*），这是 LangGraph 官方支持的多 graph 共库用法。
-2. **写并发** → 单文件 + WAL + busy_timeout=5000，统一 `connect()` 入口施加。
-3. **表名冲突** → 八库表名互不相同（已核实），零改名合并。
-
-## 工作流划分
-
-| 流 | 子任务 | 独占文件 |
-|---|---|---|
-| 主代理先行 | M137.0 统一存储入口 `driving/db.py`（很小） | 新 `src/driving/db.py` |
-| W1 | M137.1 知识库类四模块默认值收敛 | failure_kb.py repair_kb.py gold_memory.py rca.py skill_registry.py skill_evolution.py skill_recommender.py |
-| W2 | M137.2 saver/factory/api 收敛 + thread_id 命名空间 | factory_loop.py orchestrator.py stuck_detector.py infinite_loop.py api/main.py api/factory.py |
-| W3 | M137.3 迁移脚本 + roundtrip 测试 | 新 scripts/migrate_db_merge.py 新 tests/test_db_merge.py |
-
-文档（STATE.json/TEST_LOG.md）主代理收尾统一写。
-
-## M137.0 · 统一存储入口
-
-`driving/db.py`：
-- `default_db_path() -> str`：`os.environ.get("FLIPPED_DB", "data/flipped.db")`
-- `connect(path=None)`：sqlite3.connect + `PRAGMA journal_mode=WAL`(内存库跳过) + `busy_timeout=5000` + synchronous=NORMAL + temp_store=MEMORY + mmap_size=256MB，fail-open。
-- 各模块 `db_path: str = "data/xxx.db"` 默认值改为 `db_path: str | None = None`，函数体内 `db_path = db_path or default_db_path()`。**测试注入 tmp 路径行为不变**。
-
-## M137.1 · 知识库类收敛（W1）
-
-- 上述 7 文件默认值收敛；`sqlite3.connect(...)` 换 `db.connect(db_path)`。
-- env 兼容：`FLIPPED_FAILURES_DB` 等既有专用 env 若存在则优先（先查代码里是否有，无则不加）。
-
-## M137.2 · saver/factory/api 收敛（W2）
-
-- factory_loop / orchestrator / stuck_detector 的 SqliteSaver.from_conn_string 默认路径收敛。
-- thread_id 命名空间约束落为常量：orchestrator resume 入口给 thread_id 加 `orch-` 前缀（仅默认路径，显式传入不破）；stuck_detector 子 agent 用 `deleg-{factory_id}`；factory 用 factory_id 本身。写入 DECISIONS 候选。
-- api/main.py `FLIPPED_CHECKPOINT_DB`、api/factory.py `FLIPPED_FACTORY_DB` env 保留但默认值指向 `FLIPPED_DB`（向后兼容优先读专用 env）。
-- infinite_loop.db → infinite_loops 表迁入。
-
-## M137.3 · 迁移脚本 + 验收（W3）
-
-`scripts/migrate_db_merge.py`：
-- 对现存旧库逐个 ATTACH → 逐表 `INSERT OR IGNORE`(含 factory_events 保留 seq) → 行数校验 → 旧库改名 `*.db.bak-YYYYMMDD`。
-- `--dry-run` 只打印计划；幂等可重跑。
-`tests/test_db_merge.py`：
-- 造 3 个含数据的临时旧库 → 迁移 → 断言目标库行数/关键内容一致、重复迁移不翻倍。
-- 三 saver 共库隔离性：同一 flipped.db 两个 thread_id 各写 checkpoint 互不可见。
-
-## 技术约束
-
-1. **向后兼容**：所有公开函数签名保留 `db_path` 参数；测试用 tmp 库不受影响；专用 env 优先于统一 env。
-2. **fail-open**：迁移/pragma 失败不崩主流程。
-3. **不引新依赖**。
-4. 红线：不准在迁移脚本里 DROP/DELETE 旧库数据，只改名备份。
-
-## 验收标准（M137 总）
-
-- [ ] 8 默认路径全部指向 data/flipped.db（grep 审计为零残留）
-- [ ] 迁移脚本 dry-run + 实跑 roundtrip 测试通过
-- [ ] 三 saver 共库 thread_id 隔离测试通过
-- [ ] 全量 pytest + vitest 零回归
-- [ ] STATE.json / TEST_LOG.md 更新
-
----
-
-# M136 · 地基工程：契约与边界（Kimi/Grok 调研反哺）
-
-> 来源：Kimi Code × Grok Build × flipped 三方对比调研（2026-07-18）。
-> 主题：把调研判定「他们更强」的项落地——崩溃恢复、契约治理、终端测试、权限管线、结构化错误。
-> SQLite 八库合并风险高，与事件表工作互相干扰，**拆到 M137**；本里程碑只做 pragma 加固。
-
-## 工作流划分（三个并行子代理，文件所有权隔离）
-
-| 流 | 子任务 | 独占文件 |
-|---|---|---|
-| W1 | M136-A 崩溃恢复 + M136-D ToolResult 结构化错误 | `driving/factory_loop.py` `driving/orchestrator.py` 新 `driving/event_log.py` |
-| W2 | M136-E 权限管线五级 | `driving/approval.py` |
-| W3 | M136-B 契约治理 + M136-C 终端数据通路测试 | `api/` `console/` `scripts/` |
-
-文档（STATE.json/TEST_LOG.md）由主代理收尾统一写，子代理禁止触碰。
-
----
-
-## M136-A · 崩溃恢复补全（Temporal 范式：事件日志 + 幂等键）
-
-### 现状缺口
-- 有快照：LangGraph SqliteSaver + factory SQLite resume。
-- **缺事件日志**：工具调用/LLM 响应未在副作用前落盘。
-- **缺幂等键**：resume 重放时 write/verify 类副作用可能重复执行（真实缺陷）。
-
-### 实现
-1. 新 `driving/event_log.py`：
-   - `append_event(conn, factory_id, kind, payload, idempotency_key)` — append-only `factory_events` 表（factory_id, seq AUTOINCREMENT, ts, kind, payload_json, idempotency_key UNIQUE 允许 NULL）
-   - `seen_idempotency_key(conn, key) -> bool`
-   - `_ensure_event_table` 迁移（旧表兼容）
-2. `factory_loop.py` 写入点（task 开始/verify 结果/task 完成），副作用前落盘。
-3. resume 路径：重放前查幂等键，已执行过的副作用跳过重复执行。
-4. SQLite pragma 加固：`synchronous=NORMAL`、`mmap_size`、`temp_store=MEMORY`（顺带 M136 范围内）。
-5. 恢复演练测试：模拟 task 中途崩溃 → resume → 断言副作用不重复、事件连续。
-
-### 验收
-- [ ] factory_events 表存在且 append-only
-- [ ] 崩溃演练测试通过（无重复副作用）
-- [ ] 全量 pytest 零回归
-
-## M136-D · ToolResult 结构化错误（抄 Grok proto 设计）
-
-### 实现
-1. `orchestrator.py`：工具/verify 失败结果携带 `retryable: bool` + `suggestion: str`（供 LLM 消费，模型看到 retryable 知道可重试、看到 suggestion 知道怎么修）。
-2. 输出裁剪：长输出截断策略（带 `truncated` 标记），省 token。
-3. fail-open：不影响现有文本 content 消费路径。
-
-### 验收
-- [ ] 失败结果含 retryable/suggestion
-- [ ] 超长输出截断带标记
-- [ ] 全量 pytest 零回归
-
-## M136-E · 权限管线五级（Grok 管线 + Kimi engine 决策原则）
-
-### 现状
-`approval.py` 只有 `classify_risk`（正则分类 high/low）+ interrupt 门控。无规则、无记忆、无只读放行。
-
-### 实现（五级，顺序执行，短路返回）
-1. **L1 hooks**：PreToolUse 钩子可否决（预留接口，默认空）。
-2. **L2 规则表**：deny/ask/allow 三级规则 + glob pattern，跨来源合并时 **deny > ask > allow**。
-3. **L3 项目级记忆授权**：approved 的 pattern 记到 `.flipped/approvals.json`（按 cwd），下次自动放行。
-4. **L4 只读自动批准**：只读命令白名单（ls/cat/git status/grep/find 等）免提示。
-5. **L5 模式策略**：`default`（高危问）/ `dontAsk`（全自动）/ `plan`（只读+计划）。
-6. **bash 链式拆分**：`&&`/`||`/`;`/管道逐段评估，任一 deny 则整体 deny，任一 ask 则整体 ask。
-7. 保持 `build_approval_graph` 向后兼容（现有 interrupt 门控行为不变，走新管线的 verdict）。
-
-### 验收
-- [ ] 五级短路语义正确（deny 优先、记忆命中放行、只读免问、dontAsk 全放）
-- [ ] bash 链式拆分：`ls && rm -rf /` → deny；`git status && ls` → allow
-- [ ] 记忆授权持久化 roundtrip
-- [ ] 全量 pytest 零回归
-
-## M136-B · 契约治理（Kimi 式 drift test）
-
-### 实现
-1. **OpenAPI 快照测试**：`tests/test_api_contract.py`——导出 FastAPI `app.openapi()` → 归一化（去描述性噪声）→ snapshot 比对，API 面变更必须显式更新快照。
-2. **WS ack 语义**：events WS 支持客户端 `{type:"ack", last_event_id}` 帧，server 收到后记录（轻量，不改现有 replay 逻辑）；terminal WS 协议文档化。
-3. **openapi-typescript codegen**：`console/scripts/gen-api-types.mjs`（或 npm script）从 `/api/v1/openapi.json` 生成 `console/src/api-types.d.ts`；build 前可选刷新。
-
-### 验收
-- [ ] 快照测试存在且实跑通过
-- [ ] ack 帧单测通过
-- [ ] codegen 脚本实跑生成类型文件
-- [ ] 全量 pytest + vitest 零回归
-
-## M136-C · 终端数据通路测试（Grok ptyctl 模式移植）
-
-### 现状缺口
-`pty → WS → xterm.js` 链路只有 Playwright 截图级覆盖；字节丢帧/UTF-8 截断/resize 竞态不可诊断。
-
-### 实现
-1. `console/` 装 `@xterm/headless`（与前端 `@xterm/xterm` 同源）。
-2. `console/src/terminal/waitFor.ts`：事件驱动 wait——`{text, regex, gone, stableMs}` 四条件，帧到达即重查零轮询，超时带诊断（屏幕文本 + 最近 N 字节原始流）。
-3. vitest 数据通路测试（不起浏览器）：
-   - WS client → `/api/v1/terminal` → 真实 shell；帧流喂 `@xterm/headless` Terminal，断言 buffer 文本
-   - marker 夹具：`printf 'MARKER-%03d\n' {1..400}` 断言滚动/换行收敛
-   - resize：`{r}` 帧后断言重排
-   - UTF-8：中文/emoji 输出断言无截断乱码
-   - 需起后端：用 pytest 同款 test server 或在 vitest globalSetup 起 uvicorn
-
-### 验收
-- [ ] waitFor 四条件单测
-- [ ] 数据通路 vitest 实跑通过（marker/resize/UTF-8）
-- [ ] 全量 vitest 零回归
-
----
-
-## 技术约束
-
-1. **fail-open**：事件表/幂等键/ack 异常不阻塞主流程
-2. **向后兼容**：approval graph 行为不变；WS 协议只加不改；旧 SQLite 表自动迁移
-3. **子代理纪律**：只跑自己的定向测试（新测试文件），全量回归由主代理收尾跑
-4. **不引重型依赖**：@xterm/headless 是唯一新增 npm 依赖；Python 侧零新增
-
-## 验收标准（M136 总）
-
-- [ ] A/D/E/B/C 五项子验收全绿
-- [ ] 全量 pytest（基线 1463+）+ vitest（基线 45+）零回归
-- [ ] `npx tsc --noEmit` + `npm run build` 通过
-- [ ] TEST_LOG.md 记录实跑证据，STATE.json 更新
+# M182/M183/M184 · 三里程碑并行施工（Bot Channel / Worker 规则注入 / 限制消化）
+
+> 来源：用户 2026-08-04 指令三连——(1) Bot Channel 多平台接入（Telegram+微信，统一消息接口/
+> 身份映射/加密验证/状态监控）；(2) worker 规则注入系统（agent 通路手动 + auto 通路自动，
+> 规则规范/版本回滚/效果监控）；(3) 全里程碑 known_limitations 系统性分析消化（42 条，
+> 跟踪机制+分阶段方案+报告）。
+> M182 同时消化 M181 限制「Bot Channel 未做」；M183 同时消化 M180 限制「agent/auto 的
+> worker 规则注入列后续候选」——两条将在 M184 报告中标记 resolved。
+> 施工：B182（bot 后端纯逻辑）∥ B183（worker 规则后端+orchestrator 接线）∥ C（两里程碑前端）
+> ∥ M184（限制分析+跟踪脚本）。**B 队一律不碰 main.py**（防同文件并发冲突），端点由主代理
+> Phase 3 统一接线 + 快照重生 + 全量回归 + verify 脚本 + 门禁 + 留痕。
+
+## 勘察结论（主代理已核查）
+- assistant.py `send_assistant_message(session_id, req: SendMessageRequest)`（:397，req.text
+  必填）、`_do_decision`（:519）、`get_assistant_history` 均现成——bot 入站消息转发与 M181
+  remote 同模式：函数级 import canonical handler，不复刻链路（M178 教训）。
+- session.py `SessionStore.create(title, model="coder", mode="agent")`（:84）——bot 会话
+  mode="chat"，title=f"bot:{platform}:{user_name or user_id}"。
+- orchestrator.py `local_worker`（:826）已有 `_rules_short = project_rules[-300:]`（:852，
+  M11.1 教训：prompt 预算 300 字符）——M183 在此前插入 worker 规则合并，总预算仍 300。
+  verify 节点（:1568-1646，`verified` 判定在 :1526/:1642）——M183 在判定后挂 stats.record_outcome。
+- ContextPanel tabs：diff/term/browser/files/map/rules（:517-533），tab 联合类型 ContextTab
+  在 store（setContextTab）；新增 'bot'/'worker' 两 tab，Icons 走 lucide（IconBot/IconWand 新增）。
+- requirements.txt 无 pycryptodome/telegram 库——决策：**Telegram 走 raw httpx**（已有依赖，
+  Bot API sendMessage + webhook secret_token 头验证，零新增重依赖）；**企业微信回调 AES 用
+  pycryptodome**（B182 安装并登记 requirements.txt）。个人微信无官方 bot API，落地企业微信
+  （WeCom）应用回调，报告注明该决策。
+- 安全惯例：token/secret 全走 env，不进代码/日志；httpx client trust_env=False（内网代理教训）。
+
+## 契约
+
+### M182 · Bot Channel（B182 实现；主代理接线；C 消费）
+
+```python
+# B182: src/api/bot_channel.py（纯逻辑，零 FastAPI，函数级不 import main）
+#   @dataclass UnifiedMessage: platform, chat_id, user_id, user_name, text, message_id: str
+#   @dataclass ChannelStatus: platform, enabled, configured: bool; inbound_count, outbound_count,
+#     error_count: int; last_inbound_at, last_outbound_at: float|None; last_error: str
+#   class BotSessionRegistry(path)  # 身份映射：platform+chat_id → session_id
+#     resolve(platform, chat_id) -> str|None；bind(platform, chat_id, session_id, user_name="")
+#     JSON dict 持久化 tmp+os.replace；坏文件回退空不炸
+#   class ChannelStats(path)      # 状态监控：record_inbound/outbound/error(platform, err="")
+#     status(platform, configured) -> ChannelStatus；all_statuses(configured: dict) -> list
+#   async def handle_inbound(msg, *, registry, stats, create_session, dispatch, await_reply,
+#       send_reply) -> bool
+#     # 全注入保纯：create_session(title)->session_id；dispatch(sid,text)->Awaitable（转发
+#     # canonical send）；await_reply(sid)->Awaitable[str|None]（轮询 history 等新 assistant
+#     # turn，超时 None）；send_reply(text)->Awaitable[tuple[bool,str]]（平台 sender）
+#     # 流程：resolve/建会话 bind → record_inbound → dispatch → await_reply → 有回复
+#     # send_reply(截 4000)；超时发固定兜底文案；任何异常 record_error 吞掉返回 False
+#   async def wait_for_reply(get_history, session_id, baseline_turns, timeout_s, interval_s=1.0)
+#     # get_history(sid)->Awaitable[list[dict(role,text)]]；新 assistant turn 出现→其 text
+#   # 路径 env：FLIPPED_BOT_DB（默认 data/bot_sessions.json）/ FLIPPED_BOT_STATS_DB
+#   # 超时 env：FLIPPED_BOT_REPLY_TIMEOUT_S 默认 90
+
+# B182: src/api/bot_telegram.py
+#   def verify_secret(header: str|None, expected: str) -> bool   # hmac.compare_digest
+#   def parse_update(body: dict) -> UnifiedMessage|None  # message.text；非文本/无 message→None
+#   class TelegramSender(token, *, client=None)  # client=注入 fake httpx.AsyncClient
+#     async send_message(chat_id, text) -> tuple[bool, str]  # 截 4000；异常→(False,str) 不上抛
+#     # POST https://api.telegram.org/bot{token}/sendMessage；httpx.AsyncClient(timeout=15,
+#     # trust_env=False)；HTTP 非 2xx → (False, f"http {code}")
+#   def configured() -> bool   # env FLIPPED_BOT_TELEGRAM_TOKEN
+
+# B182: src/api/bot_wecom.py（企业微信应用回调；pycryptodome 缺失→available()=False 优雅降级）
+#   class WeComCrypto(token, encoding_aes_key, corp_id)
+#     verify_signature(msg_signature, timestamp, nonce, encrypt) -> bool
+#       # SHA1("".join(sorted([token, timestamp, nonce, encrypt]))) hexdigest 比对
+#     decrypt(encrypt_b64) -> str  # AES-256-CBC key=b64decode(aes_key+"=") iv=key[:16]
+#       # 去 PKCS7 → random16+msg_len(4B 网络序)+msg+corpid；corpid 尾缀校验失败→ValueError
+#     encrypt(msg) -> str  # 测试与被动回复用
+#   def parse_callback_xml(xml_text) -> UnifiedMessage|None  # MsgType=text；chat_id=FromUserName
+#   class WeComSender(corp_id, secret, agent_id, *, client=None)  # access_token 缓存提前 200s 刷新
+#     async send_message(user_id, text) -> tuple[bool, str]
+#   def configured() -> bool  # env 四件：WECOM_TOKEN/AES_KEY/CORP_ID/SECRET（+AGENT_ID 缺省 "0"）
+
+# 主代理 Phase 3 接线（main.py，pydantic 响应模型定义在 main 段内按既有风格）：
+#   POST /bot/telegram/webhook：token 未配置 404；secret 头不符 403；parse None→200
+#     {"ok":true,"handled":false}；否则 create_task(handle_inbound)→200 {"ok":true,"handled":true}
+#   GET  /bot/wecom/callback（URL 验证）：验签 403；PlainTextResponse(decrypt(echostr))
+#   POST /bot/wecom/callback：验签 403；decrypt+parse None→"success"；else create_task→"success"
+#   GET  /bot/channels → {channels: [ChannelStatusEntry...]}（enabled=env 开关且 configured）
+#   POST /bot/channels/{platform}/test {text} → 未知平台 404/未配置 400/无绑定 400/
+#     send 失败 502 {ok:false,error}；成功 {ok:true}
+#   FLIPPED_BOT=0 → 全部 404
+```
+
+```ts
+// C 队 M182 消费契约
+// types.ts: BotChannelInfo {platform,enabled,configured,inbound_count,outbound_count,
+//   error_count,last_inbound_at,last_outbound_at,last_error}
+// api.ts: fetchBotChannels() → BotChannelInfo[]；testBotChannel(platform, text) → {ok,error?}
+// icons.tsx: IconBot（lucide Bot 线性，对齐既有风格）
+// components/BotChannelPanel.tsx（直调 api 不经 store，仿 RulesPanel 范式）：
+//   通道卡片：平台名（Telegram/企业微信）+ IconBot + enabled/configured 徽标（绿/灰）+
+//   三项计数（入/出/错）+ last_inbound_at 相对时间 + last_error 红字（空不渲染）+
+//   「发测试消息」按钮→loading 禁用→结果行（ok 绿「已发送」/error 红）；
+//   空态（无通道 configured）引导文案 + env 配置提示；加载失败红字+重试
+// ContextPanel.tsx：tab 'bot' 按钮（IconBot）「机器人」+ 条件渲染 <BotChannelPanel/>
+```
+
+### M183 · Worker 规则注入系统（B183 实现；主代理接线；C 消费）
+
+```python
+# B183: src/driving/worker_rules.py（纯逻辑零 FastAPI；orchestrator 与 main 均 import 它）
+#   class WorkerRule(BaseModel): id, text, scope("worker"|"all"), source("manual"|"auto"),
+#     enabled: bool=True, priority: int=50(manual)/10(auto) 0..100, created_at: float
+#     # id 生成 "wr-"+secrets.token_hex(4) 碰撞重试；text strip 1..500；
+#     # 注入防护 blocklist（case-insensitive）："ignore previous instructions"/"忽略之前的指令"/
+#     # "忽略以上指令"/"disregard all" → ValidationError
+#   class WorkerRuleStore(path)   # env FLIPPED_WORKER_RULES_PATH 默认 data/worker_rules.json
+#     JSON {version:int, rules:[...], history:[{version,ts,action,detail,rules:[快照]}]}
+#     坏文件→空 store(version 0)；tmp+os.replace 原子写；history cap 20；每次变更 bump version
+#     list/add(text,*,scope,source,priority)/update(id,text?,priority?,scope?)/
+#     delete(id)->bool/set_enabled(id,enabled)/versions()->list[元信息含 rule_count]/
+#     rollback(version)->bool  # 恢复快照，自身亦 bump version action="rollback"
+#   def build_worker_rules_text(rules, *, max_chars=300) -> tuple[str, list[str]]
+#     # enabled 且 scope∈{worker,all}；priority desc → id asc；逐条 "- {text}"；
+#     # 预算尾部整条丢弃+"…(略N条)"；返回 (text, applied_ids)
+#   class WorkerRuleStats(path)   # env FLIPPED_WORKER_RULE_STATS_PATH 默认 data/worker_rule_stats.json
+#     record_applied(ids)/record_outcome(ids, success: bool)/snapshot()->
+#     #   {"stats": {id: {applied,success,failure}}, "total_runs": int}
+#   AUTO_RULE_TEMPLATES: list[tuple[pattern_regex, rule_text]]  # ≥6 条常见失败模式→规则模板
+#   def generate_auto_rules(failure_texts, existing, *, max_rules=3) -> list[str]
+#     # pattern 命中→模板文本；对 existing 文本+本次候选去重；返回候选
+
+# B183: orchestrator.py 接线（钉死两处，fail-open 绝不让编排失败）
+#   ① local_worker（:852 `_rules_short` 计算后）：
+#     state 增字段 worker_rules_applied: list[str]（OrchestratorState TypedDict 登记）
+#     函数级 import WorkerRuleStore/Stats/build_worker_rules_text →
+#     _wr_text,_ids = build_worker_rules_text(store.list(), max_chars=300)
+#     非空：_rules_short = (_wr_text+"\n"+_rules_short).strip()[:300]；
+#     stats.record_applied(_ids)；返回 dict 带 "worker_rules_applied": _ids
+#   ② verify 节点 verified 终判处（:1642-1646 区域 + :1526 复合路径）：
+#     函数级 import WorkerRuleStats → record_outcome(state.get("worker_rules_applied",[]), verified)
+#     语义：applied 按注入次计数，outcome 按 verify 次计数（中间迭代记 failure，
+#     规则效果=降低失败迭代数，报告注明）
+
+# 主代理 Phase 3 接线（main.py）：
+#   GET    /worker/rules → {version, rules[]}
+#   POST   /worker/rules {text, scope?, priority?} → 201 rule；ValidationError→422
+#   PUT    /worker/rules/{id} {text?, priority?, scope?} → rule；404
+#   DELETE /worker/rules/{id} → {ok:true}；404
+#   POST   /worker/rules/{id}/toggle {enabled} → rule；404
+#   GET    /worker/rules/versions → {versions:[{version,ts,action,detail,rule_count}]}
+#   POST   /worker/rules/rollback {version} → {ok,version}；未知 404
+#   POST   /worker/rules/auto-generate {failure_texts?: [...]} → {added:[rule...], candidates:n}
+#     # 缺省数据源：函数级 import driving.failure_kb 读最近失败（fail-open→空→added=[]）
+#   GET    /worker/rules/stats → WorkerRuleStats.snapshot()
+#   FLIPPED_WORKER_RULES=0 → 全部 404
+```
+
+```ts
+// C 队 M183 消费契约
+// types.ts: WorkerRule {id,text,scope,source,enabled,priority,created_at}
+//   WorkerRulesInfo {version,rules: WorkerRule[]}
+//   WorkerRuleVersion {version,ts,action,detail,rule_count}
+//   WorkerRuleStatsData {stats: Record<string,{applied,success,failure}>, total_runs}
+// api.ts: fetchWorkerRules/createWorkerRule(text,scope?,priority?)/updateWorkerRule/
+//   deleteWorkerRule/toggleWorkerRule/fetchWorkerRuleVersions/rollbackWorkerRules(version)/
+//   autoGenerateWorkerRules()/fetchWorkerRuleStats
+// icons.tsx: IconWand（lucide Wand2 线性）
+// components/WorkerRulesPanel.tsx（直调 api 不经 store）：
+//   头部：版本徽标 v{n} +「自动生成」按钮（结果 note「新增 N 条」/「无新候选」）+「版本史」
+//   展开区（versions 列表 + 回滚按钮二次确认）；
+//   规则行：enabled toggle + text（行内编辑 保存/取消）+ source 徽标（auto 紫/manual 蓝）+
+//   priority 徽标 + 删除二次确认；新建表单（text 必填/scope select/priority number）；
+//   stats 区：每规则 applied 数 + 成功率条（success/(success+failure)，0 次显示「未应用」）；
+//   全部失败红字不收起；loading 骨架
+// ContextPanel.tsx：tab 'worker' 按钮（IconWand）「Worker」+ 条件渲染 <WorkerRulesPanel/>
+```
+
+### M184 · known_limitations 系统性消化（独立子代理，无 main.py/前端改动）
+- scripts/limitations_report.py（stdlib only）子命令：
+  - `harvest`：读 STATE.json milestones.*.known_limitations → data/limitations_registry.json；
+    id 稳定 `L-{milestone}-{序号}`（按出现序）；已有条目按 (milestone,text) 匹配保留人工字段
+    （category/impact/priority/difficulty/status/resolution_note/target）；新增默认
+    category="未分类"/priority="P2"/difficulty="中"/status="open"
+  - `classify`：内置规则表为「未分类」条目自动填 category/priority/difficulty 建议
+    （关键词映射：安全/加密/token→安全；未做/候选/缺口→功能缺口；性能/开销/超时→性能；
+    测试/黑盒/覆盖→测试覆盖；取舍/不动/兼容→架构取舍；数据/持久化/恢复→数据一致性）
+  - `check`：STATE.json 每条限制都在 registry → 缺失 exit 1（CI 门禁钩子）
+  - `set-status <id> <open|in_progress|resolved|wontfix> [--note ...]`：状态更新机制
+  - `report`：生成 reports/limitations_analysis_<YYYYMMDD>.md——总览（总数/分类/优先级分布）+
+    42 条全量明细表（id/里程碑/分类/影响/优先级/难度/状态/分阶段目标）+ 优先级×难度矩阵 +
+    分阶段路线图（P0→当前迭代，P1→下两里程碑，P2→候选池）+ 已消化条目标记
+    （M180 worker 注入→resolved by M183；M181 Bot Channel→resolved by M182）+ 跟踪机制说明
+- tests/test_m184_limitations.py ≥12 例（harvest 幂等/稳定 id/人工字段保留/新增默认/
+  classify 关键词命中/check 缺失退出码/set-status 往返/report 含全部 id 与路线图节）
+- 报告定稿由主代理审阅（优先级/难度判断需全局上下文）
+
+## 阶段与验收
+- Phase 1（并行四队）：B182 / B183 / C / M184，各跑各的新增测试，不跑全量回归
+- Phase 2（主代理）：main.py 接线（M182 五端点 + M183 九端点）+ API 快照重生核对 +
+  api-types 重生 + 全量回归（pytest+vitest+tsc+build）
+- Phase 3（主代理）：verify_m182.sh（假 LLM+假 Telegram/WeCom HTTP 黑盒）+ verify_m183.sh
+  （真编排黑盒验证注入+stats）+ verify_m184.sh（脚本四子命令+check 门禁）+
+  quality_gate 门禁 + STATE.json/TEST_LOG.md 留痕 + git commit
+- DoD 红线：B 队不动 main.py；orchestrator 接线全 fail-open；bot token 只走 env；
+  注入防护 blocklist 必测；全量回归零失败；findings.jsonl 空

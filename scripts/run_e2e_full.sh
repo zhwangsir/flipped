@@ -81,7 +81,7 @@ echo -e "${BLUE}============================================================${NC
 if [[ "$REPORT_ONLY" == "true" ]]; then
   echo -e "${YELLOW}→ 跳过测试，仅重新生成报告${NC}"
   if [[ ! -f "$RESULTS_JSON" ]]; then
-    echo -e "${RED}✗ 找不到 $RESULTS_JSON，请先跑测试${NC}" >&2
+    echo -e "${RED}✗ 找不到 ${RESULTS_JSON}，请先跑测试${NC}" >&2
     exit 1
   fi
   python3 "$SCRIPT_DIR/gen_e2e_report.py" "$RESULTS_JSON" "$REPORT_MD"
@@ -95,7 +95,7 @@ fi
 echo -e "${YELLOW}→ [1/4] 检查 dev server (5273)...${NC}"
 HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:5273/ --max-time 3 2>/dev/null || echo "000")
 if [[ "$HTTP_CODE" != "200" ]]; then
-  echo -e "${RED}✗ dev server 未运行（HTTP $HTTP_CODE）${NC}"
+  echo -e "${RED}✗ dev server 未运行（HTTP ${HTTP_CODE}）${NC}"
   echo -e "${YELLOW}  请先在另一个终端启动: cd console && npm run dev${NC}"
   echo -e "${YELLOW}  Playwright 配置了 webServer.reuseExistingServer=true，${NC}"
   echo -e "${YELLOW}  若不手动启动，Playwright 会尝试自动启动（耗时 60s）。${NC}"
@@ -145,7 +145,7 @@ set -e
 if [[ $PW_EXIT -eq 0 ]]; then
   echo -e "${GREEN}✓ Playwright 测试全部通过${NC}"
 else
-  echo -e "${YELLOW}⚠ Playwright 有用例失败（exit $PW_EXIT），继续生成报告${NC}"
+  echo -e "${YELLOW}⚠ Playwright 有用例失败（exit ${PW_EXIT}），继续生成报告${NC}"
 fi
 
 # -----------------------------------------------------------------------------

@@ -35,6 +35,7 @@ TOOLS: list[Tool] = [
             "properties": {
                 "query": {"type": "string", "description": "Query text"},
                 "n_results": {"type": "integer", "default": 5},
+                "project": {"type": "string", "description": "Filter results to a specific project"},
             },
             "required": ["query"],
         },
@@ -52,6 +53,7 @@ TOOLS: list[Tool] = [
                 },
                 "text": {"type": "string", "description": "Raw text to ingest"},
                 "metadata": {"type": "object", "description": "Optional metadata for raw text"},
+                "project": {"type": "string", "description": "Project tag stored in chunk metadata for later filtering"},
             },
         },
     ),
@@ -122,8 +124,12 @@ async def _web_search(arguments: dict[str, Any]) -> dict[str, Any]:
 async def _rag_query(arguments: dict[str, Any]) -> dict[str, Any]:
     query = arguments.get("query", "")
     n_results = int(arguments.get("n_results", 5))
+    project = arguments.get("project")
     store = ChromaVectorStore()
-    results = store.query(query, n_results=n_results)
+    if project:
+        results = store.query(query, n_results=n_results, filter={"project": project})
+    else:
+        results = store.query(query, n_results=n_results)
     return {"results": results}
 
 
@@ -131,6 +137,9 @@ async def _rag_ingest(arguments: dict[str, Any]) -> dict[str, Any]:
     paths = arguments.get("paths") or []
     text = arguments.get("text", "")
     metadata = arguments.get("metadata") or {}
+    project = arguments.get("project")
+    if project and "project" not in metadata:
+        metadata = {**metadata, "project": project}
     store = ChromaVectorStore()
     ids: list[str] = []
     if text:
@@ -138,9 +147,9 @@ async def _rag_ingest(arguments: dict[str, Any]) -> dict[str, Any]:
     for path in paths:
         p = os.path.expanduser(path)
         if os.path.isdir(p):
-            ids.extend(ingest_directory(p, store=store))
+            ids.extend(ingest_directory(p, store=store, project=project))
         elif os.path.isfile(p):
-            ids.extend(ingest_file(p, store=store))
+            ids.extend(ingest_file(p, store=store, project=project))
     return {"ingested_ids": ids, "count": len(ids)}
 
 

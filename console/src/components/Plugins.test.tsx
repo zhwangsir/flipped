@@ -1,11 +1,11 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent, cleanup } from '@testing-library/react';
+import { render, screen, fireEvent, cleanup, within } from '@testing-library/react';
 import { Plugins } from './Plugins';
 
 vi.mock('../store', () => ({ useApp: vi.fn() }));
 
 import { useApp } from '../store';
-import type { McpServer } from '../types';
+import type { McpServer, McpToolInfo } from '../types';
 
 const mockedUseApp = vi.mocked(useApp);
 
@@ -20,6 +20,14 @@ function makeServer(partial: Partial<McpServer> = {}): McpServer {
   };
 }
 
+function makeTool(partial: Partial<McpToolInfo> = {}): McpToolInfo {
+  return {
+    name: partial.name ?? 'web_search',
+    description: partial.description ?? '',
+    inputSchema: partial.inputSchema ?? { type: 'object' },
+  };
+}
+
 const baseState = {
   pluginsOpen: true,
   setPluginsOpen: vi.fn(),
@@ -28,6 +36,9 @@ const baseState = {
   prefillComposer: vi.fn(),
   refreshMcpServers: vi.fn(),
   setSettingsOpen: vi.fn(),
+  mcpTools: [] as McpToolInfo[],
+  refreshMcpTools: vi.fn(async () => {}),
+  callMcpTool: vi.fn(async () => ({ ok: true, tool: 'web_search', result: {} })),
 };
 
 afterEach(() => {
@@ -254,5 +265,132 @@ describe('Plugins — 技能 tab 内容', () => {
     render(<Plugins />);
     fireEvent.click(screen.getByText('技能'));
     expect(screen.getByText(/Supervisor.*Worker.*Overseer/)).toBeInTheDocument();
+  });
+});
+
+// M170.2 — 「已安装」区 MCP 工具列表 + 参数表单 + 调用结果/错误/派发渲染
+describe('Plugins — MCP 工具调用 (M170.2)', () => {
+  function stateWithTools(overrides: Record<string, unknown> = {}) {
+    return {
+      ...baseState,
+      mcpServers: [makeServer({ name: 'flipped', tools: ['web_search'], tool_count: 1 })],
+      mcpTools: [makeTool({ name: 'web_search', description: '联网搜索' })],
+      ...overrides,
+    } as never;
+  }
+
+  function stateWithLongTool(overrides: Record<string, unknown> = {}) {
+    return {
+      ...baseState,
+      mcpServers: [makeServer({ name: 'flipped', tools: ['run_coding_task'], tool_count: 1 })],
+      mcpTools: [makeTool({ name: 'run_coding_task', description: '跑编码任务' })],
+      ...overrides,
+    } as never;
+  }
+
+  it('mcpTools 为空时打开面板自动 refreshMcpTools', () => {
+    const refreshMcpTools = vi.fn(async () => {});
+    mockedUseApp.mockReturnValue({ ...baseState, refreshMcpTools } as never);
+    render(<Plugins />);
+    expect(refreshMcpTools).toHaveBeenCalled();
+  });
+
+  it('tools 非空的服务器渲染工具列表与「调用」按钮', () => {
+    mockedUseApp.mockReturnValue(stateWithTools());
+    render(<Plugins />);
+    expect(screen.getByTestId('mcp-tool-call-btn-web_search')).toBeInTheDocument();
+    expect(screen.getByText('web_search')).toBeInTheDocument();
+    // description 出现在工具行(静态能力目录里也有同名「联网搜索」卡,故用 getAllByText)
+    expect(screen.getAllByText('联网搜索').length).toBeGreaterThan(0);
+  });
+
+  it('tools 为空的服务器不渲染工具列表', () => {
+    mockedUseApp.mockReturnValue({
+      ...baseState,
+      mcpServers: [makeServer({ name: 'empty', tools: [], tool_count: 0 })],
+      mcpTools: [makeTool({ name: 'web_search' })],
+    } as never);
+    render(<Plugins />);
+    expect(screen.queryByTestId('mcp-tool-call-btn-web_search')).toBeNull();
+  });
+
+  it('点击「调用」展开参数表单并显示 description 提示文案', () => {
+    mockedUseApp.mockReturnValue(stateWithTools());
+    render(<Plugins />);
+    expect(screen.queryByTestId('mcp-tool-form-web_search')).toBeNull();
+    fireEvent.click(screen.getByTestId('mcp-tool-call-btn-web_search'));
+    const form = screen.getByTestId('mcp-tool-form-web_search');
+    expect(form).toBeInTheDocument();
+    expect(within(form).getByLabelText('query')).toBeInTheDocument();
+    expect(within(form).getByText('联网搜索')).toBeInTheDocument();
+  });
+
+  it('必填字段为空时提交键禁用,填写后启用', () => {
+    mockedUseApp.mockReturnValue(stateWithTools());
+    render(<Plugins />);
+    fireEvent.click(screen.getByTestId('mcp-tool-call-btn-web_search'));
+    const form = screen.getByTestId('mcp-tool-form-web_search');
+    const submit = within(form).getByRole('button', { name: '运行' });
+    expect(submit).toBeDisabled();
+    fireEvent.change(within(form).getByLabelText('query'), { target: { value: 'mlx' } });
+    expect(submit).not.toBeDisabled();
+  });
+
+  it('快工具提交成功后内联渲染 result(JSON)且可点 × 关闭', async () => {
+    const callMcpTool = vi.fn(async () => ({ ok: true, tool: 'web_search', result: { hits: ['a', 'b'] } }));
+    mockedUseApp.mockReturnValue(stateWithTools({ callMcpTool }));
+    render(<Plugins />);
+    fireEvent.click(screen.getByTestId('mcp-tool-call-btn-web_search'));
+    const form = screen.getByTestId('mcp-tool-form-web_search');
+    fireEvent.change(within(form).getByLabelText('query'), { target: { value: 'mlx' } });
+    fireEvent.submit(form);
+    const result = await screen.findByTestId('mcp-tool-result');
+    expect(callMcpTool).toHaveBeenCalledWith('web_search', { query: 'mlx' });
+    expect(result.querySelector('pre')?.textContent).toContain('"hits"');
+    expect(result.querySelector('pre')?.textContent).toContain('"a"');
+    fireEvent.click(within(result).getByLabelText('关闭结果'));
+    expect(screen.queryByTestId('mcp-tool-result')).toBeNull();
+  });
+
+  it('快工具 ok:false 时渲染 error', async () => {
+    const callMcpTool = vi.fn(async () => ({ ok: false, tool: 'web_search', error: 'searxng down' }));
+    mockedUseApp.mockReturnValue(stateWithTools({ callMcpTool }));
+    render(<Plugins />);
+    fireEvent.click(screen.getByTestId('mcp-tool-call-btn-web_search'));
+    const form = screen.getByTestId('mcp-tool-form-web_search');
+    fireEvent.change(within(form).getByLabelText('query'), { target: { value: 'mlx' } });
+    fireEvent.submit(form);
+    const err = await screen.findByTestId('mcp-tool-error');
+    expect(err.textContent).toContain('searxng down');
+  });
+
+  it('长工具有会话时渲染「已派发到当前会话」提示', async () => {
+    const callMcpTool = vi.fn(async () => ({
+      ok: true,
+      accepted: true,
+      tool: 'run_coding_task',
+      session_id: 's1',
+    }));
+    mockedUseApp.mockReturnValue(stateWithLongTool({ callMcpTool }));
+    render(<Plugins />);
+    fireEvent.click(screen.getByTestId('mcp-tool-call-btn-run_coding_task'));
+    const form = screen.getByTestId('mcp-tool-form-run_coding_task');
+    fireEvent.change(within(form).getByLabelText('goal'), { target: { value: '修 bug' } });
+    fireEvent.submit(form);
+    const d = await screen.findByTestId('mcp-tool-dispatched');
+    expect(d.textContent).toContain('已派发到当前会话');
+    expect(callMcpTool).toHaveBeenCalledWith('run_coding_task', { goal: '修 bug' });
+  });
+
+  it('长工具无会话时提示「请先在 Assistant 开始对话」', async () => {
+    const callMcpTool = vi.fn(async () => ({ ok: false, tool: 'run_coding_task', error: 'no-session' }));
+    mockedUseApp.mockReturnValue(stateWithLongTool({ callMcpTool }));
+    render(<Plugins />);
+    fireEvent.click(screen.getByTestId('mcp-tool-call-btn-run_coding_task'));
+    const form = screen.getByTestId('mcp-tool-form-run_coding_task');
+    fireEvent.change(within(form).getByLabelText('goal'), { target: { value: '修 bug' } });
+    fireEvent.submit(form);
+    const err = await screen.findByTestId('mcp-tool-error');
+    expect(err.textContent).toContain('请先在 Assistant 开始对话');
   });
 });

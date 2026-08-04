@@ -1,6 +1,28 @@
-import { afterEach, describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent, cleanup } from '@testing-library/react';
+import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
+import { render, screen, fireEvent, cleanup, waitFor, act } from '@testing-library/react';
 import { Composer } from './Composer';
+
+// M167.4 — Composer 内部直接消费 store 的排队/停止能力(assistantQueue/
+// enqueueAssistantMessage/removeAssistantQueued/stopAssistantTask),测试环境 mock useApp
+vi.mock('../store', () => ({ useApp: vi.fn() }));
+// M175 — @ 文件引用补全拉取项目文件树,测试环境 mock api
+vi.mock('../api', () => ({ fetchProjectFiles: vi.fn() }));
+import { useApp } from '../store';
+import { fetchProjectFiles } from '../api';
+
+const mockedUseApp = vi.mocked(useApp);
+const mockedFetchFiles = vi.mocked(fetchProjectFiles);
+
+const baseStore = {
+  assistantQueue: [] as string[],
+  enqueueAssistantMessage: vi.fn(),
+  removeAssistantQueued: vi.fn(),
+  stopAssistantTask: vi.fn(async () => {}),
+};
+
+beforeEach(() => {
+  mockedUseApp.mockReturnValue({ ...baseStore } as never);
+});
 
 afterEach(() => {
   cleanup();
@@ -18,27 +40,280 @@ describe('Composer — 输入守卫与 slash 补全', () => {
     expect(onSend).not.toHaveBeenCalled();
   });
 
-  it('busy=true 时输入框与按钮均禁用', () => {
+  // M167.4 行为变更:busy 时输入框不再禁用(可排队),发送键位换成停止按钮
+  it('busy=true 时输入框保持可用,发送键位渲染停止按钮(M167.4)', () => {
     const onSend = vi.fn();
     render(<Composer onSend={onSend} busy={true} />);
+    const ta = screen.getByTestId('assistant-composer-input') as HTMLTextAreaElement;
+    expect(ta.disabled).toBe(false);
+    expect(screen.getByTestId('composer-stop-btn')).toBeTruthy();
+    expect(screen.queryByTestId('assistant-send-btn')).toBeNull();
+  });
+
+  it('disabled=true 时输入框与发送键均禁用(不受 M167.4 影响)', () => {
+    const onSend = vi.fn();
+    render(<Composer onSend={onSend} disabled={true} />);
     const ta = screen.getByTestId('assistant-composer-input') as HTMLTextAreaElement;
     const btn = screen.getByTestId('assistant-send-btn') as HTMLButtonElement;
     expect(ta.disabled).toBe(true);
     expect(btn.disabled).toBe(true);
   });
 
-  it('输入 / 唤起 slash 补全菜单,显示 5 项命令', () => {
+  it('输入 / 唤起 slash 补全菜单,显示 7 项命令', () => {
     const onSend = vi.fn();
     render(<Composer onSend={onSend} />);
     const ta = screen.getByTestId('assistant-composer-input') as HTMLTextAreaElement;
     fireEvent.change(ta, { target: { value: '/' } });
     const menu = screen.getByTestId('slash-menu');
     expect(menu).toBeTruthy();
-    // 5 项命令
+    // 7 项命令（M168 新增 /undo,M176 新增 /goal）
     const items = menu.querySelectorAll('.slash-item');
-    expect(items.length).toBe(5);
+    expect(items.length).toBe(7);
     // 命令文本检查
     const cmds = Array.from(items).map((i) => i.querySelector('.slash-cmd')?.textContent);
-    expect(cmds).toEqual(['/clear', '/compact', '/mode', '/help', '/files']);
+    expect(cmds).toEqual(['/clear', '/compact', '/mode', '/help', '/files', '/undo', '/goal']);
+  });
+});
+
+// M167.4 — busy 交互对标 opencode:running 中 Enter 入队 / Esc 或停止键中断
+describe('Composer — M167.4 busy 排队与停止', () => {
+  it('busy 时 Enter 入队而不发送(onSend 未调),输入框清空', () => {
+    const onSend = vi.fn();
+    const enqueueAssistantMessage = vi.fn();
+    mockedUseApp.mockReturnValue({ ...baseStore, enqueueAssistantMessage } as never);
+    render(<Composer onSend={onSend} busy={true} />);
+    const ta = screen.getByTestId('assistant-composer-input') as HTMLTextAreaElement;
+    fireEvent.change(ta, { target: { value: '接着做第三步' } });
+    fireEvent.keyDown(ta, { key: 'Enter', shiftKey: false });
+    expect(enqueueAssistantMessage).toHaveBeenCalledWith('接着做第三步');
+    expect(onSend).not.toHaveBeenCalled();
+    expect(ta.value).toBe('');
+  });
+
+  it('busy 时空输入 Enter 不入队', () => {
+    const enqueueAssistantMessage = vi.fn();
+    mockedUseApp.mockReturnValue({ ...baseStore, enqueueAssistantMessage } as never);
+    render(<Composer onSend={vi.fn()} busy={true} />);
+    const ta = screen.getByTestId('assistant-composer-input') as HTMLTextAreaElement;
+    fireEvent.keyDown(ta, { key: 'Enter', shiftKey: false });
+    expect(enqueueAssistantMessage).not.toHaveBeenCalled();
+  });
+
+  it('busy 时点击停止按钮 → stopAssistantTask', () => {
+    const stopAssistantTask = vi.fn(async () => {});
+    mockedUseApp.mockReturnValue({ ...baseStore, stopAssistantTask } as never);
+    render(<Composer onSend={vi.fn()} busy={true} />);
+    fireEvent.click(screen.getByTestId('composer-stop-btn'));
+    expect(stopAssistantTask).toHaveBeenCalledTimes(1);
+  });
+
+  it('busy 时 Esc → stopAssistantTask;非 busy 时 Esc 不停止', () => {
+    const stopAssistantTask = vi.fn(async () => {});
+    mockedUseApp.mockReturnValue({ ...baseStore, stopAssistantTask } as never);
+    const { unmount } = render(<Composer onSend={vi.fn()} busy={true} />);
+    const ta = screen.getByTestId('assistant-composer-input');
+    fireEvent.keyDown(ta, { key: 'Escape' });
+    expect(stopAssistantTask).toHaveBeenCalledTimes(1);
+    unmount();
+    render(<Composer onSend={vi.fn()} busy={false} />);
+    const ta2 = screen.getByTestId('assistant-composer-input');
+    fireEvent.keyDown(ta2, { key: 'Escape' });
+    expect(stopAssistantTask).toHaveBeenCalledTimes(1); // 不新增调用
+  });
+
+  it('非 busy Enter 正常发送(回归)', () => {
+    const onSend = vi.fn();
+    render(<Composer onSend={onSend} />);
+    const ta = screen.getByTestId('assistant-composer-input') as HTMLTextAreaElement;
+    fireEvent.change(ta, { target: { value: '正常消息' } });
+    fireEvent.keyDown(ta, { key: 'Enter', shiftKey: false });
+    expect(onSend).toHaveBeenCalledWith('正常消息');
+    expect(ta.value).toBe('');
+  });
+
+  it('排队 chips 渲染(序号 + 文本截断),× 按钮按 index 回调移除', () => {
+    const removeAssistantQueued = vi.fn();
+    const long = '这是一条特别长的排队消息'.repeat(5); // 65 字 > 40 截断线
+    mockedUseApp.mockReturnValue({
+      ...baseStore,
+      assistantQueue: [long, '短消息'],
+      removeAssistantQueued,
+    } as never);
+    render(<Composer onSend={vi.fn()} busy={true} />);
+    expect(screen.getByTestId('composer-queue')).toBeTruthy();
+    const chip0 = screen.getByTestId('queue-chip-0');
+    expect(chip0.textContent).toContain('1. ');
+    expect(chip0.textContent).toContain('…'); // 超 40 字截断
+    expect(chip0.textContent!.length).toBeLessThan(long.length);
+    const chip1 = screen.getByTestId('queue-chip-1');
+    expect(chip1.textContent).toContain('2. 短消息');
+    fireEvent.click(screen.getByTestId('queue-remove-1'));
+    expect(removeAssistantQueued).toHaveBeenCalledWith(1);
+  });
+
+  it('无排队消息 → 不渲染 composer-queue', () => {
+    render(<Composer onSend={vi.fn()} />);
+    expect(screen.queryByTestId('composer-queue')).toBeNull();
+  });
+});
+
+// M175 — @ 文件引用补全:输入 @ 触发 fetchProjectFiles,拍平树过滤排序,pick 替换 token
+describe('Composer — M175 @ 文件引用补全', () => {
+  const fileTree = {
+    root: '/proj',
+    tree: [
+      {
+        name: 'src',
+        path: 'src',
+        type: 'dir' as const,
+        children: [
+          { name: 'hello.py', path: 'src/hello.py', type: 'file' as const },
+          { name: 'helper.py', path: 'src/helper.py', type: 'file' as const },
+        ],
+      },
+      { name: 'doc.md', path: 'doc.md', type: 'file' as const },
+      {
+        name: 'docs',
+        path: 'docs',
+        type: 'dir' as const,
+        children: [{ name: 'my file.md', path: 'docs/my file.md', type: 'file' as const }],
+      },
+    ],
+  };
+
+  beforeEach(() => {
+    mockedFetchFiles.mockResolvedValue(fileTree);
+  });
+
+  it('输入 "看下 @he" → at-menu 出现且含匹配文件项', async () => {
+    render(<Composer onSend={vi.fn()} />);
+    const ta = screen.getByTestId('assistant-composer-input') as HTMLTextAreaElement;
+    fireEvent.change(ta, { target: { value: '看下 @he' } });
+    const menu = await screen.findByTestId('at-menu');
+    expect(mockedFetchFiles).toHaveBeenCalledTimes(1);
+    const items = menu.querySelectorAll('.at-item');
+    expect(items.length).toBe(2);
+    const paths = Array.from(items).map((i) => i.querySelector('.at-path')?.textContent);
+    expect(paths).toContain('src/hello.py');
+    expect(paths).toContain('src/helper.py');
+  });
+
+  it('过滤排序:name startsWith 的排在 path startsWith 之前', async () => {
+    render(<Composer onSend={vi.fn()} />);
+    const ta = screen.getByTestId('assistant-composer-input') as HTMLTextAreaElement;
+    fireEvent.change(ta, { target: { value: '@doc' } });
+    const menu = await screen.findByTestId('at-menu');
+    const items = Array.from(menu.querySelectorAll('.at-item'));
+    // doc.md(name 以 doc 开头)排最前;docs/my file.md(仅 path 以 doc 开头)其次
+    expect(items[0].querySelector('.at-path')?.textContent).toBe('doc.md');
+    expect(items[1].querySelector('.at-path')?.textContent).toBe('docs/my file.md');
+  });
+
+  it('Enter pick 首项 → textarea 变为 "看下 @src/hello.py " 且菜单关闭', async () => {
+    render(<Composer onSend={vi.fn()} />);
+    const ta = screen.getByTestId('assistant-composer-input') as HTMLTextAreaElement;
+    fireEvent.change(ta, { target: { value: '看下 @he' } });
+    await screen.findByTestId('at-menu');
+    fireEvent.keyDown(ta, { key: 'Enter' });
+    expect(ta.value).toBe('看下 @src/hello.py ');
+    expect(screen.queryByTestId('at-menu')).toBeNull();
+  });
+
+  it('点击 pick 含空格路径 → 文本含 @"docs/my file.md" ', async () => {
+    render(<Composer onSend={vi.fn()} />);
+    const ta = screen.getByTestId('assistant-composer-input') as HTMLTextAreaElement;
+    fireEvent.change(ta, { target: { value: '看下 @my' } });
+    const menu = await screen.findByTestId('at-menu');
+    const item = Array.from(menu.querySelectorAll('.at-item')).find(
+      (i) => i.querySelector('.at-path')?.textContent === 'docs/my file.md'
+    );
+    expect(item).toBeTruthy();
+    fireEvent.click(item!);
+    expect(ta.value).toContain('@"docs/my file.md" ');
+    expect(screen.queryByTestId('at-menu')).toBeNull();
+  });
+
+  it('Escape 关闭菜单', async () => {
+    render(<Composer onSend={vi.fn()} />);
+    const ta = screen.getByTestId('assistant-composer-input') as HTMLTextAreaElement;
+    fireEvent.change(ta, { target: { value: '@he' } });
+    await screen.findByTestId('at-menu');
+    fireEvent.keyDown(ta, { key: 'Escape' });
+    expect(screen.queryByTestId('at-menu')).toBeNull();
+  });
+
+  it('fetchProjectFiles reject → 不炸、菜单不出现(cache=[])', async () => {
+    mockedFetchFiles.mockRejectedValueOnce(new Error('boom'));
+    render(<Composer onSend={vi.fn()} />);
+    const ta = screen.getByTestId('assistant-composer-input') as HTMLTextAreaElement;
+    fireEvent.change(ta, { target: { value: '@he' } });
+    await waitFor(() => expect(mockedFetchFiles).toHaveBeenCalledTimes(1));
+    // 等 rejection 消化(cache 置空,不再重试)
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(screen.queryByTestId('at-menu')).toBeNull();
+  });
+});
+
+// M176 — /goal 目标驱动自循环:slash 菜单含 /goal;pick 只填充不执行;submit 带参走 onGoal;空参退化
+describe('Composer — M176 /goal 目标驱动自循环', () => {
+  it('输入 /go → slash 菜单过滤出 /goal 项(带描述)', () => {
+    render(<Composer onSend={vi.fn()} />);
+    const ta = screen.getByTestId('assistant-composer-input') as HTMLTextAreaElement;
+    fireEvent.change(ta, { target: { value: '/go' } });
+    const menu = screen.getByTestId('slash-menu');
+    const items = menu.querySelectorAll('.slash-item');
+    expect(items.length).toBe(1);
+    expect(items[0].querySelector('.slash-cmd')?.textContent).toBe('/goal');
+    expect(items[0].querySelector('.slash-desc')?.textContent).toContain('目标驱动自循环');
+  });
+
+  it('pick /goal → 只填充 "/goal " 到输入框,不执行(onGoal/onSend 均不调),菜单关闭', () => {
+    const onSend = vi.fn();
+    const onGoal = vi.fn();
+    render(<Composer onSend={onSend} onGoal={onGoal} />);
+    const ta = screen.getByTestId('assistant-composer-input') as HTMLTextAreaElement;
+    fireEvent.change(ta, { target: { value: '/go' } });
+    screen.getByTestId('slash-menu');
+    // Enter 选中菜单首项(/goal)
+    fireEvent.keyDown(ta, { key: 'Enter' });
+    expect(ta.value).toBe('/goal ');
+    expect(onGoal).not.toHaveBeenCalled();
+    expect(onSend).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('slash-menu')).toBeNull();
+  });
+
+  it('submit "/goal <目标>" → onGoal(目标文本),不走 onSend,输入框清空', () => {
+    const onSend = vi.fn();
+    const onGoal = vi.fn();
+    render(<Composer onSend={onSend} onGoal={onGoal} />);
+    const ta = screen.getByTestId('assistant-composer-input') as HTMLTextAreaElement;
+    fireEvent.change(ta, { target: { value: '/goal 修复所有 TS 错误并让测试全过' } });
+    fireEvent.keyDown(ta, { key: 'Enter', shiftKey: false });
+    expect(onGoal).toHaveBeenCalledWith('修复所有 TS 错误并让测试全过');
+    expect(onSend).not.toHaveBeenCalled();
+    expect(ta.value).toBe('');
+  });
+
+  it('空参数退化:"/goal"(无目标)点发送 → 普通发送流程(onSend),不调 onGoal', () => {
+    const onSend = vi.fn();
+    const onGoal = vi.fn();
+    render(<Composer onSend={onSend} onGoal={onGoal} />);
+    const ta = screen.getByTestId('assistant-composer-input') as HTMLTextAreaElement;
+    fireEvent.change(ta, { target: { value: '/goal' } });
+    // 菜单打开时 Enter 会走 pick,此处直接点发送按钮走 submit 验证退化路径
+    fireEvent.click(screen.getByTestId('assistant-send-btn'));
+    expect(onGoal).not.toHaveBeenCalled();
+    expect(onSend).toHaveBeenCalledWith('/goal');
+  });
+
+  it('无 onGoal 时 "/goal x" 退化为普通发送(向后兼容)', () => {
+    const onSend = vi.fn();
+    render(<Composer onSend={onSend} />);
+    const ta = screen.getByTestId('assistant-composer-input') as HTMLTextAreaElement;
+    fireEvent.change(ta, { target: { value: '/goal 做点事' } });
+    fireEvent.keyDown(ta, { key: 'Enter', shiftKey: false });
+    expect(onSend).toHaveBeenCalledWith('/goal 做点事');
   });
 });

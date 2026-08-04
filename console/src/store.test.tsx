@@ -31,10 +31,18 @@ vi.mock('./api', () => ({
   fetchMetrics: vi.fn(async () => ({ uptime: 0, sessions: 0 })),
   getMcpServers: vi.fn(async () => [{ name: 'search', enabled: true }, { name: 'git', enabled: false }]),
   toggleMcpServer: vi.fn(async () => ({})),
+  getMcpTools: vi.fn(async () => ({
+    tools: [
+      { name: 'web_search', description: '联网搜索', inputSchema: { type: 'object' } },
+      { name: 'run_coding_task', description: '跑编码任务', inputSchema: { type: 'object' } },
+    ],
+  })),
+  callMcpTool: vi.fn(async () => ({ ok: true, tool: 'web_search', result: { answer: 42 } })),
   fetchProjectContext: vi.fn(async () => null),
   fetchProjectFiles: vi.fn(async () => []),
   fetchProjectFile: vi.fn(async () => ''),
   fetchProjectDiff: vi.fn(async () => []),
+  reviewProject: vi.fn(async () => ({ findings: [], files_reviewed: 0, model: 'coder' })),
   openProject: vi.fn(async () => ({})),
   fetchProjects: vi.fn(async () => []),
   createProject: vi.fn(async () => ({})),
@@ -58,9 +66,26 @@ vi.mock('./api', () => ({
     status: 'idle',
   })),
   sendAssistantMessage: vi.fn(async () => ({ task_id: 'task-1', session_id: 'asst-new' })),
+  // M176 — Goal 模式
+  startAssistantGoal: vi.fn(async () => ({
+    task_id: 'task-goal',
+    session_id: 'asst-new',
+    objective: 'obj',
+    max_iterations: 5,
+  })),
+  fetchAssistantGoal: vi.fn(async () => null),
   fetchAssistantHistory: vi.fn(async () => []),
   approveAssistant: vi.fn(async () => ({ ok: true })),
   rejectAssistant: vi.fn(async () => ({ ok: true })),
+  compactAssistant: vi.fn(async () => ({ ok: true, session_id: 'asst-1', summary: '摘要' })),
+  editAssistantMessage: vi.fn(async () => ({
+    ok: true,
+    session_id: 'asst-1',
+    task_id: 'task-edit',
+    truncated: true,
+    restored: true,
+    deleted: [],
+  })),
 }));
 
 // mock detectServerUrl（types.ts 里的，依赖 window.location）
@@ -303,12 +328,139 @@ describe('AppProvider · MCP 服务器', () => {
   });
 });
 
+// M170.2 — Plugins 面板「MCP 工具调用」store 动作
+describe('AppProvider · MCP 工具调用 (M170.2)', () => {
+  it('refreshMcpTools: 拉取并填充 mcpTools state', async () => {
+    const { getMcpTools } = await import('./api');
+    renderProvider();
+    await flush();
+    expect(captured!.mcpTools).toEqual([]);
+    await act(async () => {
+      await captured!.refreshMcpTools();
+    });
+    expect(getMcpTools).toHaveBeenCalled();
+    expect(captured!.mcpTools).toHaveLength(2);
+    expect(captured!.mcpTools[0].name).toBe('web_search');
+    expect(captured!.mcpTools[1].name).toBe('run_coding_task');
+  });
+
+  it('callMcpTool: 快工具透传后端响应(不带 session_id)', async () => {
+    const { callMcpTool } = await import('./api');
+    renderProvider();
+    await flush();
+    (callMcpTool as ReturnType<typeof vi.fn>).mockClear();
+    let r: Awaited<ReturnType<AppState['callMcpTool']>> | null = null;
+    await act(async () => {
+      r = await captured!.callMcpTool('web_search', { query: 'mlx' });
+    });
+    expect(callMcpTool).toHaveBeenCalledWith('web_search', { arguments: { query: 'mlx' } });
+    expect(r).toEqual({ ok: true, tool: 'web_search', result: { answer: 42 } });
+  });
+
+  it('callMcpTool: 长工具自动带 selectedSessionId', async () => {
+    const { callMcpTool } = await import('./api');
+    (callMcpTool as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      ok: true,
+      accepted: true,
+      tool: 'run_coding_task',
+      session_id: 'sess-new',
+    });
+    renderProvider();
+    await flush();
+    // createSession mock 返回 id='sess-new',createSession action 会把它设为选中会话
+    await act(async () => {
+      await captured!.createSession();
+    });
+    expect(captured!.selectedSessionId).toBe('sess-new');
+    (callMcpTool as ReturnType<typeof vi.fn>).mockClear();
+    let r: Awaited<ReturnType<AppState['callMcpTool']>> | null = null;
+    await act(async () => {
+      r = await captured!.callMcpTool('run_coding_task', { goal: '修 bug' });
+    });
+    expect(callMcpTool).toHaveBeenCalledWith('run_coding_task', {
+      arguments: { goal: '修 bug' },
+      session_id: 'sess-new',
+    });
+    expect(r!.accepted).toBe(true);
+    expect(r!.session_id).toBe('sess-new');
+  });
+
+  it('callMcpTool: 无会话时长工具返回 no-session 且不发请求', async () => {
+    const { callMcpTool } = await import('./api');
+    renderProvider();
+    await flush();
+    expect(captured!.selectedSessionId).toBeNull();
+    (callMcpTool as ReturnType<typeof vi.fn>).mockClear();
+    let r: Awaited<ReturnType<AppState['callMcpTool']>> | null = null;
+    await act(async () => {
+      r = await captured!.callMcpTool('research_and_code', { research_query: 'q', coding_task: 'c' });
+    });
+    expect(r).toEqual({ ok: false, tool: 'research_and_code', error: 'no-session' });
+    expect(callMcpTool).not.toHaveBeenCalled();
+  });
+});
+
 describe('AppProvider · Assistant 动作', () => {
   it('clearAssistantTurns: 清空 turns', async () => {
     renderProvider();
     await flush();
     act(() => captured!.clearAssistantTurns());
     expect(captured!.assistantTurns).toEqual([]);
+  });
+
+  // M165.1a — slash 命令本地反馈 turn
+  it('appendAssistantLocalTurn: 追加一条本地 assistant turn', async () => {
+    renderProvider();
+    await flush();
+    act(() => captured!.appendAssistantLocalTurn('本地提示'));
+    const turns = captured!.assistantTurns;
+    expect(turns.length).toBe(1);
+    expect(turns[0].role).toBe('assistant');
+    expect(turns[0].text).toBe('本地提示');
+    expect(turns[0].tools).toEqual([]);
+    expect(typeof turns[0].created_at).toBe('string');
+  });
+
+  // M165.1a — /compact 压缩上下文
+  it('compactAssistant: 成功 → 调 API + 刷新历史', async () => {
+    const { compactAssistant, fetchAssistantHistory } = await import('./api');
+    renderProvider();
+    await flush();
+    const before = (fetchAssistantHistory as ReturnType<typeof vi.fn>).mock.calls.length;
+    await act(async () => {
+      await captured!.compactAssistant('asst-1');
+    });
+    expect(compactAssistant).toHaveBeenCalledWith('asst-1');
+    const calls = (fetchAssistantHistory as ReturnType<typeof vi.fn>).mock.calls;
+    expect(calls.length).toBeGreaterThan(before);
+    expect(calls[calls.length - 1][0]).toBe('asst-1');
+    expect(captured!.assistantBusy).toBe(false);
+  });
+
+  it('compactAssistant: API 失败(如 409 空历史) → 追加错误提示 turn + 不抛错', async () => {
+    const { compactAssistant } = await import('./api');
+    (compactAssistant as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('HTTP 409: empty history'));
+    renderProvider();
+    await flush();
+    await act(async () => {
+      await captured!.compactAssistant('asst-1');
+    });
+    const last = captured!.assistantTurns[captured!.assistantTurns.length - 1];
+    expect(last?.role).toBe('assistant');
+    expect(last?.text).toContain('409');
+    expect(captured!.assistantBusy).toBe(false);
+  });
+
+  // M165.2a — Always 审批:scope 透传到 API 层
+  it('approveAssistant: 带 scope=always → API 收到 scope', async () => {
+    const { approveAssistant } = await import('./api');
+    renderProvider();
+    await flush();
+    await act(async () => {
+      await captured!.approveAssistant('asst-1', 'always');
+    });
+    expect(approveAssistant).toHaveBeenCalledWith('asst-1', 'always');
+    expect(captured!.assistantBusy).toBe(false);
   });
 
   it('sendAssistantMessage: 空文本 → 不调 API', async () => {
@@ -356,7 +508,8 @@ describe('AppProvider · Assistant 动作', () => {
     await act(async () => {
       await captured!.approveAssistant('asst-1');
     });
-    expect(approveAssistant).toHaveBeenCalledWith('asst-1');
+    // M165.2a — scope 未传时透传 undefined(API 层此时不带 body)
+    expect(approveAssistant).toHaveBeenCalledWith('asst-1', undefined);
     expect(captured!.assistantBusy).toBe(false);
   });
 
@@ -619,6 +772,83 @@ describe('AppProvider · browser render + git diff', () => {
     });
     expect(captured!.gitDiff).toEqual([]);
     expect(captured!.gitDiffLoading).toBe(false);
+  });
+});
+
+// ---------- M179.2 · AI 代码评审 ----------
+
+describe('AppProvider · M179.2 AI 评审', () => {
+  it('runAiReview: 成功 → 写 result,loading 复位,error 清空', async () => {
+    const { reviewProject } = await import('./api');
+    (reviewProject as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      findings: [{ path: 'a.ts', line: 3, severity: 'high', message: '空指针', suggestion: '加判空' }],
+      files_reviewed: 1,
+      model: 'coder',
+      note: null,
+    });
+    renderProvider();
+    await flush();
+    expect(captured!.aiReview).toEqual({ result: null, loading: false, error: null });
+    await act(async () => {
+      await captured!.runAiReview();
+    });
+    expect(captured!.aiReview.loading).toBe(false);
+    expect(captured!.aiReview.error).toBeNull();
+    expect(captured!.aiReview.result?.findings).toHaveLength(1);
+    expect(captured!.aiReview.result?.model).toBe('coder');
+  });
+
+  it('runAiReview: 失败 → 写 error(detail 字符串),loading 必复位', async () => {
+    const { reviewProject } = await import('./api');
+    (reviewProject as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('HTTP 502: LLM 解析失败'));
+    renderProvider();
+    await flush();
+    await act(async () => {
+      await captured!.runAiReview();
+    });
+    expect(captured!.aiReview.loading).toBe(false);
+    expect(captured!.aiReview.result).toBeNull();
+    expect(captured!.aiReview.error).toContain('502');
+  });
+
+  it('clearAiReview: 清空 result 与 error', async () => {
+    const { reviewProject } = await import('./api');
+    (reviewProject as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      findings: [{ path: 'a.ts', severity: 'low', message: 'x' }],
+      files_reviewed: 1,
+      model: 'm',
+    });
+    renderProvider();
+    await flush();
+    await act(async () => {
+      await captured!.runAiReview();
+    });
+    expect(captured!.aiReview.result).not.toBeNull();
+    act(() => {
+      captured!.clearAiReview();
+    });
+    expect(captured!.aiReview).toEqual({ result: null, loading: false, error: null });
+  });
+
+  it('loadGitDiff 刷新 → 清空 aiReview.result(diff 变了旧 findings 失效)', async () => {
+    const { reviewProject, fetchProjectDiff } = await import('./api');
+    (reviewProject as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      findings: [{ path: 'a.ts', severity: 'low', message: 'x' }],
+      files_reviewed: 1,
+      model: 'm',
+    });
+    (fetchProjectDiff as ReturnType<typeof vi.fn>).mockResolvedValueOnce({ files: [] });
+    renderProvider();
+    await flush();
+    await act(async () => {
+      await captured!.runAiReview();
+    });
+    expect(captured!.aiReview.result).not.toBeNull();
+    await act(async () => {
+      await captured!.loadGitDiff();
+    });
+    expect(captured!.aiReview.result).toBeNull();
+    expect(captured!.aiReview.loading).toBe(false);
   });
 });
 
@@ -1247,6 +1477,188 @@ describe('AppProvider · WebSocket 事件流', () => {
     }
     expect(captured!.rcaHistory.length).toBe(10);
   });
+
+  // M165.3 — 事件驱动对话渲染:助手相关事件 → 300ms 防抖刷新历史(替代 2.5s 轮询)
+  it('message/tool 事件 → 300ms 防抖后刷新助手历史(同窗多事件合并为一次)', async () => {
+    const { fetchAssistantHistory } = await import('./api');
+    const h = await connectSession();
+    const before = (fetchAssistantHistory as ReturnType<typeof vi.fn>).mock.calls.length;
+    // 同一防抖窗口内连发 3 个助手相关事件
+    act(() => h.onMessage?.({
+      id: 'ev-d1', session_id: 'ws-sess', type: 'message', agent: 'worker',
+      payload: { text: 'a' },
+    }));
+    act(() => h.onMessage?.({
+      id: 'ev-d2', session_id: 'ws-sess', type: 'tool_call', agent: 'worker',
+      payload: { tool: 'terminal', summary: 'ls', status: 'running' },
+    }));
+    act(() => h.onMessage?.({
+      id: 'ev-d3', session_id: 'ws-sess', type: 'tool_result', agent: 'worker',
+      payload: { tool: 'terminal', summary: 'done', status: 'ok' },
+    }));
+    // 防抖窗口内不立即刷新
+    expect((fetchAssistantHistory as ReturnType<typeof vi.fn>).mock.calls.length).toBe(before);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(350);
+    });
+    // 300ms 后合并为恰好一次刷新,目标是当前会话
+    const calls = (fetchAssistantHistory as ReturnType<typeof vi.fn>).mock.calls;
+    expect(calls.length).toBe(before + 1);
+    expect(calls[calls.length - 1][0]).toBe('ws-sess');
+  });
+
+  it('approval_request 事件 → 防抖后同样刷新助手历史', async () => {
+    const { fetchAssistantHistory } = await import('./api');
+    const h = await connectSession();
+    const before = (fetchAssistantHistory as ReturnType<typeof vi.fn>).mock.calls.length;
+    act(() => h.onMessage?.({
+      id: 'ev-d4', session_id: 'ws-sess', type: 'approval_request', agent: 'system',
+      payload: { action: 'rm -rf', risk: 'high' },
+    }));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(350);
+    });
+    expect((fetchAssistantHistory as ReturnType<typeof vi.fn>).mock.calls.length).toBe(before + 1);
+  });
+
+  // M169.2 — usage 事件(worker 回复收尾):纳入防抖刷新集合,驱动末端 history 刷新以渲染 token 用量
+  it('usage 事件 → 防抖后刷新助手历史', async () => {
+    const { fetchAssistantHistory } = await import('./api');
+    const h = await connectSession();
+    const before = (fetchAssistantHistory as ReturnType<typeof vi.fn>).mock.calls.length;
+    act(() => h.onMessage?.({
+      id: 'ev-u1', session_id: 'ws-sess', type: 'usage', agent: 'worker',
+      payload: { prompt: 12345, completion: 3420, calls: 1 },
+    }));
+    // 防抖窗口内不立即刷新
+    expect((fetchAssistantHistory as ReturnType<typeof vi.fn>).mock.calls.length).toBe(before);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(350);
+    });
+    expect((fetchAssistantHistory as ReturnType<typeof vi.fn>).mock.calls.length).toBe(before + 1);
+  });
+
+  it('无 WS 事件推进 10s → 不发起 history 请求(running 状态下 2.5s 轮询已删)', async () => {
+    const { fetchAssistantHistory } = await import('./api');
+    const h = await connectSession();
+    // 让会话进入 running —— 旧 2.5s 轮询的触发条件
+    act(() => h.onMessage?.({
+      id: 'ev-st', session_id: 'ws-sess', type: 'status', agent: 'system',
+      payload: { status: 'running', progress: 10 },
+    }));
+    expect(captured!.sessionStatus).toBe('running');
+    const before = (fetchAssistantHistory as ReturnType<typeof vi.fn>).mock.calls.length;
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10000);
+    });
+    // status 事件不属于防抖刷新集合,且轮询已删 → 10s 内零 history 请求
+    expect((fetchAssistantHistory as ReturnType<typeof vi.fn>).mock.calls.length).toBe(before);
+  });
+});
+
+// ---------- M166.3 — assistant token 级流式(chat/plan 直聊) ----------
+
+describe('AppProvider · M166.3 assistant token 流', () => {
+  // 与 WebSocket 事件流 describe 相同的 harness:渲染 + 注入会话 + 捕获 handlers
+  async function connectSession() {
+    const { connectEvents, createSession } = await import('./api');
+    const handlers: { onOpen?: () => void; onClose?: () => void; onError?: () => void; onMessage?: (ev: any) => void; getLastEventId?: () => string | null } = {};
+    (connectEvents as ReturnType<typeof vi.fn>).mockImplementationOnce((_sid: string, h: any) => {
+      Object.assign(handlers, h);
+      return { close: vi.fn(), send: vi.fn() };
+    });
+    (createSession as ReturnType<typeof vi.fn>).mockResolvedValueOnce({ id: 'ws-sess', title: 't', status: 'idle', model: 'coder', mode: 'agent', created_at: '', updated_at: '' });
+    renderProvider();
+    await flush();
+    await act(async () => {
+      await captured!.createSession();
+    });
+    await flush();
+    return handlers;
+  }
+
+  it('初始 assistantStream = {text:"",active:false}', async () => {
+    renderProvider();
+    await flush();
+    expect(captured!.assistantStream).toEqual({ text: '', active: false });
+  });
+
+  it('token 事件累积:连发 3 个 → text 拼接 + active=true', async () => {
+    const h = await connectSession();
+    act(() => h.onMessage?.({
+      id: null, session_id: 'ws-sess', type: 'token', agent: 'worker',
+      payload: { text: '你好', seq: 1, done: false },
+    }));
+    act(() => h.onMessage?.({
+      id: null, session_id: 'ws-sess', type: 'token', agent: 'worker',
+      payload: { text: ',世界', seq: 2, done: false },
+    }));
+    act(() => h.onMessage?.({
+      id: null, session_id: 'ws-sess', type: 'token', agent: 'worker',
+      payload: { text: '!', seq: 3, done: false },
+    }));
+    expect(captured!.assistantStream).toEqual({ text: '你好,世界!', active: true });
+  });
+
+  it('done token → 清除流式态(message 事件随后收敛)', async () => {
+    const h = await connectSession();
+    act(() => h.onMessage?.({
+      id: null, session_id: 'ws-sess', type: 'token', agent: 'worker',
+      payload: { text: '部分输出', seq: 1, done: false },
+    }));
+    expect(captured!.assistantStream.active).toBe(true);
+    act(() => h.onMessage?.({
+      id: null, session_id: 'ws-sess', type: 'token', agent: 'worker',
+      payload: { text: '', seq: 2, done: true },
+    }));
+    expect(captured!.assistantStream).toEqual({ text: '', active: false });
+  });
+
+  it('token 事件排除在防抖刷新集合外:推进 10s 零 history 请求(防回归)', async () => {
+    const { fetchAssistantHistory } = await import('./api');
+    const h = await connectSession();
+    const before = (fetchAssistantHistory as ReturnType<typeof vi.fn>).mock.calls.length;
+    // 连发多个 token —— 若 token 误入防抖集合,300ms 后会触发 fetch
+    for (let i = 1; i <= 5; i++) {
+      act(() => h.onMessage?.({
+        id: null, session_id: 'ws-sess', type: 'token', agent: 'worker',
+        payload: { text: `t${i}`, seq: i, done: false },
+      }));
+    }
+    expect(captured!.assistantStream.active).toBe(true);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10000);
+    });
+    expect((fetchAssistantHistory as ReturnType<typeof vi.fn>).mock.calls.length).toBe(before);
+  });
+
+  it('worker message 事件 → 清除 active 流式态(双保险收敛)', async () => {
+    const h = await connectSession();
+    act(() => h.onMessage?.({
+      id: null, session_id: 'ws-sess', type: 'token', agent: 'worker',
+      payload: { text: '流式片段', seq: 1, done: false },
+    }));
+    expect(captured!.assistantStream.active).toBe(true);
+    // 完整 reply 落盘 message 到达(正常路径 done token 先到,但 message 必须兜底收敛)
+    act(() => h.onMessage?.({
+      id: 'ev-msg-1', session_id: 'ws-sess', type: 'message', agent: 'worker',
+      payload: { text: '流式片段完整版' },
+    }));
+    expect(captured!.assistantStream).toEqual({ text: '', active: false });
+  });
+
+  it('切换会话 → assistantStream 重置', async () => {
+    const h = await connectSession();
+    act(() => h.onMessage?.({
+      id: null, session_id: 'ws-sess', type: 'token', agent: 'worker',
+      payload: { text: '未完成的流', seq: 1, done: false },
+    }));
+    expect(captured!.assistantStream.active).toBe(true);
+    await act(async () => {
+      captured!.selectSession('other-sess');
+    });
+    expect(captured!.assistantStream).toEqual({ text: '', active: false });
+  });
 });
 
 // ---------- mobileSidebarOpen / mobilePanelOpen ----------
@@ -1296,6 +1708,33 @@ describe('AppProvider · Assistant 历史与轮询', () => {
     expect(captured!.assistantBusy).toBe(false);
   });
 
+  // M174-C — 编辑 user 消息并重跑:成功刷新历史;失败抛错由视图兜底
+  it('editAssistantMessage: 成功 → 调 API + 触发历史刷新', async () => {
+    const { editAssistantMessage, fetchAssistantHistory } = await import('./api');
+    renderProvider();
+    await flush();
+    const before = (fetchAssistantHistory as ReturnType<typeof vi.fn>).mock.calls.length;
+    await act(async () => {
+      await captured!.editAssistantMessage('asst-1', 'evt-1', '改后的文本');
+    });
+    expect(editAssistantMessage).toHaveBeenCalledWith('asst-1', 'evt-1', '改后的文本');
+    const calls = (fetchAssistantHistory as ReturnType<typeof vi.fn>).mock.calls;
+    expect(calls.length).toBeGreaterThan(before);
+    expect(calls[calls.length - 1][0]).toBe('asst-1');
+    expect(captured!.assistantBusy).toBe(false);
+  });
+
+  it('editAssistantMessage: API 失败 → 抛错 + busy 复位', async () => {
+    const { editAssistantMessage } = await import('./api');
+    (editAssistantMessage as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('HTTP 409: running'));
+    renderProvider();
+    await flush();
+    await act(async () => {
+      await expect(captured!.editAssistantMessage('asst-1', 'evt-1', 'x')).rejects.toThrow('409');
+    });
+    expect(captured!.assistantBusy).toBe(false);
+  });
+
   it('refreshAssistantHistory: 历史 API 失败 → fail-open（turns 保持空）', async () => {
     const { fetchAssistantHistory } = await import('./api');
     (fetchAssistantHistory as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('net'));
@@ -1309,5 +1748,361 @@ describe('AppProvider · Assistant 历史与轮询', () => {
     });
     // fail-open 不抛错
     expect(captured!.assistantTurns).toEqual([]);
+  });
+});
+
+// ---------- M167.4 — assistant 消息排队 / 自动 drain / 停止 ----------
+
+describe('AppProvider · M167.4 assistant 消息排队与停止', () => {
+  it('enqueueAssistantMessage: 非空入队(trim),空白不入队', async () => {
+    renderProvider();
+    await flush();
+    // 无选中会话 → 自动发送 effect 不触发,队列保持
+    act(() => captured!.enqueueAssistantMessage('  帮我写测试  '));
+    expect(captured!.assistantQueue).toEqual(['帮我写测试']);
+    act(() => captured!.enqueueAssistantMessage('   '));
+    expect(captured!.assistantQueue).toEqual(['帮我写测试']);
+  });
+
+  it('removeAssistantQueued: 按 index 移除指定排队项', async () => {
+    renderProvider();
+    await flush();
+    act(() => {
+      captured!.enqueueAssistantMessage('a');
+      captured!.enqueueAssistantMessage('b');
+      captured!.enqueueAssistantMessage('c');
+    });
+    expect(captured!.assistantQueue).toEqual(['a', 'b', 'c']);
+    act(() => captured!.removeAssistantQueued(1));
+    expect(captured!.assistantQueue).toEqual(['a', 'c']);
+  });
+
+  it('非 busy + 有选中会话 → 入队即自动发送队首,发送后队列减一', async () => {
+    const { sendAssistantMessage } = await import('./api');
+    renderProvider();
+    await flush();
+    await act(async () => {
+      await captured!.createSession();
+    });
+    await flush();
+    act(() => captured!.enqueueAssistantMessage('queued msg'));
+    await flush();
+    expect(sendAssistantMessage).toHaveBeenCalledWith('sess-new', { text: 'queued msg' });
+    expect(captured!.assistantQueue).toEqual([]);
+  });
+
+  it('发送中(busy)入队不立即发送;上一条完成后依序 drain,不重复触发(防重入)', async () => {
+    const { sendAssistantMessage } = await import('./api');
+    const releases: Array<() => void> = [];
+    (sendAssistantMessage as ReturnType<typeof vi.fn>).mockImplementation(
+      () => new Promise<{ task_id: string }>((resolve) => releases.push(() => resolve({ task_id: 't' })))
+    );
+    renderProvider();
+    await flush();
+    await act(async () => {
+      await captured!.createSession();
+    });
+    await flush();
+    // 手动发起第一条 → busy=true 且 API 挂起(模拟 running)
+    await act(async () => {
+      void captured!.sendAssistantMessage('第一条');
+    });
+    expect(captured!.assistantBusy).toBe(true);
+    act(() => {
+      captured!.enqueueAssistantMessage('排队1');
+      captured!.enqueueAssistantMessage('排队2');
+    });
+    await flush();
+    // busy 中:不进入发送通道
+    expect((sendAssistantMessage as ReturnType<typeof vi.fn>).mock.calls.length).toBe(1);
+    expect(captured!.assistantQueue).toEqual(['排队1', '排队2']);
+    // 第一条完成 → 自动 drain 队首
+    await act(async () => {
+      releases[0]();
+    });
+    await flush();
+    let calls = (sendAssistantMessage as ReturnType<typeof vi.fn>).mock.calls;
+    expect(calls.length).toBe(2);
+    expect(calls[1][1]).toEqual({ text: '排队1' });
+    expect(captured!.assistantQueue).toEqual(['排队2']);
+    // 第二条完成 → 继续 drain 完,无重复触发
+    await act(async () => {
+      releases[1]();
+    });
+    await flush();
+    calls = (sendAssistantMessage as ReturnType<typeof vi.fn>).mock.calls;
+    expect(calls.length).toBe(3);
+    expect(calls[2][1]).toEqual({ text: '排队2' });
+    expect(captured!.assistantQueue).toEqual([]);
+  });
+
+  it('stopAssistantTask: 调 cancelTask(选中会话) + 清空队列 + 重置流式态', async () => {
+    const { connectEvents, createSession, cancelTask, sendAssistantMessage } = await import('./api');
+    const handlers: { onMessage?: (ev: any) => void } = {};
+    (connectEvents as ReturnType<typeof vi.fn>).mockImplementationOnce((_sid: string, h: any) => {
+      Object.assign(handlers, h);
+      return { close: vi.fn(), send: vi.fn() };
+    });
+    (createSession as ReturnType<typeof vi.fn>).mockResolvedValueOnce({ id: 's-stop', title: 't', status: 'idle', model: 'coder', mode: 'agent', created_at: '', updated_at: '' });
+    // 发送永不 resolve → busy 一直保持(模拟 running 中点停止)
+    (sendAssistantMessage as ReturnType<typeof vi.fn>).mockImplementation(() => new Promise(() => {}));
+    renderProvider();
+    await flush();
+    await act(async () => {
+      await captured!.createSession();
+    });
+    await flush();
+    await act(async () => {
+      void captured!.sendAssistantMessage('run');
+    });
+    act(() => captured!.enqueueAssistantMessage('排队中'));
+    expect(captured!.assistantQueue).toEqual(['排队中']);
+    act(() => handlers.onMessage?.({ id: null, session_id: 's-stop', type: 'token', agent: 'worker', payload: { text: '流式片段', seq: 1, done: false } }));
+    expect(captured!.assistantStream.active).toBe(true);
+    await act(async () => {
+      await captured!.stopAssistantTask();
+    });
+    expect(cancelTask).toHaveBeenCalledWith('s-stop');
+    expect(captured!.assistantQueue).toEqual([]);
+    expect(captured!.assistantStream).toEqual({ text: '', active: false });
+  });
+
+  it('切换会话 → 清空排队(不跨会话携带)', async () => {
+    const { sendAssistantMessage } = await import('./api');
+    (sendAssistantMessage as ReturnType<typeof vi.fn>).mockImplementation(() => new Promise(() => {}));
+    renderProvider();
+    await flush();
+    await act(async () => {
+      await captured!.createSession();
+    });
+    await flush();
+    await act(async () => {
+      void captured!.sendAssistantMessage('run');
+    });
+    act(() => captured!.enqueueAssistantMessage('遗留'));
+    expect(captured!.assistantQueue).toEqual(['遗留']);
+    await act(async () => {
+      captured!.selectSession('other-sess');
+    });
+    await flush();
+    expect(captured!.assistantQueue).toEqual([]);
+  });
+});
+
+// ---------- M176 — Goal 模式:goalActive 合成 busy / sendAssistantGoal / drain 分发 / history 重建 ----------
+
+describe('AppProvider · M176 Goal 模式', () => {
+  // 工具:渲染 + 注入会话 + 捕获 WS handlers(复用 WebSocket 事件流段的写法)
+  async function connectGoalSession(sid = 'g-sess') {
+    const { connectEvents, createSession } = await import('./api');
+    const handlers: { onMessage?: (ev: any) => void } = {};
+    (connectEvents as ReturnType<typeof vi.fn>).mockImplementationOnce((_sid: string, h: any) => {
+      Object.assign(handlers, h);
+      return { close: vi.fn(), send: vi.fn() };
+    });
+    (createSession as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      id: sid,
+      title: 't',
+      status: 'idle',
+      model: 'coder',
+      mode: 'agent',
+      created_at: '',
+      updated_at: '',
+    });
+    renderProvider();
+    await flush();
+    await act(async () => {
+      await captured!.createSession();
+    });
+    await flush();
+    return handlers;
+  }
+
+  it('sendAssistantGoal: 空目标 → 不调 API', async () => {
+    const { startAssistantGoal } = await import('./api');
+    renderProvider();
+    await flush();
+    await act(async () => {
+      await captured!.sendAssistantGoal('   ');
+    });
+    expect(startAssistantGoal).not.toHaveBeenCalled();
+  });
+
+  it('sendAssistantGoal: 无会话 → 创建 assistant 会话 + POST goal(带 mode/model)', async () => {
+    const { startAssistantGoal, createAssistantSession } = await import('./api');
+    renderProvider();
+    await flush();
+    await act(async () => {
+      await captured!.sendAssistantGoal('修复所有 TS 错误');
+    });
+    expect(createAssistantSession).toHaveBeenCalledWith({ mode: 'agent' });
+    expect(startAssistantGoal).toHaveBeenCalledWith('asst-new', {
+      objective: '修复所有 TS 错误',
+      mode: 'agent',
+      model: 'coder',
+    });
+    expect(captured!.selectedSessionId).toBe('asst-new');
+  });
+
+  it('sendAssistantGoal: API 失败 → 设置 assistantError + 重抛 + busy 复位', async () => {
+    const { startAssistantGoal } = await import('./api');
+    (startAssistantGoal as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('409 busy'));
+    renderProvider();
+    await flush();
+    await act(async () => {
+      await captured!.createSession();
+    });
+    await flush();
+    await act(async () => {
+      await expect(captured!.sendAssistantGoal('目标')).rejects.toThrow('409 busy');
+    });
+    expect(captured!.assistantError).toContain('409 busy');
+    expect(captured!.assistantBusy).toBe(false);
+    expect(captured!.composerBusy).toBe(false);
+  });
+
+  it('WS goal 事件:iter → goalActive/composerBusy=true;achieved → 复位', async () => {
+    const h = await connectGoalSession();
+    expect(captured!.goalActive).toBe(false);
+    expect(captured!.composerBusy).toBe(false);
+    act(() =>
+      h.onMessage?.({
+        id: 'g1',
+        session_id: 'g-sess',
+        type: 'goal',
+        agent: 'system',
+        payload: { phase: 'iter', objective: 'obj', iteration: 1, max_iterations: 5, prompt: 'obj' },
+      })
+    );
+    expect(captured!.goalActive).toBe(true);
+    expect(captured!.composerBusy).toBe(true);
+    act(() =>
+      h.onMessage?.({
+        id: 'g2',
+        session_id: 'g-sess',
+        type: 'goal',
+        agent: 'system',
+        payload: { phase: 'achieved', objective: 'obj', iteration: 2, max_iterations: 5 },
+      })
+    );
+    expect(captured!.goalActive).toBe(false);
+    expect(captured!.composerBusy).toBe(false);
+  });
+
+  it('goalActive 合成 busy 阻塞 drain;终态后恢复 drain(M176 防轮间隙误发)', async () => {
+    const { sendAssistantMessage } = await import('./api');
+    const h = await connectGoalSession();
+    // goal iter 事件 → goalActive=true(assistantBusy 为 false,模拟轮间隙)
+    act(() =>
+      h.onMessage?.({
+        id: 'g1',
+        session_id: 'g-sess',
+        type: 'goal',
+        agent: 'system',
+        payload: { phase: 'iter', objective: 'obj', iteration: 1, max_iterations: 5, prompt: 'obj' },
+      })
+    );
+    expect(captured!.composerBusy).toBe(true);
+    // 入队消息 → 不 drain
+    act(() => captured!.enqueueAssistantMessage('排队中'));
+    await flush();
+    expect(sendAssistantMessage).not.toHaveBeenCalled();
+    expect(captured!.assistantQueue).toEqual(['排队中']);
+    // exhausted 终态 → composerBusy 落下 → 自动 drain
+    act(() =>
+      h.onMessage?.({
+        id: 'g2',
+        session_id: 'g-sess',
+        type: 'goal',
+        agent: 'system',
+        payload: { phase: 'exhausted', objective: 'obj', iteration: 5, max_iterations: 5, reason: 'max_iter' },
+      })
+    );
+    await flush();
+    expect(captured!.goalActive).toBe(false);
+    expect(sendAssistantMessage).toHaveBeenCalledWith('g-sess', { text: '排队中' });
+    expect(captured!.assistantQueue).toEqual([]);
+  });
+
+  it('其他会话的 goal 事件 → 不影响本会话 goalActive', async () => {
+    const h = await connectGoalSession();
+    act(() =>
+      h.onMessage?.({
+        id: 'g1',
+        session_id: 'other-sess',
+        type: 'goal',
+        agent: 'system',
+        payload: { phase: 'iter', objective: 'obj', iteration: 1, max_iterations: 5 },
+      })
+    );
+    expect(captured!.goalActive).toBe(false);
+  });
+
+  it('drain 前缀分发:/goal 排队消息 → startAssistantGoal;普通消息 → sendAssistantMessage', async () => {
+    const { startAssistantGoal, sendAssistantMessage } = await import('./api');
+    renderProvider();
+    await flush();
+    await act(async () => {
+      await captured!.createSession();
+    });
+    await flush();
+    act(() => {
+      captured!.enqueueAssistantMessage('/goal 修复 bug');
+      captured!.enqueueAssistantMessage('普通消息');
+    });
+    await flush();
+    expect(startAssistantGoal).toHaveBeenCalledWith('sess-new', {
+      objective: '修复 bug',
+      mode: 'agent',
+      model: 'coder',
+    });
+    expect(sendAssistantMessage).toHaveBeenCalledWith('sess-new', { text: '普通消息' });
+    expect(captured!.assistantQueue).toEqual([]);
+  });
+
+  it('history 重建 goalActive:iter turn → true;切会话后 achieved turn → false', async () => {
+    const { fetchAssistantHistory, createSession } = await import('./api');
+    (createSession as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      id: 'h-sess',
+      title: 't',
+      status: 'idle',
+      model: 'coder',
+      mode: 'agent',
+      created_at: '',
+      updated_at: '',
+    });
+    (fetchAssistantHistory as ReturnType<typeof vi.fn>).mockResolvedValueOnce([
+      { role: 'user', text: 'obj', tools: [], created_at: '2026-08-04T00:00:00Z' },
+      {
+        role: 'goal',
+        tools: [],
+        goal: { phase: 'iter', objective: 'obj', iteration: 2, max_iterations: 5, gap: '还差 3 处' },
+        created_at: '2026-08-04T00:01:00Z',
+      },
+    ]);
+    renderProvider();
+    await flush();
+    await act(async () => {
+      await captured!.createSession();
+    });
+    await flush();
+    expect(captured!.goalActive).toBe(true);
+    expect(captured!.composerBusy).toBe(true);
+    // 切到另一会话,历史含 achieved 终态 → goalActive=false
+    (fetchAssistantHistory as ReturnType<typeof vi.fn>).mockResolvedValueOnce([
+      { role: 'user', text: 'obj', tools: [], created_at: '2026-08-04T00:00:00Z' },
+      {
+        role: 'goal',
+        tools: [],
+        goal: { phase: 'achieved', objective: 'obj', iteration: 3, max_iterations: 5 },
+        created_at: '2026-08-04T00:02:00Z',
+      },
+    ]);
+    await act(async () => {
+      captured!.selectSession('sess-2');
+    });
+    await flush();
+    expect(captured!.goalActive).toBe(false);
+    expect(captured!.composerBusy).toBe(false);
   });
 });

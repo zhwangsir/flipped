@@ -18,11 +18,15 @@ class EventType(str, Enum):
     status = "status"                # 会话/任务状态变更
     plan = "plan"                    # 自主循环计划清单快照(F4 · 可见脊柱)
     checkpoint = "checkpoint"        # LangGraph checkpoint 落盘
+    snapshot = "snapshot"            # M168 git shadow 快照（assistant undo 地基）
+    usage = "usage"                  # M169 token 用量（per-turn opencode 对标）
     approval_request = "approval_request"
     approval_result = "approval_result"
     error = "error"
     rca = "rca"                            # M95 失败根因分析结果
     verifier_verdict = "verifier_verdict"  # M95 并行验证 SemanticVerdict
+    token = "token"                        # M166 token 级流式分片（transient，不落盘）
+    goal = "goal"                          # M176 goal 模式事件（set/iter/judge/achieved/exhausted/stopped 相位）
 
 
 class Role(str, Enum):
@@ -96,3 +100,18 @@ class MetricsResponse(BaseModel):
     """/metrics 端点返回的 LLM / 上下文性能指标。"""
     llm: dict[str, Any] = Field(default_factory=dict)
     context: dict[str, Any] = Field(default_factory=dict)
+
+
+class ProjectMapInfo(BaseModel):
+    """M173 · 项目结构地图（Zread 式全局概览）。"""
+    markdown: str
+    generated_at: str
+    stale: bool
+    from_cache: bool
+    stack: list[str] = Field(default_factory=list)
+
+
+class ProjectMapResponse(BaseModel):
+    """GET /project/map 与 POST /project/map/regenerate 的统一响应。"""
+    map: ProjectMapInfo | None = None
+    needs_project: bool = False

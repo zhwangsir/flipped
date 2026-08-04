@@ -1,8 +1,8 @@
 {
   "project": "flipped",
   "description": "接入本地 MLX 双模型(GLM-5.2 编排者 / Kimi-K2.7-Code 执行者)的 agentic 代码编辑器平台。fork Roo Code + 自定义驾驭层(强制验证/循环检测/上下文压缩/人工审批/子Agent/可观测性) + MCP 联网与外部能力。",
-  "updated": "2026-07-27T14:05:00+08:00",
-  "current_milestone": "M164 done（scripts venv 自举：10 个脚本对齐 heartbeat.py 模式，注入 _VENV_PY + os.execv 重启逻辑。py_compile + ast.parse + M164 标记 grep 三重验证通过。M162/M163 E2E 历史债已清零，244 cases / 237 passed + 0 failed + 0 flaky + 7 skipped / 97.1% 纯绿）。当前无进行中里程碑，83+ 未提交文件待 commit 决策。",
+  "updated": "2026-08-05",
+  "current_milestone": "M184 done（known_limitations 系统性消化：42 条注册表 + 六分类 + 状态跟踪 + 分阶段路线图报告 + check CI 门禁；同批落地 M182 Bot Channel 多平台接入（Telegram webhook + 企业微信回调）与 M183 Worker 规则注入系统（agent 手动 + auto 自动双通路），M180/M181 各一条限制消化为 resolved。当前无进行中里程碑。）",
   "key_facts": {
     "dev_host": "Apple M5 Max, 128GB RAM, 1.1TB 可用磁盘 — 开发/控制节点，非模型宿主",
     "model_cluster": "exo 集群 @ http://studio01-1:52415 (MagicDNS 主机名=macstudio01，免疫 Tailscale IP 漂移；旧裸 IP 100.64.201.37 已于 2026-07-22 失效)；公网 https://dgmt.top/exo (需 Bearer token)",
@@ -3372,33 +3372,45 @@
         "M162.1": {
           "title": "修复 mockBackend 工厂详情形状 bug（helpers.ts）",
           "status": "done",
-          "files": ["console/e2e/accessibility/helpers.ts"],
+          "files": [
+            "console/e2e/accessibility/helpers.ts"
+          ],
           "note": "原 mock 返回 {factory, tasks, summary} 嵌套结构，与 src/types.ts FactoryDetail 扁平契约不符。FactoryPanel.tsx 读 detail.factory_id.slice() 会 undefined 抛错。改为扁平结构 + 1 条 done 任务样例。此 bug 从未被暴露因 accessibility/* 只开列表不进详情。"
         },
         "M162.2": {
           "title": "factory.spec.ts 套用 mockBackend（修 11 个失败）",
           "status": "done",
-          "files": ["console/e2e/factory.spec.ts"],
+          "files": [
+            "console/e2e/factory.spec.ts"
+          ],
           "result": "20/20 通过（原 9 passed + 11 failed → 20 passed）"
         },
         "M162.3": {
           "title": "console-smoke.spec.ts + layout.spec.ts 三列布局修复（修 2 个失败）",
           "status": "done",
-          "files": ["console/e2e/console-smoke.spec.ts", "console/e2e/layout.spec.ts"],
+          "files": [
+            "console/e2e/console-smoke.spec.ts",
+            "console/e2e/layout.spec.ts"
+          ],
           "note": "根因诊断修正：.center 只在 #/factory 路由（Conversation）渲染，'/' 默认路由渲染 Assistant（无 .center）。M151.5 hash 路由变更后的 stale 断言，非后端依赖。修复：2 个三栏测试导航到 /#/factory + 全文件套 mockEmptyApi 兜底。",
           "result": "console-smoke 9/9 + layout 12/12 全通过"
         },
         "M162.4": {
           "title": "console-errors.spec.ts 套 mockBackend + 扩展 IGNORE_PATTERNS（修 3 个失败）",
           "status": "done",
-          "files": ["console/e2e/console-errors.spec.ts"],
+          "files": [
+            "console/e2e/console-errors.spec.ts"
+          ],
           "note": "套 mockBackend 杀掉 HTTP fetch 的 ERR_CONNECTION_REFUSED 噪音，让 console.error 断言真正捕获 React 问题；扩展 IGNORE_PATTERNS 兜底 WS 连接失败噪音。双管齐下而非只过滤，避免掩盖真实错误。",
           "result": "3/3 通过"
         },
         "M162.5": {
           "title": "factory-api.spec.ts 后端可用性门控（6 个失败转诚实 skip）",
           "status": "done",
-          "files": ["console/e2e/fixtures/backend-available.ts", "console/e2e/factory-api.spec.ts"],
+          "files": [
+            "console/e2e/fixtures/backend-available.ts",
+            "console/e2e/factory-api.spec.ts"
+          ],
           "note": "这 6 个是真正后端 API 集成测试（用 Playwright request context 直连 :8011，page.route 无法拦截）。新建 fixtures/backend-available.ts 探测 :8011 可达性，不可达时 test.skip 带原因。后端在时自动恢复真集成。项目先例：console.spec.ts E2E_MOCK_APPROVAL 门控。",
           "result": "无后端时 6 skip（诚实降级）；后端在时 6 passed（真集成）"
         },
@@ -3435,7 +3447,11 @@
         "M163.1": {
           "title": "修复 sessions 非数组白屏真 bug（malformed-response.spec.ts:67）",
           "status": "done",
-          "files": ["console/src/store.tsx", "console/src/api.ts", "console/src/api.test.ts"],
+          "files": [
+            "console/src/store.tsx",
+            "console/src/api.ts",
+            "console/src/api.test.ts"
+          ],
           "root_cause": "api.ts:16 res.json() as Promise<T> 仅 TS 类型断言无运行时校验；store.tsx:248 setSessions(list) 无 Array.isArray 守卫；Sidebar.tsx:70 sessions.filter() 渲染时调用 → 后端返回对象时 .filter undefined → TypeError → React 树崩溃 → .sidebar 不渲染。测试注释自述 'store 应兜底'——测试对、代码错。",
           "fix": "双层防御：api.ts fetchSessions 加 Array.isArray(data) ? data : [] 纵深防御（让所有调用方安全）；store.tsx refreshSessions 加二次守卫。TDD：api.test.ts 新增 3 例（对象降级/null 降级/合法数组透传），先红后绿。",
           "result": "malformed-response.spec.ts:67 由 3/3 failed 转 passed；vitest 594/594 含 3 新增"
@@ -3443,7 +3459,9 @@
         "M163.2": {
           "title": "修复 long-running.spec.ts Meta+K 时序竞争（:89 + :121）",
           "status": "done",
-          "files": ["console/e2e/performance/long-running.spec.ts"],
+          "files": [
+            "console/e2e/performance/long-running.spec.ts"
+          ],
           "root_cause": "30 轮 / 20 轮 Meta+K→Escape 循环，settle 时间太短（50ms / 80ms），上一轮 Escape 未完全收尾时下一轮 Meta+K 注册失败 → palette 不开 → 5s 超时 flaky。:121 在 M162 报通过，M163 全量回归时因 dev server 长时运行（10h+）退化而暴露。",
           "fix": "settle 50ms→150ms（:89）+ 80ms→150ms（:121），消除时序竞争。保留默认 5s 超时（不缩短——dev server 慢渲染时缩短会误报）。保留 30/20 轮硬断言不降轮数。",
           "result": ":89 + :121 均转稳定 passed"
@@ -3451,7 +3469,9 @@
         "M163.3": {
           "title": "修复 core-web-vitals FCP 采集 null flaky（:106，新发现）",
           "status": "done",
-          "files": ["console/e2e/performance/core-web-vitals.spec.ts"],
+          "files": [
+            "console/e2e/performance/core-web-vitals.spec.ts"
+          ],
           "root_cause": "collectNavigationMetrics 直查 performance.getEntriesByType('paint') 在 dev server 慢渲染时可能返回空（paint 条目尚未注册）→ metrics.fcp = null → 硬断言 not.toBeNull() 失败。LCP 测试已有 observeLCP PerformanceObserver fallback，FCP 无同款。",
           "fix": "镜像 LCP 模式：新增 observeFCP helper（PerformanceObserver + buffered:true 重新捕获历史 FCP 条目）；FCP 测试加 waitForTimeout(500) + null 时走 observeFCP fallback。",
           "result": "FCP 测试转稳定 passed"
@@ -3509,6 +3529,343 @@
         }
       },
       "known_issues": []
+    },
+    "M165": {
+      "title": "M151 P1 收口：slash 命令接线 + Always 持久化审批 + 事件驱动对话渲染",
+      "status": "done",
+      "completed": "2026-08-01",
+      "summary": "两队并行（A 后端 / B 前端）。M165.1 slash 五命令全接线：/help 本地帮助 turn、/mode 循环切模式+确认、/files 列 changedFiles、/compact 走新端点压缩历史并回显摘要；M165.2 Always 持久化审批：approve/reject 接受可选 {scope}，always 时把 pending action 记入宿主侧 data/approval_grants.json（严禁容器路径），orchestrator approval_gate interrupt 前查 grants 命中→auto 直通；M165.3 事件驱动渲染：WS message/tool_call/tool_result/approval_request/approval_result 事件 300ms 防抖刷新历史，2.5s 固定轮询删除。TDD 共 31 例新增（pytest 14 + vitest 17）。契约快照与 api-types.d.ts 随新端点重生。",
+      "subtasks": {
+        "M165.1a": "slash 接线（/help /mode /files /compact）+ appendAssistantLocalTurn — done",
+        "M165.1b": "POST /assistant/sessions/{id}/compact 端点（404/409/200+emit，摘要可注入，失败 502 不 emit）— done",
+        "M165.2a": "ApprovalInline Always 按钮（assistant-approve-always-btn）— done",
+        "M165.2b": "approve scope=always → remember_host_grant；approval_gate grants 直通 — done",
+        "M165.3": "WS 事件 300ms 防抖驱动 refreshAssistantHistory，删除 2.5s 轮询 — done",
+        "M165.4": "全量回归 + 契约快照/api-types 重生 + 状态留痕 — done"
+      },
+      "verification": "pytest 1953 passed 0 failed（test_api_contract 快照随有意契约变更重生后 6 passed）；vitest 611/611；tsc 绿；vite build 绿。证据见 TEST_LOG.md M165 节。"
+    },
+    "M166": {
+      "title": "M152 token 级流式（chat/plan 直聊通路）",
+      "status": "done",
+      "completed": "2026-08-01",
+      "summary": "chat/plan 直连 LLM 通路 token 级流式。核心设计：token 事件 transient（EventBus.emit_transient 只广播不落盘，id 置空串防污染断点续传），最终完整 message 事件照常落盘 → history 折叠/防抖刷新零改动收敛。新 EventType.token {text,seq,done}；_llm_chat_stream httpx SSE 解析；_run_chat 流式优先 + 建流失败静默 fallback 非流式 + 断流 done token+error；FLIPPED_CHAT_STREAM=0 总开关（conftest 对既有测试默认关，生产默认开）。前端 assistantStream{text,active} 累积渲染流式气泡（assistant-streaming + stream-cursor 呼吸光标），done token 或 worker message 双保险收敛，token 排除在防抖刷新外。M151 P1 待办至此全清。TDD 新增 19 例（pytest 9 + vitest 10）。契约快照 + api-types.d.ts 重生。顺手修复 verify-quality 门禁暴露的 M160/M161 遗留 shell lint（$VAR<全角> 陷阱 ×5，perf_audit.sh/run_e2e_full.sh）。",
+      "subtasks": {
+        "M166.1": "EventBus.emit_transient（只 publish 不落盘，id 空串）+ EventType.token — done",
+        "M166.2": "_llm_chat_stream SSE + _run_chat 流式/fallback/断流/总开关 — done",
+        "M166.3": "store assistantStream 累积/双保险收敛/防抖排除 token — done",
+        "M166.4": "Assistant 流式气泡（assistant-streaming + stream-cursor）— done",
+        "M166.5": "全量回归 + verify-quality 门禁 + 契约/api-types 重生 + shell lint 遗留修复 — done"
+      },
+      "verification": "pytest 1963 passed 0 failed；vitest 621/621；tsc 0；build ok；verify-quality 门禁通过（1 轮修复：shell lint $VAR<全角> ×5）。证据见 TEST_LOG.md M166 节。"
+    },
+    "M167": {
+      "title": "深度体验对标 opencode（渲染层 + 交互层）",
+      "status": "done",
+      "completed": "2026-08-01",
+      "summary": "以 opencode 为基线的深度体验审计与收口。渲染层：零依赖自研 MarkdownView（GFM 子集：标题/粗斜体/行内码/围栏代码块+语言标签+复制按钮/栈式嵌套列表/引用/GFM 表格/分隔线/链接协议白名单，未闭合代码块流式容错，React 转义防 XSS 无 dangerouslySetInnerHTML，.md-view 作用域样式复用 --assistant-* 变量族与既有 .md-doc 零冲突），assistant/流式气泡/本地 turn 三处接入（user 保持纯文本）。交互层：停止按钮（busy 时发送键换 IconStop → cancelTask，后端 RUNNING_TASKS+/cancel 通路复用零后端改动）+ Esc 中断 + 消息排队（assistantQueue，busy 输入可用 Enter 入队、chips 可移除、busy 转 false 自动 drain、ref 锁防重入、停止/切会话清队）。审计结论：opencode 对标项中 markdown/中断/排队三大差距全清；undo/token 用量 P2 后置。TDD 新增 38 例（MarkdownView 20 + store 6 + composer 7 + Assistant 4 + 既有修改）。",
+      "subtasks": {
+        "M167.1": "MarkdownView 零依赖两阶段解析器（块级+行内）— done",
+        "M167.2": "代码块语言标签 + 复制按钮（clipboard mock 断言）— done",
+        "M167.3": "Assistant 三处接入 + .md-view 样式 — done",
+        "M167.4": "停止按钮 + Esc 中断 — done",
+        "M167.5": "消息排队 + chips + 自动 drain 防重入 — done",
+        "M167.6": "全量回归 + verify-quality + 留痕 — done"
+      },
+      "verification": "pytest 1963 passed 0 failed；vitest 659/659（+38）；tsc 0；build ok；零新依赖（npm ls 不变）；verify-quality 门禁首轮通过（fe 覆盖率 91.3%）。证据见 TEST_LOG.md M167 节。"
+    },
+    "M168": {
+      "title": "undo（checkpoint 回滚，对标 opencode /undo）",
+      "status": "done",
+      "completed": "2026-08-01",
+      "summary": "assistant 会话文件改动撤销（opencode /undo 语义）。git shadow snapshot：orchestrator 任务开始前宿主侧 git stash create（dangling commit 不动工作区/索引/用户历史，无变更回退 HEAD）→ 新 EventType.snapshot 事件挂事件流（checkpoint 类型已被断点续传占用）；chat/plan 跳过；快照失败不阻塞派发只提示。undo 端点：找最近未撤销快照 → git restore --source 回滚 tracked + 按 file_change(add) 事件精确删除 turn 内新增文件（容器路径 /workspace/ 与 session.cwd 前缀映射 + resolve 二次校验防穿越）→ 多轮幂等回滚（undo 事件记录已撤销 hash）。守卫：404/409 运行中/409 无快照/400 非 git。前端 /undo slash（第 6 命令）+ 结果摘要 turn + 刷新 history/diff。真 git 集成测试验证完整 roundtrip。TDD 新增 32 例（pytest 26 + vitest 6）。契约快照 + api-types.d.ts 重生（schemas=22 paths=34）。",
+      "subtasks": {
+        "M168.1": "后端快照接线 + undo 端点 + git helpers + 真 git 集成测试 — done",
+        "M168.2": "前端 /undo slash + undoAssistant store action + 摘要提示 — done",
+        "M168.3": "全量回归 + verify-quality + 契约/api-types 重生 + 留痕 — done"
+      },
+      "verification": "pytest 1989 passed 0 failed；vitest 665/665（+6，另修 slash 菜单 5→6 陈旧断言）；tsc 0；build ok；verify-quality 门禁首轮通过（86.14%/91.04%）。证据见 TEST_LOG.md M168 节。"
+    },
+    "M169": {
+      "title": "token 用量显示（opencode 对标收尾，最后一块 P2）",
+      "status": "done",
+      "completed": "2026-08-04",
+      "summary": "每条 assistant 消息展示 token 用量（↑prompt/↓completion，opencode 语义）+ 会话合计 chip。新持久化 EventType.usage{prompt,completion,calls,source} 统一三路径发射：chat/plan（_run_chat：流式 stream_options.include_usage 捕获最终 usage chunk / 非流式读响应 usage；exo 不支持时落 M166 既有 fallback 零风险）+ worker（openhands_worker 收尾 _sum_conversation_usage 后 _emit）。_events_to_turns 回扫合并进最近 assistant turn、多事件累加、无前置丢弃。顺带补喂 COLLECTOR 修 TopBar 全局计数漏 chat/plan 的缺口。前端靠 M165.3 防抖刷新集合 +usage 驱动末端刷新，逐条 formatTokens 行 + 头部合计 chip（不改 history 响应模型）。types.ts 正式补字段（拆 B 队临时桥接）；api-types.d.ts 重生为生成式 Record<string,number>（应用不消费，已验证无 import）。TDD 新增 19 例（pytest 13 + vitest 6），适配 2 个既有测试文件（_llm_chat 签名变更）。契约快照 + api-types.d.ts 重生（schemas=22 paths=34）。",
+      "subtasks": {
+        "M169.1": "后端 EventType.usage + _llm_chat/stream usage 采集 + _run_chat/worker 发射 + turns 折叠 + COLLECTOR 补喂 + TDD 13 例 — done",
+        "M169.2": "前端 store 刷新集合 +usage、逐条用量行 + 会话合计 chip + app.css + TDD 6 例 — done",
+        "M169.3": "types.ts 正式字段 + 全量回归 + verify-quality + 契约/api-types 重生 + 留痕 — done"
+      },
+      "verification": "pytest 2002 passed 0 failed（+13）；vitest 671/671（+6）；tsc 0；build ok；契约快照重生 6 passed；api-types.d.ts 重生（schemas=22 paths=34）；verify-quality 门禁首轮通过（86.22%/91.08%）。证据见 TEST_LOG.md M169 节。"
+    },
+    "M170": {
+      "title": "编辑器直调 MCP 工具（M4 落地：调研+落地代码 复合任务闭环）",
+      "status": "done",
+      "completed": "2026-08-04",
+      "summary": "补齐 M4 唯一缺口——编辑器→MCP 工具执行通路（此前 MCP Server/RAG/web_search/面板/注册表全在，但面板只能 toggle 无法调用）。新模块 api/mcp_call.py（lazy import 防重依赖与循环导入，run_tool/list_tool_specs 模块级注入点）：GET /mcp/tools 内省 TOOLS 动态出清单；POST /mcp/tools/{name}/call 快慢分流——快工具（web_search/rag_query/rag_ingest）同步 await，200 {ok,result|error} 绝不 500；长工具（run_coding_task/research_and_code）202 立即受理，asyncio.create_task 后台跑，完成 emit message / 失败 emit error 回灌会话事件流（source=mcp，M169 折叠自动渲染 assistant turn），注册 RUNNING_TASKS 使既有 /cancel 与 409 守卫天然生效（CancelledError 不捕获，done_callback 清理，与 assistant 任务同语义）。前端 Plugins 面板工具行展开参数表单（5 工具预设字段/必填禁用提交），快工具内联 JSON 结果/错误条，长工具自动带 selectedSessionId（无会话提示先去 Assistant）派发后提示到对话看结果；store.callMcpTool 异常归一 ok:false。契约治理：4 个命名 pydantic 响应模型 + 快照重生（顺带登记 M165/M168 遗留 compact/undo 漂移）。TDD 新增 26 例（pytest 10 + vitest 16）。scripts/verify_m170.sh 一键验收：单测 + 真后端黑盒（RAG 临时库 ingest→query 确定性闭环、404/400/202、cancel→清理→再派发链；事件回灌硬证据在单测，黑盒不等真实编排执行防 flaky——首版等事件 20s 超时教训：research 真网络 30s×3 重试+真 LLM 不可控）。api-types.d.ts 重生（schemas=26 paths=36）。",
+      "subtasks": {
+        "M170.1": "后端 mcp_call.py + main.py 薄路由（GET /mcp/tools + POST /mcp/tools/{name}/call）+ RUNNING_TASKS 注册/取消/清理 + TDD 10 例 — done",
+        "M170.2": "前端 api.ts getMcpTools/callMcpTool + store action（长工具自动带会话/无会话 no-session）+ Plugins 工具调用表单与结果渲染 + app.css + TDD 16 例 — done",
+        "M170.3": "verify_m170.sh 一键验收（含 $VAR 后随全角字符的 bash 变量名陷阱修复）+ api-types 重生 + 契约快照 + verify-quality + 留痕 — done"
+      },
+      "verification": "pytest 2012 passed 0 failed（+10）；vitest 687/687（+16）；tsc 0；build ok；verify_m170.sh 通过（单测 10 + 黑盒 11 断言全绿）；契约快照 6 passed；api-types.d.ts 重生（schemas=26 paths=36）；verify-quality 门禁首轮通过（py 86.27% / fe 91.26%）。证据见 TEST_LOG.md M170 节。"
+    },
+    "M171": {
+      "title": "RAG 项目摄入强化（让 rag_query 真正有数据可用，对标 opencode codebase awareness）",
+      "status": "done",
+      "completed": "2026-08-04",
+      "summary": "补齐摄入层四短板。（1）gitignore 过滤：ingest_directory 内 _git_files 用 git rev-parse --is-inside-work-tree 探测 + git ls-files -z --cached --others --exclude-standard 拿未忽略清单（timeout=5，任何异常/超时/非零退出静默回退 rglob），node_modules/.venv/ignored 文件不再入库。（2）幂等 upsert：VectorStore 新增抽象 upsert_documents（doc 可带 id，缺省 uuid4），ingest_file 改用确定性 id=f\"{sha256(全文)[:16]}:{chunk序号}\" 走 collection.upsert——同文件复摄入同 id 覆盖写，count 不变、库不翻倍；add_documents 原语义不动。（3）结构化分块：_chunk_structured——.md 按标题行 ^#{1,6} 切段（标题归入下段首）、代码扩展名按空行段落切、相邻短段合并（不超 chunk_size）、单段超长回退原 _chunk 硬切；原 _chunk/ingest_text 不动。（4）元数据五字段：source(绝对路径)/ext/chunk/project/content_hash，project 缺省=目录 resolve basename。MCP 工具层（B 队）：rag_query 加可选 project → store.query(filter={\"project\": p})（无 project 不传 filter 保旧调用形状，旧 test_rag_query 零回归）；rag_ingest 加 project 透传，text 路径合并 metadata 时调用方显式 project 优先。inputSchema 同步登记。TDD 新增 16 例（A 8 + B 8，全程先红后绿）。scripts/verify_m171.sh 一键验收：单测 + 真后端黑盒（临时 git repo 含 .gitignore/node_modules + 临时 Chroma 持久库）8 断言全绿。",
+      "subtasks": {
+        "M171.1": "A 队摄入层：vector_store.upsert_documents + ingest.py（_git_files/_chunk_structured/_split_markdown/ingest_file 幂等五字段元数据/ingest_directory project+gitignore 过滤）+ TDD 8 例 — done",
+        "M171.2": "B 队工具层：mcp_server/tools.py rag_query/rag_ingest 加 project 参数（inputSchema + 分发逻辑，调用方 metadata 优先）+ TDD 8 例 — done",
+        "M171.3": "主代理收尾：全量回归 + verify_m171.sh（黑盒 8 断言：gitignore count==2/幂等复摄入/project 过滤/五字段）+ verify-quality + STATE/TEST_LOG 留痕 — done"
+      },
+      "verification": "pytest 2028 passed 0 failed（+16）；vitest 687/687；tsc 0；build ok；verify_m171.sh 通过（单测 16 + 黑盒 8 断言全绿：gitignore 排除精确 count==2、二次摄入 count 不变且唯一 id==2、project=projA 过滤只命中 projA、无过滤两 project 都在、ignored 内容不入库、五字段齐全）；verify-quality 门禁首轮通过（py 86.26% / fe 91.26%）。证据见 TEST_LOG.md M171 节。",
+      "known_limitations": [
+        "幂等 id=全文hash+chunk序号：文件改动后 chunk 数变少时尾部旧 chunk 残留（需按 content_hash 清理，后续增强）",
+        "_git_files 以 repo toplevel 列举再按子目录过滤，超大 repo 有一次性列举开销（本地操作可接受）",
+        "markdown fenced code block 内行首 # 会被当标题切段（不豁免，留作后续增强）"
+      ]
+    },
+    "M172": {
+      "title": "chat/plan 自动 RAG 上下文注入（codebase awareness 体验落地）",
+      "status": "done",
+      "completed": "2026-08-04",
+      "summary": "补齐 M170/M171 之后的体验闭环：rag_query 此前只能面板手动调，chat/plan 对话里问项目问题模型完全没有项目上下文。新模块 api/rag_context.py（A 队）：build_rag_context(query, *, project, n_results=4, max_chars=2400, store=None) -> (context_text, chunk_count)——store=None 时函数级 lazy import ChromaVectorStore；project 非空先 filter={\"project\": p} 查、0 结果无过滤兜底重查（提召回）；格式化=头部说明行+编号 chunk（[i] source+文本），逐 chunk 累计超 max_chars 即停、首条即超则截断装入保至少一条；任何异常/空结果 → (\"\",0) fail-open。_run_chat 接线（B 队，只动该函数+:528 调用点）：mode∈{chat,plan} 且 FLIPPED_RAG_AUTO≠\"0\" 且 rag_auto kwarg（调用点仅当 req.context 显式含 rag_auto 才传——兼容旧 test_api_mode_mcp 的 5 位置参数 fake，语义与 .get 默认 True 等价）→ store.get(session_id).project_name 透传 project，rag_ctx 非空则 system += \"\\n\\n\"+rag_ctx（CHAT_SYSTEM/PLAN_SYSTEM 原文不动）；最终 message payload 仅 rag_k>0 时附 \"rag_chunks\"（可观测性，前端忽略未知字段零改动）。全程 try/except fail-open——RAG 故障绝不让对话失败。worker/orchestrator/researcher 通路不动（researcher.gather 已含 RAG，orchestrator prompt 预算敏感）。TDD 新增 22 例（A 13 + B 9，全程先红后绿；B 经 sys.modules 假模块与 A 隔离开发）。scripts/verify_m172.sh 一键验收：单测 + 真检索黑盒（临时 Chroma 持久库真实 ingest→build_rag_context，无 LLM/网络依赖）。",
+      "subtasks": {
+        "M172.1": "A 队检索模块：api/rag_context.py（build_rag_context：project 过滤/兜底重查/max_chars 截断/fail-open/store 注入点）+ TDD 13 例 — done",
+        "M172.2": "B 队接线：main.py _run_chat 注入块 + rag_auto kwarg + :528 调用点透传 + rag_chunks 入 message payload + TDD 9 例 — done",
+        "M172.3": "主代理收尾：全量回归 + verify_m172.sh（真检索黑盒 6 断言：project 命中/兜底重查/max_chars/空库/fail-open）+ verify-quality + STATE/TEST_LOG 留痕 — done"
+      },
+      "verification": "pytest 2050 passed 0 failed（+22）；vitest 687/687（前端零改动）；tsc 0；build ok；verify_m172.sh 通过（单测 22 + 真检索黑盒 6 断言全绿：projA 摄入/projB 摄入、project=projA 注入含头部与来源、projC 兜底重查仍召回、max_chars=200 截断、空库 (\"\",0)、store 异常 fail-open）；verify-quality 门禁首轮通过（py 86.34% / fe 91.26%）。证据见 TEST_LOG.md M172 节。",
+      "known_limitations": [
+        "截断按字符数非 token（CJK/ASCII 等宽对待，max_chars=2400 是保守预算，token 只少不超）",
+        "黑盒不覆盖接线层真 LLM 路径（system 注入/rag_chunks 证据在单测 mock 层，避免烧模型 flaky）",
+        "注入检索为同步本地 Chroma 查询（毫秒级），未做异步化；若未来库极大可再优化"
+      ]
+    },
+    "M173": {
+      "title": "Zread 式项目地图（项目知识库可视化 + chat/plan 全局结构注入，对标 ZCode Zread）",
+      "status": "done",
+      "completed": "2026-08-04",
+      "summary": "调研 ZCode（智谱 ADE）后模仿其 Zread 能力落地。A 队新模块 api/project_map.py：纯确定性扫描（零 LLM/零 embedding），ProjectMap dataclass + build/get/regenerate 三函数；分节=技术栈/目录布局/依赖清单(package.json+pyproject+requirements)/入口关键文件/README 摘要(首段≤300字符)/代码统计(扩展名 top8)，单节异常跳过整体不炸，总长≤max_chars；缓存 FLIPPED_MAP_CACHE_DIR(默认 data/project_maps/)按项目名存 <name>.md+<name>.json meta，get 读缓存并扫顶层文件+顶层目录 mtime 判 stale（不自动重建），regenerate 强制重建。B 队接线：GET /project/map + POST /project/map/regenerate 端点（response_model=ProjectMapResponse，无项目 needs_project=True，失败 500 明示）；_run_chat 注入——mode∈{chat,plan} 且 FLIPPED_MAP_AUTO≠0 且 req.context.map_auto≠False 时 get_project_map(max_chars=1600) 追加 system（MAP_INJECT_HEADER 引导语），message payload 附 map_injected 可观测，fail-open。C 队前端：ContextPanel 新增「地图」tab（ContextTab 联合类型+IconMap），ProjectMapPanel 组件（loading/空态/错误/内容 MarkdownView 渲染/刷新 regenerate 按钮/stale 徽标提示），api.ts fetchProjectMap/regenerateProjectMap，types.ts ProjectMapInfo。与 RAG 互补：地图=全局结构 always-on，RAG=按需片段检索。worker/orchestrator 通路不动（已有 repo_map）。",
+      "subtasks": {
+        "M173.1": "A 队：project_map.py 模块 + 23 例 TDD（分节省略/依赖解析/README 摘要/代码统计/缓存/stale 判定）",
+        "M173.2": "B 队：双端点 + _run_chat 注入 + 13 例 TDD（假模块隔离）；schemas ProjectMapInfo/ProjectMapResponse（修契约测试）",
+        "M173.3": "C 队：ContextPanel 地图 tab + ProjectMapPanel + api/store 类型 + vitest",
+        "M173.4": "主代理收尾：全量回归 + verify_m173.sh + 质量门禁 + STATE/TEST_LOG"
+      },
+      "verification": "pytest 2086 passed/15 skipped（基线 2063+23+13… 实收 2086）；vitest 697 passed；tsc 0；verify_m173.sh 通过（单测 + 真后端黑盒 :8173 共 10 断言：建项目/五字段/首建非缓存/分节含锚点/技术栈双识别/依赖+README 锚点/二次缓存命中/文件变更 stale=True/regenerate 复位）；quality_gate.sh 首轮通过（py cov 86.41% / fe cov 91.33% / build ok / shell_lint ok）",
+      "known_limitations": [
+        "stale 判定只扫顶层文件+顶层目录 mtime：深层文件内容编辑不触发重建（重建成本低但全自动重建会在每次对话前扫全树，权衡后留给手动 regenerate 或顶层变动）",
+        "注入固定 max_chars=1600（保守预算，token 只少不超），无请求级调参",
+        "目录用途推断为启发式（目录名映射表），未知目录只列子项名不瞎编"
+      ]
+    },
+    "M174": {
+      "title": "消息级编辑重跑（edit & rerun，对标 ZCode 编辑历史对话 / opencode revert）",
+      "status": "done",
+      "completed": "2026-08-04",
+      "summary": "ZCode 调研第二刀。user 气泡 hover 编辑（IconEdit）→ 行内 textarea 改文本 → 重新执行：该消息及之后事件全部截断，agent/auto 模式同时 git 回滚到该轮快照（复用 M168 shadow snapshot 地基），chat/plan 纯截断重跑。A 队 session.py truncate_from（删 seq>=目标事件，返回条数，未知 id 幂等 0，_counter 单调不重置红线——WS 游标 events(after_id) 按 seq 数值比较依赖它）。B 队 assistant.py：POST /assistant/sessions/{sid}/messages/{eid}/edit（EditMessageRequest{text,restore_files=True,mode} → EditMessageResponse{ok,task_id,truncated,restored,deleted}）；8 步顺序钉死——404 会话/事件、422 非 user message、409 运行中/pending approval、截断前收集 idx 后 snapshot+file_change(add/create) 清单、_git_restore fail-closed（500 不截断）、truncate_from、重派发（emit user 消息 edited=True + agent 重新 snapshot + create_task 登记 RUNNING_TASKS）；_events_to_turns AssistantTurn 加 event_id（仅 user turn 赋值）；API 快照 FLIPPED_UPDATE_API_SNAPSHOT=1 重生（对照实验核对仅新增 edit 路径+2 schema+AssistantTurn.event_id，零删除零变更）。C 队前端：types.ts AssistantTurn.event_id + EditMessageResponse，api.ts editAssistantMessage（POST {text,restore_files}），store.tsx action（busy 包裹→api→refreshAssistantHistory→失败上抛 busy 必复位），Assistant.tsx Turn user 分支 hover 编辑钮→行内编辑态（textarea 预填/Enter 确认/Shift+Enter 换行/Esc 取消/无 event_id 或 busy 不显示），app.css +39 行。黑盒纪律：不烧真 LLM——假 OpenAI server（http.server 回显 RE:<user>）+ FLIPPED_USE_LOCAL_WORKER=1 直连。",
+      "subtasks": {
+        "M174.1": "A 队：session.py truncate_from + 7 例 TDD（中段/含目标/截尾/幂等/计数器单调/持久化/未知会话）",
+        "M174.2": "B 队：edit 端点 + turns event_id + 12 例 TDD + API 快照重生核对",
+        "M174.3": "C 队：前端编辑 UX 全链路 + 12 例 vitest（显隐/预填/确认/Enter/Esc/api 契约/store 刷新）",
+        "M174.4": "主代理：全量回归 + verify_m174.sh（假 LLM 黑盒 12 断言）+ 门禁 + STATE/TEST_LOG"
+      },
+      "verification": "pytest 2105 passed/15 skipped（2086+7+12）；vitest 709 passed（697+12）；tsc 0；build ok；verify_m174.sh 首轮修后通过（单测 19 例 + 黑盒 12 断言：建会话/3 消息回显/6 turns/event_id 锚点/truncated 精确==事件流推导值 11/chat restored==False/重跑 4 turns/编辑文本生效/新回复 RE:msg-2-edited/旧 msg-2,3 消失/第 1 轮保留）；quality_gate.sh 首轮通过（py cov 86.44% / fe cov 91.44% / shell_lint ok）",
+      "known_limitations": [
+        "编辑重跑不可逆：截断的事件不可恢复（前端编辑态即确认，端点层无二次确认）",
+        "agent 模式只回滚到该轮快照=该轮及之后文件改动全撤销；chat/plan 无文件操作纯对话截断",
+        "chat/plan _run_chat 本身无 LLM 对话历史（单消息无状态），重跑不带前序对话上下文——与现状行为一致，未额外引入历史组装",
+        "黑盒不覆盖 agent 模式 git restore（证据在单测 mock 层，不碰真实 git 仓库）"
+      ]
+    },
+    "M175": {
+      "title": "@ 文件引用（file mention，对标 ZCode 多类型附件 / opencode @file）",
+      "status": "done",
+      "completed": "2026-08-04",
+      "summary": "ZCode 调研第三刀。Composer 输入 @ 触发项目文件补全 → 插入 @path token → 发送时后端确定性展开（读文件内容追加进 LLM 输入），user 消息事件 payload 附 refs 元数据，前端气泡下渲染引用行。A 队 file_refs.py 纯确定性模块：手写扫描器 parse_file_ref_tokens（@ 前置必须空白/串首免疫邮箱假阳性；@\"引号形式\"支持含空格路径）+ expand_file_refs（root 外→outside_root、不存在→missing、二进制→binary、单文件 32KB/总量 64KB/5 文件上限截断 skipped，REFS_HEADER+fence 分节注入，任何异常 fail-open 不上抛）。B 队 assistant.py send_assistant_message 展开点钉在 emit user message 之前（展示原文/LLM 输入展开分离，全模式统一），payload 附 refs asdict 清单，AssistantTurn 加 refs 透传；FLIPPED_FILE_REFS 开关；API 快照重生核对（增量仅 AssistantTurn.refs，历史欠账经 git worktree 对照验证后一并登记）。C 队前端：@ 补全镜像 slash 实现（atQuery 正则/fetchProjectFiles 拍平缓存/模糊过滤排序 cap 8/键盘同款），filesTick bump 驱动 useMemo 重算（ref 不触发渲染的真 bug），pendingCursorRef+rAF 归位光标；user 气泡下 refs 行（状态着色 ok 绿/missing 红/binary 琥珀/skipped 灰 + truncated 标记）。",
+      "subtasks": {
+        "M175.1": "A 队：file_refs.py + 18 例 TDD（token 解析边界/展开状态机/截断上限/fail-open）",
+        "M175.2": "B 队：assistant 接线 + turns refs + 9 例 TDD + API 快照重生核对",
+        "M175.3": "C 队：前端 @ 补全+引用行 + 9 例 vitest（菜单显隐/过滤/pick 光标/refs 行渲染/api 契约）",
+        "M175.4": "主代理：全量回归 + verify_m175.sh（假 LLM 黑盒 12 断言）+ 门禁 + STATE/TEST_LOG"
+      },
+      "verification": "pytest 2132 passed/15 skipped（2105+27）；vitest 718 passed（709+9）；tsc 0；build ok；verify_m175.sh 首轮通过（单测 27 例 + 黑盒 12 断言：建项目/chat 会话/@src/hello.py 200/refs status=ok bytes>0/user 原文不污染/回显含 ZETA_ANCHOR_175 文件内容确到模型/REFS_HEADER+fence 分节/@nofile.py missing/中文状态注释）；quality_gate.sh 首轮通过（py cov 86.5% / fe cov 91.37% / findings 0 行）",
+      "known_limitations": [
+        "图像附件未纳入（视觉端点未验证，列后续候选）",
+        "展开是发送时一次性行为（历史 @token 不重放；edit 重跑按新文本重新展开，行为自然正确）",
+        "补全候选上限 8 条、单文件 32KB/总量 64KB/5 文件上限；skipped 状态仅提示不注入"
+      ]
+    },
+    "M176": {
+      "title": "Goal 模式（/goal 目标驱动自循环 + 逐轮 judge 校验，对标 ZCode Goal Mode）",
+      "status": "done",
+      "completed": "2026-08-04",
+      "summary": "ZCode 调研第四刀（Goal Mode，ZCode 3.0 头号特性）——AGENTS.md §2.5 Ralph 外层循环 + §6 熔断在对话层的产品化。/goal <目标> → 后端 goal supervisor 协程逐轮派发 → 每轮结束 LLM judge 校验达成度 → 未达成自动续跑（带上轮差距）→ achieved/exhausted/stopped 三终态。A 队 goal.py 纯状态机（零 FastAPI/零 LLM）：GoalState dataclass + build_iter_prompt（第 1 轮原文/≥2 轮带 gap+轮次）+ build_judge_messages（JUDGE_MARKER 首行供黑盒假 server 分流，摘要截断 800/400）+ parse_judge_reply（宽松剥 fence 找首个 JSON，缺字段缺省，完全无 JSON 抛 JudgeParseError）+ record_verdict（achieved/continue/exhausted_no_progress/exhausted_judge_errors 四决策；gap 签名归一化 lower+去空白+去数字防「还剩3处→2处」误判进展）+ goal_payload + summarize_goal_events（事件流重建供 GET）。B 队 assistant.py：POST /goal（FLIPPED_GOAL 开关/409 并发守卫/max_iterations=min(req|env 5,20)/emit user 消息 goal.started+goal set/create_task 注册 RUNNING_TASKS 复用 cancel）+ GET /goal + _goal_loop（顺序 await _run_chat/_run_orchestrator 不嵌套，CancelledError 沿链传播 catch 后 emit stopped 再 raise；末轮不 judge 直接 exhausted max_iter）+ _judge（fail-safe：任何异常→None 计错误，2 次熔断，绝不视为达成）+ turns 仅折 iter/achieved/exhausted/stopped 四相位；API 快照+api-types 重生。C 队前端：首个带参 slash 命令（pick 填充「/goal 」，submit+drain 双前缀检测分发）、goalActive state（WS 相位驱动 set/iter/judge→true 三终态→false，history 扫 turns 重建）、composerBusy=assistantBusy||goalActive 合成防轮间隙 drain 竞态、GoalMarker 四相位居中标记行（iter 琥珀/achieved 绿/exhausted 红/stopped 灰）。",
+      "subtasks": {
+        "M176.1": "A 队：goal.py + 20 例 TDD（iter prompt/judge messages/parse 各形态/record 四决策/no_progress 归一化/payload/summarize）",
+        "M176.2": "B 队：接线 + 13 例 TDD（派发/achieved 即停/continue 带 gap/max_iter/judge 熔断/开关 404/409/cancel stopped/GET 重建/turns 四相位）+ 快照重生",
+        "M176.3": "C 队：前端 /goal+GoalMarker+goalActive + 20 例 vitest（slash 菜单/pick 填充/submit 分发/空参退化/四相位渲染/合成 busy/api 契约/history 重建）",
+        "M176.4": "主代理：全量回归 + verify_m176.sh（假 LLM 黑盒三场景 16 断言）+ 门禁 + STATE/TEST_LOG"
+      },
+      "verification": "pytest 2165 passed/15 skipped（2132+33）；vitest 738 passed（718+20）；tsc 0；build ok；verify_m176.sh 首轮通过（单测 33 例 + 黑盒三场景 16 断言：a「2 轮未达成→第 3 轮达成」相位序列 set→iter→judge→iter→judge→iter→judge→achieved/恰 3 轮/续跑 prompt 含 gap+轮次/user 消息仅 1 条/GET 重建 achieved iter=3/history goal turns 恰 4 条；b「NEVERDONE+max_iter=2」exhausted max_iter 末轮不 judge；c「SLOW+cancel」stopped 无终态）；quality_gate.sh 通过（py cov 86.45% / fe cov 91.62% / shell_lint ok）",
+      "known_limitations": [
+        "judge 是 LLM 调用非确定性（verify_cmd 确定性校验 exit 0=达成列后续候选）",
+        "goal 运行中普通消息/edit/undo 全 409（wrapper 持 RUNNING_TASKS 全周期，与现状一致）",
+        "goal loop 不跨进程重启恢复（状态可从事件流重建，循环本身不恢复）",
+        "objective 不走 M175 @ 展开（@ 引用走普通消息）；max_iterations 硬上限 20"
+      ]
+    },
+    "M177": {
+      "title": "Review 面板强化（diff 补 untracked 清单 + POST /project/revert 逐文件回滚，对标 ZCode Review/rewind）",
+      "status": "done",
+      "completed": "2026-08-04",
+      "summary": "ZCode 调研第五刀（Review/rewind）——agentic 流程的最后一公里：人类审查。修两大缺口：① `git diff HEAD` 不含 untracked 新文件，agent 新写的文件在审查面板完全隐形（最严重）；② 无逐文件回滚，想撤单个文件只能整任务 undo 或手动 git checkout。B 队 main.py：_untracked_entries（git ls-files --others --exclude-standard 尊重 .gitignore，utf-8 行数统计，解码失败/含 \\x00/超 512KB/任何单文件异常→binary 占位绝不上抛，按 path 字典序确定性输出）+ project_diff 追加 untracked 清单 + POST /project/revert（FLIPPED_REVIEW 开关默认开=0 时 404；root None 400；resolve 越界 403；root 或目录 422；git ls-files --error-unmatch 判 tracked→git restore --source=HEAD --worktree 只动 worktree 不动 staging；非 tracked 且 is_file→unlink deleted；未知文件 404）。C 队前端：GitDiffFile 加 untracked/binary 可选字段、revertProjectFile api、revertGitDiffFile store action（成功后 loadGitDiff 刷新、失败上抛 busy 必复位）、GitDiffView 文件卡头部「新增」绿徽标/「二进制」灰徽标/无行占位行（untracked 提示撤销将删除、binary 提示不显示 diff）/头部右侧撤销按钮→行内确认态（动作文案写清后果：还原到 HEAD？/删除该新文件？确认危险色+取消，Esc/取消退出，失败红色小字可重试）+ app.css ≤40 行。API 快照+api-types 重生（仅 revert 增量）。",
+      "subtasks": {
+        "M177.1": "B 队：_untracked_entries + diff 增强 + revert 端点 + tests/test_m177_review.py 12 例（diff 含 untracked/行数统计/二进制标记/gitignore 排除/revert tracked modified 还原/revert tracked deleted 恢复/revert untracked 删除/路径穿越 403/目录 422/未知文件 404/FLIPPED_REVIEW=0 404）+ API 快照重生核对 + api-types 重生",
+        "M177.2": "C 队：types/api/store/ContextPanel + 8 例 vitest（untracked 徽标/binary 徽标/占位行/撤销按钮→确认态/取消退出/确认调 api 并刷新/失败错误字+可重试）+ app.css ≤40 行",
+        "M177.3": "主代理：全量回归（pytest+vitest+tsc+build）+ scripts/verify_m177.sh（tmp git repo 黑盒 12 断言）+ quality_gate 门禁 + STATE/TEST_LOG 留痕"
+      },
+      "verification": "pytest 2177 passed/15 skipped（2165+12）；vitest 746 passed（738+8）；tsc 0；build ok；verify_m177.sh 首轮通过（单测 12 例 + 黑盒 12 断言：建项目/diff 200/tracked 修改在列/untracked 文本 untracked=True added==3/二进制 binary=True added==0/gitignore 排除不在列/revert tracked modified→restored 内容回 HEAD/revert tracked deleted→restored 文件恢复/revert untracked→deleted 文件消失/路径穿越 403/未知文件 404/revert 后 diff 收敛）；quality_gate.sh 通过（py cov 86.4% / fe cov 91.52% / shell_lint ok / tsc 0 / build ok）",
+      "known_limitations": [
+        "revert 只动 worktree，绝不清 staging area、绝不整仓 reset/checkout",
+        "untracked 回滚=unlink 仅限 ls-files 判定的常规文件；symlink 删链不删目标（天然安全）",
+        "行内确认=ZCode rewind 安全摘要的最小等价（动作文案写清后果），不做二次 modal",
+        "文件树仅变更过滤、AI commit message、逐 hunk 接受/拒绝列后续候选（本里程碑控范围不做）"
+      ]
+    },
+    "M178": {
+      "title": "后台任务系统（「已安排」落地：任务注册表 + scheduler 定时派发 + 前端任务视图，对标 ZCode 任务侧栏）",
+      "status": "done",
+      "completed": "2026-08-04",
+      "summary": "ZCode 调研第六刀（任务侧栏）——AGENTS.md §2.5 Ralph 外层循环在单机内的产品化：用户预排任务，系统按时自动跑。Sidebar「已安排」导航项从纯占位（零后端）落地为真实任务管理界面。B 队：tasks.py 纯逻辑模块（零 FastAPI/零 main import）——ScheduledTask dataclass 15 字段 + compute_next_run 纯函数（once 过期→None；interval 以 max(last_run_at,created_at) 为基准滚动到首个 >now 时刻，落后多轮跳 N 倍间隔）+ due_tasks（升序）+ TaskRegistry（tmp+os.replace 原子写，坏 JSON 回退空表不炸，add/get/remove/list/toggle/mark_run 全量落盘，路径 FLIPPED_TASKS_PATH 可覆盖）；main.py 4 端点（POST 201 校验 mode/once 缺 run_at/interval every<1 全 422、GET 升序 None 沉底、DELETE 404、toggle 404，FLIPPED_TASKS=0 全 404）+ _task_scheduler（lifespan 启动，FLIPPED_TASKS_SCAN_S 默认 30s，单任务 try/except 隔离 mark_run failed 绝不炸循环，shutdown cancel+await）+ _dispatch_scheduled（防重入查 RUNNING_TASKS[last_session_id] 未 done→skipped；复刻 assistant 派发链：建会话→status emit→user 消息落库→agent/auto git shadow snapshot to_thread→TaskRequest→create_task 注册 RUNNING_TASKS→mark_run done；once 跑完 enabled=False+next_run=None）。C 队：types ScheduledTask snake_case 镜像 + formatFuture 相对未来时间、api 四函数（createScheduledTask 命名避让既有 createTask）、store tasks state+loadTasks fail-open+三 action 成功回拉错误上抛、ScheduledView 230 行（新建表单 once datetime-local/interval 分钟数/mode select/提交中 disable/失败红字不收起；任务卡 kind+mode 徽标/下次相对时间/done 绿 failed 红 skipped 黄状态点/已运行 N 次/启停/删除二次确认/标题点击跳 selectSession；30s interval 自动刷新卸载清理；空态保留原文案）、app.css 43 行 .sched-* 复用既有变量。API 快照重生（3 路径+3 schema）+ api-types 重生。",
+      "subtasks": {
+        "M178.1": "B 队：tasks.py + 4 端点 + scheduler + tests/test_m178_tasks.py 27 例（纯函数 8/Registry 8/端点 9/dispatch 2 含防重入 skipped）+ API 快照重生核对（增量 3 路径+3 schema，非 /tasks 漂移经逐 hunk 核对属 M165–M177 未提交工作如实反映）+ api-types 重生",
+        "M178.2": "C 队：types/api/store/ScheduledView/Sidebar + 16 例 vitest（api 5 + 组件 11：空态/任务卡/停用/once+interval 提交/校验红字/失败不收起/toggle/删除二次确认/跳转会话）+ app.css 43 行",
+        "M178.3": "主代理：全量回归（pytest+vitest+tsc+build）+ scripts/verify_m178.sh（黑盒 13 断言）+ quality_gate 门禁 + STATE/TEST_LOG 留痕"
+      },
+      "verification": "pytest 2204 passed/15 skipped（2177+27）；vitest 762 passed（746+16）；tsc 0；build ok；verify_m178.sh 首轮通过（单测 27 例 + 黑盒 13 断言：scan=1s 加速下 once 任务 now+2s 自动建会话+user 消息落库+假 LLM 回显到达/last_status=done/enabled=false/run_count=1/last_session_id 指向新会话/interval next_run ≤61s/toggle off 后 3s 不新建会话/once 缺 run_at 422/every_minutes=0 422/DELETE 未知 404）；quality_gate.sh 通过（py cov 86.47% / fe cov 91.14% / shell_lint ok / tsc 0 / build ok）",
+      "known_limitations": [
+        "mark_run(done) 语义=「派发成功」非「任务执行完成」（执行结果在会话事件流，任务卡可跳转查看）",
+        "cron 表达式、任务编辑（PATCH）、跨进程重启恢复 RUNNING_TASKS 映射列后续候选",
+        "scheduler 单进程内存态（重启后 due 任务按 next_run_at 自然补触发；RUNNING 防重入映射不跨重启）",
+        "黑盒验证 chat 模式通路；agent/auto 模式的 git snapshot 分支由单测覆盖"
+      ]
+    },
+    "M179": {
+      "title": "AI 代码评审（Review 面板「AI 评审」：diff → LLM → 结构化 findings 行内渲染，对标 ZCode 自动化代码评审）",
+      "status": "done",
+      "completed": "2026-08-04",
+      "summary": "ZCode 调研第七刀（自动化代码评审）——「在创建 PR 之前就给出内联建议，提前发现风险和回归问题」。M177 Review 面板已有逐文件 diff + untracked 清单 + 逐文件回滚，但评审动作本身还是人肉；本里程碑补上「一键 LLM 审查工作区变更」最后一公里。B 队：review.py 纯逻辑模块（零 FastAPI/函数级不 import main）——REVIEW_PROMPT_BUDGET=12k + REVIEW_SYSTEM_PROMPT（严格评审员只输出 JSON）+ build_review_prompt（指令含「只输出 JSON」+ 逐文件 diff 段 fence 包裹防注入；untracked 仅列路径+行数；超预算按文件逆序丢弃保前部完整并注记「…已截断 N 个文件」）+ parse_review_reply（剥 fence 找首个 JSON 数组或 {\"findings\":[...]}，逐项规范化：缺/非 str path 跳过不炸整体、line 非法→None、severity 非法→medium、message 缺→\"\"、suggestion 非法→None；完全无 JSON → ReviewParseError）；main.py POST /project/review（ReviewRequest/ReviewFinding/ReviewResponse 命名模型，FLIPPED_AI_REVIEW=0→404、root None→400、复用 _parse_unified_diff+_untracked_entries 走 to_thread、空 diff 短路 note=工作区干净不调 LLM、resolve_worker_model_config(req.model or coder)→_llm_chat、ReviewParseError/LLM 异常→502 带 detail 绝不伪造 findings）。C 队：types ReviewFinding/AiReviewResult、api reviewProject、store aiReview state+runAiReview（loading 两路径必复位）+clearAiReview+loadGitDiff 刷新清 result、ContextPanel GitDiffView 头部「AI 评审」按钮（IconSparkle，loading 禁用+「评审中…」）+error 红字+总览行「N 条建议 · 评审了 M 个文件 · model」+note+清除按钮+findings 按 path 分组渲染到对应文件卡 diff 行之上（severity 徽标 high 红/medium 琥珀/low 灰，line「:行号」，suggestion 次级行「建议：…」）+path 不匹配→底部「其他文件」分组、app.css 30 行 .review-* 复用既有变量。API 快照重生（/project/review + 3 schema）+ api-types 重生。",
+      "subtasks": {
+        "M179.1": "B 队：review.py + 端点 + tests/test_m179_review.py 20 例（prompt 5/parse 8/端点 7）+ API 快照重生核对（M179 增量 /project/review+3 schema；+1543/-90 漂移逐 hunk 核对属 M165–M178 未提交工作如实反映）+ api-types 重生（schemas=41 paths=45）",
+        "M179.2": "C 队：types/api/store/ContextPanel + 17 例 vitest（组件 11 + store 4 + api 2：按钮调 api/loading 禁用/按文件分组不串卡/finding 在 diff 行之上 compareDocumentPosition 验序/severity 三态/其他文件分组/总览行/清除/error 红字/runAiReview 成败/刷新清 result）+ app.css 30 行",
+        "M179.3": "主代理：全量回归（pytest+vitest+tsc+build）+ scripts/verify_m179.sh（黑盒 8 断言）+ quality_gate 门禁（findings.jsonl 空）+ STATE/TEST_LOG 留痕"
+      },
+      "verification": "pytest 2224 passed/15 skipped（2204+20）；vitest 779 passed（762+17）；tsc 0；build ok；verify_m179.sh 首轮通过（单测 20 例 + 黑盒 8 断言：空 diff 短路 findings=[] note 非空不调 LLM/有 diff files_reviewed==2 model 非空/缺 path 项 4→3 跳过/severity CRITICAL→medium 归一/path 对应+字段完整/PARSE_FAIL 触发 502 detail 非空/FLIPPED_AI_REVIEW=0 第二实例 404）；quality_gate.sh 通过（py cov 86.52% / fe cov 91.24% / shell_lint ok / tsc 0 / build ok / findings.jsonl 空）",
+      "known_limitations": [
+        "untracked 文件按契约只送路径+行数（不送内容），LLM 对新文件只能做有限评审——预算与注入防护的既定取舍",
+        "评审结果不落盘（一次性请求-响应），历史评审持久化列后续候选",
+        "评审模型固定走 coder alias；reviewProject(model?) 已留参数位，前端 UI 暂未暴露模型选择",
+        "findings 行号仅文本展示，未做点击跳转编辑器对应行（列后续候选）"
+      ]
+    },
+    "M180": {
+      "title": "项目规则系统（rules：项目级规则文件 → chat/plan 注入 + 规则面板查看/编辑，对标 ZCode 规则系统）",
+      "status": "done",
+      "completed": "2026-08-04",
+      "summary": "ZCode 调研第八刀（规则系统）——「项目级规则文件（AGENTS.md/.cursorrules 类）定义代码风格与约束，Agent 全模式遵守」。M172 RAG 注入 + M173 项目地图注入都是「上下文事实」；本里程碑补上「用户可声明必须遵守的规则」缺口。B 队：rules.py 纯逻辑模块（零 FastAPI/函数级不 import main）——RULE_FILES=(.flipped/rules.md, AGENTS.md, .cursorrules) 按序收集 + load_project_rules（每文件渲染「## {relpath}\\n\\n{content}」节，拼接超 4000 字符从末尾整节丢弃+注记「…已截断 N 节」；解码失败跳过；内容空白不命中）+ rules_raw_content + write_project_rules（mkdir parents + tmp+os.replace 原子写）；main.py GET/PUT /project/rules（RulesResponse 带 rules_content 编辑源/needs_project 空态；PUT 只写固定相对路径 .flipped/rules.md 零穿越面，content ≤64KB）+ _run_chat 规则注入（紧随 map 之后，system prompt 顺序：基础指令→RAG→地图→规则；rules_auto 参数 + FLIPPED_RULES_AUTO env + fail-open）+ create_task rules_auto context 覆盖。C 队：types ProjectRulesInfo、api fetch/saveProjectRules、RulesPanel.tsx（直调 api 不经 store：查看态 files chip + renderMarkdown + 「编辑」；空态引导+「新建规则」；编辑态受控 textarea + 保存 busy 禁用/取消 + 失败红字不收起）、ContextPanel 新增「规则」tab 与「地图」同级、app.css 25 行 .rules-*。API 快照重生（2 路径+2 schema）+ api-types 重生（schemas=43 paths=46）。",
+      "subtasks": {
+        "M180.1": "B 队：rules.py + 2 端点 + _run_chat 注入 + tests/test_m180_rules.py 24 例（load 7/raw 2/write 2/端点 6/注入 6/路由 1）+ API 快照重生核对 + api-types 重生",
+        "M180.2": "C 队：types/api/RulesPanel/ContextPanel 挂载 + 12 例 vitest（组件 10 + ContextPanel 2：files 徽标/渲染/空态/编辑初值/保存调 PUT/保存中禁用/失败不收起/取消不保存/needs_project/挂载）+ app.css 25 行",
+        "M180.3": "主代理：全量回归（pytest+vitest+tsc+build）+ scripts/verify_m180.sh（黑盒 5 断言，修复 2 处：history 响应 list 直返格式 + shell lint ${VAR}<全角>陷阱）+ quality_gate 门禁 + STATE/TEST_LOG 留痕"
+      },
+      "verification": "pytest 2248 passed/15 skipped（2224+24）；vitest 791 passed（779+12）；tsc 0；build ok；verify_m180.sh 通过（单测 24 例 + 黑盒 5 断言：建项目/GET 单文件 AGENTS.md 命中且 rules_content 空/PUT 双文件命中+落盘正确/正常实例 chat 注入双规则标记/FLIPPED_RULES_AUTO=0 实例不含标记）；quality_gate.sh 通过（py cov 86.59% / fe cov 91.33% / shell_lint ok / tsc 0 / build ok / findings.jsonl 空）",
+      "known_limitations": [
+        "注入仅接 chat/plan；agent/auto 的 worker 规则注入列后续候选",
+        "files 记录全部命中文件（含被截断丢弃的节），截断注记追加在预算外（可能略超 max_chars）",
+        "内容空白的规则文件视为不命中（满足「空规则零注入」红线）",
+        "Launcher 未加「规则」入口（与「地图」一致，仅从 ContextPanel tab 进入）"
+      ]
+    },
+    "M181": {
+      "title": "移动远程控制（手机扫码 → 远程查看进度/补需求/审批确认，对标 ZCode 远程控制）",
+      "status": "done",
+      "completed": "2026-08-04",
+      "summary": "ZCode 调研收官项——「桌面端生成二维码/链接，手机扫码打开当前工作区，查看进度、补一句需求、确认动作、让任务继续往下跑」。Goal 模式(M176)/后台任务(M178)/审批流(M151/M165.2b) 都齐了，但人必须守在电脑前——本里程碑补上长任务场景最后一公里。B 队：remote.py 纯逻辑模块（零 FastAPI/函数级不 import main）——RemoteToken dataclass + RemoteRegistry（secrets.token_urlsafe(24) 签发/同 session 单活/惰性 purge 过期/tmp+os.replace 原子写/坏文件回退空注册表，TTL env FLIPPED_REMOTE_TTL_S 默认 1800s，路径 env FLIPPED_REMOTE_DB）+ detect_lan_ip（UDP connect 8.8.8.8:80 不发包取主网卡 IP，异常回退 127.0.0.1）+ mobile_page_html（自包含移动页：内联 CSS/JS 零外部资源，2.5s 轮询 state，user/assistant 气泡，pending_approval 显示 action/reason + 放行/否决按钮，底部输入框发消息，404 显示「链接已失效」，动态文本一律 textContent 防 XSS）+ qr_svg（函数级 import segno）；main.py 7 端点——POST /remote/sessions（缺省取 store.list() created_at 降序首条，无→400/指定不存在→404；url=FLIPPED_REMOTE_HOST 或 detect_lan_ip+request.url.port；127.0.0.1 时 host_note 提示）+ GET /remote/{token}/state（尾 20 turns user/assistant text 截 2000 + pending_approval，复用 assistant.get_assistant_history/_has_pending_approval/_latest_pending_action 函数级 import）+ POST /remote/{token}/message（转发 send_assistant_message 走 canonical 缺省，409 透传）+ POST /remote/{token}/decision（转发 _do_decision，409 透传）+ GET /remote/{token}（HTMLResponse；无效→404「链接已失效」页）+ GET /remote/{token}/qr.svg（image/svg+xml）+ DELETE /remote/{token}（幂等 {ok:true}）。C 队：types RemoteSessionInfo、api createRemoteSession/revokeRemoteToken（API_BASE 改 export，值未变）、icons IconSmartphone（lucide 线性）、RemoteModal.tsx（直调 api 不经 store，仿 RulesPanel 范式：mount 即签发/QR img/URL+复制（clipboard 失败 fallback execCommand）/host_note 黄字/mm:ss 倒计时到期文案/撤销禁用「已撤销」/失败红字重试/遮罩点击不关闭 Escape 关闭/unmount 清理 interval）、Assistant.tsx assistant-head 恒渲染+「远程」按钮、app.css 51 行 .remote-*。API 快照重生（7 路径+5 schema，HTML/QR 两 Response 端点入 contract allowlist）+ api-types 重生。",
+      "subtasks": {
+        "M181.1": "B 队：remote.py + 7 端点 + tests/test_m181_remote.py 24 例（registry 7/util 3/端点 14）+ API 快照重生核对 + api-types 重生；全量回归修复 1 处（conftest 共享 sessions 文件污染 → fixture 加 FLIPPED_SESSION_STORE_PATH 隔离）",
+        "M181.2": "C 队：types/api/icons/RemoteModal/Assistant 挂载 + 12 例 vitest（RemoteModal 10：签发调用/空 sessionId body/QR src/host_note/复制/倒计时到期/撤销禁用/失败重试/关闭回调；Assistant 2：head 恒渲染/按钮开 modal）+ app.css 51 行",
+        "M181.3": "主代理：全量回归复核（pytest+vitest+tsc+build）+ scripts/verify_m181.sh（黑盒 10 断言一次全绿：无会话 400/issue 200/页面 200 含 token/无效 token 404「链接已失效」/state 键齐/远程发消息假 LLM 回显到达 turns/decision 409/qr.svg image/svg+xml/DELETE 后 404+幂等）+ quality_gate 门禁 + STATE/TEST_LOG 留痕"
+      },
+      "verification": "pytest 2272 passed/15 skipped（2248+24）；vitest 803 passed（791+12）；tsc 0；build ok；verify_m181.sh 通过（单测 24 例 + 黑盒 10 断言，一次全绿无修复）；quality_gate.sh 通过（py cov 86.68% / fe cov 91.12% / shell_lint ok / tsc 0 / build ok / findings.jsonl 空）",
+      "known_limitations": [
+        "远程面只读会话 + 发消息 + 审批三能力；不暴露文件树/终端/项目写/其他会话（token 绑定单会话）",
+        "token 单活制：同 session 重复签发旧 token 即失效；TTL 默认 1800s（FLIPPED_REMOTE_TTL_S）过期即 purge",
+        "远程发消息走 canonical handler 缺省行为（不支持请求级 mode/model 覆盖），语义=console 发送",
+        "host=127.0.0.1 时仅 host_note 文案提示，不自动改绑定（需 --host 0.0.0.0 起后端或设 FLIPPED_REMOTE_HOST）",
+        "Bot Channel（Telegram/微信等外部机器人）未做，依赖外部服务列后续候选",
+        "移动页为零构建自包含 HTML（非 React），与 console 前端无共享组件"
+      ]
+    },
+    "M182": {
+      "title": "Bot Channel 多平台接入（Telegram Bot webhook + 企业微信应用回调：统一消息接口/身份映射/加密验证/状态监控）",
+      "status": "done",
+      "completed": "2026-08-05",
+      "summary": "用户指令三连之一——外部机器人接入（消化 M181 限制「Bot Channel 未做」）。B 队三纯逻辑模块（零 FastAPI/函数级不 import main）：bot_channel.py（UnifiedMessage/ChannelStatus dataclass；BotSessionRegistry 身份映射 platform+chat_id→session_id，tmp+os.replace 原子写/坏文件回退空不炸；ChannelStats 状态监控 record_inbound/outbound/error + status/all_statuses；handle_inbound 全注入协程——resolve/建会话 bind → record_inbound → dispatch（函数级 import canonical send_assistant_message，M178 教训不复刻链路）→ await_reply（轮询 history 等新 assistant turn，FLIPPED_BOT_REPLY_TIMEOUT_S 默认 90s）→ send_reply 截 4000；超时发固定兜底文案；任何异常 record_error 吞掉返回 False）；bot_telegram.py（verify_secret hmac.compare_digest，expected 空一律 False 无 oracle；parse_update 只看 message.text，非文本/无 message 一律 None；TelegramSender client 注入 fake，send_message→(ok,err) 绝不上抛，httpx.AsyncClient(timeout=15, trust_env=False) 内网代理教训）；bot_wecom.py（WeComCrypto SHA1 验签 + AES-256-CBC 加解密 + corpid 尾缀校验；parse_callback_xml 只接 MsgType=text；WeComSender access_token 缓存提前 200s 刷新；pycryptodome 缺失→available()=False 优雅降级；D19：个人微信无官方 bot API，落地企业微信应用回调）。主代理：main.py 5 端点（POST /bot/telegram/webhook：未配置 404/secret 不符 403/parse None→200 handled=false 防 Telegram 重试风暴；GET /bot/wecom/callback URL 验证 PlainTextResponse(decrypt(echostr))；POST /bot/wecom/callback create_task；GET /bot/channels 状态监控字典序；POST /bot/channels/{platform}/test 未知平台 404/未配置 400/无绑定 400/发送失败 502）+ FLIPPED_BOT=0 全 404 + API 快照重生核对 + api-types 重生。C 队：types BotChannelInfo、api fetchBotChannels/testBotChannel、icons IconBot、BotChannelPanel.tsx（直调 api 不经 store 仿 RulesPanel 范式：通道卡片 enabled/configured 徽标 + 入/出/错三计数 + last_inbound 相对时间 + last_error 红字 + 「发测试消息」loading/结果行 + 空态 env 配置引导）、ContextPanel 'bot' tab「机器人」、app.css。token/secret 全走 env（FLIPPED_BOT_TELEGRAM_TOKEN/SECRET、FLIPPED_BOT_WECOM_*）绝不硬编码。修复：sender 异常 str(e) 空串 → 回退 type(e).__name__，error 诊断信息绝不为空（黑盒 d3/f3 钉死）。",
+      "subtasks": {
+        "M182.1": "B 队：bot_channel.py/bot_telegram.py/bot_wecom.py 三纯逻辑模块 + tests 64 例（channel 29 + telegram/wecom 35：registry 原子写坏文件回退/stats 计数/handle_inbound 全注入流程/验签/解析/加解密 corpid 校验/sender fake 注入不触真网络）+ pycryptodome 登记 requirements.txt",
+        "M182.2": "C 队：types/api/icons IconBot/BotChannelPanel/ContextPanel 'bot' tab + 14 例 vitest（通道卡片徽标/三项计数/last_error/测试消息 ok 与 error/空态引导/加载失败重试）+ app.css",
+        "M182.3": "主代理：main.py 5 端点接线 + API 快照重生核对 + api-types 重生 + 全量回归 + scripts/verify_m182.sh（真 uvicorn ×2 + 假 LLM，黑盒 16 断言）+ sender 错误信息加固"
+      },
+      "verification": "pytest 2397 passed/15 skipped（2272+125 三里程碑合计，本里程碑单测 64 例）；vitest 847 passed（803+44，本里程碑 14 例）；tsc 0；build ok；verify_m182.sh 通过（黑盒 16 断言：channels 字典序 configured/enabled、TG webhook 无/错 secret 403、非文本与非法 JSON handled=false 防重试风暴、test 无绑定 400/未知平台 404、文本消息 handled=true、inbound=1+error=1 计数、已绑定假 token 502 error 非空、WeCom URL 验证正误签名、加密回调 success+inbound=1、已绑定假 corp 502、FLIPPED_BOT=0 实例全 404）；quality_gate.sh 通过（py cov 86.14% / fe cov 91.34% / shell_lint ok / tsc 0 / build ok / findings.jsonl 空）",
+      "known_limitations": [
+        "个人微信无官方 bot API，落地企业微信应用回调；个人微信接入不在路线图",
+        "入站回复经轮询 history 实现（FLIPPED_BOT_REPLY_TIMEOUT_S 默认 90s），超时发固定兜底文案；长任务超 90s 仅收兜底文案不阻塞后台执行",
+        "一 chat 绑定一会话（mode=chat）；bot 会话不暴露文件树/终端/项目写等 console 能力",
+        "WeCom 依赖 pycryptodome，缺失时 available()=False 优雅降级（channels configured=false 不炸后端）",
+        "outbound 走平台主动 send API（Telegram sendMessage/WeCom 应用消息），非 webhook 被动回复",
+        "身份映射 platform+chat_id→session_id 单映射，同 chat 多用户共享会话（群聊场景无逐用户隔离）"
+      ]
+    },
+    "M183": {
+      "title": "Worker 规则注入系统（agent 通路手动 CRUD + auto 通路自动生成 + 版本管理回滚 + orchestrator 注入与执行效果统计）",
+      "status": "done",
+      "completed": "2026-08-05",
+      "summary": "用户指令三连之二——worker 规则注入（消化 M180 限制「agent/auto 的 worker 规则注入列后续候选」）。B 队 worker_rules.py 纯逻辑（零 FastAPI）：WorkerRule pydantic（id=\"wr-\"+secrets.token_hex(4) 碰撞重试；text strip 1..500；scope worker|all；source manual|auto；priority manual 50/auto 10，0..100；注入防护 blocklist case-insensitive「ignore previous instructions/忽略之前的指令/忽略以上指令/disregard all」→ValidationError）；WorkerRuleStore JSON {version,rules,history}（坏文件回退空 store version 0；tmp+os.replace 原子写；history cap 20；每次变更 bump version）——list/add/update/delete/set_enabled/versions/rollback（恢复快照自身亦 bump version action=rollback）；build_worker_rules_text（enabled 且 scope∈{worker,all}；priority desc→id asc；逐条 \"- {text}\"；预算 300 尾部整条丢弃+「…(略N条)」；返回 (text, applied_ids)）；WorkerRuleStats（record_applied/record_outcome/snapshot→{stats:{id:{applied,success,failure}},total_runs}，tmp+os.replace）；AUTO_RULE_TEMPLATES ≥6 条常见失败模式→规则模板；generate_auto_rules（pattern 命中+对 existing 文本与本次候选去重，max_rules=3）；orchestrator.py 两处接线全 fail-open——① local_worker _rules_short 计算后插入 worker 规则合并（总预算仍 300，M11.1 教训），state 增 worker_rules_applied；② verify 节点 verified 终判处 record_outcome(applied_ids, verified)（语义：applied 按注入次计数，outcome 按 verify 次计数，规则效果=降低失败迭代数）。主代理：main.py 9 端点（GET/POST /worker/rules、PUT/DELETE /{id}、POST /{id}/toggle、GET /versions、POST /rollback、POST /auto-generate 缺省函数级 import driving.failure_kb 读最近失败 fail-open、GET /stats；ValidationError→422，未知 id→404）+ FLIPPED_WORKER_RULES=0 全 404 + API 快照重生核对 + api-types 重生。C 队：types/api 9 函数、icons IconWand、WorkerRulesPanel.tsx（直调 api 不经 store：版本徽标 v{n}+「自动生成」结果 note+「版本史」展开回滚二次确认；规则行 enabled toggle+行内编辑保存/取消+source 徽标 auto 紫/manual 蓝+priority 徽标+删除二次确认；新建表单 text 必填/scope/priority；stats 区每规则 applied 数+成功率条；失败红字不收起）、ContextPanel 'worker' tab「Worker」、app.css。契约勘误（D20）：GET /worker/rules 返回全量插入序（含停用规则），priority desc 排序职责在前端/注入层，停用留列表供复启——verify 脚本 d2/e1/e2 初版断言与真实契约不符，修脚本对齐（PUT 落库校验/toggle enabled 字段校验），非改实现。",
+      "subtasks": {
+        "M183.1": "B 队：worker_rules.py + orchestrator.py 两处 fail-open 接线 + tests/test_m183_worker_rules.py 41 例（WorkerRule 校验/blocklist/Store CRUD/版本/回滚/坏文件回退/history cap/build 预算排序截断/Stats 累积/auto 模板命中去重截断/orchestrator 注入 fail-open + verify 节点 outcome）",
+        "M183.2": "C 队：types/api 9 函数/icons IconWand/WorkerRulesPanel/ContextPanel 'worker' tab + 18 例 vitest（版本徽标/自动生成 note/版本史回滚二次确认/规则行编辑 toggle 删除确认/新建表单/stats 成功率条/失败不收起）+ app.css",
+        "M183.3": "主代理：main.py 9 端点接线 + API 快照重生核对 + api-types 重生 + 全量回归 + scripts/verify_m183.sh（真 uvicorn ×2 + 假 SSE LLM + 真 local_worker 子进程，黑盒 24 断言）+ 契约勘误修脚本 d2/e1/e2"
+      },
+      "verification": "pytest 2397 passed/15 skipped（本里程碑单测 41 例）；vitest 847 passed（本里程碑 18 例）；tsc 0；build ok；verify_m183.sh 通过（黑盒 24 断言：空库 version=0/POST 201 id wr- 前缀 source manual/blocklist 与超 500 字 422/列表插入序/PUT 部分更新落库/未知 id 404/toggle enabled 往返/DELETE 消失/versions 元信息齐/auto-generate 模板命中 candidates=2 added=2 重复调用去重 candidates=0/rollback 自动规则消失未知版本 404/stats 形状/FLIPPED_WORKER_RULES=0 全 404 + 真 local_worker 子进程：启用规则按 priority desc 注入假 LLM prompt、停用规则不出现、worker_rules_applied 与 stats.applied 落盘且 API 可见）；quality_gate.sh 通过（findings.jsonl 空）",
+      "known_limitations": [
+        "注入仅接 local_worker（agent/auto 通路）；chat 通路不注入 worker 规则（chat 走 M180 项目规则）",
+        "auto-generate 缺省数据源 driving.failure_kb 最近失败，fail-open 空→added=[]；模板 ≥6 条固定 regex 模式，非 LLM 生成，未命中模式不产生候选",
+        "stats 语义：applied 按注入次计数，outcome 按 verify 次计数（中间迭代记 failure）——规则效果=降低失败迭代数，非端到端任务成功率",
+        "worker 规则与项目规则共享 300 字符预算（worker 规则优先在前，超出尾部整条丢弃），超长规则可能不生效",
+        "history cap 20 版本，更早版本不可回滚",
+        "GET /worker/rules 返回全量插入序（含停用），priority desc 排序职责在前端/注入层（D20 契约）"
+      ]
+    },
+    "M184": {
+      "title": "known_limitations 系统性分析与消化（42 条注册表 + 六分类 + 状态跟踪 + 分阶段路线图报告 + check CI 门禁）",
+      "status": "done",
+      "completed": "2026-08-05",
+      "summary": "用户指令三连之三——全里程碑 known_limitations 系统性整理/评估/跟踪。scripts/limitations_report.py（stdlib only 零新依赖）五子命令：harvest（STATE.json milestones.*.known_limitations → data/limitations_registry.json；id 稳定 L-{milestone}-{序号} 按出现序；(milestone,text) 匹配保留人工字段 category/impact/priority/difficulty/status/resolution_note/target；新增默认 未分类/P2/中/open；源移除标 stale→wontfix 不删记录）/classify（内置关键词映射六类：安全/功能缺口/性能/测试覆盖/数据一致性/架构取舍；只填「未分类」条目不踩人工）/check（STATE.json 每条限制都在 registry，缺失 exit 1 打印缺失 id——CI 门禁钩子）/set-status <id> <open|in_progress|resolved|wontfix> [--note]（状态更新机制，未知 id exit 1）/report（reports/limitations_analysis_<YYYYMMDD>.md 五节：总览 总数/分类/优先级分布 + 42 条全量明细表 id/里程碑/分类/影响/优先级/难度/状态/分阶段目标 + 优先级×难度矩阵 + 分阶段路线图 P0 当前迭代/P1 下两里程碑/P2 候选池 + 已消化标记 + 跟踪机制说明；tmp+os.replace 原子写）。真实数据流全跑通：42 条全量登记（M171–M181）→ harvest 幂等二次 0 added → classify 关键词分类 → L-M180-1 set-status resolved（M183 worker 注入消化）+ L-M181-5 resolved（M182 Bot Channel 消化）→ 报告落盘五节齐 → check 正例 exit 0/反例（篡改副本多一条未登记）exit 1 打印缺失 id。修复：verify 脚本 $REPORT 后全角括号触发 bash 变量名解析歧义 → ${REPORT} 花括号钉死（${VAR}<全角> 陷阱复发，M180 已录一次）。",
+      "subtasks": {
+        "M184.1": "独立子代理：scripts/limitations_report.py 五子命令 + tests/test_m184_limitations.py 20 例（harvest 新建/幂等/保留人工字段/源移除 wontfix/classify 六类关键词/不踩人工/check 齐全 exit 0 缺失 exit 1/set-status 往返/未知 id/report 五节/矩阵/路线图/tmp+os.replace 原子写）",
+        "M184.2": "主代理：报告定稿审阅（优先级/难度全局判断）+ scripts/verify_m184.sh（真实数据流 a1-g：42 条登记字段齐/幂等/classify/两条 resolved+注记/报告五节与已消化节/check 正反例）+ bash ${VAR} 花括号修复"
+      },
+      "verification": "pytest 2397 passed/15 skipped（本里程碑单测 20 例）；verify_m184.sh 通过（单测 20 例 + 真实数据流 13 断言：harvest 摘要格式/registry 42 条 id 格式 L-M{n}-{i} 人工字段齐/幂等 0 added 0 stale/classify 六类至少一类命中/L-M180-1 与 L-M181-5 resolved 注记含 M183/M182/未知 id exit 1/registry 落盘/report 五节标题齐 含全部关键 id 与总数 42 「已消化」节含两条/check 正例 exit 0/反例 exit 1 打印缺失 id L-M171-4）；quality_gate.sh 通过（findings.jsonl 空）。收尾自举：M182–M184 自身 16 条新限制留痕后被 check 门禁如实捕获 → harvest 登记（58 条，16 added）→ classify 6 条 → 报告重生 58 条 → check exit 0，机制对自身生效。",
+      "known_limitations": [
+        "classify 为关键词启发式（六类映射），命中率依赖限制文本措辞，人工校正为准（不踩人工已分类条目）",
+        "check 只验证「STATE.json 每条限制都在 registry」，不验证 registry 中状态/优先级真实性",
+        "registry 人工字段（priority/difficulty/target/impact）需人工维护，脚本不自动评估",
+        "报告按日生成同日覆盖（limitations_analysis_<YYYYMMDD>.md），历史报告无索引机制"
+      ]
     }
   },
   "architecture_decisions": [

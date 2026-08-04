@@ -5,6 +5,7 @@ import { useTheme } from "../hooks/useTheme";
 import { formatWhen } from "../types";
 import type { Session } from "../types";
 import { revealProject } from "../api";
+import { ScheduledView } from "./ScheduledView";
 import {
   IconPlus,
   IconSearch,
@@ -285,13 +286,7 @@ export function Sidebar() {
             </div>
           </>
         ) : (
-          <div className="side-empty tall scheduled-empty">
-            <span className="scheduled-empty-icon">
-              <IconClock size={22} />
-            </span>
-            <span className="scheduled-empty-title">暂无已安排任务</span>
-            <span className="scheduled-empty-hint">在此处规划的任务将自动出现在这里</span>
-          </div>
+          <ScheduledView />
         )}
       </div>
 

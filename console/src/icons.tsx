@@ -145,6 +145,25 @@ export const IconPause = ({ size }: P) => (
 export const IconRefresh = ({ size }: P) => (
   <svg {...b(size)}><path d="M3 12a9 9 0 0 1 15-6.7L21 8M21 3v5h-5M21 12a9 9 0 0 1-15 6.7L3 16M3 21v-5h5" /></svg>
 );
+export const IconMap = ({ size }: P) => (
+  <svg {...b(size)}><path d="M9 3 2 6v15l7-3 6 3 7-3V3l-7 3z" /><path d="M9 3v15M15 6v15" /></svg>
+);
+// M176 — Goal 模式 marker(lucide Target 同款:三同心圆靶心)
+export const IconTarget = ({ size }: P) => (
+  <svg {...b(size)}><circle cx="12" cy="12" r="9" /><circle cx="12" cy="12" r="5" /><circle cx="12" cy="12" r="1" /></svg>
+);
+// M181.2 — 移动远程控制(lucide Smartphone 同款:圆角机身 + 底部 home 短线)
+export const IconSmartphone = ({ size }: P) => (
+  <svg {...b(size)}><rect x="7" y="2" width="10" height="20" rx="2" /><path d="M11 18h2" /></svg>
+);
+// M182 — Bot 通道(lucide Bot 同款:天线 + 矩形脸 + 两眼)
+export const IconBot = ({ size }: P) => (
+  <svg {...b(size)}><path d="M12 8V4h2" /><rect x="4" y="8" width="16" height="12" rx="2" /><path d="M2 14h2M20 14h2M9 13v2M15 13v2" /></svg>
+);
+// M183 — Worker 规则自动生成(lucide Wand2 同款:魔杖斜线 + 三点星光)
+export const IconWand = ({ size }: P) => (
+  <svg {...b(size)}><path d="m6 21 15-15-3-3L3 18z" /><path d="M14 7l3 3M9 2v2M4 7H2M7 11 5 13" /></svg>
+);
 
 export function ToolIcon({ name, size = 15 }: { name: string; size?: number }) {
   if (name === "terminal") return <IconTerminal size={size} />;

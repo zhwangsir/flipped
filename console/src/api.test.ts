@@ -15,6 +15,7 @@ import {
   fetchProjectFile,
   renderBrowser,
   fetchProjectDiff,
+  reviewProject,
   revealProject,
   toggleMcpServer,
   fetchFailureCounter,
@@ -27,10 +28,34 @@ import {
   fetchFactoryQualityTrend,
   createAssistantSession,
   sendAssistantMessage,
+  startAssistantGoal,
+  fetchAssistantGoal,
   fetchAssistantHistory,
   approveAssistant,
   rejectAssistant,
+  compactAssistant,
+  undoAssistant,
+  editAssistantMessage,
+  getMcpTools,
+  callMcpTool,
+  fetchProjectMap,
+  regenerateProjectMap,
   connectEvents,
+  fetchTasks,
+  createScheduledTask,
+  deleteTask,
+  toggleTask,
+  fetchBotChannels,
+  testBotChannel,
+  fetchWorkerRules,
+  createWorkerRule,
+  updateWorkerRule,
+  deleteWorkerRule,
+  toggleWorkerRule,
+  fetchWorkerRuleVersions,
+  rollbackWorkerRules,
+  autoGenerateWorkerRules,
+  fetchWorkerRuleStats,
 } from './api';
 
 // fetch 的统一 mock 工具
@@ -119,6 +144,45 @@ describe('api — HTTP GET 类', () => {
     const fetchMock = mockFetch(async () => okResponse({ files: [] }));
     await fetchProjectDiff();
     expect(fetchMock.mock.calls[0][0]).toContain('/api/v1/project/diff');
+  });
+
+  it('reviewProject POST /project/review(M179.2;无 model → 空 body {})', async () => {
+    const fetchMock = mockFetch(async () =>
+      okResponse({ findings: [], files_reviewed: 0, model: 'coder', note: '工作区干净' })
+    );
+    const r = await reviewProject();
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toContain('/api/v1/project/review');
+    expect(init.method).toBe('POST');
+    expect(init.body).toBe('{}');
+    expect(r.files_reviewed).toBe(0);
+    expect(r.note).toBe('工作区干净');
+  });
+
+  it('reviewProject(model) → body 带 model;错误响应原样抛 HTTP 错误', async () => {
+    const fetchMock = mockFetch(async () =>
+      okResponse({
+        findings: [{ path: 'a.ts', line: 1, severity: 'high', message: 'm', suggestion: null }],
+        files_reviewed: 1,
+        model: 'kimi',
+      })
+    );
+    const r = await reviewProject('kimi');
+    const init = fetchMock.mock.calls[0][1] as RequestInit;
+    expect(JSON.parse(init.body as string)).toEqual({ model: 'kimi' });
+    expect(r.findings).toHaveLength(1);
+    expect(r.findings[0].severity).toBe('high');
+
+    mockFetch(async () => errResponse(502, 'LLM 解析失败'));
+    await expect(reviewProject()).rejects.toThrow('HTTP 502');
+  });
+
+  it('fetchProjectMap GET /project/map(M173 项目地图)', async () => {
+    const fetchMock = mockFetch(async () => okResponse({ map: null, needs_project: true }));
+    const result = await fetchProjectMap();
+    expect(fetchMock.mock.calls[0][0]).toContain('/api/v1/project/map');
+    expect(result.needs_project).toBe(true);
+    expect(result.map).toBeNull();
   });
 
   it('fetchFailureCounter GET /rca/failure_counter', async () => {
@@ -236,6 +300,21 @@ describe('api — HTTP POST/DELETE 类', () => {
     expect(init.method).toBe('POST');
   });
 
+  it('regenerateProjectMap POST /project/map/regenerate(M173 强制重建)', async () => {
+    const fetchMock = mockFetch(async () =>
+      okResponse({
+        map: { markdown: '# x', generated_at: '2026-08-04T00:00:00Z', stale: false, from_cache: false, stack: ['ts'] },
+        needs_project: false,
+      })
+    );
+    const result = await regenerateProjectMap();
+    const url = fetchMock.mock.calls[0][0] as string;
+    const init = fetchMock.mock.calls[0][1] as RequestInit;
+    expect(url).toContain('/api/v1/project/map/regenerate');
+    expect(init.method).toBe('POST');
+    expect(result.map?.stack).toEqual(['ts']);
+  });
+
   it('toggleMcpServer POST /mcp/servers/:name/toggle?enabled=bool 并编码 name', async () => {
     const fetchMock = mockFetch(async () => okResponse({ name: 'n', enabled: true }));
     await toggleMcpServer('my server', true);
@@ -305,6 +384,43 @@ describe('api — HTTP POST/DELETE 类', () => {
     expect(JSON.parse(init.body as string)).toEqual({ text: 'hello', mode: 'chat' });
   });
 
+  // M176 — Goal 模式:startAssistantGoal / fetchAssistantGoal
+  it('startAssistantGoal POST /assistant/sessions/:id/goal 带 body 并编码 id', async () => {
+    const fetchMock = mockFetch(async () =>
+      okResponse({ task_id: 't', session_id: 's', objective: 'o', max_iterations: 5 })
+    );
+    await startAssistantGoal('s 1', { objective: '修复 bug', mode: 'agent', model: 'coder', max_iterations: 3 });
+    const url = fetchMock.mock.calls[0][0] as string;
+    const init = fetchMock.mock.calls[0][1] as RequestInit;
+    expect(url).toContain('/assistant/sessions/s%201/goal');
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(init.body as string)).toEqual({
+      objective: '修复 bug',
+      mode: 'agent',
+      model: 'coder',
+      max_iterations: 3,
+    });
+  });
+
+  it('fetchAssistantGoal GET 同径;200 → 状态对象', async () => {
+    const fetchMock = mockFetch(async () =>
+      okResponse({ objective: 'o', status: 'running', iteration: 2, max_iterations: 5, gap: '还差 1 处' })
+    );
+    const r = await fetchAssistantGoal('s1');
+    const url = fetchMock.mock.calls[0][0] as string;
+    expect(url).toContain('/assistant/sessions/s1/goal');
+    expect(r?.status).toBe('running');
+    expect(r?.iteration).toBe(2);
+    expect(r?.gap).toBe('还差 1 处');
+  });
+
+  it('fetchAssistantGoal 404 → null(无 goal);500 → 抛错', async () => {
+    mockFetch(async () => errResponse(404, 'no goal'));
+    expect(await fetchAssistantGoal('s1')).toBeNull();
+    mockFetch(async () => errResponse(500, 'boom'));
+    await expect(fetchAssistantGoal('s1')).rejects.toThrow('HTTP 500');
+  });
+
   it('approveAssistant POST /assistant/sessions/:id/approve', async () => {
     const fetchMock = mockFetch(async () => okResponse({ ok: true, session_id: 's', decision: 'approve' }));
     await approveAssistant('s1');
@@ -314,11 +430,139 @@ describe('api — HTTP POST/DELETE 类', () => {
     expect(init.method).toBe('POST');
   });
 
+  // M165.2a — Always 审批:scope 透传后端
+  it('approveAssistant 带 scope=always → body 含 {scope:"always"}', async () => {
+    const fetchMock = mockFetch(async () => okResponse({ ok: true, session_id: 's', decision: 'approve' }));
+    await approveAssistant('s1', 'always');
+    const init = fetchMock.mock.calls[0][1] as RequestInit;
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(init.body as string)).toEqual({ scope: 'always' });
+  });
+
+  it('approveAssistant 不传 scope → 无 body(兼容旧契约)', async () => {
+    const fetchMock = mockFetch(async () => okResponse({ ok: true, session_id: 's', decision: 'approve' }));
+    await approveAssistant('s1');
+    const init = fetchMock.mock.calls[0][1] as RequestInit;
+    expect(init.body).toBeUndefined();
+  });
+
+  // M165.1a — /compact 压缩上下文端点
+  it('compactAssistant POST /assistant/sessions/:id/compact', async () => {
+    const fetchMock = mockFetch(async () => okResponse({ ok: true, session_id: 's', summary: '压缩摘要' }));
+    const r = await compactAssistant('s1');
+    const url = fetchMock.mock.calls[0][0] as string;
+    const init = fetchMock.mock.calls[0][1] as RequestInit;
+    expect(url).toContain('/assistant/sessions/s1/compact');
+    expect(init.method).toBe('POST');
+    expect(r.summary).toBe('压缩摘要');
+  });
+
+  // M168.2 — /undo 撤销最近一轮 agent 文件改动端点(对标 opencode /undo)
+  it('undoAssistant POST /assistant/sessions/:id/undo(无 body)', async () => {
+    const fetchMock = mockFetch(async () =>
+      okResponse({ ok: true, session_id: 's1', restored: true, deleted: ['a.ts', 'b.ts'] })
+    );
+    const r = await undoAssistant('s1');
+    const url = fetchMock.mock.calls[0][0] as string;
+    const init = fetchMock.mock.calls[0][1] as RequestInit;
+    expect(url).toContain('/assistant/sessions/s1/undo');
+    expect(init.method).toBe('POST');
+    expect(init.body).toBeUndefined();
+    expect(r.ok).toBe(true);
+    expect(r.session_id).toBe('s1');
+    expect(r.restored).toBe(true);
+    expect(r.deleted).toEqual(['a.ts', 'b.ts']);
+  });
+
   it('rejectAssistant POST /assistant/sessions/:id/reject', async () => {
     const fetchMock = mockFetch(async () => okResponse({ ok: true, session_id: 's', decision: 'reject' }));
     await rejectAssistant('s1');
     const init = fetchMock.mock.calls[0][1] as RequestInit;
     expect(init.method).toBe('POST');
+  });
+
+  // M174-C — 编辑 user 消息并重跑端点(截断该事件后历史,默认恢复文件)
+  it('editAssistantMessage POST /assistant/sessions/:sid/messages/:eid/edit', async () => {
+    const fetchMock = mockFetch(async () =>
+      okResponse({ ok: true, session_id: 's1', task_id: 't2', truncated: true, restored: true, deleted: ['a.ts'] })
+    );
+    const r = await editAssistantMessage('s1', 'e1', '改后的文本');
+    const url = fetchMock.mock.calls[0][0] as string;
+    const init = fetchMock.mock.calls[0][1] as RequestInit;
+    expect(url).toContain('/assistant/sessions/s1/messages/e1/edit');
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(init.body as string)).toEqual({ text: '改后的文本', restore_files: true });
+    expect(r.ok).toBe(true);
+    expect(r.session_id).toBe('s1');
+    expect(r.task_id).toBe('t2');
+    expect(r.truncated).toBe(true);
+    expect(r.restored).toBe(true);
+    expect(r.deleted).toEqual(['a.ts']);
+  });
+
+  it('editAssistantMessage restoreFiles=false → body restore_files:false', async () => {
+    const fetchMock = mockFetch(async () =>
+      okResponse({ ok: true, session_id: 's1', task_id: 't3', truncated: true, restored: false, deleted: [] })
+    );
+    await editAssistantMessage('s1', 'e1', 'x', false);
+    const body = JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string);
+    expect(body).toEqual({ text: 'x', restore_files: false });
+  });
+});
+
+// M170.2 — MCP 工具列表/调用端点(Plugins 面板「MCP 工具调用」)
+describe('api — MCP 工具调用 (M170.2)', () => {
+  it('getMcpTools GET /mcp/tools 并返回 tools 列表', async () => {
+    const fetchMock = mockFetch(async () =>
+      okResponse({
+        tools: [
+          { name: 'web_search', description: '联网搜索', inputSchema: { type: 'object' } },
+          { name: 'rag_query', description: '知识库检索', inputSchema: { type: 'object' } },
+        ],
+      })
+    );
+    const r = await getMcpTools();
+    const url = fetchMock.mock.calls[0][0] as string;
+    const init = fetchMock.mock.calls[0][1] as RequestInit | undefined;
+    expect(url).toContain('/api/v1/mcp/tools');
+    expect(init?.method ?? 'GET').toBe('GET');
+    expect(r.tools).toHaveLength(2);
+    expect(r.tools[0].name).toBe('web_search');
+    expect(r.tools[0].description).toBe('联网搜索');
+  });
+
+  it('callMcpTool POST /mcp/tools/:name/call 带 arguments body', async () => {
+    const fetchMock = mockFetch(async () =>
+      okResponse({ ok: true, tool: 'web_search', result: { hits: ['a', 'b'] } })
+    );
+    const r = await callMcpTool('web_search', { arguments: { query: 'mlx server' } });
+    const url = fetchMock.mock.calls[0][0] as string;
+    const init = fetchMock.mock.calls[0][1] as RequestInit;
+    expect(url).toContain('/api/v1/mcp/tools/web_search/call');
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(init.body as string)).toEqual({ arguments: { query: 'mlx server' } });
+    expect(r.ok).toBe(true);
+    expect(r.result).toEqual({ hits: ['a', 'b'] });
+  });
+
+  it('callMcpTool 编码工具名并透传 session_id(长工具 202 契约)', async () => {
+    const fetchMock = mockFetch(async () =>
+      okResponse({ ok: true, accepted: true, tool: 'run_coding_task', session_id: 's1' })
+    );
+    const r = await callMcpTool('run_coding_task', {
+      arguments: { goal: '修 bug' },
+      session_id: 's1',
+    });
+    const url = fetchMock.mock.calls[0][0] as string;
+    const init = fetchMock.mock.calls[0][1] as RequestInit;
+    expect(url).toContain('/api/v1/mcp/tools/run_coding_task/call');
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(init.body as string)).toEqual({
+      arguments: { goal: '修 bug' },
+      session_id: 's1',
+    });
+    expect(r.accepted).toBe(true);
+    expect(r.session_id).toBe('s1');
   });
 });
 
@@ -355,6 +599,208 @@ describe('api — 畸形响应降级 (M163.1)', () => {
     mockFetch(async () => okResponse([{ id: 's1' }]));
     const result = await fetchSessions();
     expect(result).toEqual([{ id: 's1' }]);
+  });
+});
+
+// M178.2 — 已安排任务端点(后台任务系统)
+describe('api — 已安排任务 (M178.2)', () => {
+  it('fetchTasks GET /tasks 返回数组', async () => {
+    const fetchMock = mockFetch(async () => okResponse([{ id: 'task-1', title: '巡检' }]));
+    const result = await fetchTasks();
+    expect(result).toEqual([{ id: 'task-1', title: '巡检' }]);
+    const url = fetchMock.mock.calls[0][0] as string;
+    expect(url).toContain('/api/v1/tasks');
+  });
+
+  it('fetchTasks 非数组响应降级为 []', async () => {
+    mockFetch(async () => okResponse({ not: 'an array' }));
+    const result = await fetchTasks();
+    expect(Array.isArray(result)).toBe(true);
+    expect(result).toEqual([]);
+  });
+
+  it('createScheduledTask POST /tasks 带 body', async () => {
+    const fetchMock = mockFetch(async () => okResponse({ id: 'task-9' }));
+    const body = {
+      title: '每日巡检',
+      prompt: '跑一遍测试',
+      mode: 'agent',
+      kind: 'interval' as const,
+      every_minutes: 60,
+      run_at: null,
+    };
+    const r = await createScheduledTask(body);
+    expect(r.id).toBe('task-9');
+    const url = fetchMock.mock.calls[0][0] as string;
+    const init = fetchMock.mock.calls[0][1] as RequestInit;
+    expect(url).toContain('/api/v1/tasks');
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(init.body as string)).toEqual(body);
+  });
+
+  it('deleteTask DELETE /tasks/:id', async () => {
+    const fetchMock = mockFetch(async () => okResponse({ ok: true }));
+    const r = await deleteTask('task-1');
+    const url = fetchMock.mock.calls[0][0] as string;
+    const init = fetchMock.mock.calls[0][1] as RequestInit;
+    expect(url).toContain('/api/v1/tasks/task-1');
+    expect(init.method).toBe('DELETE');
+    expect(r).toEqual({ ok: true });
+  });
+
+  it('toggleTask POST /tasks/:id/toggle?enabled=bool(无 body)', async () => {
+    const fetchMock = mockFetch(async () => okResponse({ id: 'task-1', enabled: false }));
+    const r = await toggleTask('task-1', false);
+    const url = fetchMock.mock.calls[0][0] as string;
+    const init = fetchMock.mock.calls[0][1] as RequestInit;
+    expect(url).toContain('/api/v1/tasks/task-1/toggle?enabled=false');
+    expect(init.method).toBe('POST');
+    expect(r.enabled).toBe(false);
+  });
+});
+
+// M182 — Bot 通道端点(多平台消息接入)
+describe('api — Bot 通道 (M182)', () => {
+  it('fetchBotChannels GET /bot/channels 并取 channels 字段', async () => {
+    const channels = [
+      {
+        platform: 'telegram',
+        enabled: true,
+        configured: true,
+        inbound_count: 3,
+        outbound_count: 5,
+        error_count: 0,
+        last_inbound_at: 1722700000,
+        last_outbound_at: 1722700100,
+        last_error: '',
+      },
+    ];
+    const fetchMock = mockFetch(async () => okResponse({ channels }));
+    const result = await fetchBotChannels();
+    const url = fetchMock.mock.calls[0][0] as string;
+    expect(url).toContain('/api/v1/bot/channels');
+    expect(result).toEqual(channels);
+    expect(result[0].platform).toBe('telegram');
+  });
+
+  it('testBotChannel POST /bot/channels/:platform/test 带 {text} body 并编码 platform', async () => {
+    const fetchMock = mockFetch(async () => okResponse({ ok: true }));
+    const r = await testBotChannel('my plat', 'ping from console');
+    const url = fetchMock.mock.calls[0][0] as string;
+    const init = fetchMock.mock.calls[0][1] as RequestInit;
+    expect(url).toContain('/api/v1/bot/channels/my%20plat/test');
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(init.body as string)).toEqual({ text: 'ping from console' });
+    expect(r.ok).toBe(true);
+  });
+
+  it('testBotChannel 失败响应 → {ok:false,error}', async () => {
+    mockFetch(async () => okResponse({ ok: false, error: 'chat_id 未配置' }));
+    const r = await testBotChannel('telegram', 'x');
+    expect(r.ok).toBe(false);
+    expect(r.error).toBe('chat_id 未配置');
+  });
+});
+
+// M183 — Worker 规则端点(学习系统:CRUD + 版本史 + 回滚 + 自动生成 + 统计)
+describe('api — Worker 规则 (M183)', () => {
+  const sampleRule = {
+    id: 'r1',
+    text: '修复后必须跑测试',
+    scope: 'worker',
+    source: 'manual',
+    enabled: true,
+    priority: 50,
+    created_at: 1722700000,
+  };
+
+  it('fetchWorkerRules GET /worker/rules', async () => {
+    const fetchMock = mockFetch(async () => okResponse({ version: 3, rules: [sampleRule] }));
+    const r = await fetchWorkerRules();
+    expect(fetchMock.mock.calls[0][0]).toContain('/api/v1/worker/rules');
+    expect(r.version).toBe(3);
+    expect(r.rules).toHaveLength(1);
+  });
+
+  it('createWorkerRule POST /worker/rules 默认 scope=worker 带 priority', async () => {
+    const fetchMock = mockFetch(async () => okResponse(sampleRule));
+    await createWorkerRule('新规则', 'worker', 80);
+    const init = fetchMock.mock.calls[0][1] as RequestInit;
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(init.body as string)).toEqual({ text: '新规则', scope: 'worker', priority: 80 });
+  });
+
+  it('updateWorkerRule PUT /worker/rules/:id 带 patch body', async () => {
+    const fetchMock = mockFetch(async () => okResponse(sampleRule));
+    await updateWorkerRule('r 1', { text: '改', priority: 90 });
+    const url = fetchMock.mock.calls[0][0] as string;
+    const init = fetchMock.mock.calls[0][1] as RequestInit;
+    expect(url).toContain('/api/v1/worker/rules/r%201');
+    expect(init.method).toBe('PUT');
+    expect(JSON.parse(init.body as string)).toEqual({ text: '改', priority: 90 });
+  });
+
+  it('deleteWorkerRule DELETE /worker/rules/:id', async () => {
+    const fetchMock = mockFetch(async () => okResponse({ ok: true }));
+    const r = await deleteWorkerRule('r1');
+    const url = fetchMock.mock.calls[0][0] as string;
+    const init = fetchMock.mock.calls[0][1] as RequestInit;
+    expect(url).toContain('/api/v1/worker/rules/r1');
+    expect(init.method).toBe('DELETE');
+    expect(r.ok).toBe(true);
+  });
+
+  it('toggleWorkerRule POST /worker/rules/:id/toggle 带 {enabled} body', async () => {
+    const fetchMock = mockFetch(async () => okResponse({ ...sampleRule, enabled: false }));
+    const r = await toggleWorkerRule('r1', false);
+    const url = fetchMock.mock.calls[0][0] as string;
+    const init = fetchMock.mock.calls[0][1] as RequestInit;
+    expect(url).toContain('/api/v1/worker/rules/r1/toggle');
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(init.body as string)).toEqual({ enabled: false });
+    expect(r.enabled).toBe(false);
+  });
+
+  it('fetchWorkerRuleVersions GET /worker/rules/versions 并取 versions 字段', async () => {
+    const versions = [{ version: 2, ts: 1722700000, action: 'create', detail: '新增规则', rule_count: 5 }];
+    const fetchMock = mockFetch(async () => okResponse({ versions }));
+    const r = await fetchWorkerRuleVersions();
+    expect(fetchMock.mock.calls[0][0]).toContain('/api/v1/worker/rules/versions');
+    expect(r).toEqual(versions);
+    expect(r[0].rule_count).toBe(5);
+  });
+
+  it('rollbackWorkerRules POST /worker/rules/rollback 带 {version} body', async () => {
+    const fetchMock = mockFetch(async () => okResponse({ ok: true, version: 4 }));
+    const r = await rollbackWorkerRules(2);
+    const url = fetchMock.mock.calls[0][0] as string;
+    const init = fetchMock.mock.calls[0][1] as RequestInit;
+    expect(url).toContain('/api/v1/worker/rules/rollback');
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(init.body as string)).toEqual({ version: 2 });
+    expect(r).toEqual({ ok: true, version: 4 });
+  });
+
+  it('autoGenerateWorkerRules POST /worker/rules/auto-generate 空 body {}', async () => {
+    const fetchMock = mockFetch(async () => okResponse({ added: [sampleRule], candidates: 3 }));
+    const r = await autoGenerateWorkerRules();
+    const url = fetchMock.mock.calls[0][0] as string;
+    const init = fetchMock.mock.calls[0][1] as RequestInit;
+    expect(url).toContain('/api/v1/worker/rules/auto-generate');
+    expect(init.method).toBe('POST');
+    expect(init.body).toBe('{}');
+    expect(r.added).toHaveLength(1);
+    expect(r.candidates).toBe(3);
+  });
+
+  it('fetchWorkerRuleStats GET /worker/rules/stats', async () => {
+    const fetchMock = mockFetch(async () =>
+      okResponse({ stats: { r1: { applied: 4, success: 3, failure: 1 } }, total_runs: 10 })
+    );
+    const r = await fetchWorkerRuleStats();
+    expect(fetchMock.mock.calls[0][0]).toContain('/api/v1/worker/rules/stats');
+    expect(r.stats.r1.applied).toBe(4);
+    expect(r.total_runs).toBe(10);
   });
 });
 

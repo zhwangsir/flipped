@@ -12,6 +12,8 @@ import type {
   PlanState,
   Metrics,
   McpServer,
+  McpToolInfo,
+  McpCallResult,
   ContextTab,
   SidebarTab,
   ProjectContext,
@@ -19,6 +21,7 @@ import type {
   FileNode,
   BrowserRender,
   GitDiffFile,
+  AiReviewResult,
   FactorySummary,
   FactoryDetail,
   FactoryRcaHistoryResponse,
@@ -26,6 +29,7 @@ import type {
   RcaInfo,
   VerifierVerdict,
   AssistantTurn,
+  ScheduledTask,
 } from './types';
 import { eventToStreamItem, detectServerUrl } from './types';
 import {
@@ -37,10 +41,14 @@ import {
   fetchMetrics,
   getMcpServers,
   toggleMcpServer as apiToggleMcpServer,
+  getMcpTools as apiGetMcpTools,
+  callMcpTool as apiCallMcpTool,
   fetchProjectContext,
   fetchProjectFiles,
   fetchProjectFile,
   fetchProjectDiff,
+  revertProjectFile as apiRevertProjectFile,
+  reviewProject as apiReviewProject,
   openProject as apiOpenProject,
   fetchProjects,
   createProject as apiCreateProject,
@@ -56,9 +64,19 @@ import {
   connectEvents,
   createAssistantSession,
   sendAssistantMessage as apiSendAssistantMessage,
+  startAssistantGoal as apiStartAssistantGoal,
   fetchAssistantHistory,
   approveAssistant as apiApproveAssistant,
   rejectAssistant as apiRejectAssistant,
+  compactAssistant as apiCompactAssistant,
+  undoAssistant as apiUndoAssistant,
+  editAssistantMessage as apiEditAssistantMessage,
+  type UndoAssistantResponse,
+  fetchTasks as apiFetchTasks,
+  createScheduledTask as apiCreateScheduledTask,
+  deleteTask as apiDeleteTask,
+  toggleTask as apiToggleTask,
+  type CreateScheduledTaskRequest,
 } from './api';
 
 export type ConnectionState = 'idle' | 'connecting' | 'connected' | 'error';
@@ -83,6 +101,10 @@ interface AppState {
   mcpServers: McpServer[];
   toggleMcpServer: (name: string, enabled: boolean) => Promise<void>;
   refreshMcpServers: () => void;
+  // M170.2 — MCP 工具列表 + 调用(Plugins 面板)
+  mcpTools: McpToolInfo[];
+  refreshMcpTools: () => Promise<void>;
+  callMcpTool: (name: string, args: Record<string, unknown>) => Promise<McpCallResult>;
   selectedModel: string;
   setModel: (m: string) => void;
   selectedMode: string;
@@ -124,6 +146,11 @@ interface AppState {
   gitDiff: GitDiffFile[];
   gitDiffLoading: boolean;
   loadGitDiff: () => Promise<void>;
+  revertGitDiffFile: (path: string) => Promise<{ ok: boolean; path: string; action: 'restored' | 'deleted' }>;
+  // M179.2 — AI 代码评审(Review 面板一键 LLM 审查 diff → findings 行内渲染,只读)
+  aiReview: { result: AiReviewResult | null; loading: boolean; error: string | null };
+  runAiReview: () => Promise<void>;
+  clearAiReview: () => void;
   selectSession: (id: string) => void;
   createSession: (title?: string, mode?: string) => Promise<string>;
   deleteSession: (id: string) => Promise<void>;
@@ -160,10 +187,37 @@ interface AppState {
   assistantTurns: AssistantTurn[];
   assistantBusy: boolean;
   assistantError: string | null;
+  // M166.3 — assistant token 级流式(chat/plan 直聊,transient 不落盘)
+  assistantStream: { text: string; active: boolean };
   sendAssistantMessage: (text: string, mode?: string) => Promise<void>;
-  approveAssistant: (sessionId: string) => Promise<void>;
+  approveAssistant: (sessionId: string, scope?: 'once' | 'always') => Promise<void>;
   rejectAssistant: (sessionId: string) => Promise<void>;
   clearAssistantTurns: () => void;
+  // M165.1a — slash 命令本地反馈 turn(不走后端)
+  appendAssistantLocalTurn: (text: string) => void;
+  // M165.1a — /compact 压缩上下文
+  compactAssistant: (sessionId: string) => Promise<void>;
+  // M168.2 — /undo 撤销最近一轮 agent 文件改动(成功返回结果供视图拼摘要;失败抛错由视图兜底)
+  undoAssistant: (sessionId: string) => Promise<UndoAssistantResponse>;
+  // M174 — 编辑 user 消息并重跑(成功后刷新历史;失败抛错由视图兜底)
+  editAssistantMessage: (sessionId: string, eventId: string, text: string) => Promise<void>;
+  // M167.4 — assistant 消息排队与停止(opencode 交互:running 中 Enter 入队,Esc/停止键中断)
+  assistantQueue: string[];
+  enqueueAssistantMessage: (text: string) => void;
+  removeAssistantQueued: (index: number) => void;
+  stopAssistantTask: () => Promise<void>;
+  // M176 — Goal 模式(目标驱动自循环):goalActive 由 goal 事件相位/history 重建驱动;
+  // composerBusy = assistantBusy || goalActive,供 Composer/drain 使用
+  // (goal 轮间隙 status done→running 闪烁,单看 assistantBusy 会让 drain 误发)
+  goalActive: boolean;
+  composerBusy: boolean;
+  sendAssistantGoal: (objective: string) => Promise<void>;
+  // M178.2 — 已安排任务(后台任务系统;动作失败原样上抛由视图兜底,同 revertGitDiffFile)
+  tasks: ScheduledTask[];
+  loadTasks: () => Promise<void>;
+  addTask: (body: CreateScheduledTaskRequest) => Promise<void>;
+  removeTask: (id: string) => Promise<void>;
+  toggleTaskEnabled: (id: string, enabled: boolean) => Promise<void>;
 }
 
 const AppContext = createContext<AppState | null>(null);
@@ -186,6 +240,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [detectedServerUrl, setDetectedServerUrl] = useState<string | null>(null);
   const [metrics, setMetrics] = useState<Metrics | null>(null);
   const [mcpServers, setMcpServers] = useState<McpServer[]>([]);
+  const [mcpTools, setMcpTools] = useState<McpToolInfo[]>([]);
   const [selectedModel, setSelectedModel] = useState('coder');
   const [selectedMode, setSelectedMode] = useState('agent');
   const [activeView, setActiveView] = useState('assistant');
@@ -207,6 +262,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [browserError, setBrowserError] = useState<string | null>(null);
   const [gitDiff, setGitDiff] = useState<GitDiffFile[]>([]);
   const [gitDiffLoading, setGitDiffLoading] = useState(false);
+  // M179.2 — AI 评审结果态(一次性请求-响应,不落盘)
+  const [aiReview, setAiReview] = useState<{ result: AiReviewResult | null; loading: boolean; error: string | null }>({
+    result: null,
+    loading: false,
+    error: null,
+  });
   const [factories, setFactories] = useState<FactorySummary[]>([]);
   const [factoryDetail, setFactoryDetail] = useState<FactoryDetail | null>(null);
   const [factoryOpen, setFactoryOpen] = useState(false);
@@ -225,6 +286,24 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [assistantTurns, setAssistantTurns] = useState<AssistantTurn[]>([]);
   const [assistantBusy, setAssistantBusy] = useState(false);
   const [assistantError, setAssistantError] = useState<string | null>(null);
+  // M166.3 — assistant token 级流式累积态(done token / worker message / 会话切换时收敛)
+  const [assistantStream, setAssistantStream] = useState<{ text: string; active: boolean }>({ text: '', active: false });
+  // M167.4 — assistant 排队消息(ref 为 drain 循环的实时源,state 驱动 UI)
+  const [assistantQueue, setAssistantQueueState] = useState<string[]>([]);
+  const assistantQueueRef = useRef<string[]>([]);
+  const setAssistantQueue = useCallback((q: string[]) => {
+    assistantQueueRef.current = q;
+    setAssistantQueueState(q);
+  }, []);
+  // M167.4 — drain 防重入锁
+  const assistantDrainingRef = useRef(false);
+  // M176 — goal 运行中标记(goal 事件相位 set/iter/judge→true;achieved/exhausted/stopped→false)
+  const [goalActive, setGoalActive] = useState(false);
+  // M178.2 — 已安排任务列表(仅「已安排」视图拉取/轮询,不随 Provider 挂载拉)
+  const [tasks, setTasks] = useState<ScheduledTask[]>([]);
+  // M176 — 合成 busy:goal 轮间隙 status done→running 闪烁,单看 assistantBusy 会让
+  // drain 误发/Composer 误以为空闲;composerBusy 供 drain effect 与 Composer busy prop 使用
+  const composerBusy = assistantBusy || goalActive;
   const clearRca = useCallback(() => {
     setRcaHistory([]);
     setLastVerifierVerdict(null);
@@ -234,6 +313,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const prefillComposer = useCallback((text: string) => setComposerPrefill(text), []);
   const wsRef = useRef<{ close: () => void; send: (msg: unknown) => void } | null>(null);
   const lastEventIdRef = useRef<string | null>(null);
+  // M165.3 — 助手历史防抖刷新定时器(事件驱动,替代 2.5s 轮询)
+  const assistantRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const toggleContext = useCallback(() => setShowContext((v) => !v), []);
   const openContext = useCallback((t: ContextTab) => {
@@ -388,8 +469,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, []);
 
   // 阶段②c — 拉工作区真实 git diff（审查面板）
+  // M179.2 — diff 刷新后旧评审 findings 失效,清空 aiReview.result(保 error 供用户看到上次失败)
   const loadGitDiff = useCallback(async () => {
     setGitDiffLoading(true);
+    setAiReview((prev) => (prev.result ? { ...prev, result: null } : prev));
     try {
       const r = await fetchProjectDiff();
       setGitDiff(r.files);
@@ -398,6 +481,31 @@ export function AppProvider({ children }: { children: ReactNode }) {
     } finally {
       setGitDiffLoading(false);
     }
+  }, []);
+
+  // M177.2 — 撤销单文件变更,成功后刷新 diff 列表;错误原样上抛(组件本地管确认态与错误)
+  const revertGitDiffFile = useCallback(
+    async (path: string) => {
+      const r = await apiRevertProjectFile(path);
+      await loadGitDiff();
+      return r;
+    },
+    [loadGitDiff]
+  );
+
+  // M179.2 — AI 评审:loading 置位 → 调后端 → 成功写 result/失败写 error,loading 必复位(只读)
+  const runAiReview = useCallback(async () => {
+    setAiReview({ result: null, loading: true, error: null });
+    try {
+      const r = await apiReviewProject();
+      setAiReview({ result: r, loading: false, error: null });
+    } catch (e) {
+      setAiReview({ result: null, loading: false, error: e instanceof Error ? e.message : String(e) });
+    }
+  }, []);
+
+  const clearAiReview = useCallback(() => {
+    setAiReview({ result: null, loading: false, error: null });
   }, []);
 
   const toggleMcpServer = useCallback(async (name: string, enabled: boolean) => {
@@ -409,6 +517,36 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setMcpServers((prev) => prev.map((s) => (s.name === name ? { ...s, enabled: !enabled } : s)));
     }
   }, []);
+
+  // M170.2 — 拉取 MCP 工具列表(Plugins 面板打开时触发,fail-open)
+  const refreshMcpTools = useCallback(async () => {
+    try {
+      const r = await apiGetMcpTools();
+      setMcpTools(Array.isArray(r.tools) ? r.tools : []);
+    } catch {
+      /* fail-open:保持原列表 */
+    }
+  }, []);
+
+  // M170.2 — 调用 MCP 工具:长工具(后台异步跑)自动带当前会话 id,
+  // 无会话时不发请求直接返回 no-session;网络/HTTP 异常归一为 ok:false 供组件渲染。
+  const callMcpTool = useCallback(
+    async (name: string, args: Record<string, unknown>): Promise<McpCallResult> => {
+      const longTool = name === 'run_coding_task' || name === 'research_and_code';
+      if (longTool && !selectedSessionId) {
+        return { ok: false, tool: name, error: 'no-session' };
+      }
+      try {
+        return await apiCallMcpTool(name, {
+          arguments: args,
+          ...(longTool && selectedSessionId ? { session_id: selectedSessionId } : {}),
+        });
+      } catch (e) {
+        return { ok: false, tool: name, error: e instanceof Error ? e.message : String(e) };
+      }
+    },
+    [selectedSessionId]
+  );
 
   const selectSession = useCallback((id: string) => {
     setSelectedSessionId(id);
@@ -501,11 +639,21 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const refreshAssistantHistory = useCallback(async (sid: string | null) => {
     if (!sid) {
       setAssistantTurns([]);
+      setGoalActive(false);
       return;
     }
     try {
       const turns = await fetchAssistantHistory(sid);
       setAssistantTurns(turns);
+      // M176 — 扫 goal turns 重建 goalActive(取最后一条 goal turn 的相位):
+      // iter→true(运行中);achieved/exhausted/stopped→false(终态)。set/judge 不折 turn。
+      let active = false;
+      for (const t of turns) {
+        if (t.role === 'goal' && t.goal) {
+          active = t.goal.phase === 'iter';
+        }
+      }
+      setGoalActive(active);
     } catch {
       // fail-open:历史拉取失败保持原状,不阻塞发消息
     }
@@ -541,11 +689,79 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [selectedSessionId, refreshAssistantHistory]
   );
 
+  // M178.2 — 拉取已安排任务列表(失败静默,与 refreshMcpTools 同款 fail-open:保持原列表)
+  const loadTasks = useCallback(async () => {
+    try {
+      const list = await apiFetchTasks();
+      setTasks(Array.isArray(list) ? list : []);
+    } catch {
+      /* fail-open:保持原列表 */
+    }
+  }, []);
+
+  // M178.2 — 新建/删除/启停后统一回拉列表;错误原样上抛(视图本地管错误态,不产生未捕获 rejection)
+  const addTask = useCallback(
+    async (body: CreateScheduledTaskRequest) => {
+      await apiCreateScheduledTask(body);
+      await loadTasks();
+    },
+    [loadTasks]
+  );
+
+  const removeTask = useCallback(
+    async (id: string) => {
+      await apiDeleteTask(id);
+      await loadTasks();
+    },
+    [loadTasks]
+  );
+
+  const toggleTaskEnabled = useCallback(
+    async (id: string, enabled: boolean) => {
+      await apiToggleTask(id, enabled);
+      await loadTasks();
+    },
+    [loadTasks]
+  );
+
+  // M176 — /goal 目标驱动自循环:与 sendAssistantMessage 同款 busy 守卫/会话兜底/错误通道;
+  // 之后走 WS goal 事件 + 防抖刷新推进(goalActive 由事件相位/history 重建维护)
+  const sendAssistantGoalAction = useCallback(
+    async (objective: string) => {
+      const trimmed = objective.trim();
+      if (!trimmed) return;
+      let sid = selectedSessionId;
+      setAssistantBusy(true);
+      setAssistantError(null);
+      try {
+        if (!sid) {
+          const s = await createAssistantSession({ mode: (selectedMode as 'auto' | 'agent' | 'chat' | 'plan') || 'agent' });
+          sid = s.id;
+          setSessions((prev) => [s, ...prev]);
+          setSelectedSessionId(s.id);
+        }
+        await apiStartAssistantGoal(sid, {
+          objective: trimmed,
+          mode: selectedMode,
+          model: selectedModel,
+        });
+        // 发完立刻拉一次历史(goal set/user 消息已落盘),后续轮次走 WS/防抖刷新
+        await refreshAssistantHistory(sid);
+      } catch (e) {
+        setAssistantError(e instanceof Error ? e.message : String(e));
+        throw e;
+      } finally {
+        setAssistantBusy(false);
+      }
+    },
+    [selectedSessionId, selectedMode, selectedModel, refreshAssistantHistory]
+  );
+
   const approveAssistantAction = useCallback(
-    async (sessionId: string) => {
+    async (sessionId: string, scope?: 'once' | 'always') => {
       setAssistantBusy(true);
       try {
-        await apiApproveAssistant(sessionId);
+        await apiApproveAssistant(sessionId, scope);
         await refreshAssistantHistory(sessionId);
       } catch (e) {
         setAssistantError(e instanceof Error ? e.message : String(e));
@@ -573,19 +789,122 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const clearAssistantTurns = useCallback(() => setAssistantTurns([]), []);
 
+  // M165.1a — 本地追加一条 assistant turn(slash 命令反馈,不走后端)
+  const appendAssistantLocalTurn = useCallback((text: string) => {
+    setAssistantTurns((prev) => [
+      ...prev,
+      { role: 'assistant', text, tools: [], created_at: new Date().toISOString() },
+    ]);
+  }, []);
+
+  // M165.1a — /compact:调后端压缩上下文,成功刷新历史;失败(如 409 空历史)本地提示
+  const compactAssistantAction = useCallback(
+    async (sessionId: string) => {
+      setAssistantBusy(true);
+      try {
+        await apiCompactAssistant(sessionId);
+        await refreshAssistantHistory(sessionId);
+      } catch (e) {
+        appendAssistantLocalTurn(`压缩上下文失败:${e instanceof Error ? e.message : String(e)}`);
+      } finally {
+        setAssistantBusy(false);
+      }
+    },
+    [refreshAssistantHistory, appendAssistantLocalTurn]
+  );
+
+  // M168.2 — /undo:调后端撤销最近一轮改动,成功刷新对话历史 + diff 面板;
+  // 结果返回给视图拼摘要 turn;错误原样上抛(视图 .catch 后追加失败 turn,不产生未捕获 rejection)
+  const undoAssistantAction = useCallback(
+    async (sessionId: string) => {
+      setAssistantBusy(true);
+      try {
+        const r = await apiUndoAssistant(sessionId);
+        await refreshAssistantHistory(sessionId);
+        await loadGitDiff();
+        return r;
+      } finally {
+        setAssistantBusy(false);
+      }
+    },
+    [refreshAssistantHistory, loadGitDiff]
+  );
+
+  // M174 — 编辑 user 消息重跑:调后端截断重跑,成功刷新对话历史(同 undo 写法);
+  // 错误原样上抛(视图 .catch 兜底,不产生未捕获 rejection)
+  const editAssistantMessageAction = useCallback(
+    async (sessionId: string, eventId: string, text: string) => {
+      setAssistantBusy(true);
+      try {
+        await apiEditAssistantMessage(sessionId, eventId, text);
+        await refreshAssistantHistory(sessionId);
+      } finally {
+        setAssistantBusy(false);
+      }
+    },
+    [refreshAssistantHistory]
+  );
+
   // 选中会话变化 → 重拉助手历史(步级流,不是 token 流)
   useEffect(() => {
     refreshAssistantHistory(selectedSessionId);
   }, [selectedSessionId, refreshAssistantHistory]);
 
-  // 任务运行中 → 轮询历史让对话流向前推进(2.5s 一次,廉价 GET)
+  // M167.4 — 排队消息操作
+  const enqueueAssistantMessage = useCallback(
+    (text: string) => {
+      const trimmed = text.trim();
+      if (!trimmed) return;
+      setAssistantQueue([...assistantQueueRef.current, trimmed]);
+    },
+    [setAssistantQueue]
+  );
+
+  const removeAssistantQueued = useCallback(
+    (index: number) => {
+      setAssistantQueue(assistantQueueRef.current.filter((_, i) => i !== index));
+    },
+    [setAssistantQueue]
+  );
+
+  // M167.4 — 停止当前生成:取消后端任务 + 清空排队 + 收敛流式态
+  const stopAssistantTask = useCallback(async () => {
+    setAssistantQueue([]);
+    setAssistantStream({ text: '', active: false });
+    await cancelTask();
+  }, [cancelTask, setAssistantQueue]);
+
+  // M167.4 — 排队自动发送:busy 落下且有选中会话时逐条 drain。
+  // 防重入 = assistantDrainingRef 锁 + 发送中 composerBusy=true 天然阻断 effect 重入;
+  // 队列以 ref 为源,发送中新入队的消息会被同一 drain 循环拾取;
+  // 单条发送失败错误已写入 assistantError,继续 drain 后续消息(消息间相互独立)。
+  // M176 — drain 用 composerBusy(goal 运行中不 drain);/goal 前缀消息分发给 sendAssistantGoal。
   useEffect(() => {
-    if (sessionStatus !== 'running' || !selectedSessionId) return;
-    const id = setInterval(() => {
-      refreshAssistantHistory(selectedSessionId);
-    }, 2500);
-    return () => clearInterval(id);
-  }, [sessionStatus, selectedSessionId, refreshAssistantHistory]);
+    if (composerBusy || assistantQueue.length === 0 || !selectedSessionId) return;
+    if (assistantDrainingRef.current) return;
+    assistantDrainingRef.current = true;
+    void (async () => {
+      try {
+        while (assistantQueueRef.current.length > 0) {
+          const [head, ...rest] = assistantQueueRef.current;
+          setAssistantQueue(rest);
+          try {
+            // M176 — /goal <目标> 前缀分发(空参退化为普通消息)
+            const goalMatch = /^\/goal\s+(.+)$/.exec(head);
+            if (goalMatch && goalMatch[1].trim()) {
+              await sendAssistantGoalAction(goalMatch[1].trim());
+            } else {
+              await sendAssistantMessageAction(head);
+            }
+          } catch {
+            /* 错误已由 action 写入 assistantError */
+          }
+        }
+      } finally {
+        assistantDrainingRef.current = false;
+      }
+    })();
+  }, [composerBusy, assistantQueue, selectedSessionId, sendAssistantMessageAction, sendAssistantGoalAction, setAssistantQueue]);
 
   // M9 — 工厂循环
   const refreshFactories = useCallback(async () => {
@@ -683,6 +1002,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
+    // M167.4 — 会话切换/取消选中 → 清空排队消息(不跨会话携带;drain 循环读 ref 随即退出)
+    setAssistantQueue([]);
     if (!selectedSessionId) {
       setStream([]);
       setConnection('idle');
@@ -717,10 +1038,68 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setDetectedServerUrl(null);
     setRcaHistory([]);
     setLastVerifierVerdict(null);
+    // M166.3 — 会话切换/清空选中 → 重置 token 流式态
+    setAssistantStream({ text: '', active: false });
     lastEventIdRef.current = null;
+
+    // M165.3 — 事件驱动对话推进:300ms 防抖刷新助手历史(同一窗口多事件合并一次,
+    // 替代旧的 2.5s 轮询)。refreshAssistantHistory 为稳定 useCallback,闭包安全;
+    // selectedSessionId 取自本 effect 作用域,依赖数组不变、不引发 WS 重连。
+    const scheduleAssistantRefresh = () => {
+      if (assistantRefreshTimerRef.current) clearTimeout(assistantRefreshTimerRef.current);
+      assistantRefreshTimerRef.current = setTimeout(() => {
+        assistantRefreshTimerRef.current = null;
+        refreshAssistantHistory(selectedSessionId);
+      }, 300);
+    };
 
     const appendEvent = (ev: ApiEvent) => {
       if (ev.id) lastEventIdRef.current = ev.id;
+      // M165.3 — 命中助手对话相关事件 → 调度防抖刷新(放最前,早退分支也覆盖)
+      // M169.2 — 'usage' 入集合:worker 收尾的 token 用量事件也驱动末端 history 刷新
+      if (
+        ev.session_id === selectedSessionId &&
+        (ev.type === 'message' ||
+          ev.type === 'tool_call' ||
+          ev.type === 'tool_result' ||
+          ev.type === 'approval_request' ||
+          ev.type === 'approval_result' ||
+          ev.type === 'usage')
+      ) {
+        scheduleAssistantRefresh();
+      }
+      // M176 — goal 事件:相位驱动 goalActive(set/iter/judge→true;achieved/exhausted/
+      // stopped→false),并调度防抖历史刷新(iter/achieved/exhausted/stopped 折成
+      // role='goal' turn 渲染 marker)。不进 stream、不走 token 流。
+      if (ev.type === 'goal') {
+        if (ev.session_id !== selectedSessionId) return;
+        const phase = ev.payload?.phase as string | undefined;
+        if (phase === 'set' || phase === 'iter' || phase === 'judge') {
+          setGoalActive(true);
+        } else if (phase === 'achieved' || phase === 'exhausted' || phase === 'stopped') {
+          setGoalActive(false);
+        }
+        scheduleAssistantRefresh();
+        return;
+      }
+      // M166.3 — token 级流式(chat/plan 直聊,transient 不落盘,id 为 null/空):
+      // 只累积进 assistantStream,不进 stream、不触发上面的防抖 history 刷新。
+      // seq 仅作日志/兜底,WS 保序不强制校验。done token → 清除(message 随后收敛)。
+      if (ev.type === 'token') {
+        if (ev.session_id !== selectedSessionId) return;
+        if (ev.payload?.done) {
+          setAssistantStream({ text: '', active: false });
+        } else {
+          const chunk = typeof ev.payload?.text === 'string' ? ev.payload.text : '';
+          setAssistantStream((prev) => ({ text: prev.text + chunk, active: true }));
+        }
+        return;
+      }
+      // M166.3 — worker 完整 message 到达时必须收敛流式态(双保险:
+      // 正常路径后端先发 done token 再发 message,message 到达即兜底清除)
+      if (ev.type === 'message' && ev.agent === 'worker') {
+        setAssistantStream((prev) => (prev.active ? { text: '', active: false } : prev));
+      }
       // M6.1 — 从事件流派生 ContextPanel 的真实上下文数据
       if (ev.type === 'terminal') {
         setTerminalBlocks((prev) => [
@@ -885,6 +1264,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
     wsRef.current = ws;
     return () => {
+      // M165.3 — 卸载/会话切换时清掉未触发的防抖刷新,避免刷新到旧会话
+      if (assistantRefreshTimerRef.current) {
+        clearTimeout(assistantRefreshTimerRef.current);
+        assistantRefreshTimerRef.current = null;
+      }
       ws.close();
       wsRef.current = null;
     };
@@ -912,6 +1296,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
         mcpServers,
         toggleMcpServer,
         refreshMcpServers,
+        mcpTools,
+        refreshMcpTools,
+        callMcpTool,
         selectedModel,
         setModel,
         selectedMode,
@@ -953,6 +1340,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
         gitDiff,
         gitDiffLoading,
         loadGitDiff,
+        revertGitDiffFile,
+        aiReview,
+        runAiReview,
+        clearAiReview,
         selectSession,
         createSession,
         deleteSession,
@@ -984,10 +1375,27 @@ export function AppProvider({ children }: { children: ReactNode }) {
         assistantTurns,
         assistantBusy,
         assistantError,
+        assistantStream,
         sendAssistantMessage: sendAssistantMessageAction,
         approveAssistant: approveAssistantAction,
         rejectAssistant: rejectAssistantAction,
         clearAssistantTurns,
+        appendAssistantLocalTurn,
+        compactAssistant: compactAssistantAction,
+        undoAssistant: undoAssistantAction,
+        editAssistantMessage: editAssistantMessageAction,
+        assistantQueue,
+        enqueueAssistantMessage,
+        removeAssistantQueued,
+        stopAssistantTask,
+        goalActive,
+        composerBusy,
+        sendAssistantGoal: sendAssistantGoalAction,
+        tasks,
+        loadTasks,
+        addTask,
+        removeTask,
+        toggleTaskEnabled,
       }}
     >
       {children}

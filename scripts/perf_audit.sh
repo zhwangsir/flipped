@@ -131,7 +131,7 @@ if [ "$MODE" = "all" ] || [ "$MODE" = "lighthouse" ]; then
   LH_EXIT=$?
 
   if [ $LH_EXIT -ne 0 ] || [ ! -f "$LH_REPORT" ]; then
-    bad "Lighthouse 运行失败（exit=$LH_EXIT）"
+    bad "Lighthouse 运行失败（exit=${LH_EXIT}）"
     cat "$LH_TMP" >&2
     rm -f "$LH_TMP"
   else
@@ -194,7 +194,7 @@ if [ "$MODE" = "all" ] || [ "$MODE" = "playwright" ]; then
   echo "  Playwright 交互流畅度: passed=$PW_PASS failed=$PW_FAIL"
 
   if [ "${PW_FAIL:-0}" -gt 0 ]; then
-    [ $CI_MODE = 1 ] && bad "Playwright perf 有 $PW_FAIL 个失败" || warn "Playwright perf 有 $PW_FAIL 个失败（软告警，见 $PERF_LOG）"
+    [ $CI_MODE = 1 ] && bad "Playwright perf 有 ${PW_FAIL} 个失败" || warn "Playwright perf 有 ${PW_FAIL} 个失败（软告警，见 ${PERF_LOG}）"
   else
     pass "Playwright 交互流畅度全部通过"
   fi

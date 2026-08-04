@@ -517,6 +517,10 @@ class OpenHandsWorker:
                     if p or c:
                         COLLECTOR.record_usage(prompt_tokens=p, completion_tokens=c, calls=n,
                                                latency=_session_latency)
+                        # M169：per-turn token 用量事件（opencode 对标），
+                        # 与全局统计同 try/except，绝不影响任务
+                        self._emit(EventType.usage, Role.worker,
+                                   {"prompt": p, "completion": c, "calls": n, "source": "worker"})
                 except Exception:  # noqa: BLE001 统计失败绝不影响任务
                     pass
                 if self.manage_session_status:

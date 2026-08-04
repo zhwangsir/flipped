@@ -21,3 +21,9 @@ textual>=0.50
 # ---------- M4: MCP Server + RAG ----------
 mcp==1.26.0
 chromadb>=1.5
+
+# ---------- M181: 移动远程控制（QR 码生成，纯 Python 零依赖 SVG 输出） ----------
+segno==1.6.6
+
+# ---------- M182: Bot Channel（企业微信回调 AES） ----------
+pycryptodome>=3.21

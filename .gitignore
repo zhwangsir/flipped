@@ -70,6 +70,10 @@ config/mcp_servers.json
 data/*.bak-*
 data/*.db.bak.*
 
+# M173/M183 运行时产物(可再生, 不入库)
+data/project_maps/
+data/worker_rule_stats.json
+
 # ---- 测试 / 覆盖率 / 质量门禁产物（M153） ----
 .coverage
 .coverage.*

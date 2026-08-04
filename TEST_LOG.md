@@ -7273,3 +7273,824 @@ scripts/verify_m99_gold_memory_loop.py:1
 1. **venv 自举是 cron 脚本的必备防护**：开发时手动跑通常已激活 venv，但 cron/launchd 调度时不保证。`os.execv` 是进程内重启，开销极小（< 1ms），应在所有依赖 venv 的脚本入口统一注入。
 2. **ROOT 风格不统一是技术债**：10 个脚本中有 Path 风格也有 os.path 风格，新增 venv 自举时需分别适配。后续可考虑统一到一种风格，但本次遵循"只插入不改风格"避免扩大改动面。
 3. **变量名冲突需预防**：`resume_factory.py` 已有函数内局部 `root` 变量，模块级若也用 `root` 会遮蔽。用 `_ROOT`（下划线前缀）既避免冲突又标记为模块级常量。
+
+---
+
+## M165 · M151 P1 收口：slash 接线 + Always 持久化审批 + 事件驱动渲染（2026-08-01）
+
+**目标**：落地 M151 P1 待办中本机可自主推进的三项——slash 命令接线（/compact /mode /help /files）、"Always" 持久化审批规则、step 级事件流驱动对话渲染（去 2.5s 轮询）。
+
+**施工方式**：两队并行，文件所有权互斥（A=后端 src/，B=前端 console/），靠 PLAN.md M165 节 API 契约集成（approve/reject 可选 `{scope}`；新 `POST /assistant/sessions/{id}/compact` → `{ok, session_id, summary}`）。
+
+**改动清单**：
+- 后端：`src/api/assistant.py`（DecisionRequest{scope} + CompactResponse + compact 端点 + _latest_pending_action）、`src/driving/approval.py`（host_grants_path/load_host_grants/remember_host_grant → `data/approval_grants.json`，结构 `{cwd: [patterns]}`，FLIPPED_HOST_GRANTS 可覆盖，fail-open 幂等去重）、`src/driving/orchestrator.py`（approval_gate interrupt 前查 host grants，fnmatch 命中 → auto 直通）
+- 前端：`console/src/api.ts`（approveAssistant scope 参 + compactAssistant）、`console/src/store.tsx`（appendAssistantLocalTurn / compactAssistantAction / scope 透传 / 300ms 防抖刷新 / 删 2.5s 轮询）、`console/src/views/Assistant.tsx`（Always 按钮 + slash 五命令接线）、`console/src/styles/app.css`（.ap-btn.always）
+- 契约：`tests/snapshots/api_contract_snapshot.json` 重生（+CompactResponse/DecisionRequest/compact 路径）、`console/src/api-types.d.ts` 重生（schemas=21 paths=33）
+- 测试：`tests/test_m165_assistant_compact_always.py`（新，14 例）、`console/src/{api.test.ts,store.test.tsx,views/Assistant.test.tsx}`（+17 例，改 1 例钉旧行为）
+
+**验证证据**（主代理亲自复跑）：
+```
+$ .venv/bin/python3 -m pytest -q
+1 failed, 1953 passed, 15 skipped   # failed = test_api_contract（有意的契约新增：compact 端点）
+$ FLIPPED_UPDATE_API_SNAPSHOT=1 PYTHONPATH=src .venv/bin/python -m pytest tests/test_api_contract.py -q
+6 passed                            # 快照重生后全绿
+$ cd console && npx vitest run
+Test Files 28 passed (28) / Tests 611 passed (611)
+$ npx tsc --noEmit && npm run build
+绿 / ✓ built in 92ms
+```
+
+**关键决策**：
+1. grants 落宿主侧 `data/approval_grants.json` 而非 `<cwd>/.flipped/`——session.cwd 可能是容器路径（/projects/x），写宿主避免容器/宿主路径错位；cwd 字符串作 key，approval_gate 用 state["cwd"]（checkpoint 持久化，drive/resume 两路径同值）保证读写 key 匹配。
+2. compact 摘要 fail-closed：摘要异常 → 502 且不 emit，不往对话流写半截摘要；`_summarize_transcript` 模块级可 monkeypatch，默认走 _run_chat 同款模型通路。
+3. 防抖调度器定义为 WS useEffect 内局部函数，依赖数组保持 [selectedSessionId] → 不引起 WS 重连；cleanup 覆盖卸载与会话切换。
+4. Always 语义 = 同 cwd 下同 pattern 子任务后续 auto 直通（L3 记忆放行的 orchestrator 接入），reject 不持久化。
+
+**工程化教训**：
+- 并行 Agent 按文件所有权切分（后端 src/ vs 前端 console/）+ 书面 API 契约，零冲突合并，集成即绿。
+- 契约快照测试（test_api_contract）正确捕获了新端点——不是回归失败，是有意变更；流程：FLIPPED_UPDATE_API_SNAPSHOT=1 重生 → 复跑绿。
+- 开工时发现 flipped/AGENTS.md 被 ALLProject 设备管家版内容覆盖（2026-07-28，疑跨项目写入），已从 git 恢复；设备版正本在 ALLProject/AGENTS.md 无损。提醒：跨项目写文件需核对目标路径。
+
+**未 commit**（用户规则：明确要求才提交）。
+
+---
+
+## M166 (M152) · token 级流式（chat/plan 直聊通路）（2026-08-01）
+
+**目标**：M151 P1 最后一项——chat/plan 直连 LLM 通路 token 级流式。orchestrator 通路 token 流需改 OpenHands worker，不在本期。
+
+**核心设计**：token 事件 transient（`EventBus.emit_transient` 只广播不落盘，id 置空串 → JS falsy 不污染断点续传位点），最终完整 `message` 事件照常落盘 → history 折叠与 M165.3 防抖刷新零改动收敛。重连丢失流式中间态由 history 兜底。
+
+**改动清单**：
+- 后端：`src/api/schemas.py`（EventType.token）、`src/api/events.py`（emit_transient + _broadcast 抽取）、`src/api/main.py`（_llm_chat_stream SSE 解析 + _run_chat 流式优先/建流失败静默 fallback/断流 done token+error/FLIPPED_CHAT_STREAM=0 总开关）、`tests/conftest.py`（既有测试默认关流式——部分用例 TestClient 未 with 管理，真实流式 I/O 会冻结后台任务；生产默认开）
+- 前端：`console/src/store.tsx`（assistantStream{text,active} + token 累积/done 清除/worker message 双保险收敛/防抖排除 token/切换会话重置）、`console/src/views/Assistant.tsx`（流式气泡 assistant-streaming + stream-cursor）、`console/src/styles/app.css`（.stream-cursor coral 呼吸）
+- 契约：`tests/snapshots/api_contract_snapshot.json`（EventType +token）、`console/src/api-types.d.ts` 重生
+- 测试：`tests/test_m166_token_stream.py`（新，9 例）、`console/src/{store.test.tsx,views/Assistant.test.tsx}`（+10 例）
+- 顺手修复：`scripts/perf_audit.sh` ×2 + `scripts/run_e2e_full.sh` ×3 的 `$VAR<全角>` 陷阱（verify-quality 门禁暴露的 M160/M161 遗留）
+
+**验证证据**（主代理亲自复跑）：
+```
+$ .venv/bin/python3 -m pytest -q
+1 failed, 1962 passed   # failed=test_api_contract（有意新增 EventType.token）
+$ FLIPPED_UPDATE_API_SNAPSHOT=1 ... pytest tests/test_api_contract.py -q → 6 passed
+$ cd console && npx vitest run → 28 files / 621 passed
+$ npx tsc --noEmit → 0 错误；npm run build → ✓ built
+$ bash scripts/quality_gate.sh（第 1 轮）
+  ❌ QG_SHELL_LINT_FAILED — findings.jsonl 定位 perf_audit.sh L134/L197 + run_e2e_full.sh L84/L98/L148
+  → 修复 $VAR<全角> → ${VAR} ×5（1 轮，预算 3）
+$ bash scripts/quality_gate.sh（第 2 轮）
+  质量门禁：通过 ✅  shell_lint:1 py:1963/0 fe:621/0 tsc:0 build:1 cov:86.05%/90.52%
+```
+
+**关键决策**：
+1. transient token + 落盘 message 双轨——不污染 store/回放/续传，history 折叠逻辑零改动。
+2. 建流 vs 断流按「是否已产出 chunk」区分：建流失败静默 fallback 非流式（用户无感），断流发 done token 清前端态再走 error 分支（不发半截 message）。
+3. Event id 置空串而非 None——Event.id 必填不扩契约面，JS falsy 天然不进 lastEventIdRef。
+4. token 分支在 store appendEvent 早退——不进 stream（防 eventToStreamItem default 分支序列化成 JSON 推入旧消息流）、不触发防抖刷新。
+5. conftest 默认 FLIPPED_CHAT_STREAM=0 沿用 M42 FLIPPED_AUTO_PROPOSER 先例——既有测试钉非流式现状，新测试显式开 env。
+
+**M151 P1 待办全清**：✅ Always 持久化审批（M165）✅ slash 命令接线（M165）✅ step 级事件流渲染（M165.3）✅ token 级流式（M166）。
+
+**未 commit**（用户规则：明确要求才提交）。
+
+---
+
+## M167 · 深度体验对标 opencode（渲染层 + 交互层）（2026-08-01）
+
+**目标**：用户指令「功能上深度体验达到最佳效果，以 opencode 为基底」。先审计后施工。
+
+**审计结论（opencode 对标矩阵）**：markdown 渲染 ❌（最大差距）、代码块复制 ❌、中断生成 UI ❌（后端 RUNNING_TASKS+/cancel 通路已备）、消息排队 ❌（busy 直接禁用）；流式/会话/slash/模式/模型 ✅ 已平；undo/token 用量 P2 后置。
+
+**改动清单**：
+- 渲染层（Agent A）：`console/src/components/MarkdownView.tsx`（新，~350 行两阶段解析器：块级栈式扫描 + 行内单正则一趟，优先级 行内码>图片>链接>粗>斜）、`MarkdownView.test.tsx`（新，20 例）、`app.css` 追加 .md-view 作用域样式（~120 行，全用 --assistant-* 变量族，bubble pre-wrap 复位 normal 段落换行交 <br/>）、`Assistant.tsx` 渲染段三处接入（assistant/流式/本地 turn → MarkdownView，user 保持纯文本）
+- 交互层（Agent B）：`store.tsx`（assistantQueue state+ref 双源、enqueue/remove、drain effect 自动发送+防重入锁、stopAssistantTask=清队+清 stream+cancelTask、切会话清队）、`Composer.tsx`（useApp 自取新能力→Assistant.tsx 零改动；busy 输入可用/发送键换 composer-stop-btn/Enter 入队/Esc 停止/queue chips 复用 .chip 类零 CSS 改动）、`store.test.tsx` +6、`composer.test.tsx` +7（改 vi.mock('../store') 模式）、`Assistant.test.tsx` +4
+
+**验证证据**（主代理亲自复跑）：
+```
+$ .venv/bin/python3 -m pytest -q
+1963 passed, 15 skipped
+$ cd console && npx vitest run
+Test Files 28→29 passed / Tests 659 passed（+38：MarkdownView 20 + store 6 + composer 7 + Assistant 4 + 既有修改 1）
+$ npx tsc --noEmit → 0 错误；npm run build → ✓ built；npm ls --depth=0 → 零新依赖
+$ bash scripts/quality_gate.sh
+质量门禁：通过 ✅（首轮）  shell_lint:1 py:1963/0 fe:659/0 tsc:0 build:1 cov:86.07%/91.3%
+```
+
+**关键决策**：
+1. 零依赖自研 MarkdownView 而非 react-markdown/unified——硬约束（§7 引入依赖需审批）+ 流式容错可控 + XSS 天然免疫（React 转义，链接协议白名单 javascript: 降级纯文本，图片不加载）。
+2. 发现项目已有 lib/markdown.tsx（.md-doc，文档向）——新组件 scope .md-view 与之零冲突，聊天向（换行保留、流式容错）与文档向诉求不同，不强行合并。
+3. drain 用 ref 为源 + 锁防重入——规避「busy=false 状态更新与锁复位间微任务时序竞争致队列停滞」；发送中新入队被同一 drain 循环拾取。
+4. Assistant.tsx 零改动达成（Composer 经 useApp 自取能力）——两队文件所有权完全互斥，零冲突合并。
+
+**opencode 对标状态**：markdown/中断/排队三大差距全清；undo（checkpoint 回滚 UI）与 token 用量显示为 P2，另开里程碑。
+
+**未 commit**（用户规则：明确要求才提交）。
+
+---
+
+## M168 · undo（checkpoint 回滚，对标 opencode /undo）（2026-08-01）
+
+**目标**：assistant 会话文件改动撤销——opencode /undo 语义：撤销最近一轮 agent 造成的文件改动。
+
+**核心设计（git shadow snapshot，宿主侧执行）**：
+- 快照：orchestrator 任务开始前 `git stash create`（dangling commit，不动工作区/索引/用户 git 历史；无变更回退 `rev-parse HEAD`）→ 新 `EventType.snapshot` 事件（checkpoint 已被断点续传占用）；chat/plan 跳过；快照失败 emit 提示不阻塞派发；`asyncio.to_thread` 包裹防阻塞 loop。
+- undo：最近未撤销快照 → `git restore --source=<hash> -- .` 回滚 tracked + 按 file_change(add/create) 事件精确删除 turn 内新增文件（`/workspace/`、`session.cwd` 前缀映射 + resolve 二次校验防路径穿越）→ 多轮幂等（undo 事件记录已撤销 hash 集合）。
+- 守卫：404 无会话 / 409 运行中 / 409 无快照 / 400 非 git / 500 restore 失败带 stderr。
+
+**改动清单**：
+- 后端：`src/api/schemas.py`（EventType.snapshot）、`src/api/assistant.py`（_git_snapshot/_git_head/_git_restore/_map_change_to_host + send_assistant_message 快照接线 + POST /undo + UndoResponse）、`tests/test_m168_undo.py`（新，26 例）
+- 前端：`console/src/api.ts`（undoAssistant + UndoAssistantResponse）、`store.tsx`（undoAssistant action：busy 包裹 + 成功刷 history/diff + 错误上抛视图拼提示）、`Assistant.tsx`（/undo 分支 + /help 更新）、`Composer.tsx`（SLASH_COMMANDS 第 6 项）、`api.test.ts` +1、`Assistant.test.tsx` +5
+- 契约：snapshot 重生（+undo 路径 +UndoResponse +EventType.snapshot）、api-types.d.ts 重生（schemas=22 paths=34）
+- 修复：composer.test.tsx slash 菜单断言 5→6 项（M168 新增 /undo 的有意变更）
+
+**验证证据**（主代理亲自复跑）：
+```
+$ pytest tests/test_m168_undo.py -q → 26 passed（含真 git 集成 test_undo_real_git_roundtrip：
+  tmp_path 真仓库验证 stash create dangling commit → undo 后 a.py 还原/被删 b.py 恢复/新增 c.py 映射删除/二轮 undo 409）
+$ .venv/bin/python3 -m pytest -q → 1 failed→契约重生→ 1989 passed, 15 skipped
+$ npx vitest run → 29 files / 665 passed
+$ npx tsc --noEmit → 0；npm run build → ✓ built
+$ bash scripts/quality_gate.sh → 质量门禁：通过 ✅（首轮）py:1989/0 fe:665/0 cov:86.14%/91.04%
+```
+
+**关键决策**：
+1. git stash create 而非 commit/stash push——零污染用户 git 历史与索引，dangling commit 纯对象。
+2. EventType.snapshot 新增而非复用 checkpoint——checkpoint 已被 LangGraph 断点续传占用，语义隔离。
+3. 新增文件删除只信事件流 file_change(add) + 路径双重校验——绝不做 git clean（会误删用户未跟踪文件）。
+4. undo 已知限制（opencode 同语义，写入响应 note）：覆盖工作区，turn 后用户手工改动会被覆盖；索引不处理。
+5. store undoAssistant 错误上抛（偏离 compactAssistantAction 内部消化模式）——视图需 err.message 与 restored/deleted 拼摘要，.catch 兜底无未捕获 rejection。
+
+**opencode 对标全景**：markdown ✅ 中断 ✅ 排队 ✅ undo ✅；token 用量显示仍后置（需后端 usage 上报设计）。
+
+**未 commit**（用户规则：明确要求才提交）。
+
+## M169 · token 用量显示（opencode 对标收尾，最后一块 P2）（2026-08-04）
+
+**目标**：每条 assistant 消息展示自己的 token 用量（↑prompt / ↓completion，opencode 语义）+ 会话级合计 chip；顺带修复 chat/plan 直连通路漏采 usage 导致的全局计数缺口。
+
+**核心设计（新持久化事件 EventType.usage，统一三路径）**：
+- 事件：`EventType.usage`，payload `{prompt, completion, calls, source}`（source ∈ chat/plan/worker），持久化（非 transient），历史重放可还原每轮用量。
+- chat/plan（`_run_chat`）：流式加 `stream_options:{include_usage:true}` 捕获 choices 为空的最终 usage chunk 进 usage_box；非流式读响应 usage。message 后紧随 emit usage + 补喂 COLLECTOR（修全局缺口，try/except 包裹）。exo 不支持 stream_options → 建流 400 走既有 fallback 非流式（零风险逃生路径）。
+- worker（openhands_worker 收尾）：`_sum_conversation_usage` 得 (p,c,n) 后在既有 try/except 内追加 `_emit(EventType.usage, ...)`。
+- 折叠：`_events_to_turns` 遇 usage 回扫合并进最近 role=assistant turn，同 turn 多事件**累加**；无前置 assistant turn 丢弃。
+- 前端：turns 全来自后端折叠（M165.3 事件驱动防抖刷新），store 仅把 'usage' 加进刷新触发集合；assistant 气泡下方逐条 `↑ 12.3k · ↓ 3.4k`（formatTokens）+ 视图头部会话合计 chip（前端求和，不改 history 响应模型）。
+
+**改动清单**：
+- 后端（Agent A）：`src/api/schemas.py`（EventType.usage）、`src/api/main.py`（_llm_chat 返 tuple / _llm_chat_stream usage_box + stream_options / _run_chat 发射 + COLLECTOR 补喂）、`src/executor/openhands_worker.py`（收尾 _emit usage）、`src/api/assistant.py`（AssistantTurn.usage + _events_to_turns 折叠 + _summarize_transcript 适配新签名）、`tests/test_m169_token_usage.py`（新，13 例）；适配 `tests/test_m166_token_stream.py`、`tests/test_assistant_single_model.py`（_llm_chat 签名变更的既有 fake）
+- 前端（Agent B）：`console/src/store.tsx`（防抖刷新集合 +usage）、`console/src/views/Assistant.tsx`（turn-usage 行 + session-usage chip）、`console/src/styles/app.css`（.turn-usage/.assistant-head/.session-usage）、`Assistant.test.tsx` +5、`store.test.tsx` +1
+- 主代理收口：`console/src/types.ts` AssistantTurn 正式补 usage 字段（拆 B 的临时桥接 TurnUsage/usageOf）；契约快照重生（EventType+usage、AssistantTurn+usage）；api-types.d.ts 重生（schemas=22 paths=34，生成式 `Record<string, number>`，应用代码实际消费 types.ts 精确形——已验证无文件 import api-types）
+
+**验证证据**（主代理亲自复跑）：
+```
+$ pytest tests/test_m169_token_usage.py -q → 13 passed（A 队 TDD 红灯已先验证）
+$ pytest tests/test_m165...py tests/test_m166...py tests/test_m168...py -q → 49 passed
+$ FLIPPED_UPDATE_API_SNAPSHOT=1 pytest tests/test_api_contract.py -q → 6 passed（契约重生）
+$ PYTHONPATH=src .venv/bin/python -m pytest -q → 2002 passed, 15 skipped, 0 failed
+$ npx vitest run → 29 files / 671 passed（B 队 RED 确认：恰 3 例先红）
+$ npx tsc --noEmit → 0；npm run build → ✓ built
+$ bash scripts/quality_gate.sh → 质量门禁：通过 ✅（首轮）py:2002/0 fe:671/0 cov:86.22%/91.08%
+```
+
+**关键决策**：
+1. 统一 EventType.usage 持久化事件，而非把 usage 塞进 message payload——worker 通路无天然「最终消息」可挂靠，事件流方案三路径同构且历史可重放。
+2. turns 折叠回扫 + 累加——orchestrator 多子任务场景多个 usage 事件天然分布到各 turn；累加兜底防双挂覆盖。
+3. 流式 usage 依赖 `stream_options.include_usage`，exo 不支持时建流 400 恰好落入 M166 既有 fallback 非流式路径——零新增风险面。
+4. `_run_chat` 补喂 COLLECTOR——顺带修复 TopBar 全局计数漏 chat/plan 的存量缺口（F10 之后第二处计数来源修复）。
+5. types.ts（应用消费）精确形 `{prompt,completion,calls}` vs api-types.d.ts（生成产物）`Record<string, number>` 并存——AssistantTurn 既有 dict 字段（tools 等）同风格，不为单字段引命名模型。
+
+**opencode 对标全景**：markdown ✅ 中断 ✅ 排队 ✅ undo ✅ token 用量 ✅ —— M167 审计清单全部清账。
+
+**未 commit**（用户规则：明确要求才提交；M165–M169 改动均在工作区）。
+
+---
+
+## M170 (M4) · 编辑器直调 MCP 工具（调研+落地代码 复合任务闭环）（2026-08-04）
+
+**目标**：落地 AGENTS.md 路线图 M4——编辑器内触发「调研+落地代码」复合任务，跨越搜索、RAG、编码、测试。勘察结论：MCP Server（stdio 5 工具）、RAG（Chroma）、web_search、mcp_registry、前端面板**全部已存在**，唯一缺口是编辑器→MCP 工具的执行通路（面板只能 toggle 开关，无法调用）。
+
+**核心设计（快慢分流，长工具回灌会话事件流）**：
+- `GET /api/v1/mcp/tools`：内省 `mcp_server.tools.TOOLS` 动态生成清单（不硬编码）。
+- `POST /api/v1/mcp/tools/{name}/call` body `{arguments, session_id?}`：
+  - 快工具（web_search/rag_query/rag_ingest）：同步 await → 200 `{ok, result|error}`（工具异常也 200，绝不 500）。
+  - 长工具（run_coding_task/research_and_code）：缺 session_id 400 / 假会话 404 / 命中 202 `{ok, accepted}`，`asyncio.create_task` 后台跑 `run_tool`，完成 emit `message`（Role.worker，摘要含 verified/stop_reason，JSON 截断 2000）、失败 emit `error`；注册 `RUNNING_TASKS` → 既有 `/sessions/{id}/cancel` 与 409 并发守卫天然生效（CancelledError 不捕获自然传播，done_callback 清理，与 assistant 任务同语义）。
+- 前端零事件改动：长工具结果走 `message` 事件落盘，M165.3 防抖刷新 + M169 折叠自动渲染为 assistant turn。
+- `api/mcp_call.py` 全部函数级 lazy import（mcp_server.tools 拉 langgraph/chromadb 重依赖），`run_tool`/`list_tool_specs` 模块级注入点供测试 monkeypatch。
+- 前端：Plugins 面板工具行 → 参数表单（5 工具预设字段，必填为空禁用提交）→ 快工具内联 JSON 结果/错误条；长工具 store action 自动带 `selectedSessionId`（无会话返回 `no-session` 提示先去 Assistant），派发后提示到对话看结果。
+
+**改动清单**：
+- 后端（Agent A）：`src/api/mcp_call.py`（新建 156 行）、`src/api/main.py`（MCP 段 +25 行薄路由）、`tests/test_m170_mcp_call.py`（新建 10 例）、契约快照重生（本端点 + 顺带登记 M165/M168 遗留 compact/undo 漂移）
+- 前端（Agent B）：`console/src/api.ts`（getMcpTools/callMcpTool）、`console/src/store.tsx`（mcpTools state + callMcpTool action，异常归一 ok:false）、`console/src/components/Plugins.tsx`（McpToolRow + 表单 + 结果区 +140 行）、`console/src/types.ts`（McpToolInfo/McpCallResult）、`console/src/styles/app.css`（+128 行，全用色板变量）；测试 api.test.ts +3 / store.test.tsx +4 / Plugins.test.tsx +9
+- 主代理收口：`scripts/verify_m170.sh` 一键验收、api-types.d.ts 重生（schemas=26 paths=36）
+
+**验证证据**（主代理亲自复跑）：
+```
+$ pytest tests/test_m170_mcp_call.py -q → 10 passed（A 队 TDD 先红 9 failed 确认）
+$ npx vitest run → 29 files / 687 passed（B 队 TDD 先红 16 例确认；基线 671 + 16）
+$ bash scripts/verify_m170.sh → 通过 ✅
+    M170-1 单测 10 passed
+    M170-2 黑盒（真 uvicorn :8170，RAG_DB_DIR 临时库）11 断言全绿：
+      GET /mcp/tools 5 工具✓ 工具含 description/inputSchema✓
+      rag_ingest ok✓ rag_query 命中锚点文本✓（真实 Chroma 持久库闭环）
+      未知工具 404✓ 长工具缺 session 400✓ 假会话 404✓
+      202 accepted✓ cancel 200✓ 清理后再派发仍 202（无 409）✓
+$ FLIPPED_API_URL=http://127.0.0.1:8171 node console/scripts/gen-api-types.mjs
+    → schemas=26 paths=36（+4 模型 +2 端点）
+$ bash scripts/quality_gate.sh → 质量门禁：通过 ✅（首轮）
+    py:2012/0（cov 86.27%） fe:687/0（cov 91.26%） tsc:0 build:ok shell_lint:ok
+```
+
+**关键决策与教训**：
+1. **快慢分流**：快工具同步返回结果给面板内联展示；长工具 202 派发到会话——复用既有任务管理（RUNNING_TASKS/cancel/409）与渲染通路（message 事件 → assistant turn），前端零事件改动。
+2. **黑盒验收不做真实执行等待**：首版 verify_m170.sh 等 source=mcp 事件 20s 超时失败——researcher.gather 真网络搜索（30s 超时 × 3 重试）+ drive_orchestrated 真 LLM 耗时不可控，注定 flaky。改为确定性链：202 → cancel → 再 202（证明派发/注册/取消/清理四通路）；message/error 事件回灌的硬证据留在单测（mock run_tool 断言事件形状）。单测钉逻辑、黑盒钉真实进程的任务管理，各管确定性。
+3. **$VAR 后随全角字符的 bash 陷阱**（M160/M161 之后第三次）：`echo "...:$PORT，..."` 中全角逗号被 bash 3.2 并入变量名报 unbound——全部变量加花括号 `${VAR}`。shell_lint 已拦下同类问题，门禁保持绿。
+4. **契约治理前置**：新路由必须命名 response_model（allowlist 在禁改文件），故 4 个 pydantic 模型建模；快照重生时顺带登记了 M165/M168 未登记的 compact/undo 端点漂移（工作树正当补齐，否则契约测试必红）。
+5. 测试注入点放 `api.mcp_call` 模块（monkeypatch 模块级包装函数），不 patch mcp_server.tools 本体——与 test_mcp_server.py 的既有惯例一致，且 lazy import 让 api.main 启动零额外负担。
+
+**未 commit**（用户规则：明确要求才提交；M165–M170 改动均在工作区）。
+
+---
+
+## 2026-08-04 · M171 · RAG 项目摄入强化（gitignore 过滤 / 幂等 upsert / 结构化分块 / project 过滤）
+
+**目标**：M170 打通了编辑器→MCP 通路，但摄入层太弱导致 rag_query 无数据可用——无 gitignore 过滤（node_modules/.venv 全被摄入）、随机 UUID 无幂等（重复摄入=库翻倍）、固定窗口硬切（切断函数/标题语义）、元数据仅 source+chunk（无法按项目过滤）。本里程碑补齐四短板，对标 opencode codebase awareness。
+
+**核心设计**：
+- **gitignore 过滤**（`_git_files`）：`git rev-parse --is-inside-work-tree` 探测 → `git ls-files -z --cached --others --exclude-standard` 拿未忽略清单（以 toplevel 为基准再按摄入目录前缀过滤）；timeout=5，任何异常/超时/非零退出**静默回退 rglob**——git 不可用绝不炸摄入。
+- **幂等 upsert**：`VectorStore.upsert_documents`（doc 可带 id，缺省 uuid4）；`ingest_file` 确定性 id = `f"{sha256(全文)[:16]}:{chunk序号}"` 走 `collection.upsert`——同文件复摄入同 id 覆盖写，count 不变、库不翻倍。`add_documents` 原语义不动（向后兼容）。
+- **结构化分块**（`_chunk_structured`）：`.md` 按标题行 `^#{1,6}\s` 切段（标题归入下段首）；代码扩展名按空行段落切；相邻短段合并（不超 chunk_size）；单段超长回退原 `_chunk` 硬切。
+- **元数据五字段**：`source`(绝对路径) / `ext` / `chunk` / `project`(缺省=目录 basename) / `content_hash`。
+- **MCP 工具层**：`rag_query` 加可选 `project` → `store.query(filter={"project": p})`（无 project 不传 filter，保旧调用形状——旧 `test_rag_query` 钉死了无 filter kwarg 的调用形状，B 队据此从显式 `filter=None` 改为不传）；`rag_ingest` 加 `project` 透传，text 路径合并 metadata 时**调用方显式 project 优先**。inputSchema 同步登记。
+
+**改动清单**：
+- A 队：`src/rag/vector_store.py`（upsert_documents 抽象 + Chroma 实现）、`src/rag/ingest.py`（_git_files/_chunk_structured/_split_markdown + ingest_file/ingest_directory 重写）、`tests/test_m171_rag_ingest.py`（新建 8 例）
+- B 队：`src/mcp_server/tools.py`（两工具 project 参数 + inputSchema）、`tests/test_m171_mcp_rag_project.py`（新建 8 例）
+- 主代理：`scripts/verify_m171.sh`（新建）、STATE.json、TEST_LOG.md
+
+**验证证据**（主代理亲自复跑）：
+```
+$ pytest tests/test_m171_rag_ingest.py tests/test_m171_mcp_rag_project.py -q
+    → 16 passed（A 队 TDD 先红 ImportError 确认；B 队先红 6 failed 确认）
+$ pytest tests/ -q → 2028 passed, 0 failed（基线 2012 + 16），15 skipped
+$ npx vitest run → 29 files / 687 passed（纯后端里程碑，前端零改动）
+$ npx tsc --noEmit → 0；npm run build → ok
+$ bash scripts/verify_m171.sh → 通过 ✅（首轮）
+    M171-1 单测 16 passed
+    M171-2 黑盒（真 uvicorn :8172，临时 git repo 含 .gitignore/node_modules
+           + 临时 Chroma 持久库）8 断言全绿：
+      projA 摄入 count == 2（gitignore 排除 ignored.md 与 node_modules/x.md）✓
+      projB 非 repo 回退 rglob count == 1 ✓
+      二次摄入 count 不变（确定性 id upsert）✓
+      复摄入后库内 projA chunk 不翻倍（唯一 id == 2）✓
+      project=projA 过滤只命中 projA ✓
+      无过滤查询两 project 都在 ✓
+      ignored.md / node_modules 内容不入库 ✓
+      元数据五字段齐全 ✓
+$ bash scripts/quality_gate.sh → 质量门禁：通过 ✅（首轮）
+    py:2028/0（cov 86.26%） fe:687/0（cov 91.26%） tsc:0 build:ok shell_lint:ok
+```
+
+**关键决策与教训**：
+1. **gitignore 走 git 子进程而非 pathspec 库**：零新依赖约束下 `git ls-files --exclude-standard` 是最准确的 gitignore 语义实现（git 自己的解析），且 `--others` 覆盖未跟踪文件无需 commit；代价是仅 repo 内生效，非 repo 回退 rglob 属合理降级。
+2. **确定性幂等 id 的设计权衡**：`content_hash:chunk序号` 简单可靠，但文件改动后 chunk 数变少时尾部旧 chunk 残留——契约未要求清理，已登记 known_limitations（后续可按 content_hash 维度清理旧 hash 的 chunk）。
+3. **旧测试形状即契约**：B 队初版 `_rag_query` 无 project 时显式传 `filter=None`，旧 `test_mcp_server.py::test_rag_query` 钉死了不带 filter kwarg 的调用形状而失败——改为"无 project 不传 filter"。老测试的 mock 断言形状本身就是向后兼容契约，先读旧测试再定实现细节。
+4. **黑盒确定性**：verify_m171.sh 不依赖具体嵌入模型（Mock 关键词/语义模型都能命中锚点 token），count 断言用精确数（chunking 确定性），project 过滤用集合相等断言，全程无网络/LLM，首轮即过。
+
+**已知限制**（已登记 STATE.json known_limitations）：
+- 文件改动后 chunk 数变少时尾部旧 chunk 残留（需按 content_hash 清理，后续增强）
+- `_git_files` 以 toplevel 列举再按子目录过滤，超大 repo 有一次性列举开销（本地可接受）
+- markdown fenced code block 内行首 `#` 会被当标题切段（不豁免，后续增强）
+
+**未 commit**（用户规则：明确要求才提交；M165–M171 改动均在工作区）。
+
+---
+
+## 2026-08-04 · M172 · chat/plan 自动 RAG 上下文注入（codebase awareness 体验落地）
+
+**目标**：M170 打通编辑器→MCP 通路、M171 强化摄入后，rag_query 已可用——但只能在 Plugins 面板手动调。opencode 级 codebase awareness 的最后缺口：chat/plan 对话里问项目问题，模型完全没有项目上下文。本里程碑让 chat/plan 通路自动检索注入。
+
+**勘察结论**（主代理）：
+- 注入点 `api/main.py:_run_chat`（:938）：`system = PLAN_SYSTEM if mode=="plan" else CHAT_SYSTEM` → `_llm_chat_stream`/`_llm_chat` 直连 LLM。
+- 会话 project 现成：`Session.project_name`（schemas.py:68），M171 的 project 过滤直接可用。
+- worker 通路不碰：researcher.gather 已含 RAG；orchestrator prompt 预算敏感。
+
+**核心设计**：
+- **检索模块** `api/rag_context.py`：`build_rag_context(query, *, project=None, n_results=4, max_chars=2400, store=None) -> (context_text, chunk_count)`。project 非空先 `filter={"project": p}` 查、0 结果**无过滤兜底重查**（提召回）；格式化=头部行+`[i] source\n文本`，逐 chunk 累计超 max_chars 即停（首条即超则截断装入保至少一条）；**任何异常/空结果 → ("",0)**。
+- **接线** `_run_chat`（只动该函数 + :528 调用点）：`mode∈{chat,plan}` 且 `FLIPPED_RAG_AUTO≠"0"` 且 `rag_auto=True`（调用点仅当 `req.context` 显式含 rag_auto 才传）→ `store.get(session_id).project_name` 透传 → `rag_ctx` 非空则 `system += "\n\n"+rag_ctx`（system 原文不动只追加）；最终 message payload 仅 `rag_k>0` 时附 `rag_chunks`（可观测性，前端忽略未知字段零改动）。全程 try/except fail-open。
+
+**改动清单**：
+- A 队：`src/api/rag_context.py`（新建）、`tests/test_m172_rag_context.py`（新建 13 例）
+- B 队：`src/api/main.py`（_run_chat 本体 + :528 调用点，4 处）、`tests/test_m172_chat_rag.py`（新建 9 例）
+- 主代理：`scripts/verify_m172.sh`（新建）、STATE.json、TEST_LOG.md
+
+**验证证据**（主代理亲自复跑）：
+```
+$ pytest tests/test_m172_rag_context.py tests/test_m172_chat_rag.py -q
+    → 22 passed（A 队先红 ModuleNotFoundError 确认；B 队先红 6 failed 确认）
+$ pytest tests/ -q → 2050 passed, 0 failed（基线 2028 + 22），15 skipped
+$ npx vitest run → 29 files / 687 passed（纯后端里程碑，前端零改动）
+$ npx tsc --noEmit → 0；npm run build → ok
+$ bash scripts/verify_m172.sh → 通过 ✅（首轮）
+    M172-1 单测 22 passed
+    M172-2 真检索黑盒（临时 Chroma 持久库，真实 ingest→build_rag_context，
+           无 LLM/网络）6 断言全绿：
+      摄入 projA+projB 各 1 chunk ✓
+      project=projA 注入文本含头部与 projA 来源 ✓
+      project=projC（无数据）兜底无过滤重查仍召回 ✓
+      max_chars=200 截断总长 ≤ 200 且至少装入 1 条 ✓
+      空库返回 ("", 0) ✓
+      store 异常 fail-open ("", 0) ✓
+$ bash scripts/quality_gate.sh → 质量门禁：通过 ✅（首轮）
+    py:2050/0（cov 86.34%） fe:687/0（cov 91.26%） tsc:0 build:ok shell_lint:ok
+```
+
+**关键决策与教训**：
+1. **旧测试形状即契约（第二次）**：B 队调用点初版按 spec 无条件传 `req.context.get("rag_auto", True)`，旧 `test_api_mode_mcp.py::test_task_mode_chat_routes_to_run_chat` 用 5 位置参数 fake 替换 `_run_chat` 会 TypeError——改为"仅当 key 显式存在才传"，四种情形（缺省/False/True/None）行为与 spec 完全等价。与 M171「无 project 不传 filter」同一模式：改老通路前先读老测试的 mock 形状。
+2. **project 过滤 + 无过滤兜底的召回策略**：project 过滤可能因项目未摄入而 0 结果，直接放弃会让用户以为"知识库没东西"；兜底重查用全局召回保住可用性，相关性由向量排序兜底。这是体验决策不是技术必需，已用黑盒断言钉死（projC 仍召回 zebra）。
+3. **黑盒确定性边界**：接线层（system 注入/rag_chunks payload）证据留单测 mock 层；黑盒只验真检索（ingest→build_rag_context），不烧真 LLM——与 M170「不做真实执行等待」同一纪律，首轮即过。
+4. **fail-open 三防线**：build_rag_context 内部 try/except → ("",0)；_run_chat 注入块整体 try/except；env/context 双开关。RAG 故障最坏情况 = 退化为无注入的现状行为，对话永不失败。
+
+**已知限制**（已登记 STATE.json known_limitations）：
+- 截断按字符数非 token（max_chars=2400 保守预算，token 只少不超）
+- 接线层真 LLM 路径不在黑盒覆盖（证据在单测 mock 层）
+- 注入检索为同步本地 Chroma 查询（毫秒级），未异步化
+
+**未 commit**（用户规则：明确要求才提交；M165–M172 改动均在工作区）。
+
+---
+
+## M173 · Zread 式项目地图（2026-08-04）
+
+**范围**：对标 ZCode Zread——确定性项目结构概览（零 LLM/零 embedding）+ 面板「地图」tab 可视化 + chat/plan system 全局注入。与 RAG 互补：地图=always-on 全局结构，RAG=按需语义片段。
+
+**三队并行**（文件互斥，契约钉死）：
+- A 队 [project_map.py](src/api/project_map.py)：ProjectMap dataclass + build/get/regenerate；分节=技术栈/目录布局/依赖清单(pkg.json+pyproject+requirements 并存都列)/入口关键文件/README 首段≤300字符/代码统计 top8；单节异常跳过整体不炸；缓存 data/project_maps/<name>.md+json，get 判 stale（顶层文件+顶层目录 mtime）不自动重建。
+- B 队 [main.py](src/api/main.py)：GET /project/map + POST /project/map/regenerate（ProjectMapResponse，无项目 needs_project，失败 500 明示）；_run_chat 注入（mode∈chat/plan 且 FLIPPED_MAP_AUTO≠0 且 map_auto≠False，max_chars=1600，MAP_INJECT_HEADER 引导，payload.map_injected 可观测，fail-open）。
+- C 队 [ProjectMapPanel.tsx](console/src/components/ProjectMapPanel.tsx)：ContextPanel 第 5 个 tab，loading/空态/错误/MarkdownView 渲染/刷新 regenerate/stale 徽标。
+
+**测试与验证**：
+```
+$ pytest tests/test_m173_project_map.py tests/test_m173_map_api.py -q
+    → 36 passed（A 23 + B 13，均先红确认）
+$ .venv/bin/python -m pytest tests/ -q → 2086 passed, 15 skipped
+$ npx vitest run → 30 files / 697 passed（ProjectMapPanel.test.tsx 新增）
+$ npx tsc --noEmit → 0；npm run build → ok
+$ bash scripts/verify_m173.sh → 通过 ✅（首轮）
+    M173-1 单测全绿
+    M173-2 真后端黑盒（uvicorn :8173，临时项目+临时缓存）10 断言：
+      POST /projects 建项目设活动 ✓
+      GET /project/map 200 + needs_project=False + 五字段齐全 ✓
+      首建 from_cache=False 且 stale=False ✓
+      markdown 含技术栈/依赖清单/README 摘要/代码统计分节 ✓
+      技术栈双识别 Node/JS + Python；依赖含 react/fastapi；README 锚点命中 ✓
+      二次 GET from_cache=True（缓存命中）✓
+      顶层文件变更后 stale=True 且仍走缓存 ✓
+      regenerate 200 + stale=False + from_cache=False ✓
+$ bash scripts/quality_gate.sh → 质量门禁：通过 ✅（首轮）
+    py:2086/0（cov 86.41%） fe:697/0（cov 91.33%） tsc:0 build:ok shell_lint:ok
+```
+
+**关键决策与教训**：
+1. **契约测试即响应模型红线**：新端点首轮未声明 response_model 导致 api_contract 测试失败——schemas 补 ProjectMapInfo/ProjectMapResponse 后过。FastAPI 契约纪律：端点必先有模型再有路由。
+2. **stale 判定的成本权衡**：初版只扫顶层文件 mtime，黑盒改深层文件不触发 stale（不符直觉）；改为顶层文件+顶层目录 mtime（目录直接子项增删会更新目录 mtime，可捕捉布局变化），深层内容编辑仍不触发——全自动深层扫描每次对话前走全树太贵，留给手动 regenerate。黑盒相应改为改顶层 README 触发。
+3. **黑盒顺序陷阱**：先 mkdir 项目目录再 POST /projects 会 409（项目已存在）——先 POST 建空项目再往里写文件，与真实用户流程一致。
+4. **地图 vs RAG 分工**：地图解决「Agent 看后面忘前面」的全局结构盲区（always-on、确定性、零推理成本），RAG 解决按需语义检索；两者同注入 system 互不冲突，各有独立开关（FLIPPED_MAP_AUTO / FLIPPED_RAG_AUTO）。
+
+**已知限制**（已登记 STATE.json known_limitations）：stale 不捕深层内容编辑；注入固定 1600 字符无请求级调参；目录用途推断为启发式映射表。
+
+**未 commit**（用户规则：明确要求才提交；M165–M173 改动均在工作区）。
+
+---
+
+## M174 · 消息级编辑重跑（2026-08-04）
+
+**范围**：A 队 session.py truncate_from（截断原语，7 例）+ B 队 edit 端点+turns event_id（12 例）+ C 队前端编辑 UX（12 例）+ 主代理 verify_m174.sh（假 LLM 黑盒）。
+
+**测试证据**（实跑输出摘要，命令均可复跑）：
+```
+$ pytest tests/test_m174_truncate.py tests/test_m174_edit_rerun.py -q
+    → 19 passed（A 7 + B 12）
+$ .venv/bin/python -m pytest tests/ -q → 2105 passed, 15 skipped（2086+19）
+$ npx vitest run → 30 files / 709 passed（697+12）
+$ npx tsc --noEmit → 0；npm run build → ok
+$ bash scripts/verify_m174.sh → 通过 ✅
+    M174-1 单测全绿
+    M174-2 假 LLM 黑盒（uvicorn :8174 + fake :8175 回显 RE:<user>）12 断言：
+      建 chat 会话 ✓ / 3 消息回显 ✓ / 6 turns ✓ / user turns event_id 锚点 ✓
+      edit truncated 精确==事件流推导值（len(events)-idx，自校准非硬编码）✓
+      chat restored==False ✓ / 重跑 4 turns ✓ / 编辑文本生效 ✓
+      新回复 RE:msg-2-edited ✓ / 旧 msg-2,3 及回复消失 ✓ / 第 1 轮保留 ✓
+$ bash scripts/quality_gate.sh → 质量门禁：通过 ✅
+    py:2105/0（cov 86.44%） fe:709/0（cov 91.44%） tsc:0 build:ok shell_lint:ok
+```
+
+**关键决策与教训**：
+1. **计数器单调是红线**：truncate_from 删事件但不重置 _counter——WS 游标 events(after_id) 按 seq 数值比较，重置会让已连客户端丢新事件；A 队测试钉死「截断后新事件 seq 大于被删 seq」。
+2. **fail-closed 顺序**：agent 模式 restore 失败 → 500 且不截断（不能删了事件又没回滚文件）；截断前必须先收集 idx 后 snapshot+file_change(add/create) 清单。
+3. **truncated 断言自校准**：黑盒不硬编码事件数——抓原始事件流动态推导 expected=len(events)-idx，免疫 status/usage 等非 turn 事件数量变化（首轮硬编码 4 被实际 11 打脸后修正）。
+4. **API 快照对照实验**：FLIPPED_UPDATE_API_SNAPSHOT=1 重生后 diff 核对仅新增 edit 路径+2 schema+AssistantTurn.event_id，零删除零变更。
+
+**已知限制**（已登记 STATE.json known_limitations）：截断不可逆；agent 只回滚到该轮快照；chat/plan 重跑不带前序 LLM 上下文（与现状单消息无状态一致）；黑盒不碰真实 git（restore 证据在单测 mock 层）。
+
+**未 commit**（用户规则：明确要求才提交；M165–M174 改动均在工作区）。
+
+---
+
+## M175 · @ 文件引用（2026-08-04）
+
+**范围**：ZCode 调研第三刀（多类型附件/opencode @file）。A 队 file_refs.py 确定性展开模块（18 例）+ B 队 assistant 接线+turns refs（9 例）+ C 队前端 @ 补全+引用行（9 例）+ 主代理 verify_m175.sh（假 LLM 黑盒 12 断言）。
+
+**测试证据**（实跑输出摘要，命令均可复跑）：
+```
+$ pytest tests/test_m175_file_refs.py tests/test_m175_refs_api.py -q
+    → 27 passed（A 18 + B 9）
+$ .venv/bin/python -m pytest tests/ -q → 2132 passed, 15 skipped（2105+27）
+$ npx vitest run → 30 files / 718 passed（709+9）
+$ npx tsc --noEmit → 0；npm run build → ok
+$ bash scripts/verify_m175.sh → 通过 ✅（首轮）
+    M175-1 单测全绿（27 例）
+    M175-2 假 LLM 黑盒（uvicorn :8176 + fake :8177）12 断言：
+      POST /projects 建项目设活动 ✓ / chat 会话 ✓ / @src/hello.py 200 ✓
+      history 2 turns ✓
+      user turn refs 含 src/hello.py status=ok bytes>0 ✓
+      user 原文不污染（text=="看下 @src/hello.py"）✓
+      回显含锚点 ZETA_ANCHOR_175（文件内容确到模型）✓
+      回显含 REFS_HEADER + fence 分节 ### @src/hello.py ✓
+      @nofile.py → refs[0].status==missing ✓
+      missing 回显含中文状态注释「文件不存在或不可读」✓
+$ bash scripts/quality_gate.sh → 质量门禁：通过 ✅（首轮）
+    py:2132/0（cov 86.5%） fe:718/0（cov 91.37%） tsc:0 build:ok shell_lint:ok
+    reports/findings.jsonl 0 行（零发现）
+```
+
+**关键决策与教训**：
+1. **展示/输入分离**：user 消息事件 text 保持原文（@token 可见、可编辑重跑），LLM 输入（chat description / agent TaskRequest.description）用展开文本——展开点钉在 emit user message 之前，全模式统一。
+2. **token 解析用手写扫描器非正则**：@ 前置必须为空白或串首（邮箱假阳性免疫）；@"引号形式"支持含空格路径；无闭合引号不视为 token。
+3. **ref 异步缓存必须配 tick**：C 队 filesRef 是 ref，fetch 完成不触发渲染 → atMatches 不重算菜单永不出；filesTick state bump 驱动 useMemo 重算（测试实跑抓出，非"看起来对"）。
+4. **pick 后光标归位**：jsdom/浏览器替换文本后不自动移 selection，atQuery 按旧光标重算出新 token 导致菜单重开——pendingCursorRef 记录目标位 + rAF setSelectionRange（测试驱动发现的真 bug）。
+5. **API 快照欠账一并登记**：重生快照 diff 含 M165–M174 历史演进增量（EventType token/usage、edit 端点、event_id、project_map 等），经 git worktree 对照验证 HEAD 处契约测试绿、快照本身欠账，非误删；M175 增量仅 AssistantTurn.refs。
+
+**已知限制**（已登记 STATE.json known_limitations）：图像附件未纳入（视觉端点未验证，列后续）；展开是发送时一次性行为（历史 @token 不重放，edit 重跑按新文本重新展开自然正确）；补全候选上限 8 条、单文件 32KB/总量 64KB/5 文件上限；skipped 状态仅提示不注入。
+
+**未 commit**（用户规则：明确要求才提交；M165–M175 改动均在工作区）。
+
+## M176 · Goal 模式（2026-08-04）
+
+**范围**：ZCode 调研第四刀（Goal Mode，ZCode 3.0 头号特性）——AGENTS.md §2.5 Ralph 外层循环 + §6 熔断在对话层的产品化。A 队 goal.py 纯状态机（20 例）+ B 队接线端点/_goal_loop/judge/turns（13 例）+ C 队前端 /goal 命令+GoalMarker+goalActive（20 例）+ 主代理 verify_m176.sh（假 LLM 黑盒三场景 16 断言）。
+
+**测试证据**（实跑输出摘要，命令均可复跑）：
+```
+$ pytest tests/test_m176_goal.py tests/test_m176_goal_api.py -q
+    → 33 passed（A 20 + B 13）
+$ .venv/bin/python -m pytest tests/ -q → 2165 passed, 15 skipped（2132+33）
+$ npx vitest run → 30 files / 738 passed（718+20）
+$ npx tsc --noEmit → 0；npm run build → ok
+$ bash scripts/verify_m176.sh → 通过 ✅（首轮）
+    M176-1 单测全绿（33 例）
+    M176-2 假 LLM 黑盒（uvicorn :8176 + fake :8177，GOAL_JUDGE_V1 marker 分流脚本化 verdict）：
+      场景a（2 轮未达成→第 3 轮达成）9 断言：
+        相位序列精确 set→iter→judge→iter→judge→iter→judge→achieved ✓
+        恰 3 轮迭代 ✓ / 第 2 轮续跑 prompt 含 gap「还差甲」+「第 2/5 轮」✓
+        第 1 轮 prompt==objective 原文 ✓ / user 消息仅 1 条且 goal.started ✓
+        GET goal 重建 status=achieved iteration=3 ✓
+        history goal turns 恰 4 条（iter×3+achieved，set/judge 不折）✓
+      场景b（NEVERDONE + max_iter=2）3 断言：
+        相位 set→iter→judge→iter→exhausted（末轮不 judge）✓ reason==max_iter ✓
+      场景c（SLOW + cancel）4 断言：
+        cancel 受理 ✓ goal stopped 事件 ✓ 无 achieved/exhausted（半途停止）✓
+$ bash scripts/quality_gate.sh → 质量门禁：通过 ✅（首轮）
+    py:2165/0（cov 86.45%） fe:738/0（cov 91.62%） tsc:0 build:ok shell_lint:ok
+```
+
+**关键决策与教训**：
+1. **wrapper 复用 RUNNING_TASKS 全周期**：goal supervisor 协程自身注册为会话任务条目——既有 409 并发守卫、`/sessions/{sid}/cancel` 停止按钮零改动直接可用；轮内顺序 `await _run_chat/_run_orchestrator`（不嵌套 create_task），CancelledError 沿 await 链传播，wrapper catch 后 emit stopped 再 re-raise。
+2. **judge fail-safe 第一**：LLM judge 任何异常（解析失败/调用失败）→ None → 计连续错误，2 次熔断 exhausted_judge_errors，绝不视为达成——LLM 校验永不绕过确定性熔断。
+3. **no-progress 签名归一化去数字**：「还剩3处」vs「还剩2处」归一化（lower+去空白+去数字）后判同 → exhausted_no_progress，防止 gap 文案微变被误判为有进展而空转烧钱（对齐 §6 预算熔断）。
+4. **busy 竞态必须合成**：goal 轮间隙 status done→running 闪烁会让 M167.4 消息队列 drain 误发撞 409——store 合成 composerBusy=assistantBusy||goalActive，WS goal 事件相位驱动（set/iter/judge→true，三终态→false），loadAssistantHistory 扫 turns 重建。
+5. **/goal 是首个带参 slash 命令**：/undo 系无参立即执行，/goal pick 仅填充「/goal 」、submit 与 drain 两处做前缀检测分发（drain 层检测保证 busy 入队的 /goal 文本出队时仍走 goal 端点）。
+6. **API 快照欠账二次登记**：B 队重生快照 diff 含 M165–M174 端点（compact/undo/edit/mcp/map）此前未登记的欠账，经核对属预期漂移修正，M176 增量仅 /goal 路径+3 schema+AssistantTurn.goal+EventType.goal。
+
+**已知限制**（已登记 STATE.json known_limitations）：judge 是 LLM 调用非确定性（verify_cmd 确定性校验列后续候选）；goal 运行中普通消息/edit/undo 全 409；goal loop 不跨进程重启恢复（状态可从事件流重建，循环本身不恢复）；objective 不走 M175 @ 展开（@ 引用走普通消息）；max_iterations 硬上限 20。
+
+**未 commit**（用户规则：明确要求才提交；M165–M176 改动均在工作区）。
+
+## M177 · Review 面板强化（2026-08-04）
+
+**范围**：ZCode 调研第五刀（Review/rewind）——agentic 流程最后一公里：人类审查。修两大缺口：① `git diff HEAD` 不含 untracked 新文件，agent 新写的文件在审查面板完全隐形（最严重）；② 无逐文件回滚，想撤单个文件只能整任务 undo 或手动 git checkout。B 队 _untracked_entries + diff 增强 + POST /project/revert（12 例）+ C 队 types/api/store/ContextPanel 徽标/占位行/行内确认撤销（8 例）+ 主代理 verify_m177.sh（tmp git repo 黑盒 12 断言）。
+
+**测试证据**（实跑输出摘要，命令均可复跑）：
+```
+$ PYTHONPATH=src .venv/bin/python -m pytest tests/test_m177_review.py -q
+    → 12 passed
+$ .venv/bin/python -m pytest tests/ -q → 2177 passed, 15 skipped（2165+12）
+$ npx vitest run → 30 files / 746 passed（738+8，ContextPanel 78 例含新增 8 例）
+$ npx tsc --noEmit → 0；npm run build → ok
+$ bash scripts/verify_m177.sh → 通过 ✅（首轮）
+    M177-1 单测全绿（12 例）
+    M177-2 黑盒（uvicorn :8178，tmp git repo，无 LLM 依赖）12 断言：
+      a. POST /projects 建项目并设为活动 ✓
+      b. GET /project/diff 200 ✓
+      c. tracked 修改 base.txt 在列且有 diff 行 ✓
+      d. untracked 文本 new_note.md 在列：untracked=True 且 added==3 ✓
+      e. untracked 二进制 blob.bin：binary=True 且 added==0 ✓
+      f. gitignore 排除的 ignored.txt 不在列 ✓
+      g. revert tracked modified → restored 且内容回 HEAD ✓
+      h. revert tracked deleted → restored 且文件恢复 ✓
+      i. revert untracked → deleted 且文件消失 ✓
+      j. revert 路径穿越 → 403 ✓
+      k. revert 未知文件 → 404 ✓
+      l. revert 后 diff：base.txt/new_note.md 消失，blob.bin 仍在 ✓
+$ bash scripts/quality_gate.sh → 质量门禁：通过 ✅（首轮）
+    py:2177/0（cov 86.4%） fe:746/0（cov 91.52%） tsc:0 build:ok shell_lint:ok
+```
+
+**关键决策与教训**：
+1. **untracked 清单走 ls-files 不走 diff**：`git diff HEAD` 结构性不含 untracked，必须并行 `git ls-files --others --exclude-standard`（尊重 .gitignore 天然过滤 node_modules/.venv）；每条目独立 try，utf-8 解码失败/含 \x00/超 _FILE_MAX_BYTES/任何异常 → binary 占位 added=0，绝不上抛污染整个 diff 响应；按 path 字典序输出保确定性。
+2. **tracked 判定用 ls-files --error-unmatch 而非文件存在性**：modified/deleted 通吃——被删 tracked 文件 revert 后恢复，untracked 文件 revert 后 unlink；两路径动作不同，先判 tracked 再分流。
+3. **revert 只动 worktree 绝不动 staging**：`git restore --source=HEAD --worktree`（不带 --staged）——agent 从不 git add，用户自己 stage 的内容不被误清；绝不整仓 git reset/checkout（那是 M168 undo 整任务粒度的地盘，逐文件粒度必须手术刀）。
+4. **路径防护三段式复用 project_file 惯例**：root.resolve() → target=(root/req.path).resolve() 越界 403 → target==root 或 is_dir() 422 → rel=relative_to(root).as_posix()；非 tracked 且 not is_file() 404（ls-files 只列文件不会有目录）。
+5. **行内确认 = ZCode rewind 安全摘要最小等价**：动作文案写清后果（tracked「还原到 HEAD？」/ untracked「删除该新文件？」）+ 确认危险色 + 取消/Esc 退出 + 失败红色小字确认态保持可重试 + busy 必复位——不做二次 modal，确认即手术。
+6. **API 快照增量干净**：本次重生 diff 仅 /project/revert 路径 + RevertRequest/RevertResponse 两 schema——M176 已把 M165–M174 欠账一次性登记，M177 起快照回归纯增量。
+
+**已知限制**（已登记 STATE.json known_limitations）：revert 只动 worktree 不动 staging、绝不整仓 reset；untracked 回滚=unlink 仅限常规文件（symlink 删链不删目标）；行内确认不做二次 modal；文件树仅变更过滤、AI commit message、逐 hunk 接受/拒绝列后续候选（本里程碑控范围不做）。
+
+**未 commit**（用户规则：明确要求才提交；M165–M177 改动均在工作区）。
+
+## M181 · 移动远程控制（2026-08-04）
+
+**范围**：ZCode 调研收官项（远程控制）——「桌面端生成二维码/链接，手机扫码打开当前工作区，查看进度、补一句需求、确认动作、让任务继续往下跑」。Goal 模式(M176)/后台任务(M178)/审批流(M151/M165.2b) 都齐了，但人必须守在电脑前——长任务场景最后一公里缺失。B 队 remote.py 纯逻辑（RemoteRegistry 单活签发/惰性 purge/原子写 + detect_lan_ip UDP 探测 + mobile_page_html 自包含零外部资源 + qr_svg segno）+ main.py 7 端点（issue/state/message/decision/页面/qr.svg/revoke，审批与发消息函数级 import 转发 assistant canonical handler，与手工操作同语义）+ C 队 types/api/icons/RemoteModal/Assistant「远程」按钮（24 例后端 + 12 例前端）+ 主代理 verify_m181.sh（黑盒 10 断言）。
+
+**测试证据**（实跑输出摘要，命令均可复跑）：
+```
+$ PYTHONPATH=src .venv/bin/python -m pytest tests/test_m181_remote.py -q
+    → 24 passed（registry 7 + util 3 + 端点 14）
+$ .venv/bin/python -m pytest tests/ -q → 2272 passed, 15 skipped（2248+24）
+$ npx vitest run → 32 files / 803 passed（791+12：RemoteModal 10 + Assistant 2）
+$ npx tsc --noEmit → 0；npm run build → ok
+$ bash scripts/verify_m181.sh → 通过 ✅（一次全绿零修复）
+    M181-1 单测全绿（24 例）
+    M181-2 黑盒（uvicorn :8187 + 假 LLM :8188，tmp 隔离 FLIPPED_REMOTE_DB/SESSION_STORE）10 断言：
+      a. 无会话 POST /remote/sessions → 400 ✓
+      b. 建 chat 会话 → issue 200 字段齐（token≥24 字符/url/qr_url/expires_at）✓
+      c. GET /remote/{token} → 200 页面含 token；无效 token → 404 含「链接已失效」✓
+      d. GET state → 200（session_id/mode/status/turns/pending_approval 键齐）✓
+      e. POST message（标记文本）→ 假 LLM 回显 RE: 到达 state turns（user+assistant 双到）✓
+      f. POST decision 无 pending approval → 409 透传 ✓
+      g. GET qr.svg → 200 image/svg+xml 且 body 以 <svg 开头 ✓
+      h. DELETE → state 404；重复 DELETE 仍 200（幂等）✓
+$ bash scripts/quality_gate.sh → 质量门禁：通过 ✅
+    py:2272/0（cov 86.68%） fe:803/0（cov 91.12%） tsc:0 build:ok shell_lint:ok
+    reports/findings.jsonl 空（零发现）
+```
+
+**关键决策与教训**：
+1. **B 队全量回归隔离漏洞修复（最重要）**：tests/conftest.py 把 FLIPPED_SESSION_STORE_PATH 指到全进程共享的 /tmp/flipped_test_sessions.json，TestClient 关闭时 lifespan shutdown store.save() 写回共享文件，下一个测试 lifespan store.load() 只 merge 不清空 → 跨模块污染。单跑 m181 时文件干净 400 ✓；全量时前面模块累积会话 → issue 端点取到「最新会话」返回 200。修复：remote_env fixture 加 `monkeypatch.setenv("FLIPPED_SESSION_STORE_PATH", str(tmp_path/"sessions.json"))`（沿用 test_api_mode_mcp.py:155 既有隔离模式），每测试独享空会话库。教训：**新端点若依赖「全局 store 为空」前提，fixture 必须隔离 SESSION_STORE_PATH，不能假设 conftest 已清干净**。
+2. **审批/发消息复用 canonical handler**：remote 端点函数级 import assistant.send_assistant_message/_do_decision/get_assistant_history 直接转发，与手工操作同语义（M178 _dispatch_scheduled 复刻链路的教训：优先调 canonical handler，不复刻）。409（会话忙/无 pending approval）自然透传。
+3. **契约偏差两处入 allowlist**：GET /remote/{token}（HTML 页）与 GET qr.svg（SVG）直出 Response 无 response_model，已入 test_api_contract.py allowlist 并注明理由——非 JSON 端点不适用 schema 快照。
+4. **前端 API_BASE 唯一既有行改动**：`const API_BASE` → `export const API_BASE`（QR img src 需要绝对基址，因 fetch 走绝对 URL）；值未变，既有导出签名均未动。
+5. **倒计时每秒按 expires_at 重算**（非递减计数器），防手机休眠后漂移——契约行为一致但更稳健。
+6. **移动页零信任设计**：自包含 HTML 零外部资源（无 CDN/npm），动态文本一律 textContent 防 XSS，无效 token 一律 404（不区分未知/过期，无 oracle），token=secrets.token_urlsafe(24)。
+7. **黑盒一次全绿零修复**：勘察阶段锚点全部核实（assistant handler 行号/Session.title/store.list() 无序需自排序/SendMessageRequest 实名），任务书契约与源码零偏差——M180 的「先 grep 同端点消费方式」教训被前置消化。
+
+**已知限制**（已登记 STATE.json known_limitations）：远程面三能力（读/发消息/审批）不暴露文件树终端；token 单活制+TTL 1800s；远程发消息不支持 mode/model 覆盖；127.0.0.1 仅文案提示；Bot Channel 未做；移动页非 React 自包含 HTML。
+
+**未 commit**（用户规则：明确要求才提交；M165–M181 改动均在工作区）。
+
+## M180 · 项目规则系统（2026-08-04）
+
+**范围**：ZCode 调研第八刀（规则系统）——「项目级规则文件（AGENTS.md/.cursorrules 类）定义代码风格与约束，Agent 全模式遵守」。M172 RAG 注入 + M173 项目地图注入都是「上下文事实」，本里程碑补上「用户可声明必须遵守的规则」缺口。B 队 rules.py 纯逻辑（load 优先级拼接 4000 字符预算截断注记 / raw / write 原子写）+ main.py GET/PUT /project/rules + _run_chat 注入紧随 map 之后（24 例）+ C 队 types/api/RulesPanel/ContextPanel「规则」tab（12 例）+ 主代理 verify_m180.sh（黑盒 5 断言）。
+
+**测试证据**（实跑输出摘要，命令均可复跑）：
+```
+$ PYTHONPATH=src .venv/bin/python -m pytest tests/test_m180_rules.py -q
+    → 24 passed（load 7 + raw 2 + write 2 + 端点 6 + 注入 6 + 路由 1）
+$ .venv/bin/python -m pytest tests/ -q → 2248 passed, 15 skipped（2224+24）
+$ npx vitest run → 31 files / 791 passed（779+12：组件 10 + ContextPanel 2）
+$ npx tsc --noEmit → 0；npm run build → ok
+$ bash scripts/verify_m180.sh → 通过 ✅（修复 2 处后，见教训 1/2）
+    M180-1 单测全绿（24 例）
+    M180-2 黑盒（uvicorn :8184 + 开关实例 :8185 + 假 LLM :8186，tmp 隔离）5 断言：
+      a. POST /projects 建项目并设为活动 ✓
+      b. GET /project/rules → files==[AGENTS.md] 且 markdown 含标记 且 rules_content 为空 ✓
+      c. PUT /project/rules → files 双命中（.flipped 优先）且 rules_content 回显 + 落盘正确 ✓
+      d. 正常实例 chat 跑通且假 LLM capture 的 system 含 AGENTS + .flipped 双规则标记 ✓
+      e. FLIPPED_RULES_AUTO=0 实例 chat 跑通且 system 不含规则标记 ✓
+$ bash scripts/quality_gate.sh → 质量门禁：通过 ✅
+    py:2248/0（cov 86.59%） fe:791/0（cov 91.33%） tsc:0 build:ok shell_lint:ok
+    reports/findings.jsonl 空（零发现）
+```
+
+**关键决策与教训**：
+1. **黑盒 history 响应是 list 直返，不是 {turns:[...]}**：GET /assistant/sessions/{id}/history 返回 list[AssistantTurn]（verify_m174.sh 的 history()/wait_turns() 惯例早就是这么消费的）。verify_m180.sh 首轮按 dict.get("turns") 解析 → AttributeError: 'list' object has no attribute 'get'。教训：写新黑盒先 grep 既有 verify 脚本的同端点消费方式，不凭印象猜响应包络。
+2. **shell lint 扫注释里的 $VAR<全角字符> 陷阱**：verify_m180.sh L45 注释「记录 system 到 $CAPTURE_PATH，回显…」被 check_shell_lint.sh 拦下——$VAR 后紧跟全角字符（，）即使出现在注释里也报。修复统一写 ${VAR} 显式大括号。教训：门禁 findings.jsonl 的 rule+location+expected+actual+suggested_fix 五元组直接给出修复方向，照做即过（对齐 M157.10 verify-quality 的「结构化失败信号驱动修复」闭环）。
+3. **规则注入严格尾随地图**：_run_chat 中规则注入紧随 map 之后（system prompt 顺序：基础指令 → RAG → 地图 → 规则），保持既有上下文优先级不被干扰。
+4. **注入开关独立环境变量**：FLIPPED_RULES_AUTO 独立于 RAG/MAP 开关，黑盒 e 断言验证开关有效性（第二实例互不污染）。
+5. **编辑源与渲染结果分离**：GET 返回的 markdown 是多文件拼接产物（不可编辑），另带 rules_content 字段（仅 .flipped/rules.md 原始文本）作为编辑源；PUT 只写固定相对路径，零穿越面。
+6. **fail-open 设计贯穿全栈**：后端注入 try/except 全吞异常不影响对话；前端编辑态保存失败不收起保留用户输入——双端容错。
+7. **原子写防数据丢失**：write_project_rules 用 tmp+os.replace（复刻 tasks.py TaskRegistry 惯例），测试覆盖 unicode 往返与目录创建。
+
+**已知限制**（已登记 STATE.json known_limitations）：注入仅接 chat/plan；files 含被截断文件；空白文件视为不命中；Launcher 未加入口。
+
+**未 commit**（用户规则：明确要求才提交；M165–M180 改动均在工作区）。
+
+## M179 · AI 代码评审（2026-08-04）
+
+**范围**：ZCode 调研第七刀（自动化代码评审）——「在创建 PR 之前就给出内联建议，提前发现风险和回归问题」。M177 Review 面板已有逐文件 diff + untracked 清单 + 逐文件回滚，本里程碑补上「一键 LLM 审查工作区变更」最后一公里。B 队 review.py 纯逻辑（build_review_prompt 12k 预算 fence 防注入截断注记 / parse_review_reply 宽松 JSON 规范化）+ main.py POST /project/review（20 例）+ C 队 types/api/store/ContextPanel GitDiffView「AI 评审」按钮与 findings 行内渲染（17 例）+ 主代理 verify_m179.sh（黑盒 8 断言）。
+
+**测试证据**（实跑输出摘要，命令均可复跑）：
+```
+$ PYTHONPATH=src .venv/bin/python -m pytest tests/test_m179_review.py -q
+    → 20 passed（prompt 5 + parse 8 + 端点 7）
+$ .venv/bin/python -m pytest tests/ -q → 2224 passed, 15 skipped（2204+20）
+$ npx vitest run → 30 files / 779 passed（762+17：组件 11 + store 4 + api 2）
+$ npx tsc --noEmit → 0；npm run build → ok
+$ bash scripts/verify_m179.sh → 通过 ✅（首轮）
+    M179-1 单测全绿（20 例）
+    M179-2 黑盒（uvicorn :8181 + 假 LLM :8183 + 开关实例 :8182，tmp 隔离）8 断言：
+      a. POST /projects 建项目并设为活动 ✓
+      b. 空 diff → 200 findings=[] 且 note 非空（短路不调 LLM）✓
+      c1. 有 diff → 200 且 files_reviewed==2 且 model 非空 ✓
+      c2. 缺 path 项被跳过 → 假 LLM 4 条收敛为 3 条 ✓
+      c3. severity 规范化：high 保留，CRITICAL 归一为 medium ✓
+      c4. path 对应 diff 文件且字段完整（line=3/message/suggestion）✓
+      d. PARSE_FAIL 触发假 LLM 返回垃圾 → 502 detail 非空（绝不伪造 findings）✓
+      e. FLIPPED_AI_REVIEW=0 第二实例 → 404 ✓
+$ bash scripts/quality_gate.sh → 质量门禁：通过 ✅（首轮）
+    py:2224/0（cov 86.52%） fe:779/0（cov 91.24%） tsc:0 build:ok shell_lint:ok
+    reports/findings.jsonl 空（零发现）
+```
+
+**关键决策与教训**：
+1. **评审只读红线贯穿全栈**：端点不改文件/不写事件流/不碰 RUNNING_TASKS；前端纯展示。评审动作与 M177 revert（写操作）严格分离——审查是建议，回滚是动作，用户各取所需。
+2. **假 LLM 黑盒三态设计**：fence JSON（正常）/ 含 PARSE_FAIL 路径返回垃圾（502 通路）/ 第二实例 FLIPPED_AI_REVIEW=0（404 通路）——一个假 server 覆盖成功+解析失败两条通路，开关走独立实例互不污染。
+3. **解析失败 = 502 明示，绝不伪造 findings**：parse_review_reply 缺 path 项跳过不炸整体（局部容错），但完全无 JSON 抛 ReviewParseError → 端点 502 带 detail（全局诚实）。粒度：单项可弃，整体不可骗。
+4. **prompt 注入防护双保险**：diff 内容包在 fence 内 + 指令明确「只输出 JSON」；模型输出的 path 仅用于前端分组展示，绝不进入任何文件系统操作。
+5. **空 diff 短路不调 LLM**：工作区干净时直接返回 findings=[] + note，省一次 LLM 调用且语义明确（黑盒 b 断言覆盖）。
+6. **untracked 只送路径+行数的取舍**：新文件内容不进 prompt（预算+注入面控制），LLM 对新文件只能做有限评审——已登记 known_limitations，后续可加「小文件内容内联」候选。
+7. **loading 复位两路径**：runAiReview 成功/失败均显式复位 loading（store.test.tsx 双例覆盖）——异步 action 的 loading 泄漏是 UI 卡死的高发源。
+
+**已知限制**（已登记 STATE.json known_limitations）：untracked 不送内容新文件评审有限；评审结果不落盘（历史持久化列候选）；评审模型固定 coder alias（UI 未暴露选择）；findings 行号未做点击跳转。
+
+**未 commit**（用户规则：明确要求才提交；M165–M179 改动均在工作区）。
+
+## M178 · 后台任务系统（2026-08-04）
+
+**范围**：ZCode 调研第六刀（任务侧栏）——AGENTS.md §2.5 Ralph 外层循环在单机内的产品化：用户预排任务，系统按时自动跑。Sidebar「已安排」导航项从纯占位落地为真实任务管理界面。B 队 tasks.py 纯逻辑（compute_next_run/due_tasks/TaskRegistry 原子写）+ main.py 4 端点 + _task_scheduler/_dispatch_scheduled（27 例）+ C 队 types/api/store/ScheduledView/Sidebar（16 例）+ 主代理 verify_m178.sh（黑盒 13 断言）。
+
+**测试证据**（实跑输出摘要，命令均可复跑）：
+```
+$ PYTHONPATH=src .venv/bin/python -m pytest tests/test_m178_tasks.py -q
+    → 27 passed（纯函数 8 + Registry 8 + 端点 9 + dispatch 2）
+$ .venv/bin/python -m pytest tests/ -q → 2204 passed, 15 skipped（2177+27）
+$ npx vitest run → 30 files / 762 passed（746+16，api 5 + Sidebar 11）
+$ npx tsc --noEmit → 0；npm run build → ok
+$ bash scripts/verify_m178.sh → 通过 ✅（首轮）
+    M178-1 单测全绿（27 例）
+    M178-2 黑盒（uvicorn :8179 + 假 LLM :8180，FLIPPED_TASKS_SCAN_S=1，tmp 隔离）13 断言：
+      a. POST /tasks once（run_at=now+2s）→ 201 且 next_run_at 非空 ✓
+      b1. scheduler 自动建会话（标题=任务标题）✓
+      b2. user 消息原文落库 + 假 LLM 回显到达（任务真实跑通）✓
+      c1. once 跑完 last_status==done ✓
+      c2. enabled==false 且 next_run_at 为空 ✓
+      c3. run_count==1 且 last_session_id 指向新会话 ✓
+      d. interval every=1min → next_run_at 在未来且 ≤61s ✓
+      e1. toggle off → enabled==false 且 next_run_at==None ✓
+      e2. toggle off 后 3s 内不新建会话（scheduler 尊重停用）✓
+      f1/f2. once 缺 run_at / every_minutes=0 → 422 ✓
+      g. DELETE 未知 id → 404 ✓
+$ bash scripts/quality_gate.sh → 质量门禁：通过 ✅（首轮）
+    py:2204/0（cov 86.47%） fe:762/0（cov 91.14%） tsc:0 build:ok shell_lint:ok
+```
+
+**关键决策与教训**：
+1. **scheduler 复刻派发链而非 HTTP 自调**：_dispatch_scheduled 在进程内复刻 send_assistant_message 的完整链路（建会话→status emit→user 消息落库→agent/auto git shadow snapshot to_thread→TaskRequest→create_task 注册 RUNNING_TASKS），与手工发消息完全同语义——前端看到的就是普通会话，任务卡点击标题即跳转查看，零特殊渲染路径。
+2. **时钟全注入保确定性**：compute_next_run/due_tasks 全部传 now 参数，单测无 freezegun 无 sleep；黑盒用 FLIPPED_TASKS_SCAN_S=1 + run_at=now+2s 真实等待，兼顾确定性与端到端真实。
+3. **interval 滚动基准 max(last_run_at, created_at)**：落后多轮（进程停机后重启）跳 N 倍间隔到首个 >now 时刻——重启后 due 任务按 next_run_at 自然补触发一次，随后回归正常节拍，不追补欠账（防风暴）。
+4. **单任务异常隔离是 scheduler 的生命线**：循环内逐任务 try/except，派发抛错→mark_run(failed) 继续下一个，绝不允许一个坏任务杀死整个调度循环；shutdown 时 cancel+await 优雅退出。
+5. **防重入查 RUNNING_TASKS[last_session_id]**：interval 任务上轮会话还在跑 → 本轮 mark_run(skipped) 不派——同一任务绝不自我并发（对齐既有 409 并发守卫精神）。
+6. **命名避让**：前端 api.ts 已有 createTask（会话任务），新函数命名 createScheduledTask 避免冲突——新 API 命名前先 grep 既有符号。
+7. **API 快照漂移核对成惯例**：本次快照 diff 含 M165–M177 未提交工作的如实反映，经逐 hunk 核对 main.py 改动为纯增量（lifespan +8 行 + 文末新段），非 /tasks 漂移非本次引入——快照重生后必须 diff 核对增量归属，不能盲收。
+
+**已知限制**（已登记 STATE.json known_limitations）：mark_run(done)=「派发成功」非「执行完成」（结果在会话事件流）；cron 表达式/任务编辑 PATCH/跨进程 RUNNING 映射恢复列后续候选；scheduler 单进程内存态（重启后按 next_run_at 自然补触发）；黑盒验证 chat 通路，agent/auto 的 snapshot 分支由单测覆盖。
+
+**未 commit**（用户规则：明确要求才提交；M165–M178 改动均在工作区）。
+
+## M182 · Bot Channel 多平台接入（2026-08-05）
+
+**范围**：用户指令三连之一——Telegram Bot webhook + 企业微信应用回调完整接入（消化 M181 限制「Bot Channel 未做」）。统一消息接口（UnifiedMessage）+ 身份映射（BotSessionRegistry：platform+chat_id→session_id）+ 加密验证（TG secret 头 hmac.compare_digest / WeCom SHA1 验签+AES-256-CBC）+ 状态监控（ChannelStats 入/出/错计数 + GET /bot/channels）。B 队三纯逻辑模块（bot_channel/bot_telegram/bot_wecom，64 例）+ 主代理 main.py 5 端点接线 + C 队 BotChannelPanel（14 例）。
+
+**测试证据**（实跑输出摘要，命令均可复跑）：
+```
+$ PYTHONPATH=src .venv/bin/python -m pytest tests/test_m182_bot_channel.py tests/test_m182_bot_telegram.py tests/test_m182_bot_wecom.py -q
+    → 64 passed（channel 29 + telegram/wecom 35）
+$ PYTHONPATH=src .venv/bin/python -m pytest tests/ -q → 2397 passed, 15 skipped（2272+125 三里程碑合计）
+$ npx vitest run → 34 files / 847 passed（803+44；BotChannelPanel 14 例）
+$ npx tsc --noEmit → 0；npm run build → ok
+$ bash scripts/verify_m182.sh → 通过 ✅
+    M182-1 单测全绿（64 例）
+    M182-2 黑盒（真 uvicorn ×2 :8189 正常/:8190 FLIPPED_BOT=0 + 假 LLM :8191，tmp 隔离）16 断言：
+      a. GET /bot/channels → 200 [telegram, wecom] 字典序 configured/enabled=true ✓
+      b1/b2. TG webhook 无/错 secret 头 → 403 ✓
+      b3/b4. TG 非文本消息/非法 JSON → 200 handled=false（防 Telegram 重试风暴）✓
+      c1/c2. TG test 无绑定 400 / 未知平台 404 ✓
+      d1. TG 文本消息 → 200 handled=true ✓
+      d2. 轮询 channels：telegram inbound=1 且 error=1（假 token 发送必失败→异常处理记 error）✓
+      d3. TG test 已绑定但假 token → 502 ok=false（error 字段非空）✓
+      e1/e2. WeCom URL 验证正确签名 200 明文==echostr / 坏签名 403 ✓
+      f1. WeCom 加密 text 回调 → 200 明文 success ✓
+      f2. 轮询 channels：wecom inbound=1（身份映射+入站编排生效）✓
+      f3. WeCom test 已绑定但假 corp → 502 ok=false（error 字段非空）✓
+      g. FLIPPED_BOT=0 实例：channels/webhook/callback/test 全 404 ✓
+$ bash scripts/quality_gate.sh → 质量门禁：通过 ✅
+    py:2397/0（cov 86.14%） fe:847/0（cov 91.34%） tsc:0 build:ok shell_lint:ok
+    reports/findings.jsonl 空（零发现）
+```
+
+**关键决策与教训**：
+1. **Telegram 走 raw httpx 零新增重依赖**（Bot API sendMessage + webhook secret_token 头验证）；**个人微信无官方 bot API → 落地企业微信（WeCom）应用回调**，AES 用 pycryptodome 且缺失时 available()=False 优雅降级（D19）。
+2. **bot 入站复用 canonical handler 不复刻链路**（M178 教训）：handle_inbound 全注入协程，dispatch=函数级 import send_assistant_message——bot 消息与 console 发送完全同语义。
+3. **parse None→200 handled=false 而非 4xx**：Telegram 对非 2xx 会重试风暴，非文本/非法 JSON 一律吞掉返回 200。
+4. **sender 错误诊断信息绝不为空**：异常时 str(e) 可能为空串（黑盒 d3 首轮失败根因）→ 回退 type(e).__name__，双平台 sender 同步加固。
+5. **token/secret 全走 env 绝不硬编码**；httpx.AsyncClient(timeout=15, trust_env=False)（内网代理教训 D5 复发防线）。
+6. **入站回复轮询 history 等新 assistant turn**（FLIPPED_BOT_REPLY_TIMEOUT_S 默认 90s），超时发固定兜底文案不阻塞后台执行——长任务语义与 M181 远程面一致。
+
+**已知限制**（已登记 STATE.json known_limitations）：个人微信不在路线图；回复轮询 90s 超时仅兜底文案；一 chat 绑定一会话（群聊无逐用户隔离）；bot 会话不暴露文件树/终端；WeCom 依赖 pycryptodome 优雅降级；outbound 走主动 send API 非被动回复。
+
+## M183 · Worker 规则注入系统（2026-08-05）
+
+**范围**：用户指令三连之二——worker 规则注入（消化 M180 限制「agent/auto 的 worker 规则注入列后续候选」）。agent 通路手动 CRUD + auto 通路模板自动生成 + 版本管理回滚 + orchestrator 注入与执行效果统计。B 队 worker_rules.py 纯逻辑 + orchestrator.py 两处 fail-open 接线（41 例）+ 主代理 main.py 9 端点 + C 队 WorkerRulesPanel（18 例）。
+
+**测试证据**（实跑输出摘要，命令均可复跑）：
+```
+$ PYTHONPATH=src .venv/bin/python -m pytest tests/test_m183_worker_rules.py -q
+    → 41 passed（WorkerRule 校验/blocklist/Store CRUD/版本/回滚/坏文件回退/history cap/
+      build 预算排序/Stats 累积/auto 模板命中去重截断/orchestrator 注入 fail-open + verify outcome）
+$ npx vitest run src/components/WorkerRulesPanel.test.tsx → 18 passed
+$ bash scripts/verify_m183.sh → 通过 ✅
+    M183-1 单测全绿（41 例）
+    M183-2 黑盒（真 uvicorn ×2 :8192 正常/:8193 FLIPPED_WORKER_RULES=0 + 假 SSE LLM :8194
+      + 真 local_worker 子进程，tmp 隔离）24 断言：
+      a. 空库 GET → 200 version=0 rules=[] ✓
+      b. POST 手动规则 → 201（id wr- 前缀/source manual/priority 80/enabled）✓
+      c1/c2. blocklist 文本/超 500 字 → 422 ✓
+      d1. 列表 version=2 按插入序含甲乙（priority 排序职责在前端/注入层）✓
+      d2. PUT 部分更新 → 200（text/priority=90 落库，source 保留 manual）✓
+      d3/d4. PUT 未知 id 404 / PUT blocklist 422 ✓
+      e1/e2/e3. toggle 停用 enabled=false 留列表 / 复启恢复 / 未知 id 404 ✓
+      f1/f2. DELETE 未知 404 / 删除后列表消失 ✓
+      g. GET versions 元信息齐（version/ts/action/rule_count）含 add/update/delete/toggle ✓
+      h1. auto-generate 模板命中 → candidates=2 added=2（source auto/priority 10）✓
+      h2. 同文本重复调用 → candidates=0 added=[]（去重）✓
+      i1/i2. rollback 回滚到 auto 前版本自动规则消失 / 未知版本 404 ✓
+      j. GET stats → stats dict + total_runs int ✓
+      k. FLIPPED_WORKER_RULES=0 实例全端点 404 ✓
+      l1. 真 local_worker 子进程跑通（exit=0/worker_error=False/index.html 落盘）✓
+      l2. worker_rules_applied 含启用规则且按 priority desc，停用规则不注入 ✓
+      l3. 假 LLM 捕获 prompt：规则B 在 规则A 前，停用规则C 不出现 ✓
+      l4. stats 落盘且 API 可见：applied≥1 ✓
+$ bash scripts/quality_gate.sh → 质量门禁：通过 ✅（findings.jsonl 空）
+```
+
+**关键决策与教训**：
+1. **契约勘误（D20）**：GET /worker/rules 返回**全量插入序**（含停用规则），priority desc 排序职责在前端/注入层，停用留列表供复启——verify 脚本 d2/e1/e2 初版断言按「排序+消失」假设写，与真实契约不符；**修脚本对齐契约而非改实现**（前端面板自行排序且需看到停用规则复启）。先查 PLAN 与前端真实消费再定契约归属，避免脚本与实现双向错配。
+2. **orchestrator 接线全 fail-open**：worker 规则 store/stats 任何异常绝不炸编排（规则是增强不是命脉）；两处钉死——local_worker _rules_short 合并（总预算仍 300，M11.1 教训）+ verify 节点 record_outcome。
+3. **stats 语义分层**：applied 按注入次计数，outcome 按 verify 次计数（中间迭代记 failure）——规则效果=降低失败迭代数，不是端到端任务成功率；报告与面板均注明防误读。
+4. **注入防护 blocklist 必测**：case-insensitive「ignore previous instructions/忽略之前的指令/忽略以上指令/disregard all」→ ValidationError→422，POST/PUT 双路径钉死。
+5. **真 local_worker 子进程黑盒**：假 SSE LLM 捕获请求体，断言启用规则按 priority desc 出现在 prompt、停用规则不出现——注入顺序由消费侧（build_worker_rules_text）保证，l2/l3 钉死 D20 契约的排序职责确实落在注入层。
+6. **rollback 自身亦 bump version（action=rollback）**：回滚是可审计变更而非时光倒流，versions 历史完整。
+
+**已知限制**（已登记 STATE.json known_limitations）：注入仅接 local_worker（chat 走 M180 项目规则）；auto 模板 ≥6 条固定 regex 非 LLM 生成；stats 非端到端成功率；与项目规则共享 300 字符预算；history cap 20 版本；列表全量插入序排序职责在消费侧。
+
+## M184 · known_limitations 系统性分析与消化（2026-08-05）
+
+**范围**：用户指令三连之三——全里程碑 known_limitations 整理/评估/跟踪/报告。scripts/limitations_report.py（stdlib only）五子命令：harvest（42 条登记，id 稳定 L-M{n}-{i}，(milestone,text) 匹配保留人工字段，源移除 wontfix）/classify（六类关键词映射，不踩人工）/check（CI 门禁钩子，缺失 exit 1）/set-status（open|in_progress|resolved|wontfix + note）/report（五节 markdown：总览+全量明细+优先级×难度矩阵+分阶段路线图+跟踪机制）。独立子代理 20 例 + 主代理 verify_m184.sh 真实数据流 13 断言。
+
+**测试证据**（实跑输出摘要，命令均可复跑）：
+```
+$ PYTHONPATH=src .venv/bin/python -m pytest tests/test_m184_limitations.py -q
+    → 20 passed（harvest 新建/幂等/保留人工字段/源移除 wontfix/classify 六类关键词/不踩人工/
+      check 齐全 exit 0 缺失 exit 1/set-status 往返/未知 id/report 五节/矩阵/路线图/原子写）
+$ bash scripts/verify_m184.sh → 通过 ✅
+    M184-1 单测全绿（20 例）
+    M184-2 真实数据流（真 STATE.json ×42 → 真 data/limitations_registry.json）13 断言：
+      a1/a2. harvest exit 0 摘要格式正确 / registry 42 条 id 格式 L-M{n}-{i} 人工字段齐 ✓
+      b. harvest 幂等：二次跑 0 added 0 stale ✓
+      c. classify exit 0 且六类关键词至少一类命中 ✓
+      d1/d2. L-M180-1 → resolved（M183 消化）/ L-M181-5 → resolved（M182 消化）✓
+      d3/d4. set-status 未知 id exit 1 / registry 落盘两条 resolved+注记 ✓
+      e1/e2/e3. report 落盘五节标题齐 / 含全部关键 id 与总数 42 /「已消化」节含两条 ✓
+      f. check 正例：真 STATE.json → exit 0（42 条登记）✓
+      g. check 反例：篡改副本多一条未登记 → exit 1 打印缺失 id L-M171-4 ✓
+$ bash scripts/quality_gate.sh → 质量门禁：通过 ✅（findings.jsonl 空）
+```
+
+**关键决策与教训**：
+1. **registry 与 STATE.json 双写分工**：STATE.json 是限制的唯一源头（各里程碑自报），registry 是跟踪层（人工字段+状态）——harvest 按 (milestone,text) 匹配保留人工字段，源移除标 wontfix 不删记录（历史可审计）。
+2. **check 作 CI 门禁钩子**：任何里程碑新增 known_limitations 必须同步 harvest 登记，否则 check exit 1——把「限制跟踪」从自觉变成门禁。
+3. **classify 只填「未分类」不踩人工**：关键词启发式命中率有限，人工校正为准——自动化做粗分，判断力留给人。
+4. **bash ${VAR}<全角> 陷阱复发**：verify 脚本 $REPORT 后接全角括号触发变量名解析歧义（M180 已录一次同坑）——一律 ${VAR} 花括号钉死，shell_lint 已收录该规则。
+5. **两条限制就地消化闭环**：L-M180-1（worker 注入候选）→ resolved by M183；L-M181-5（Bot Channel 未做）→ resolved by M182——跟踪机制首批真实案例，验证「登记→消化→标记→报告」全链路。
+6. **收尾自举**：M182–M184 自身 16 条新限制留痕进 STATE.json 后，check 门禁如实捕获未登记（exit 1 列出全部 16 条）→ harvest 登记（58 条，16 added）→ classify 6 条 → 报告重生 58 条 → check exit 0——机制对自身生效，门禁不是摆设。
+
+**已知限制**（已登记 STATE.json known_limitations）：classify 关键词启发式人工校正为准；check 不验证状态真实性；人工字段需人工维护；报告按日覆盖无历史索引。
+
+**未 commit**（用户规则：明确要求才提交；M165–M184 改动均在工作区）。

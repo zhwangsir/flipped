@@ -139,7 +139,7 @@ def test_run_chat_passes_glm_to_llm_chat(chat_client, monkeypatch):
         captured["model"] = model
         captured["base_url"] = base_url
         captured["system"] = system
-        return "ok from glm"
+        return "ok from glm", None
 
     monkeypatch.setattr("api.main._llm_chat", _fake_llm_chat)
 

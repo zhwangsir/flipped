@@ -155,5 +155,19 @@ class SessionStore:
             evs = self._events.get(session_id)
             return evs[-1].id if evs else None
 
+    def truncate_from(self, session_id: str, event_id: str) -> int:
+        """删除 seq >= seq(event_id) 的全部事件（含目标事件本身），返回删除条数。
+        event_id 不存在 → 0（幂等，不报错）。_counter 不重置（单调递增红线）。
+        持锁 + save() 持久化。"""
+        with self._lock:
+            evs = self._events.get(session_id, [])
+            idx = next((i for i, e in enumerate(evs) if e.id == event_id), None)
+            if idx is None:
+                return 0
+            deleted = len(evs) - idx
+            del evs[idx:]
+            self.save()
+            return deleted
+
 
 store = SessionStore()

@@ -1,5 +1,5 @@
 import { afterEach, beforeAll, beforeEach, describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent, cleanup } from '@testing-library/react';
+import { render, screen, fireEvent, cleanup, waitFor, within } from '@testing-library/react';
 import { ContextPanel } from './ContextPanel';
 
 // jsdom 未实现 ResizeObserver / scrollIntoView
@@ -29,15 +29,24 @@ vi.mock('./PtyTerminal', () => ({
     <div data-testid="pty-terminal" data-active={String(props.active)} data-class={props.className ?? ''} />
   ),
 }));
+// M180.2 — 规则/地图面板直调 api,mock 避免真实 fetch
+vi.mock('../api', () => ({
+  fetchProjectRules: vi.fn(),
+  saveProjectRules: vi.fn(),
+  fetchProjectMap: vi.fn(),
+  regenerateProjectMap: vi.fn(),
+}));
 
 import { useApp } from '../store';
 import { isTauri } from '../lib/native';
+import { fetchProjectRules } from '../api';
 import type {
   ChangedFile,
   FileNode,
   GitDiffFile,
   BrowserRender,
   ProjectContext,
+  AiReviewResult,
 } from '../types';
 
 const mockedUseApp = vi.mocked(useApp);
@@ -65,6 +74,11 @@ const baseState = {
   gitDiff: [] as GitDiffFile[],
   gitDiffLoading: false,
   loadGitDiff: vi.fn(async () => {}),
+  revertGitDiffFile: vi.fn(async (_path: string) => ({ ok: true, path: _path, action: 'restored' as const })),
+  // AI 评审(M179.2)
+  aiReview: { result: null as AiReviewResult | null, loading: false, error: null as string | null },
+  runAiReview: vi.fn(async () => {}),
+  clearAiReview: vi.fn(),
 };
 
 afterEach(() => {
@@ -130,6 +144,29 @@ describe('ContextPanel — tabs 切换', () => {
     render(<ContextPanel />);
     fireEvent.click(screen.getByText('文件'));
     expect(setContextTab).toHaveBeenCalledWith('files');
+  });
+
+  it('点击"规则"调用 setContextTab("rules")', () => {
+    const setContextTab = vi.fn();
+    mockedUseApp.mockReturnValue({ ...baseState, setContextTab } as never);
+    render(<ContextPanel />);
+    fireEvent.click(screen.getByText('规则'));
+    expect(setContextTab).toHaveBeenCalledWith('rules');
+  });
+
+  it('contextTab=rules 时渲染 RulesPanel(项目规则标题 + files 徽标)', async () => {
+    vi.mocked(fetchProjectRules).mockResolvedValue({
+      files: ['.flipped/rules.md', 'AGENTS.md'],
+      markdown: '## .flipped/rules.md\n\n- 禁止 console.log\n',
+      total_chars: 40,
+      rules_content: '- 禁止 console.log\n',
+      needs_project: false,
+    });
+    mockedUseApp.mockReturnValue({ ...baseState, contextTab: 'rules' } as never);
+    render(<ContextPanel />);
+    await waitFor(() => expect(screen.getByText('项目规则')).toBeInTheDocument());
+    const chips = [...document.querySelectorAll('.rules-chip')].map((c) => c.textContent);
+    expect(chips).toEqual(['.flipped/rules.md', 'AGENTS.md']);
   });
 });
 
@@ -531,6 +568,210 @@ describe('ContextPanel — 审查 tab(无变更,渲染 GitDiffView)', () => {
     vi.clearAllMocks();
     fireEvent.click(screen.getByTitle('刷新'));
     expect(loadGitDiff).toHaveBeenCalled();
+  });
+});
+
+// M177.2 — Review 面板强化:untracked/binary 徽标、空 diff 占位、逐文件撤销(行内确认)
+describe('ContextPanel — 审查 tab · M177.2 文件卡增强', () => {
+  const diffFiles: GitDiffFile[] = [
+    { path: 'src/tracked.ts', added: 2, removed: 1, lines: [{ type: 'add', text: 'x' }] },
+    { path: 'src/new-file.ts', added: 10, removed: 0, lines: [], untracked: true },
+    { path: 'assets/logo.png', added: 0, removed: 0, lines: [], binary: true },
+  ];
+  const renderDiff = (overrides: Record<string, unknown> = {}) => {
+    mockedUseApp.mockReturnValue({
+      ...baseState,
+      contextTab: 'diff',
+      changedFiles: [],
+      gitDiff: diffFiles,
+      ...overrides,
+    } as never);
+    return render(<ContextPanel />);
+  };
+
+  it('untracked 文件卡显示「新增」徽标', () => {
+    renderDiff();
+    expect(screen.getByText('新增')).toBeInTheDocument();
+  });
+
+  it('binary 文件卡显示「二进制」徽标', () => {
+    renderDiff();
+    expect(screen.getByText('二进制')).toBeInTheDocument();
+  });
+
+  it('lines 为空时显示占位文案(untracked/binary)', () => {
+    renderDiff();
+    expect(screen.getByText('新文件 · 撤销将删除该文件')).toBeInTheDocument();
+    expect(screen.getByText('二进制文件不显示 diff')).toBeInTheDocument();
+  });
+
+  it('点击撤销按钮出现确认文案与确认/取消按钮', () => {
+    renderDiff();
+    fireEvent.click(screen.getAllByTitle('撤销该文件变更')[0]);
+    expect(screen.getByText('还原到 HEAD？')).toBeInTheDocument();
+    expect(screen.getByText('确认')).toBeInTheDocument();
+    expect(screen.getByText('取消')).toBeInTheDocument();
+  });
+
+  it('点击取消 → 确认态消失,恢复撤销按钮', () => {
+    renderDiff();
+    fireEvent.click(screen.getAllByTitle('撤销该文件变更')[0]);
+    expect(screen.getByText('还原到 HEAD？')).toBeInTheDocument();
+    fireEvent.click(screen.getByText('取消'));
+    expect(screen.queryByText('还原到 HEAD？')).not.toBeInTheDocument();
+    expect(screen.getAllByTitle('撤销该文件变更')).toHaveLength(3);
+  });
+
+  it('点击确认 → 调 revertGitDiffFile(path) 且成功后刷新(loadGitDiff)', async () => {
+    const loadGitDiff = vi.fn(async () => {});
+    const revertGitDiffFile = vi.fn(async (p: string) => {
+      await loadGitDiff();
+      return { ok: true, path: p, action: 'restored' as const };
+    });
+    renderDiff({ loadGitDiff, revertGitDiffFile });
+    fireEvent.click(screen.getAllByTitle('撤销该文件变更')[0]);
+    fireEvent.click(screen.getByText('确认'));
+    await waitFor(() => expect(revertGitDiffFile).toHaveBeenCalledWith('src/tracked.ts'));
+    await waitFor(() => expect(loadGitDiff).toHaveBeenCalled());
+    await waitFor(() => expect(screen.queryByText('还原到 HEAD？')).not.toBeInTheDocument());
+  });
+
+  it('撤销失败 → 显示错误文案且确认态保持,可重试', async () => {
+    const revertGitDiffFile = vi.fn(async (_p: string) => {
+      throw new Error('磁盘只读');
+    });
+    renderDiff({ revertGitDiffFile });
+    fireEvent.click(screen.getAllByTitle('撤销该文件变更')[0]);
+    fireEvent.click(screen.getByText('确认'));
+    await screen.findByText('磁盘只读');
+    expect(screen.getByText('还原到 HEAD？')).toBeInTheDocument();
+    expect(screen.getByText('确认')).toBeInTheDocument();
+  });
+
+  it('untracked 确认文案是"删除该新文件？",tracked 是"还原到 HEAD？"', () => {
+    renderDiff();
+    fireEvent.click(screen.getAllByTitle('撤销该文件变更')[1]);
+    expect(screen.getByText('删除该新文件？')).toBeInTheDocument();
+    fireEvent.click(screen.getByText('取消'));
+    fireEvent.click(screen.getAllByTitle('撤销该文件变更')[0]);
+    expect(screen.getByText('还原到 HEAD？')).toBeInTheDocument();
+  });
+});
+
+// M179.2 — AI 代码评审:头部「AI 评审」按钮 + findings 按文件行内渲染 + 总览行 + 其他文件分组
+describe('ContextPanel — 审查 tab · M179.2 AI 评审', () => {
+  const diffFiles: GitDiffFile[] = [
+    { path: 'src/a.ts', added: 3, removed: 1, lines: [{ type: 'add', text: '+new' }] },
+    { path: 'src/b.ts', added: 0, removed: 1, lines: [{ type: 'del', text: '-old' }] },
+  ];
+  const reviewResult: AiReviewResult = {
+    findings: [
+      { path: 'src/a.ts', line: 42, severity: 'high', message: '可能空指针', suggestion: '加判空' },
+      { path: 'src/a.ts', severity: 'low', message: '命名含糊' },
+      { path: 'src/b.ts', severity: 'medium', message: '缺少错误处理' },
+      { path: 'src/gone.ts', severity: 'low', message: '不在 diff 里的发现' },
+    ],
+    files_reviewed: 2,
+    model: 'glm-x',
+    note: null,
+  };
+  const renderDiff = (overrides: Record<string, unknown> = {}) => {
+    mockedUseApp.mockReturnValue({
+      ...baseState,
+      contextTab: 'diff',
+      changedFiles: [],
+      gitDiff: diffFiles,
+      ...overrides,
+    } as never);
+    return render(<ContextPanel />);
+  };
+
+  it('头部渲染「AI 评审」按钮,点击调用 runAiReview()', () => {
+    const runAiReview = vi.fn(async () => {});
+    renderDiff({ runAiReview });
+    fireEvent.click(screen.getByText('AI 评审'));
+    expect(runAiReview).toHaveBeenCalledTimes(1);
+  });
+
+  it('loading 中按钮禁用且文案为「评审中…」', () => {
+    renderDiff({ aiReview: { result: null, loading: true, error: null } });
+    const btn = screen.getByText('评审中…').closest('button') as HTMLButtonElement;
+    expect(btn.disabled).toBe(true);
+    expect(screen.queryByText('AI 评审')).toBeNull();
+  });
+
+  it('findings 按 path 分组渲染到对应文件卡(不串卡)', () => {
+    renderDiff({ aiReview: { result: reviewResult, loading: false, error: null } });
+    const cardA = screen.getByText('src/a.ts').closest('.rdiff-file') as HTMLElement;
+    const cardB = screen.getByText('src/b.ts').closest('.rdiff-file') as HTMLElement;
+    expect(within(cardA).getByText(/可能空指针/)).toBeInTheDocument();
+    expect(within(cardA).getByText('命名含糊')).toBeInTheDocument();
+    expect(within(cardA).queryByText('缺少错误处理')).toBeNull();
+    expect(within(cardB).getByText('缺少错误处理')).toBeInTheDocument();
+  });
+
+  it('finding 渲染在文件卡 diff 行之上', () => {
+    renderDiff({ aiReview: { result: reviewResult, loading: false, error: null } });
+    const cardA = screen.getByText('src/a.ts').closest('.rdiff-file') as HTMLElement;
+    const findingEl = within(cardA).getByText(/可能空指针/);
+    const diffRowEl = within(cardA).getByText('+new');
+    // finding 在 diff 行之前(diffRow 是 finding 的后续节点)
+    expect(findingEl.compareDocumentPosition(diffRowEl) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('severity 徽标三态(high/medium/low 类名 + 高/中/低 文案)', () => {
+    const { container } = renderDiff({ aiReview: { result: reviewResult, loading: false, error: null } });
+    expect(container.querySelector('.review-badge.high')?.textContent).toBe('高');
+    expect(container.querySelector('.review-badge.medium')?.textContent).toBe('中');
+    expect(container.querySelectorAll('.review-badge.low').length).toBe(2);
+  });
+
+  it('line 非空追加「:行号」,suggestion 非空渲染次级行「建议:…」', () => {
+    renderDiff({ aiReview: { result: reviewResult, loading: false, error: null } });
+    expect(screen.getByText(':42')).toBeInTheDocument();
+    expect(screen.getByText('建议:加判空')).toBeInTheDocument();
+  });
+
+  it('path 不在当前 diff 的 findings → 底部「其他文件」分组(带 path 前缀)', () => {
+    const { container } = renderDiff({ aiReview: { result: reviewResult, loading: false, error: null } });
+    const other = screen.getByText('其他文件').closest('.review-other') as HTMLElement;
+    expect(other).toBeTruthy();
+    expect(within(other).getByText('不在 diff 里的发现')).toBeInTheDocument();
+    expect(within(other).getByText('src/gone.ts')).toBeInTheDocument();
+    // 匹配文件的 finding 不进「其他文件」
+    expect(within(other).queryByText('命名含糊')).toBeNull();
+    expect(container.querySelectorAll('.review-other .review-finding')).toHaveLength(1);
+  });
+
+  it('总览行展示「N 条建议 · 评审了 M 个文件 · model」,清除按钮调 clearAiReview()', () => {
+    const clearAiReview = vi.fn();
+    renderDiff({ aiReview: { result: reviewResult, loading: false, error: null }, clearAiReview });
+    expect(screen.getByText('4 条建议 · 评审了 2 个文件 · glm-x')).toBeInTheDocument();
+    fireEvent.click(screen.getByText('清除'));
+    expect(clearAiReview).toHaveBeenCalledTimes(1);
+  });
+
+  it('note 非空时总览行展示 note', () => {
+    renderDiff({
+      aiReview: { result: { ...reviewResult, findings: [], files_reviewed: 0, note: '工作区干净' }, loading: false, error: null },
+    });
+    expect(screen.getByText('0 条建议 · 评审了 0 个文件 · glm-x')).toBeInTheDocument();
+    expect(screen.getByText('工作区干净')).toBeInTheDocument();
+  });
+
+  it('error 非空 → 头部下方红字行(.review-error)', () => {
+    const { container } = renderDiff({
+      aiReview: { result: null, loading: false, error: 'HTTP 502: LLM 解析失败' },
+    });
+    const err = container.querySelector('.review-error') as HTMLElement;
+    expect(err).toBeTruthy();
+    expect(err.textContent).toContain('HTTP 502: LLM 解析失败');
+  });
+
+  it('无 result 时不渲染总览行与「其他文件」分组', () => {
+    renderDiff();
+    expect(screen.queryByText(/条建议/)).toBeNull();
+    expect(screen.queryByText('其他文件')).toBeNull();
   });
 });
 

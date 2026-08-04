@@ -1,5 +1,6 @@
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { useApp } from '../store';
+import type { McpCallResult, McpToolInfo } from '../types';
 import {
   IconBrowser,
   IconTerminal,
@@ -38,9 +39,16 @@ const CAPS: Cap[] = [
 ];
 
 export function Plugins() {
-  const { pluginsOpen, setPluginsOpen, mcpServers, toggleMcpServer, prefillComposer, refreshMcpServers, setSettingsOpen } = useApp();
+  const { pluginsOpen, setPluginsOpen, mcpServers, toggleMcpServer, prefillComposer, refreshMcpServers, setSettingsOpen, mcpTools, refreshMcpTools, callMcpTool } = useApp();
   const [tab, setTab] = useState<'plugins' | 'skills'>('plugins');
   const [q, setQ] = useState('');
+
+  // M170.2 — 打开面板且工具列表为空时拉取一次(供工具行显示 description)
+  useEffect(() => {
+    if (pluginsOpen && mcpTools.length === 0) {
+      void refreshMcpTools();
+    }
+  }, [pluginsOpen, mcpTools.length, refreshMcpTools]);
 
   if (!pluginsOpen) return null;
 
@@ -93,6 +101,21 @@ export function Plugins() {
                   </button>
                 ))}
               </div>
+              {mcpServers
+                .filter((s) => s.tools.length > 0)
+                .map((s) => (
+                  <div key={s.name} className="mcp-tools-server">
+                    <div className="mcp-tools-server-h">{s.name} 工具</div>
+                    {s.tools.map((t) => (
+                      <McpToolRow
+                        key={t}
+                        name={t}
+                        info={mcpTools.find((i) => i.name === t)}
+                        onCall={callMcpTool}
+                      />
+                    ))}
+                  </div>
+                ))}
             </div>
 
             {featured.length > 0 && (
@@ -152,6 +175,125 @@ function PluginCard({ cap, onTry }: { cap: Cap; onTry: (name: string) => void })
         <span className="plugin-status soon">即将支持</span>
       ) : (
         <button className="plugin-try" onClick={() => onTry(cap.name)}>Try in chat</button>
+      )}
+    </div>
+  );
+}
+
+/** M170.2 — 按工具名预设的参数字段(textarea=多行,否则单行 input;全部必填)。 */
+const MCP_TOOL_FIELDS: Record<string, { name: string; textarea?: boolean }[]> = {
+  web_search: [{ name: 'query' }],
+  rag_query: [{ name: 'query' }],
+  rag_ingest: [{ name: 'text', textarea: true }],
+  run_coding_task: [{ name: 'goal', textarea: true }],
+  research_and_code: [{ name: 'research_query' }, { name: 'coding_task', textarea: true }],
+};
+
+function McpToolRow({
+  name,
+  info,
+  onCall,
+}: {
+  name: string;
+  info?: McpToolInfo;
+  onCall: (name: string, args: Record<string, unknown>) => Promise<McpCallResult>;
+}) {
+  const [open, setOpen] = useState(false);
+  const [values, setValues] = useState<Record<string, string>>({});
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<unknown>(null);
+  const [hasResult, setHasResult] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [dispatched, setDispatched] = useState(false);
+
+  const fields = MCP_TOOL_FIELDS[name] ?? [{ name: 'query' }];
+  const valid = fields.every((f) => (values[f.name] ?? '').trim().length > 0);
+
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!valid || busy) return;
+    setBusy(true);
+    setError(null);
+    setDispatched(false);
+    setHasResult(false);
+    try {
+      const r = await onCall(name, values);
+      if (r.ok && r.accepted) {
+        // 长工具已派发到当前会话,结果走对话流
+        setDispatched(true);
+      } else if (r.ok) {
+        setResult(r.result ?? null);
+        setHasResult(true);
+      } else {
+        setError(r.error === 'no-session' ? '请先在 Assistant 开始对话' : r.error || '调用失败');
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="mcp-tool-row">
+      <div className="mcp-tool-head">
+        <div className="mcp-tool-text">
+          <b>{name}</b>
+          {info?.description && <span>{info.description}</span>}
+        </div>
+        <button
+          className="plugin-try"
+          data-testid={`mcp-tool-call-btn-${name}`}
+          onClick={() => setOpen((v) => !v)}
+        >
+          调用
+        </button>
+      </div>
+      {open && (
+        <form className="mcp-tool-form" data-testid={`mcp-tool-form-${name}`} onSubmit={submit}>
+          {info?.description && <p className="mcp-tool-desc">{info.description}</p>}
+          {fields.map((f) => (
+            <label key={f.name} className="mcp-tool-field">
+              <span>{f.name}</span>
+              {f.textarea ? (
+                <textarea
+                  rows={3}
+                  value={values[f.name] ?? ''}
+                  onChange={(e) => setValues((prev) => ({ ...prev, [f.name]: e.target.value }))}
+                />
+              ) : (
+                <input
+                  value={values[f.name] ?? ''}
+                  onChange={(e) => setValues((prev) => ({ ...prev, [f.name]: e.target.value }))}
+                />
+              )}
+            </label>
+          ))}
+          <div className="mcp-tool-actions">
+            <button type="submit" className="plugin-try" disabled={!valid || busy}>
+              {busy ? '调用中…' : '运行'}
+            </button>
+          </div>
+          {dispatched && (
+            <div className="mcp-tool-dispatched" data-testid="mcp-tool-dispatched">
+              已派发到当前会话，结果将出现在对话中
+            </div>
+          )}
+          {error && (
+            <div className="mcp-tool-error" data-testid="mcp-tool-error">{error}</div>
+          )}
+          {hasResult && (
+            <div className="mcp-tool-result" data-testid="mcp-tool-result">
+              <button
+                type="button"
+                className="icon-btn ghost mcp-tool-result-close"
+                aria-label="关闭结果"
+                onClick={() => setHasResult(false)}
+              >
+                <IconX size={12} />
+              </button>
+              <pre>{JSON.stringify(result, null, 2)}</pre>
+            </div>
+          )}
+        </form>
       )}
     </div>
   );

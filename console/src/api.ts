@@ -1,7 +1,8 @@
 /** Console ↔ orchestration-api HTTP + WebSocket 客户端。 */
-import type { Session, ApiEvent, Metrics, McpServer, ProjectContext, Project, FileNode, BrowserRender, GitDiffFile, FactoryDetail, FactorySummary, FactoryRcaHistoryResponse, FailureCounterResponse, QualityTrendResponse, AssistantTurn } from './types';
+import type { Session, ApiEvent, Metrics, McpServer, McpToolInfo, McpCallResult, ProjectContext, Project, FileNode, BrowserRender, GitDiffFile, AiReviewResult, FactoryDetail, FactorySummary, FactoryRcaHistoryResponse, FailureCounterResponse, QualityTrendResponse, AssistantTurn, EditMessageResponse, ProjectMapInfo, ProjectRulesInfo, ScheduledTask, RemoteSessionInfo, BotChannelInfo, WorkerRule, WorkerRulesInfo, WorkerRuleVersion, WorkerRuleStatsData } from './types';
 
-const API_BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined) || 'http://127.0.0.1:8011';
+// M181.2 — RemoteModal 拼接 qr_url(相对路径)需要绝对基址,导出既有常量
+export const API_BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined) || 'http://127.0.0.1:8011';
 const API_PREFIX = '/api/v1';
 
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
@@ -101,12 +102,61 @@ export function fetchProjectDiff(): Promise<{ files: GitDiffFile[] }> {
   return api<{ files: GitDiffFile[] }>('/project/diff');
 }
 
+// M177.2 — 撤销单文件变更:tracked 还原到 HEAD(action=restored),untracked 新文件删除(action=deleted)
+export function revertProjectFile(path: string): Promise<{ ok: boolean; path: string; action: 'restored' | 'deleted' }> {
+  return api(`/project/revert`, { method: 'POST', body: JSON.stringify({ path }) });
+}
+
+// M179.2 — AI 代码评审:POST /project/review,LLM 审查当前工作区 diff → 结构化 findings(只读)
+export function reviewProject(model?: string): Promise<AiReviewResult> {
+  return api<AiReviewResult>('/project/review', {
+    method: 'POST',
+    body: JSON.stringify(model ? { model } : {}),
+  });
+}
+
+// M173 — 项目地图(对标 ZCode Zread;B 队契约:GET /project/map,POST /project/map/regenerate 强制重建)
+
+export function fetchProjectMap(): Promise<{ map: ProjectMapInfo | null; needs_project: boolean }> {
+  return api<{ map: ProjectMapInfo | null; needs_project: boolean }>('/project/map');
+}
+
+export function regenerateProjectMap(): Promise<{ map: ProjectMapInfo | null; needs_project: boolean }> {
+  return api<{ map: ProjectMapInfo | null; needs_project: boolean }>('/project/map/regenerate', { method: 'POST' });
+}
+
+// M180 — 项目规则(对标 ZCode 规则系统;B 队契约:GET/PUT /project/rules,PUT 只写 .flipped/rules.md)
+
+export function fetchProjectRules(): Promise<ProjectRulesInfo> {
+  return api<ProjectRulesInfo>('/project/rules');
+}
+
+export function saveProjectRules(content: string): Promise<ProjectRulesInfo> {
+  return api<ProjectRulesInfo>('/project/rules', { method: 'PUT', body: JSON.stringify({ content }) });
+}
+
 export function revealProject(): Promise<{ ok: boolean }> {
   return api<{ ok: boolean }>('/project/reveal', { method: 'POST' });
 }
 
 export function toggleMcpServer(name: string, enabled: boolean): Promise<{ name: string; enabled: boolean }> {
   return api(`/mcp/servers/${encodeURIComponent(name)}/toggle?enabled=${enabled}`, { method: 'POST' });
+}
+
+// M170.2 — MCP 工具列表/调用(Plugins 面板「MCP 工具调用」;长工具 202 属 2xx 不抛错)
+
+export function getMcpTools(): Promise<{ tools: McpToolInfo[] }> {
+  return api<{ tools: McpToolInfo[] }>('/mcp/tools');
+}
+
+export function callMcpTool(
+  name: string,
+  args: { arguments: Record<string, unknown>; session_id?: string }
+): Promise<McpCallResult> {
+  return api<McpCallResult>(`/mcp/tools/${encodeURIComponent(name)}/call`, {
+    method: 'POST',
+    body: JSON.stringify(args),
+  });
 }
 
 // M95 — RCA 失败计数(后端 /rca/failure_counter 端点)
@@ -198,12 +248,215 @@ export function fetchAssistantHistory(sessionId: string): Promise<AssistantTurn[
   return api<AssistantTurn[]>(`/assistant/sessions/${encodeURIComponent(sessionId)}/history`);
 }
 
-export function approveAssistant(sessionId: string): Promise<{ ok: boolean; session_id: string; decision: string }> {
-  return api(`/assistant/sessions/${encodeURIComponent(sessionId)}/approve`, { method: 'POST' });
+// M176 — /goal:目标驱动自循环(POST 建立派发;GET 查询最新 goal 状态,404 无 goal → null)
+
+export interface StartAssistantGoalRequest {
+  objective: string;
+  mode?: string;
+  model?: string;
+  max_iterations?: number;
+}
+
+export interface StartAssistantGoalResponse {
+  task_id: string;
+  session_id: string;
+  objective: string;
+  max_iterations: number;
+}
+
+export function startAssistantGoal(
+  sessionId: string,
+  req: StartAssistantGoalRequest
+): Promise<StartAssistantGoalResponse> {
+  return api<StartAssistantGoalResponse>(`/assistant/sessions/${encodeURIComponent(sessionId)}/goal`, {
+    method: 'POST',
+    body: JSON.stringify(req),
+  });
+}
+
+export interface AssistantGoalStatus {
+  objective: string;
+  status: string;
+  iteration: number;
+  max_iterations: number;
+  gap?: string;
+}
+
+export async function fetchAssistantGoal(sessionId: string): Promise<AssistantGoalStatus | null> {
+  const res = await fetch(
+    `${API_BASE}${API_PREFIX}/assistant/sessions/${encodeURIComponent(sessionId)}/goal`,
+    { headers: { 'Content-Type': 'application/json' } }
+  );
+  if (res.status === 404) return null; // 无 goal
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`HTTP ${res.status}: ${text}`);
+  }
+  return res.json() as Promise<AssistantGoalStatus>;
+}
+
+// M165.2a — scope: 'once'(默认,无 body) | 'always'(本会话同类动作不再询问)
+export function approveAssistant(
+  sessionId: string,
+  scope?: 'once' | 'always'
+): Promise<{ ok: boolean; session_id: string; decision: string }> {
+  return api(`/assistant/sessions/${encodeURIComponent(sessionId)}/approve`, {
+    method: 'POST',
+    ...(scope ? { body: JSON.stringify({ scope }) } : {}),
+  });
 }
 
 export function rejectAssistant(sessionId: string): Promise<{ ok: boolean; session_id: string; decision: string }> {
   return api(`/assistant/sessions/${encodeURIComponent(sessionId)}/reject`, { method: 'POST' });
+}
+
+// M165.1a — /compact:压缩会话上下文(404 无会话 / 409 空历史)
+export function compactAssistant(sessionId: string): Promise<{ ok: boolean; session_id: string; summary: string }> {
+  return api(`/assistant/sessions/${encodeURIComponent(sessionId)}/compact`, { method: 'POST' });
+}
+
+// M168.2 — /undo:撤销最近一轮 agent 文件改动(对标 opencode /undo)
+// 404 无会话 / 409 运行中或无可撤销改动 / 400/501 非 git 工作区
+export interface UndoAssistantResponse {
+  ok: boolean;
+  session_id: string;
+  restored: boolean;
+  deleted: string[];
+}
+
+export function undoAssistant(sessionId: string): Promise<UndoAssistantResponse> {
+  return api<UndoAssistantResponse>(`/assistant/sessions/${encodeURIComponent(sessionId)}/undo`, { method: 'POST' });
+}
+
+// M174 — 编辑 user 消息并重跑:截断该事件后的历史,默认恢复文件快照(restore_files)
+// 404 无会话/事件 / 409 运行中;响应 EditMessageResponse 定义在 ./types
+export function editAssistantMessage(
+  sessionId: string,
+  eventId: string,
+  text: string,
+  restoreFiles = true
+): Promise<EditMessageResponse> {
+  return api<EditMessageResponse>(
+    `/assistant/sessions/${encodeURIComponent(sessionId)}/messages/${encodeURIComponent(eventId)}/edit`,
+    { method: 'POST', body: JSON.stringify({ text, restore_files: restoreFiles }) }
+  );
+}
+
+// ---- M178.2 · 已安排任务(后台任务系统;新建函数命名 createScheduledTask 以避开既有 createTask 会话任务) ----
+
+export function fetchTasks(): Promise<ScheduledTask[]> {
+  // 与 fetchSessions 同款纵深防御：非数组响应兜底为 []
+  return api<ScheduledTask[]>('/tasks').then((data) =>
+    Array.isArray(data) ? data : []
+  );
+}
+
+export interface CreateScheduledTaskRequest {
+  title: string;
+  prompt: string;
+  mode?: string;
+  model?: string;
+  kind?: 'once' | 'interval';
+  run_at?: string | null;
+  every_minutes?: number | null;
+}
+
+export function createScheduledTask(body: CreateScheduledTaskRequest): Promise<ScheduledTask> {
+  return api<ScheduledTask>('/tasks', { method: 'POST', body: JSON.stringify(body) });
+}
+
+export function deleteTask(id: string): Promise<{ ok: boolean }> {
+  return api(`/tasks/${encodeURIComponent(id)}`, { method: 'DELETE' });
+}
+
+export function toggleTask(id: string, enabled: boolean): Promise<ScheduledTask> {
+  return api<ScheduledTask>(`/tasks/${encodeURIComponent(id)}/toggle?enabled=${enabled}`, { method: 'POST' });
+}
+
+// ---- M181.2 · 移动远程控制(扫码在手机浏览器接管会话;token 限时有效、可撤销) ----
+
+export function createRemoteSession(sessionId?: string): Promise<RemoteSessionInfo> {
+  return api<RemoteSessionInfo>('/remote/sessions', {
+    method: 'POST',
+    body: JSON.stringify(sessionId ? { session_id: sessionId } : {}),
+  });
+}
+
+export function revokeRemoteToken(token: string): Promise<{ ok: boolean }> {
+  return api(`/remote/${encodeURIComponent(token)}`, { method: 'DELETE' });
+}
+
+// ---- M182 · Bot 通道(多平台消息接入:telegram/wecom;状态 + 发测试消息) ----
+
+export function fetchBotChannels(): Promise<BotChannelInfo[]> {
+  return api<{ channels: BotChannelInfo[] }>('/bot/channels').then((data) =>
+    Array.isArray(data?.channels) ? data.channels : []
+  );
+}
+
+export function testBotChannel(platform: string, text: string): Promise<{ ok: boolean; error?: string }> {
+  return api<{ ok: boolean; error?: string }>(`/bot/channels/${encodeURIComponent(platform)}/test`, {
+    method: 'POST',
+    body: JSON.stringify({ text }),
+  });
+}
+
+// ---- M183 · Worker 规则(学习系统:CRUD + 版本史/回滚 + 自动生成 + 执行统计) ----
+
+export function fetchWorkerRules(): Promise<WorkerRulesInfo> {
+  return api<WorkerRulesInfo>('/worker/rules');
+}
+
+export function createWorkerRule(text: string, scope = 'worker', priority?: number): Promise<WorkerRule> {
+  return api<WorkerRule>('/worker/rules', {
+    method: 'POST',
+    body: JSON.stringify({ text, scope, ...(priority !== undefined ? { priority } : {}) }),
+  });
+}
+
+export function updateWorkerRule(
+  id: string,
+  patch: { text?: string; priority?: number; scope?: string }
+): Promise<WorkerRule> {
+  return api<WorkerRule>(`/worker/rules/${encodeURIComponent(id)}`, {
+    method: 'PUT',
+    body: JSON.stringify(patch),
+  });
+}
+
+export function deleteWorkerRule(id: string): Promise<{ ok: boolean }> {
+  return api(`/worker/rules/${encodeURIComponent(id)}`, { method: 'DELETE' });
+}
+
+export function toggleWorkerRule(id: string, enabled: boolean): Promise<WorkerRule> {
+  return api<WorkerRule>(`/worker/rules/${encodeURIComponent(id)}/toggle`, {
+    method: 'POST',
+    body: JSON.stringify({ enabled }),
+  });
+}
+
+export function fetchWorkerRuleVersions(): Promise<WorkerRuleVersion[]> {
+  return api<{ versions: WorkerRuleVersion[] }>('/worker/rules/versions').then((data) =>
+    Array.isArray(data?.versions) ? data.versions : []
+  );
+}
+
+export function rollbackWorkerRules(version: number): Promise<{ ok: boolean; version: number }> {
+  return api<{ ok: boolean; version: number }>('/worker/rules/rollback', {
+    method: 'POST',
+    body: JSON.stringify({ version }),
+  });
+}
+
+export function autoGenerateWorkerRules(): Promise<{ added: WorkerRule[]; candidates: number }> {
+  return api<{ added: WorkerRule[]; candidates: number }>('/worker/rules/auto-generate', {
+    method: 'POST',
+    body: JSON.stringify({}),
+  });
+}
+
+export function fetchWorkerRuleStats(): Promise<WorkerRuleStatsData> {
+  return api<WorkerRuleStatsData>('/worker/rules/stats');
 }
 
 export interface EventHandlers {

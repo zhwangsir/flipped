@@ -143,3 +143,19 @@
 - **取代**：D10/D14/D17 的"桌面 IDE/VSCodium fork/Windows 安装器"方向降级搁置(未推的 `release-windows.yml` 暂不推进)。Cline 仍可作可选 worker/参考。
 - **候选横评依据**(均一手核实)：OpenHands ✓(沙盒+浏览器+MCP+Web+SDK)；Cline(最佳 agent 运行时但无沙盒)；SWE-agent/mini(研究/维护态)；Goose(无浏览器/沙盒)；Continue(仓库只读)；Tabby(非 agent)；bolt.diy(浏览器内 WebContainer，无 Docker/Python)；Devika(已弃)。
 - **风险**：OpenHands 本地模型工具调用摩擦 → spike 首步验证；上游活跃但 rebrand 频繁(registry/命名变动)需以官方 quickstart 为准。
+
+## D19 · Bot Channel 平台选型：Telegram raw httpx + 企业微信(WeCom)应用回调
+- **日期**：2026-08-05 ｜ **批准**：实测勘察(PLAN M182)
+- **背景**：用户要求「Telegram 机器人 + 微信机器人」完整接入。勘察结论：**个人微信无官方 bot API**（任何个人号机器人方案都是逆向协议，有封号风险且随时失效）。
+- **决策**：
+  - **Telegram 走 raw httpx**（已有依赖），Bot API sendMessage + webhook secret_token 头验证(hmac.compare_digest)，**零新增重依赖**（不引 python-telegram-bot）。
+  - **微信落地企业微信(WeCom)应用回调**：SHA1 验签 + AES-256-CBC 加解密(pycryptodome 新增登记)，pycryptodome 缺失时 available()=False 优雅降级不炸后端。个人微信接入明确不进路线图。
+  - token/secret 全走 env(FLIPPED_BOT_TELEGRAM_TOKEN/SECRET、FLIPPED_BOT_WECOM_*)，绝不硬编码；httpx trust_env=False(D5 防线)。
+- **影响**：M182 落地；STATE.json M182 known_limitations 首条注明个人微信取舍；用户若坚持个人微信需另行决策（逆向协议风险自担）。
+
+## D20 · 列表类 API 契约：返回全量插入序，展示排序职责下沉消费侧
+- **日期**：2026-08-05 ｜ **批准**：契约勘误实测(M183 verify d2/e1/e2 失败定位)
+- **背景**：verify_m183.sh 初版断言假设 GET /worker/rules「按 priority desc 排序 + 停用规则消失」，与实现不符三连败。定位后确认真实契约意图：前端 WorkerRulesPanel 自行排序展示，且需看到停用规则以便复启；注入层(build_worker_rules_text)才是 priority desc 的真正消费方。
+- **决策**：**列表 GET 接口一律返回全量(含停用/软删除项)按插入序**；排序/过滤是消费侧职责（前端展示排序、注入层 priority desc），服务端不做展示优化。停用项留列表供复启（toggle 是状态翻转不是删除）。
+- **理由**：单一数据源不做多视图；消费侧各取所需（面板要全量可复启、注入层要 enabled+排序）；契约稳定不随 UI 需求漂移。
+- **影响**：修脚本对齐契约而非改实现（契约勘误流程：先查 PLAN 与前端真实消费再定归属）；M183 verify d2/e1/e2 改为校验 PUT 落库/toggle enabled 字段；注入层排序正确性由真 local_worker 黑盒 l2/l3 钉死。
