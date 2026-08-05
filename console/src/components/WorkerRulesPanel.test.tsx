@@ -310,6 +310,9 @@ describe('WorkerRulesPanel', () => {
   });
 
   it('加载失败 → 红字 + 重试可恢复', async () => {
+    // M194.7 — 带参失败后会先做一次无参回落尝试;两次都拒绝才进错误态
+    // (clearAllMocks 不清 mockResolvedValue 实现,单次 reject 会让回落意外成功)
+    mockedFetchRules.mockRejectedValueOnce(new Error('HTTP 500: boom'));
     mockedFetchRules.mockRejectedValueOnce(new Error('HTTP 500: boom'));
     render(<WorkerRulesPanel />);
     await waitFor(() => expect(screen.getByText(/加载失败：HTTP 500: boom/)).toBeInTheDocument());
@@ -317,6 +320,84 @@ describe('WorkerRulesPanel', () => {
     mockedFetchStats.mockResolvedValue(defaultStats);
     fireEvent.click(screen.getByText('重试'));
     await waitFor(() => expect(screen.getByTestId('wrules-panel')).toBeInTheDocument());
-    expect(mockedFetchRules).toHaveBeenCalledTimes(2);
+    // M194.7 — 带参失败后会先做一次无参回落尝试(同样失败),故重试是第 3 次调用
+    expect(mockedFetchRules).toHaveBeenCalledTimes(3);
+  });
+});
+
+// M194.7 — 服务端排序/过滤:默认 sort=priority 走服务端;enabled 开关(全部/启用/停用);
+// 服务端请求失败/不支持 → 回落本地排序全量拉取(现状行为不回归)
+describe('WorkerRulesPanel — M194.7 服务端排序/过滤', () => {
+  it('mount 默认带 { sort: "priority" } 走服务端排序', async () => {
+    setupLoad();
+    render(<WorkerRulesPanel />);
+    await waitFor(() => expect(screen.getByTestId('wrule-r-auto')).toBeInTheDocument());
+    expect(mockedFetchRules).toHaveBeenCalledWith({ sort: 'priority' });
+  });
+
+  it('enabled 过滤开关渲染(全部/启用/停用,默认全部 active)', async () => {
+    setupLoad();
+    render(<WorkerRulesPanel />);
+    await waitFor(() => expect(screen.getByTestId('wrules-filter')).toBeInTheDocument());
+    const group = screen.getByTestId('wrules-filter');
+    expect(within(group).getByText('全部')).toBeInTheDocument();
+    expect(within(group).getByText('启用')).toBeInTheDocument();
+    expect(within(group).getByText('停用')).toBeInTheDocument();
+    expect(within(group).getByText('全部').className).toContain('active');
+  });
+
+  it('切「停用」→ 重新拉取带 { sort: "priority", enabled: false }', async () => {
+    setupLoad();
+    render(<WorkerRulesPanel />);
+    await waitFor(() => expect(screen.getByTestId('wrules-filter')).toBeInTheDocument());
+    mockedFetchRules.mockClear();
+    fireEvent.click(screen.getByText('停用'));
+    await waitFor(() =>
+      expect(mockedFetchRules).toHaveBeenCalledWith({ sort: 'priority', enabled: false })
+    );
+  });
+
+  it('切「启用」→ { sort: "priority", enabled: true };切回「全部」→ 仅 sort', async () => {
+    setupLoad();
+    render(<WorkerRulesPanel />);
+    await waitFor(() => expect(screen.getByTestId('wrules-filter')).toBeInTheDocument());
+    fireEvent.click(screen.getByText('启用'));
+    await waitFor(() =>
+      expect(mockedFetchRules).toHaveBeenCalledWith({ sort: 'priority', enabled: true })
+    );
+    fireEvent.click(screen.getByText('全部'));
+    await waitFor(() => expect(mockedFetchRules).toHaveBeenLastCalledWith({ sort: 'priority' }));
+  });
+
+  it('服务端 500 → 回落本地排序全量拉取,规则照常渲染不炸', async () => {
+    // 带参请求 500,回落无参全量成功(故意乱序:manual(p60) 在前)
+    mockedFetchRules.mockRejectedValueOnce(new Error('HTTP 500: boom'));
+    mockedFetchRules.mockResolvedValueOnce({ version: 3, rules: [manualRule, autoRule] });
+    mockedFetchStats.mockResolvedValue(defaultStats);
+    render(<WorkerRulesPanel />);
+    await waitFor(() => expect(screen.getByTestId('wrule-r-auto')).toBeInTheDocument());
+    // 无错误红字(回落成功)
+    expect(screen.queryByText(/加载失败/)).toBeNull();
+    // 本地排序 priority desc:auto(70) 在 manual(60) 前
+    const rows = document.querySelectorAll('.wrules-row');
+    expect(rows[0].getAttribute('data-testid')).toBe('wrule-r-auto');
+    expect(rows[1].getAttribute('data-testid')).toBe('wrule-r-manual');
+  });
+
+  it('回落后切「停用」→ 无参拉取 + 本地过滤(只剩停用规则)', async () => {
+    mockedFetchRules.mockRejectedValueOnce(new Error('HTTP 500: boom'));
+    mockedFetchRules.mockResolvedValueOnce({ version: 3, rules: [manualRule, autoRule] });
+    mockedFetchStats.mockResolvedValue(defaultStats);
+    render(<WorkerRulesPanel />);
+    await waitFor(() => expect(screen.getByTestId('wrule-r-auto')).toBeInTheDocument());
+    mockedFetchRules.mockResolvedValue({ version: 3, rules: [manualRule, autoRule] });
+    mockedFetchRules.mockClear();
+    fireEvent.click(screen.getByText('停用'));
+    // 回落通路不再带查询参数
+    await waitFor(() => expect(mockedFetchRules).toHaveBeenCalledWith(undefined));
+    await waitFor(() => {
+      expect(screen.queryByTestId('wrule-r-auto')).toBeNull();
+      expect(screen.getByTestId('wrule-r-manual')).toBeInTheDocument();
+    });
   });
 });

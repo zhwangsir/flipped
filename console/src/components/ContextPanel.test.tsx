@@ -907,6 +907,68 @@ describe('ContextPanel — 审查 tab · M179.2 AI 评审', () => {
   });
 });
 
+// M194.4 — 评审模型选择:评审按钮旁紧凑下拉(默认 · coder / architect),非默认传 model 参数
+describe('ContextPanel — 审查 tab · M194.4 评审模型选择', () => {
+  const diffFiles: GitDiffFile[] = [
+    { path: 'src/a.ts', added: 3, removed: 1, lines: [{ type: 'add', text: '+new' }] },
+  ];
+  const renderDiff = (overrides: Record<string, unknown> = {}) => {
+    mockedUseApp.mockReturnValue({
+      ...baseState,
+      contextTab: 'diff',
+      changedFiles: [],
+      gitDiff: diffFiles,
+      ...overrides,
+    } as never);
+    return render(<ContextPanel />);
+  };
+
+  it('评审按钮旁渲染模型下拉(默认 · coder / architect 两项)', () => {
+    renderDiff();
+    const select = screen.getByTitle('评审模型') as HTMLSelectElement;
+    expect(select.tagName).toBe('SELECT');
+    const labels = [...select.options].map((o) => o.textContent);
+    expect(labels).toEqual(['默认 · coder', 'architect']);
+    expect(select.value).toBe('');
+  });
+
+  it('选 architect 后点「AI 评审」→ runAiReview("architect")', () => {
+    const runAiReview = vi.fn(async () => {});
+    renderDiff({ runAiReview });
+    fireEvent.change(screen.getByTitle('评审模型'), { target: { value: 'architect' } });
+    fireEvent.click(screen.getByText('AI 评审'));
+    expect(runAiReview).toHaveBeenCalledWith('architect');
+  });
+
+  it('保持默认 → runAiReview() 不传 model(后端默认模型)', () => {
+    const runAiReview = vi.fn(async () => {});
+    renderDiff({ runAiReview });
+    fireEvent.click(screen.getByText('AI 评审'));
+    expect(runAiReview).toHaveBeenCalledWith(undefined);
+  });
+
+  it('选择持久:选 architect 再切回默认 → 再次评审不传 model', () => {
+    const runAiReview = vi.fn(async () => {});
+    renderDiff({ runAiReview });
+    const select = screen.getByTitle('评审模型');
+    fireEvent.change(select, { target: { value: 'architect' } });
+    fireEvent.change(select, { target: { value: '' } });
+    fireEvent.click(screen.getByText('AI 评审'));
+    expect(runAiReview).toHaveBeenCalledWith(undefined);
+  });
+
+  it('结果区总览行显示本次评审使用的 model', () => {
+    renderDiff({
+      aiReview: {
+        result: { findings: [], files_reviewed: 1, model: 'architect', note: null },
+        loading: false,
+        error: null,
+      },
+    });
+    expect(screen.getByText('0 条建议 · 评审了 1 个文件 · architect')).toBeInTheDocument();
+  });
+});
+
 // M186.2 — findings 行号跳转:有行号的 finding 整行可点 → openFile(path, line);
 // 编辑器目标行高亮(.eln-wrap.line-target) + scrollIntoView 居中
 describe('ContextPanel — M186.2 findings 行号跳转', () => {
@@ -1160,7 +1222,7 @@ describe('ContextPanel — M186.4 AI commit message', () => {
     expect(btn.disabled).toBe(true);
   });
 
-  it('生成成功 → 展示 message/model/文件数,点击「复制」调 clipboard.writeText(message)', () => {
+  it('生成成功 → textarea 初值=生成文本 + meta 展示,点击「复制」调 clipboard.writeText(编辑后文本)(M194.5)', () => {
     const writeText = vi.fn(async () => {});
     Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
     renderDiff({
@@ -1170,10 +1232,50 @@ describe('ContextPanel — M186.4 AI commit message', () => {
         error: null,
       },
     });
-    expect(screen.getByText('feat: 增加评审历史')).toBeInTheDocument();
+    const textarea = screen.getByTitle('提交信息(可编辑)') as HTMLTextAreaElement;
+    expect(textarea.tagName).toBe('TEXTAREA');
+    expect(textarea.value).toBe('feat: 增加评审历史');
     expect(screen.getByText('glm-x · 2 个文件')).toBeInTheDocument();
+    // 编辑后复制的是编辑后的文本
+    fireEvent.change(textarea, { target: { value: 'feat: 增加评审历史(手改)' } });
     fireEvent.click(screen.getByText('复制'));
-    expect(writeText).toHaveBeenCalledWith('feat: 增加评审历史');
+    expect(writeText).toHaveBeenCalledWith('feat: 增加评审历史(手改)');
+  });
+
+  it('未编辑直接复制 → clipboard 收到原始生成文本(M194.5)', () => {
+    const writeText = vi.fn(async () => {});
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+    renderDiff({
+      commitMessage: {
+        result: { message: 'fix: 空指针', model: 'glm-x', files_count: 1, note: null },
+        loading: false,
+        error: null,
+      },
+    });
+    fireEvent.click(screen.getByText('复制'));
+    expect(writeText).toHaveBeenCalledWith('fix: 空指针');
+  });
+
+  it('重新生成(新 result) → textarea 重置为新文本(M194.5)', () => {
+    const first = renderDiff({
+      commitMessage: {
+        result: { message: 'feat: 第一版', model: 'glm-x', files_count: 1, note: null },
+        loading: false,
+        error: null,
+      },
+    });
+    const textarea = screen.getByTitle('提交信息(可编辑)') as HTMLTextAreaElement;
+    fireEvent.change(textarea, { target: { value: '手改内容' } });
+    expect(textarea.value).toBe('手改内容');
+    first.unmount();
+    renderDiff({
+      commitMessage: {
+        result: { message: 'feat: 第二版', model: 'glm-x', files_count: 2, note: null },
+        loading: false,
+        error: null,
+      },
+    });
+    expect((screen.getByTitle('提交信息(可编辑)') as HTMLTextAreaElement).value).toBe('feat: 第二版');
   });
 
   it('error 非空 → 头部下方红字行(.commit-error)', () => {

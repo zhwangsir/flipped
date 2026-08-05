@@ -1731,6 +1731,21 @@ body.resizing {
   background: var(--bg-hover);
   color: var(--text-primary);
 }
+/* M194.4 — 评审模型紧凑下拉(评审按钮旁,同 rdiff-* 语言) */
+.rdiff-model {
+  font-family: var(--font-sans);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  background: var(--bg-base);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 2px 4px;
+  cursor: pointer;
+}
+.rdiff-model:hover {
+  color: var(--text-primary);
+  border-color: var(--border-strong, var(--border-subtle));
+}
 .rdiff-file {
   border-bottom: 1px solid var(--border-subtle);
 }
@@ -1952,9 +1967,10 @@ body.resizing {
   background: color-mix(in oklab, var(--orange) 12%, transparent);
 }
 /* M186.4 — AI commit message 结果块(复用 review-summary/review-clear 视觉) */
+/* M194.5 — 只读块改可编辑 textarea,容器改 center 对齐(icon/meta/复制按钮对多行文本框垂直居中) */
 .commit-msg {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 8px;
   padding: 6px 12px;
   font-size: var(--text-xs);
@@ -1963,6 +1979,20 @@ body.resizing {
 }
 .commit-msg svg { color: var(--orange); flex: none; align-self: center; }
 .commit-msg-text { color: var(--text-primary); word-break: break-all; }
+.commit-msg-edit {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  line-height: 1.5;
+  color: var(--text-primary);
+  background: var(--bg-base);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 4px 6px;
+  resize: vertical;
+}
+.commit-msg-edit:focus { outline: none; border-color: var(--accent); }
 .commit-msg-meta { flex: none; margin-left: auto; color: var(--text-faint); }
 .commit-msg .review-clear { margin-left: 0; flex: none; align-self: center; }
 
@@ -6493,6 +6523,17 @@ select.set-select-native option {
 .wrules { display: flex; flex-direction: column; flex: 1; min-height: 0; overflow-y: auto; }
 .wrules-head { display: flex; align-items: center; gap: 8px; padding: 8px var(--sp-4); border-bottom: 1px solid var(--border-subtle); }
 .wrules-title { font-size: var(--text-sm); font-weight: 600; color: var(--text-primary); }
+/* M194.7 — enabled 过滤分段开关(全部/启用/停用,视觉对齐 ft-filter 系) */
+.wrules-filter { display: inline-flex; gap: 2px; padding: 1px; border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); }
+.wrules-filter-btn {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  padding: 2px 8px;
+  border-radius: calc(var(--radius-sm) - 1px);
+  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+.wrules-filter-btn:hover { background: var(--bg-hover); color: var(--text-primary); }
+.wrules-filter-btn.active { background: var(--accent-soft); color: var(--text-primary); }
 .wrules-ver { font-size: 10px; padding: 1px 6px; border-radius: 999px; background: var(--bg-hover); color: var(--text-muted); margin-left: 4px; }
 .wrules-note { padding: 4px var(--sp-4); font-size: var(--text-xs); }
 .wrules-note.ok { color: var(--success); }

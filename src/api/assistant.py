@@ -1101,11 +1101,25 @@ async def create_assistant_goal(session_id: str, req: CreateGoalRequest) -> Crea
     max_iterations = _goal_max_iterations(req.max_iterations)
     model_alias = req.model or session.model or "coder"
     task_id = f"task-{datetime.now(timezone.utc).strftime('%H%M%S')}-{uuid.uuid4().hex[:4]}"
-    state = GoalState(objective=req.objective, max_iterations=max_iterations)
+    # M194.1 · @ 文件引用展开（与 send 通路 L514-528 同款，消化 L-M176-4）：
+    # GoalState/LLM 输入用展开文本；展示层 user 消息保持原文 + refs 元数据。
+    # FLIPPED_FILE_REFS=0 关闭；fail-open：任何异常 = 不展开。
+    objective_expanded = req.objective
+    goal_refs: list[Any] = []
+    if os.environ.get("FLIPPED_FILE_REFS", "1") != "0":
+        try:
+            from .file_refs import expand_file_refs
+            from .main import ps
+            objective_expanded, goal_refs = expand_file_refs(req.objective, ps.project_root())
+        except Exception:  # noqa: BLE001 fail-open
+            objective_expanded, goal_refs = req.objective, []
+    state = GoalState(objective=objective_expanded, max_iterations=max_iterations)
 
-    # 用户消息落库（原文 + goal 标记，前端据此渲染 goal 起始标记行）
-    bus.emit(session_id, EventType.message, Role.user,
-             {"text": req.objective, "goal": {"started": True}})
+    # 用户消息落库（原文 + goal 标记 + refs 元数据，前端据此渲染 goal 起始标记行）
+    goal_msg: dict[str, Any] = {"text": req.objective, "goal": {"started": True}}
+    if goal_refs:
+        goal_msg["refs"] = [asdict(r) for r in goal_refs]
+    bus.emit(session_id, EventType.message, Role.user, goal_msg)
     bus.emit(session_id, EventType.goal, Role.system, goal_payload("set", state))
     # M188.2：goal 运行期间会话须为 running——否则进程死后 lifespan 看不到它，
     # 断点续跑（try_resume_goal 只作用于 running 会话）永远不会命中

@@ -1606,10 +1606,14 @@ async def _run_chat(session_id: str, task_id: str, description: str, model_alias
                 WORKER_RULES_CHAT_HEADER as _WR_CHAT_HEADER,
                 WorkerRuleStore as _WRStoreChat,
                 build_worker_rules_text as _build_wr_text,
+                chat_rules_max_chars as _chat_rules_max_chars,
             )
             _wr_store = _WRStoreChat(Path(
                 os.environ.get("FLIPPED_WORKER_RULES_PATH", "data/worker_rules.json")))
-            _wr_text, _ = _build_wr_text(_wr_store.list(), scopes=("all",), max_chars=300)
+            # M194.2：chat 通路预算读 FLIPPED_CHAT_RULES_MAX_CHARS
+            # （缺省回落 FLIPPED_WORKER_RULES_MAX_CHARS 解析值，双缺省 300）
+            _wr_text, _ = _build_wr_text(_wr_store.list(), scopes=("all",),
+                                         max_chars=_chat_rules_max_chars())
             if _wr_text:
                 system += "\n\n" + _WR_CHAT_HEADER + "\n" + _wr_text
                 worker_rules_injected = True

@@ -19,21 +19,22 @@ beforeEach(() => {
 });
 
 describe('Launcher', () => {
-  it('渲染 toolbar 与 4 个入口按钮', () => {
+  it('渲染 toolbar 与 5 个入口按钮', () => {
     render(<Launcher />);
     const toolbar = screen.getByRole('toolbar');
     expect(toolbar).toHaveAttribute('aria-orientation', 'vertical');
     expect(toolbar).toHaveAttribute('aria-label', '面板入口');
     const items = screen.getAllByRole('button');
-    expect(items).toHaveLength(4);
+    expect(items).toHaveLength(5);
   });
 
-  it('4 个入口的 aria-label 分别为 审查/终端/浏览器/文件', () => {
+  it('5 个入口的 aria-label 分别为 审查/终端/浏览器/文件/规则', () => {
     render(<Launcher />);
     expect(screen.getByLabelText('审查')).toBeInTheDocument();
     expect(screen.getByLabelText('终端')).toBeInTheDocument();
     expect(screen.getByLabelText('浏览器')).toBeInTheDocument();
     expect(screen.getByLabelText('文件')).toBeInTheDocument();
+    expect(screen.getByLabelText('规则')).toBeInTheDocument();
   });
 
   it('点击「审查」调用 openContext("diff")', () => {
@@ -66,6 +67,19 @@ describe('Launcher', () => {
     render(<Launcher />);
     fireEvent.click(screen.getByLabelText('文件'));
     expect(openContext).toHaveBeenCalledWith('files');
+  });
+
+  it('点击「规则」调用 openContext("rules")(M194.6)', () => {
+    const openContext = vi.fn();
+    mockedUseApp.mockReturnValue({ openContext } as never);
+    render(<Launcher />);
+    fireEvent.click(screen.getByLabelText('规则'));
+    expect(openContext).toHaveBeenCalledWith('rules');
+  });
+
+  it('规则入口无快捷键时 data-label 等于 label(M194.6)', () => {
+    render(<Launcher />);
+    expect(screen.getByLabelText('规则')).toHaveAttribute('data-label', '规则');
   });
 
   it('带快捷键的入口 data-label 拼接 label + shortcut', () => {

@@ -35,6 +35,43 @@ _BLOCKLIST: tuple[str, ...] = (
 
 _HISTORY_CAP = 20
 
+
+def _history_cap() -> int:
+    """M194.3：history 上限运行期读 FLIPPED_WORKER_RULES_HISTORY_CAP。
+
+    默认 _HISTORY_CAP(20)，clamp 到 [1, 500]，非法值（ValueError）回落 20。
+    """
+    try:
+        return max(1, min(int(os.environ.get("FLIPPED_WORKER_RULES_HISTORY_CAP", "20")), 500))
+    except ValueError:
+        return _HISTORY_CAP
+
+
+def _rules_max_chars() -> int:
+    """M194.2：worker 通路注入预算运行期读 FLIPPED_WORKER_RULES_MAX_CHARS。
+
+    默认 300，非法值（ValueError）回落 300。
+    """
+    try:
+        return int(os.environ.get("FLIPPED_WORKER_RULES_MAX_CHARS", "300"))
+    except ValueError:
+        return 300
+
+
+def chat_rules_max_chars() -> int:
+    """M194.2：chat/plan 通路注入预算解析（api/main 注入调用点显式传参用）。
+
+    FLIPPED_CHAT_RULES_MAX_CHARS 优先；缺省或非法值回落
+    FLIPPED_WORKER_RULES_MAX_CHARS 解析值（双缺省 = 300）。
+    """
+    raw = os.environ.get("FLIPPED_CHAT_RULES_MAX_CHARS")
+    if raw is not None:
+        try:
+            return int(raw)
+        except ValueError:
+            pass
+    return _rules_max_chars()
+
 # M185.1：chat/plan 通路注入 scope="all" 规则时的 system 段头
 WORKER_RULES_CHAT_HEADER = "以下是全局工作规则（必须遵守）："
 
@@ -122,7 +159,7 @@ class WorkerRuleStore:
             "detail": detail,
             "rules": [r.model_dump() for r in self._rules],
         })
-        self._history = self._history[-_HISTORY_CAP:]
+        self._history = self._history[-_history_cap():]
         self._save()
 
     def list(self) -> list[WorkerRule]:
@@ -204,16 +241,21 @@ class WorkerRuleStore:
 
 
 def build_worker_rules_text(rules: list[WorkerRule], *,
-                            max_chars: int = 300,
+                            max_chars: int | None = None,
                             scopes: tuple[str, ...] = ("worker", "all")
                             ) -> tuple[str, list[str]]:
     """渲染注入文本：enabled 且 scope∈scopes；priority desc → id asc。
 
     scopes 缺省 ("worker","all") = M183 现状（worker 通路）；chat/plan 通路传
     ("all",) 只注入全域规则（worker-only 工程约束不进对话）。
+    max_chars=None（M194.2）时运行期读 FLIPPED_WORKER_RULES_MAX_CHARS
+    （默认 300，非法值回落 300）；显式传参优先。chat 通路调用点改传
+    chat_rules_max_chars()（FLIPPED_CHAT_RULES_MAX_CHARS，缺省回落 worker 值）。
     逐条 "- {text}"，累计超 max_chars 即停（当前条整条不装）；尾部有丢弃则追加
     "…(略N条)"（此行自身需在预算内，装不下则直接截掉）。空集 → ("", [])。
     """
+    if max_chars is None:
+        max_chars = _rules_max_chars()
     eligible = [r for r in rules if r.enabled and r.scope in scopes]
     eligible.sort(key=lambda r: (-r.priority, r.id))
 

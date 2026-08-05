@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   fetchWorkerRules,
   createWorkerRule,
@@ -13,6 +13,14 @@ import {
 import type { WorkerRule, WorkerRulesInfo, WorkerRuleVersion, WorkerRuleStatsData } from '../types';
 import { IconWand } from '../icons';
 
+// M194.7 — enabled 过滤三态:全部(不带 enabled 参数)/启用/停用
+type EnabledFilter = 'all' | 'on' | 'off';
+const FILTER_OPTIONS: { key: EnabledFilter; label: string }[] = [
+  { key: 'all', label: '全部' },
+  { key: 'on', label: '启用' },
+  { key: 'off', label: '停用' },
+];
+
 export function WorkerRulesPanel() {
   const [info, setInfo] = useState<WorkerRulesInfo | null>(null);
   const [stats, setStats] = useState<WorkerRuleStatsData | null>(null);
@@ -26,35 +34,60 @@ export function WorkerRulesPanel() {
   const [versions, setVersions] = useState<WorkerRuleVersion[]>([]);
   const [rollbackTarget, setRollbackTarget] = useState<number | null>(null);
   const [autoNote, setAutoNote] = useState<{ text: string; ok: boolean } | null>(null);
+  // M194.7 — 服务端排序/过滤:sort=priority + enabled 走查询参数;
+  // 服务端失败/不支持 → 回落全量拉取 + 本地排序/过滤(ref 置 false 后不再带参)
+  const [enabledFilter, setEnabledFilter] = useState<EnabledFilter>('all');
+  const serverQueryRef = useRef(true);
 
   const errText = (e: unknown) => (e instanceof Error ? e.message : String(e));
+
+  const fetchAll = useCallback(async () => {
+    const params = serverQueryRef.current
+      ? {
+          sort: 'priority' as const,
+          ...(enabledFilter !== 'all' ? { enabled: enabledFilter === 'on' } : {}),
+        }
+      : undefined;
+    try {
+      const [r, s] = await Promise.all([fetchWorkerRules(params), fetchWorkerRuleStats()]);
+      setInfo(r);
+      setStats(s);
+      setError(null);
+    } catch (e) {
+      if (!serverQueryRef.current) {
+        setError(errText(e));
+        return;
+      }
+      // M194.7 — 回落:无参全量拉取(本地排序/过滤兜底,现状行为不回归)
+      try {
+        const [r2, s2] = await Promise.all([fetchWorkerRules(), fetchWorkerRuleStats()]);
+        if (!r2 || !Array.isArray(r2.rules)) throw e;
+        serverQueryRef.current = false;
+        setInfo(r2);
+        setStats(s2);
+        setError(null);
+      } catch {
+        setError(errText(e));
+      }
+    }
+  }, [enabledFilter]);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const [r, s] = await Promise.all([fetchWorkerRules(), fetchWorkerRuleStats()]);
-      setInfo(r);
-      setStats(s);
-    } catch (e) {
-      setError(errText(e));
+      await fetchAll();
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [fetchAll]);
 
   useEffect(() => {
     load();
   }, [load]);
 
   const refresh = async () => {
-    try {
-      const [r, s] = await Promise.all([fetchWorkerRules(), fetchWorkerRuleStats()]);
-      setInfo(r);
-      setStats(s);
-    } catch (e) {
-      setError(errText(e));
-    }
+    await fetchAll();
   };
 
   const onToggle = async (rule: WorkerRule) => {
@@ -160,7 +193,15 @@ export function WorkerRulesPanel() {
     );
   }
 
-  const rules = (info?.rules ?? []).slice().sort((a, b) => b.priority - a.priority);
+  // M194.7 — 服务端通路:列表已被服务端排序/过滤,直接渲染;
+  // 回落通路(serverQueryRef=false):本地 priority desc 排序 + enabled 过滤(现状行为)
+  const allRules = info?.rules ?? [];
+  const rules = serverQueryRef.current
+    ? allRules
+    : allRules
+        .filter((r) => (enabledFilter === 'all' ? true : enabledFilter === 'on' ? r.enabled : !r.enabled))
+        .slice()
+        .sort((a, b) => b.priority - a.priority);
 
   // M185.2：成功率 = success/(success+failure)（同单位 verify 次）；
   // 旧公式 success/applied 分母分子不同单位（L-M183-3）。零 outcome → -1（效果未评）。
@@ -185,6 +226,18 @@ export function WorkerRulesPanel() {
         <span className="wrules-title">
           Worker 规则 {info?.version != null && <span className="wrules-ver">v{info.version}</span>}
         </span>
+        <div className="wrules-filter" data-testid="wrules-filter">
+          {FILTER_OPTIONS.map(({ key, label }) => (
+            <button
+              key={key}
+              type="button"
+              className={'wrules-filter-btn' + (enabledFilter === key ? ' active' : '')}
+              onClick={() => setEnabledFilter(key)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
         <button className="rdiff-refresh" data-testid="wrules-auto" onClick={autoGen}>
           <IconWand size={12} /> 自动生成
         </button>

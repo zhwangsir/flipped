@@ -3986,7 +3986,7 @@
    },
    "verify": "scripts/verify_m192.sh（单测 34 例 + 黑盒 20 断言全绿）；exo VL 真实推理待集群恢复复验（L-M192-1）",
    "known_limitations": [
-    "exo 集群 Qwen3-VL-4B 实例已放置（控制面 /state 可见 MlxRingInstance），但图像推理数据面 420s 超时无响应；对照 GLM 文本推理 60s 可返回。判定集群侧阻塞，代码侧多模态链路已经假 LLM 黑盒验证"
+    "exo 集群 Qwen3-VL-4B 实例已放置（控制面 /state 可见 MlxRingInstance），但图像推理数据面 420s 超时无响应；对照 GLM 文本推理 60s 可返回。判定集群侧阻塞，代码侧多模态链路已经假 LLM 黑盒验证。2026-08-06 复验#2：实例曾被卸载，重新放置（POST /instance）后数据面仍 6×120s 超时，排除实例状态腐烂——VL runner 本体问题，需进节点查 runner 日志；GLM 数据面 2.3s 健康"
    ]
   },
   "M193": {
@@ -4004,6 +4004,26 @@
     "hunk 接受状态为会话级内存标记（组件 useState + 内容指纹），刷新页面不保留——内容指纹决定不做持久化",
     "拒绝粒度=unified diff hunk（git 原生分组），hunk 内单行不可独立拒绝",
     "staged 新文件/deleted 文件的 hunk 拒绝 422 引导整文件回滚（/dev/null 侧不支持单 hunk 反向应用）"
+   ]
+  },
+  "M194": {
+   "title": "P2 功能缺口批消化（goal @ 展开 / 规则预算 env 化 / 评审模型选择 / commit 编辑框 / Launcher 规则入口 / 规则面板服务端排序）",
+   "status": "done",
+   "completed": "2026-08-06",
+   "summary": "registry open P2 中「功能缺口/可调参数」类批消化（架构取舍类不动），双代理并行（A=后端 assistant.py/worker_rules.py/main.py/orchestrator.py；B=前端 console/src），零 OpenAPI 契约变更。M194.1：create_assistant_goal 插入与 send 同款 expand_file_refs 块（GoalState/LLM 输入用展开文本，用户消息事件 text 保持原文 + refs 元数据，CreateGoalResponse.objective 原文，FLIPPED_FILE_REFS=0 关闭，fail-open；M191 resume 从事件 payload 重建取到展开文本，续跑自然一致）。M194.2：build_worker_rules_text max_chars 默认 None → 运行期读 FLIPPED_WORKER_RULES_MAX_CHARS（默认 300 零行为变化，显式传参优先）；chat 通路调用点改 chat_rules_max_chars()（FLIPPED_CHAT_RULES_MAX_CHARS 缺省回落 worker 值）；orchestrator worker 通路去显式 300 走 env。M194.3：_history_cap() 运行期读 FLIPPED_WORKER_RULES_HISTORY_CAP（默认 20，clamp [1,500]，非法回落 20），trim 改调之。M194.4：ContextPanel 评审按钮旁加模型下拉（默认·coder/architect，跟随 rdiff-* 设计语言），选择透传 reviewProject(model)，结果区显示本次模型。M194.5：commit message 只读块改 textarea（初值=生成文本），复制按钮取编辑后文本。M194.6：Launcher 镜像「地图」入口加「规则」入口（IconScrollText）点击切 rules tab。M194.7：WorkerRulesPanel 带 sort/enabled 参数服务端拉取（复用 M185.3 端点），失败回落本地排序，加 enabled 过滤开关。验收：tests/test_m194_goal_refs.py + test_m194_rules_env.py 单测全绿；scripts/verify_m194.sh 黑盒 23 断言（a. goal @ 展开：响应原文/refs 元数据/goal set 含文件内容/judge 达成；b. FLIPPED_WORKER_RULES_MAX_CHARS=40 起后端 → 假 LLM 捕获 system 含短规则+「略1条」不含长规则，worker_rules_injected=True；c1. M175 普通 @ 消息回归；c2. M193 revert-hunk 回归）。回归：pytest 2722 passed/15 skipped、vitest 951 全绿、tsc/build OK、quality_gate 通过（py 86.66%/fe 91.65%）、API 快照零变化。registry 八条 resolved：L-M176-4（@ 展开部分，max_iterations 注记已有 env）/L-M183-4/L-M185-4/L-M183-5/L-M179-3/L-M186-3/L-M180-4/L-M185-2。",
+   "subtasks": {
+    "M194.1": "后端 A：goal objective 走 @ 展开（消化 L-M176-4）——GoalState 用展开文本，用户消息原文+refs，响应原文",
+    "M194.2": "后端 A：注入预算 env 化（消化 L-M183-4+L-M185-4）——FLIPPED_WORKER_RULES_MAX_CHARS / FLIPPED_CHAT_RULES_MAX_CHARS，双通路独立调参",
+    "M194.3": "后端 A：history cap env 化（消化 L-M183-5）——FLIPPED_WORKER_RULES_HISTORY_CAP，clamp [1,500]",
+    "M194.4": "前端 B：评审模型选择下拉（消化 L-M179-3）——默认·coder/architect，结果区显示模型",
+    "M194.5": "前端 B：commit message 可编辑 textarea（消化 L-M186-3）——复制取编辑后文本",
+    "M194.6": "前端 B：Launcher「规则」入口（消化 L-M180-4）——镜像「地图」入口，IconScrollText",
+    "M194.7": "前端 B：WorkerRulesPanel 服务端排序（消化 L-M185-2）——sort/enabled 参数拉取+失败回落+enabled 过滤开关"
+   },
+   "verify": "scripts/verify_m194.sh（单测全绿 + 黑盒 23 断言全绿）",
+   "known_limitations": [
+    "goal 展开为启动时一次性行为（与 M175 发送时展开同哲学，续跑不重展开）",
+    "评审模型选项硬编码（coder/architect/默认），未接动态 alias 列表"
    ]
   }
  },

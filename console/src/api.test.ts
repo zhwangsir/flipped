@@ -736,6 +736,37 @@ describe('api — Worker 规则 (M183)', () => {
     expect(r.rules).toHaveLength(1);
   });
 
+  it('fetchWorkerRules 无参 → URL 不带查询串(M194.7)', async () => {
+    const fetchMock = mockFetch(async () => okResponse({ version: 3, rules: [] }));
+    await fetchWorkerRules();
+    expect(fetchMock.mock.calls[0][0]).not.toContain('?');
+  });
+
+  it('fetchWorkerRules({ sort: "priority" }) → URL 含 sort=priority(M194.7)', async () => {
+    const fetchMock = mockFetch(async () => okResponse({ version: 3, rules: [sampleRule] }));
+    await fetchWorkerRules({ sort: 'priority' });
+    const url = fetchMock.mock.calls[0][0] as string;
+    expect(url).toContain('/api/v1/worker/rules?');
+    expect(url).toContain('sort=priority');
+    expect(url).not.toContain('enabled=');
+  });
+
+  it('fetchWorkerRules({ enabled: false }) → URL 含 enabled=false(M194.7)', async () => {
+    const fetchMock = mockFetch(async () => okResponse({ version: 3, rules: [] }));
+    await fetchWorkerRules({ enabled: false });
+    const url = fetchMock.mock.calls[0][0] as string;
+    expect(url).toContain('enabled=false');
+    expect(url).not.toContain('sort=');
+  });
+
+  it('fetchWorkerRules({ sort: "priority", enabled: true }) → 双参数同带(M194.7)', async () => {
+    const fetchMock = mockFetch(async () => okResponse({ version: 3, rules: [sampleRule] }));
+    await fetchWorkerRules({ sort: 'priority', enabled: true });
+    const url = fetchMock.mock.calls[0][0] as string;
+    expect(url).toContain('sort=priority');
+    expect(url).toContain('enabled=true');
+  });
+
   it('createWorkerRule POST /worker/rules 默认 scope=worker 带 priority', async () => {
     const fetchMock = mockFetch(async () => okResponse(sampleRule));
     await createWorkerRule('新规则', 'worker', 80);

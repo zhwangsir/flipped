@@ -8619,4 +8619,106 @@ $ npm run gen:api-types（:8194 后端）→ schemas=77 paths=70（+2 schemas +1
 open P1 仅剩 L-M192-1（exo VL 数据面，外部依赖，本日复验未恢复）。
 M193 新登记 3 条 P2 限制（接受状态不持久化/hunk 粒度/git add 新文件引导）。
 
-**未 commit**（用户规则：明确要求才提交；M165–M193 改动均在工作区）。
+commit `2f40642`（M185–M193 积累落盘，72 文件）。
+
+---
+
+## 2026-08-06 · L-M192-1 复验 #2（exo VL 数据面）——仍未恢复，保持 open
+
+本次复验发现集群状态较昨日有变化，并尝试了主动修复：
+
+```
+$ GET /state → 仅 GLM-5.2-fp8（MlxJaccl TP worldSize=4, 790GB）在跑；
+  VL 实例已被卸载（昨日状态=已放置但无响应）
+$ POST /v1/chat/completions {model: Qwen3-VL-4B} → 404 No instance found
+$ GET /instance/placement?model_id=Qwen3-VL-4B → 返回单节点 MlxRingInstance 预览
+$ POST /instance（预览 payload）→ command accepted，/state 确认 VL 实例重新放置
+$ 数据面轮询：纯文本 chat ×6 次（每次 -m 120s）→ 全部空响应（超时无应答）
+$ 对照：GLM-5.2-fp8 文本推理 2.3s 正常返回
+```
+
+**结论**：重新放置实例后数据面依旧 wedge（6×120s 超时），排除"实例状态腐烂"
+假设——VL runner 本体存在问题（疑似 vision encoder 初始化卡死或 runner
+crash-loop），集群侧需进节点查 VL runner 日志。GLM 数据面健康，问题为
+VL 特异。L-M192-1 保持 open/P1/低；实例当前已放置（id 14af57a7…），
+集群侧修复后直接复跑 `scripts/verify_m192.sh` + 真实红蓝图问答闭环。
+
+---
+
+## 2026-08-06 · M194 · P2 功能缺口批消化（goal @ 展开 / 规则预算 env 化 / 评审模型选择 / commit 编辑框 / Launcher 规则入口 / 规则面板服务端排序）
+
+### 范围
+
+- 后端 A（`src/api/assistant.py` / `src/driving/worker_rules.py` / `src/api/main.py` /
+  `src/driving/orchestrator.py`）：
+  - M194.1 goal @ 展开：`create_assistant_goal` 在 GoalState 创建前插入与 send 同款
+    `expand_file_refs` 块——GoalState/LLM 输入用展开文本，用户消息事件 text 保持原文
+    + refs 元数据（`asdict(r)` 清单），`CreateGoalResponse.objective` 原文（用户面向），
+    `FLIPPED_FILE_REFS=0` 关闭，fail-open。M191 resume 从事件 payload 重建取到展开
+    文本，续跑自然一致。
+  - M194.2 注入预算 env 化：`build_worker_rules_text(max_chars=None)` → 运行期读
+    `FLIPPED_WORKER_RULES_MAX_CHARS`（默认 300 零行为变化，显式传参优先）；
+    chat 通路调用点改 `chat_rules_max_chars()`（`FLIPPED_CHAT_RULES_MAX_CHARS`，
+    缺省回落 worker 解析值）；orchestrator worker 通路去掉显式 300 走 env。
+  - M194.3 history cap env 化：`_history_cap()` 运行期读
+    `FLIPPED_WORKER_RULES_HISTORY_CAP`（默认 20，clamp [1,500]，非法回落 20），
+    trim 处改调之。
+- 前端 B（`console/src/`）：
+  - M194.4 评审模型选择：ContextPanel 评审按钮旁紧凑下拉（默认·coder/architect，
+    跟随 rdiff-* 语言），选择透传 `reviewProject(model)`，结果区显示本次模型。
+  - M194.5 commit message 可编辑：只读块改 textarea（初值=生成文本），复制按钮
+    取编辑后文本。
+  - M194.6 Launcher「规则」入口：镜像「地图」入口（IconScrollText），点击切
+    ContextPanel rules tab。
+  - M194.7 WorkerRulesPanel 服务端排序：带 sort/enabled 参数拉取（复用 M185.3
+    端点），失败回落本地排序保持现状行为；面板加 enabled 过滤开关（全部/启用/停用）。
+- 零 OpenAPI 契约变更（goal refs 走 loose event payload；预算为 env；评审模型用
+  既有参数位；规则排序端点 M185.3 已就绪）。
+
+### 证据
+
+```
+$ PYTHONPATH=src .venv/bin/python -m pytest tests/test_m194_goal_refs.py tests/test_m194_rules_env.py -q
+  → 全绿（goal @ 展开/refs 元数据/开关关闭/resume 重建；预算 env/显式优先/
+    非法回落/chat 独立 env/history cap env+clamp）
+
+$ bash scripts/verify_m194.sh（真 uvicorn :8196 + 假 LLM :8197 捕获 {system,user}，黑盒 23 断言）
+  ✅ a.POST goal 200 响应 objective=原文；用户消息 text=原文 + goal.started +
+       refs[0].path=readme.md；goal set 事件 objective 含 M194GoalMarker194（展开生效）；
+       假 judge 一轮 achieved 收尾
+  ✅ b.FLIPPED_WORKER_RULES_MAX_CHARS=40 起后端 → 假 LLM 捕获 system 含
+       「以下是全局工作规则」头 + 短规则 + 「略1条」截断注记、不含 50B 长规则
+       （默认 300 时长规则可装下，注记出现=env 生效铁证）；
+       应答 payload.worker_rules_injected=True
+  ✅ c1.M175 回归：普通 @ 消息 refs 元数据在、LLM 收到展开文本
+  ✅ c2.M193 回归：POST /project/revert-hunk 200 action=hunk_reverted，文件回 HEAD
+  → M194 验收：全部通过 ✅
+
+$ PYTHONPATH=src .venv/bin/python -m pytest tests/ -q
+  → 2722 passed, 15 skipped（API 快照零变化）
+$ cd console && npx vitest run → 36 files / 951 tests 全过
+$ npx tsc --noEmit → 0 错误；npm run build → ✓ built
+$ bash scripts/quality_gate.sh → 通过 ✅（py 86.66% / fe 91.65%，findings 空）
+$ scripts/limitations_report.py check → ok: 82 limitations registered
+```
+
+**关键决策与教训**：
+1. **goal 展开 = 启动时一次性**：与 M175 发送时展开同哲学——展示层保持原文 +
+   refs 元数据，执行层（GoalState/LLM/judge/续跑）全程用展开文本；续跑不重展开，
+   重建即得一致状态，零额外分支。
+2. **env 化默认值 = 旧常量**：FLIPPED_WORKER_RULES_MAX_CHARS 默认 300 /
+   FLIPPED_WORKER_RULES_HISTORY_CAP 默认 20，均为旧硬编码值 → 零行为变化，
+   显式传参优先保住既有测试；非法值回落默认。
+3. **黑盒断言 env 生效的铁证是「差分行为」**：预算 40 时长规则被丢 + 「略1条」
+   注记出现，而该注记在默认 300 下不出现——无需读代码即可证明 env 通路打通。
+4. **harvest 按 (milestone, text) 精确匹配**：STATE.json 限制文本被后续更新
+   （如 L-M192-1 追加复验#2）而 registry 未同步时，harvest 会新增同 id 裸条目 +
+   旧条目置 wontfix。修法：STATE 文本与 registry 同步更新后重跑 harvest + check。
+
+**限制消化进展**：registry 八条 → resolved（L-M176-4 @ 展开部分，max_iterations
+注记已有 env；L-M183-4/L-M185-4/L-M183-5/L-M179-3/L-M186-3/L-M180-4/L-M185-2）。
+M194 新登记 2 条 P2（goal 展开一次性/评审模型选项硬编码）。顺手修复 L-M192-1
+registry 重复条目（恢复会话产物），STATE.json M192 文本补齐复验#2，
+harvest 0 added/0 stale，check ok（82 条）。
+
+---

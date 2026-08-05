@@ -902,6 +902,39 @@ describe('AppProvider · M179.2 AI 评审', () => {
     expect(captured!.aiReview.result?.model).toBe('coder');
   });
 
+  it('runAiReview("architect") → 透传 model 给 apiReviewProject(M194.4)', async () => {
+    const { reviewProject } = await import('./api');
+    (reviewProject as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      findings: [],
+      files_reviewed: 0,
+      model: 'architect',
+      note: null,
+    });
+    renderProvider();
+    await flush();
+    await act(async () => {
+      await captured!.runAiReview('architect');
+    });
+    expect(reviewProject).toHaveBeenCalledWith('architect');
+    expect(captured!.aiReview.result?.model).toBe('architect');
+  });
+
+  it('runAiReview() 无参 → apiReviewProject 不带 model(默认模型走后端)', async () => {
+    const { reviewProject } = await import('./api');
+    (reviewProject as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      findings: [],
+      files_reviewed: 0,
+      model: 'coder',
+      note: null,
+    });
+    renderProvider();
+    await flush();
+    await act(async () => {
+      await captured!.runAiReview();
+    });
+    expect(reviewProject).toHaveBeenCalledWith(undefined);
+  });
+
   it('runAiReview: 失败 → 写 error(detail 字符串),loading 必复位', async () => {
     const { reviewProject } = await import('./api');
     (reviewProject as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('HTTP 502: LLM 解析失败'));

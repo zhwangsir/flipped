@@ -168,6 +168,10 @@ export const IconWand = ({ size }: P) => (
 export const IconImagePlus = ({ size }: P) => (
   <svg {...b(size)}><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7" /><path d="M16 5h6M19 2v6" /><circle cx="9" cy="9" r="2" /><path d="m21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21" /></svg>
 );
+// M194.6 — Launcher 规则入口(lucide ScrollText 同款:卷轴 + 文本行)
+export const IconScrollText = ({ size }: P) => (
+  <svg {...b(size)}><path d="M19 17V5a2 2 0 0 0-2-2H4" /><path d="M8 21h12a2 2 0 0 0 2-2v-1a1 1 0 0 0-1-1H11a1 1 0 0 0-1 1v1a2 2 0 1 1-4 0V5a2 2 0 1 0-4 0v2a1 1 0 0 0 1 1h3" /><path d="M15 8h-5M15 12h-5" /></svg>
+);
 
 export function ToolIcon({ name, size = 15 }: { name: string; size?: number }) {
   if (name === "terminal") return <IconTerminal size={size} />;

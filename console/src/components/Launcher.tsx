@@ -1,6 +1,6 @@
 import { useApp } from "../store";
 import type { ContextTab } from "../types";
-import { IconReview, IconTerminal, IconBrowser, IconFolder } from "../icons";
+import { IconReview, IconTerminal, IconBrowser, IconFolder, IconScrollText } from "../icons";
 
 interface LauncherEntry {
   tab: ContextTab;
@@ -14,9 +14,11 @@ const ENTRIES: LauncherEntry[] = [
   { tab: "term", icon: IconTerminal, label: "终端" },
   { tab: "browser", icon: IconBrowser, label: "浏览器", shortcut: "⌘T" },
   { tab: "files", icon: IconFolder, label: "文件", shortcut: "⌘P" },
+  // M194.6 — 规则入口(镜像既有入口模式:点击 → ContextPanel 切 rules tab)
+  { tab: "rules", icon: IconScrollText, label: "规则" },
 ];
 
-/** 右侧窄图标栏：上下文面板隐藏时的入口(审查/终端/浏览器/文件)。hover 左弹标签。 */
+/** 右侧窄图标栏：上下文面板隐藏时的入口(审查/终端/浏览器/文件/规则)。hover 左弹标签。 */
 export function Launcher() {
   const { openContext } = useApp();
   return (

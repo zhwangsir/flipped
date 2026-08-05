@@ -451,8 +451,17 @@ export function testBotChannel(platform: string, text: string): Promise<{ ok: bo
 
 // ---- M183 · Worker 规则(学习系统:CRUD + 版本史/回滚 + 自动生成 + 执行统计) ----
 
-export function fetchWorkerRules(): Promise<WorkerRulesInfo> {
-  return api<WorkerRulesInfo>('/worker/rules');
+// M194.7 — 列表支持服务端排序/过滤:sort=priority(与注入层同序 priority desc → id asc),
+// enabled=true/false 服务端过滤;无参 = D20 契约(全量插入序),保持向后兼容
+export function fetchWorkerRules(params?: {
+  sort?: 'insertion' | 'priority';
+  enabled?: boolean;
+}): Promise<WorkerRulesInfo> {
+  const q = new URLSearchParams();
+  if (params?.sort) q.set('sort', params.sort);
+  if (params?.enabled !== undefined) q.set('enabled', String(params.enabled));
+  const qs = q.toString();
+  return api<WorkerRulesInfo>(`/worker/rules${qs ? `?${qs}` : ''}`);
 }
 
 export function createWorkerRule(text: string, scope = 'worker', priority?: number): Promise<WorkerRule> {

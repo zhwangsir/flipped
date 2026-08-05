@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, type ReactNode } from 'react';
 import { useApp } from '../store';
-import type { ChangedFile, FileNode, BrowserElement, GitDiffFile, GitDiffLine, ReviewFinding } from '../types';
+import type { ChangedFile, FileNode, BrowserElement, GitDiffFile, GitDiffLine, ReviewFinding, CommitMessageResult } from '../types';
 import { renderMarkdown } from '../lib/markdown';
 import { splitDiffHunks } from '../lib/diffHunks';
 import { isTauri, createBrowserWebview, updateBrowserWebview, closeBrowserWebview } from '../lib/native';
@@ -266,6 +266,34 @@ function ReviewFindingRow({ finding, showPath = false }: { finding: ReviewFindin
   return <div className="review-finding">{body}</div>;
 }
 
+/** M194.5 — AI commit message 可编辑块:textarea 初值=生成文本,复制按钮复制编辑后文本;
+ * 由调用处 key={result.message} 保证重新生成时重置初值。 */
+function CommitMessageBlock({ result }: { result: CommitMessageResult }) {
+  const [text, setText] = useState(result.message);
+  return (
+    <div className="commit-msg">
+      <IconWand size={12} />
+      <textarea
+        className="commit-msg-edit"
+        title="提交信息(可编辑)"
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        rows={4}
+      />
+      <span className="commit-msg-meta">
+        {result.model} · {result.files_count} 个文件
+      </span>
+      <button
+        className="review-clear"
+        onClick={() => navigator.clipboard?.writeText(text)}
+        title="复制提交信息"
+      >
+        复制
+      </button>
+    </div>
+  );
+}
+
 /** diff 单行渲染(add/del/ctx/hunk 符号 + 文本)。M193.2 抽出供 prelude 与 hunk 块复用。 */
 function DiffLineRow({ l }: { l: GitDiffLine }) {
   return (
@@ -293,6 +321,8 @@ function GitDiffView() {
   const [hunkError, setHunkError] = useState<{ key: string; message: string } | null>(null);
   // M186.1 — 评审历史下拉(展开时拉取一次列表)
   const [historyOpen, setHistoryOpen] = useState(false);
+  // M194.4 — 评审模型选择('' = 默认 coder,不发 model 字段;'architect' 显式传参)
+  const [reviewModel, setReviewModel] = useState('');
   useEffect(() => {
     loadGitDiff();
   }, [loadGitDiff]);
@@ -374,9 +404,19 @@ function GitDiffView() {
         <button className="rdiff-refresh" onClick={() => loadGitDiff()} title="刷新">
           刷新
         </button>
+        {/* M194.4 — 评审模型选择:默认 '' 不传 model(后端 coder),非默认显式传参 */}
+        <select
+          className="rdiff-model"
+          title="评审模型"
+          value={reviewModel}
+          onChange={(e) => setReviewModel(e.target.value)}
+        >
+          <option value="">默认 · coder</option>
+          <option value="architect">architect</option>
+        </select>
         <button
           className="rdiff-refresh rdiff-review-btn"
-          onClick={() => runAiReview()}
+          onClick={() => runAiReview(reviewModel || undefined)}
           disabled={aiReview.loading}
           title="AI 评审"
         >
@@ -445,20 +485,7 @@ function GitDiffView() {
       )}
       {commitMessage.error && <div className="review-error commit-error">生成提交信息失败:{commitMessage.error}</div>}
       {commitMessage.result && (
-        <div className="commit-msg">
-          <IconWand size={12} />
-          <span className="commit-msg-text">{commitMessage.result.message}</span>
-          <span className="commit-msg-meta">
-            {commitMessage.result.model} · {commitMessage.result.files_count} 个文件
-          </span>
-          <button
-            className="review-clear"
-            onClick={() => navigator.clipboard?.writeText(commitMessage.result!.message)}
-            title="复制提交信息"
-          >
-            复制
-          </button>
-        </div>
+        <CommitMessageBlock key={commitMessage.result.message} result={commitMessage.result} />
       )}
       {gitDiff.map((f) => {
         // M193.2 — 按 hunk 分组(空 lines 时结果为空,走现状空态分支)

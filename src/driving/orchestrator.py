@@ -862,7 +862,8 @@ def local_worker(state: OrchestratorState) -> dict:
             WorkerRuleStats as _WRS, WorkerRuleStore as _WRStore, build_worker_rules_text,
         )
         _wr_db = _P(os.environ.get("FLIPPED_WORKER_RULES_PATH", "data/worker_rules.json"))
-        _wr_text, _worker_rule_ids = build_worker_rules_text(_WRStore(_wr_db).list(), max_chars=300)
+        # M194.2：缺省 max_chars=None → 运行期读 FLIPPED_WORKER_RULES_MAX_CHARS（默认 300）
+        _wr_text, _worker_rule_ids = build_worker_rules_text(_WRStore(_wr_db).list())
         if _wr_text:
             _rules_short = (_wr_text + "\n" + _rules_short).strip()[:300] if _rules_short else _wr_text
             _WRS(_P(os.environ.get("FLIPPED_WORKER_RULE_STATS_PATH",

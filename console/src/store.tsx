@@ -160,8 +160,9 @@ interface AppState {
   // M193.2 — 拒绝单个 hunk(反向应用该段改动);错误原样上抛由视图兜底
   revertGitDiffHunk: (path: string, hunkIndex: number) => Promise<{ ok: boolean; path: string; hunk_index: number; action: string }>;
   // M179.2 — AI 代码评审(Review 面板一键 LLM 审查 diff → findings 行内渲染,只读)
+  // M194.4 — 可选 model 透传(评审模型选择;缺省走后端默认模型)
   aiReview: { result: AiReviewResult | null; loading: boolean; error: string | null };
-  runAiReview: () => Promise<void>;
+  runAiReview: (model?: string) => Promise<void>;
   clearAiReview: () => void;
   // M186.1 — 评审历史(列表载入 fail-open;openReview 拉详情回放进 aiReview.result,historical 标记)
   reviewHistory: ReviewHistoryEntry[];
@@ -546,10 +547,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
   );
 
   // M179.2 — AI 评审:loading 置位 → 调后端 → 成功写 result/失败写 error,loading 必复位(只读)
-  const runAiReview = useCallback(async () => {
+  // M194.4 — model 可选透传(评审模型选择;undefined = 后端默认模型)
+  const runAiReview = useCallback(async (model?: string) => {
     setAiReview({ result: null, loading: true, error: null });
     try {
-      const r = await apiReviewProject();
+      const r = await apiReviewProject(model);
       setAiReview({ result: r, loading: false, error: null });
     } catch (e) {
       setAiReview({ result: null, loading: false, error: e instanceof Error ? e.message : String(e) });
