@@ -16,6 +16,21 @@
             ],
             "title": "Approval"
           },
+          "attachments": {
+            "anyOf": [
+              {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Attachments"
+          },
           "created_at": {
             "title": "Created At",
             "type": "string"
@@ -350,6 +365,40 @@
         "title": "CallToolResponse",
         "type": "object"
       },
+      "CommitMessageResponse": {
+        "properties": {
+          "files_count": {
+            "title": "Files Count",
+            "type": "integer"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          }
+        },
+        "required": [
+          "message",
+          "model",
+          "files_count"
+        ],
+        "title": "CommitMessageResponse",
+        "type": "object"
+      },
       "CompactResponse": {
         "description": "compact 端点响应（M165.1b）：摘要已生成并作为 supervisor message 落库。",
         "properties": {
@@ -448,6 +497,20 @@
             "minLength": 1,
             "title": "Objective",
             "type": "string"
+          },
+          "verify_cmd": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Verify Cmd"
           }
         },
         "required": [
@@ -628,6 +691,30 @@
           "truncated"
         ],
         "title": "EditMessageResponse",
+        "type": "object"
+      },
+      "EditUndoResponse": {
+        "description": "编辑重跑撤销响应（M190.1）：restored 为恢复的事件条数。",
+        "properties": {
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "restored": {
+            "title": "Restored",
+            "type": "integer"
+          },
+          "session_id": {
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ok",
+          "session_id",
+          "restored"
+        ],
+        "title": "EditUndoResponse",
         "type": "object"
       },
       "Event": {
@@ -873,6 +960,32 @@
           "proxy"
         ],
         "title": "HealthResponse",
+        "type": "object"
+      },
+      "ImageAttachmentIn": {
+        "description": "M192 · 图像附件输入（chat/plan 多模态）：纯 base64，不含 data: 前缀。",
+        "properties": {
+          "data_base64": {
+            "title": "Data Base64",
+            "type": "string"
+          },
+          "media_type": {
+            "title": "Media Type",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "media_type",
+          "data_base64"
+        ],
+        "title": "ImageAttachmentIn",
         "type": "object"
       },
       "MessageResponse": {
@@ -1133,6 +1246,54 @@
         "title": "RemoteStateResponse",
         "type": "object"
       },
+      "RevertHunkRequest": {
+        "properties": {
+          "hunk_index": {
+            "minimum": 0.0,
+            "title": "Hunk Index",
+            "type": "integer"
+          },
+          "path": {
+            "minLength": 1,
+            "title": "Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "hunk_index"
+        ],
+        "title": "RevertHunkRequest",
+        "type": "object"
+      },
+      "RevertHunkResponse": {
+        "properties": {
+          "action": {
+            "title": "Action",
+            "type": "string"
+          },
+          "hunk_index": {
+            "title": "Hunk Index",
+            "type": "integer"
+          },
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ok",
+          "path",
+          "hunk_index",
+          "action"
+        ],
+        "title": "RevertHunkResponse",
+        "type": "object"
+      },
       "RevertRequest": {
         "properties": {
           "path": {
@@ -1215,6 +1376,90 @@
         "title": "ReviewFinding",
         "type": "object"
       },
+      "ReviewHistoryEntry": {
+        "properties": {
+          "files_reviewed": {
+            "title": "Files Reviewed",
+            "type": "integer"
+          },
+          "findings_count": {
+            "title": "Findings Count",
+            "type": "integer"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "project": {
+            "title": "Project",
+            "type": "string"
+          },
+          "ts": {
+            "title": "Ts",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "ts",
+          "project",
+          "model",
+          "files_reviewed",
+          "findings_count"
+        ],
+        "title": "ReviewHistoryEntry",
+        "type": "object"
+      },
+      "ReviewRecord": {
+        "properties": {
+          "files_reviewed": {
+            "title": "Files Reviewed",
+            "type": "integer"
+          },
+          "findings": {
+            "items": {
+              "$ref": "#/components/schemas/ReviewFinding"
+            },
+            "title": "Findings",
+            "type": "array"
+          },
+          "findings_count": {
+            "title": "Findings Count",
+            "type": "integer"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "project": {
+            "title": "Project",
+            "type": "string"
+          },
+          "ts": {
+            "title": "Ts",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "ts",
+          "project",
+          "model",
+          "files_reviewed",
+          "findings_count",
+          "findings"
+        ],
+        "title": "ReviewRecord",
+        "type": "object"
+      },
       "ReviewRequest": {
         "properties": {
           "model": {
@@ -1259,6 +1504,17 @@
               }
             ],
             "title": "Note"
+          },
+          "review_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Review Id"
           }
         },
         "required": [
@@ -1267,6 +1523,22 @@
           "model"
         ],
         "title": "ReviewResponse",
+        "type": "object"
+      },
+      "ReviewsHistoryResponse": {
+        "properties": {
+          "reviews": {
+            "items": {
+              "$ref": "#/components/schemas/ReviewHistoryEntry"
+            },
+            "title": "Reviews",
+            "type": "array"
+          }
+        },
+        "required": [
+          "reviews"
+        ],
+        "title": "ReviewsHistoryResponse",
         "type": "object"
       },
       "Role": {
@@ -1337,6 +1609,17 @@
           "created_at": {
             "title": "Created At",
             "type": "string"
+          },
+          "cron": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cron"
           },
           "enabled": {
             "title": "Enabled",
@@ -1454,6 +1737,20 @@
       "SendMessageRequest": {
         "description": "发送消息请求。",
         "properties": {
+          "images": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/ImageAttachmentIn"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Images"
+          },
           "mode": {
             "anyOf": [
               {
@@ -1609,8 +1906,19 @@
         "type": "string"
       },
       "TaskCreateRequest": {
-        "description": "创建已安排任务请求（M178.1）。",
+        "description": "创建已安排任务请求（M178.1；M187.1 增加 cron kind）。",
         "properties": {
+          "cron": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cron"
+          },
           "every_minutes": {
             "anyOf": [
               {
@@ -1626,7 +1934,8 @@
             "default": "once",
             "enum": [
               "once",
-              "interval"
+              "interval",
+              "cron"
             ],
             "title": "Kind",
             "type": "string"
@@ -1686,6 +1995,106 @@
           "id"
         ],
         "title": "TaskDeleteResponse",
+        "type": "object"
+      },
+      "TaskPatchRequest": {
+        "description": "M187.2 · 编辑已安排任务请求（全字段可选，exclude_unset 语义：\n显式传 null 会进入 fields，置空后合并非法由 registry.update 校验拦截）。",
+        "properties": {
+          "cron": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cron"
+          },
+          "every_minutes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Every Minutes"
+          },
+          "kind": {
+            "anyOf": [
+              {
+                "enum": [
+                  "once",
+                  "interval",
+                  "cron"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kind"
+          },
+          "mode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mode"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "prompt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prompt"
+          },
+          "run_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run At"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          }
+        },
+        "title": "TaskPatchRequest",
         "type": "object"
       },
       "TaskRequest": {
@@ -1911,7 +2320,7 @@
         "type": "object"
       },
       "WorkerRuleAutoGenResponse": {
-        "description": "自动生成回执：added 为实际入库的规则，candidates 为候选条数。",
+        "description": "自动生成回执：added 为实际入库的规则，candidates 为候选条数。\n\nM190.2：llm_used 标记候选是否来自 LLM 兜底（固定模板未命中时触发）。",
         "properties": {
           "added": {
             "items": {
@@ -1923,6 +2332,11 @@
           "candidates": {
             "title": "Candidates",
             "type": "integer"
+          },
+          "llm_used": {
+            "default": false,
+            "title": "Llm Used",
+            "type": "boolean"
           }
         },
         "required": [
@@ -2018,7 +2432,7 @@
         "type": "object"
       },
       "WorkerRuleStatEntry": {
-        "description": "单规则效果：applied=注入次；success/failure=对应 verify 通过/失败次。",
+        "description": "单规则效果：applied=注入次；success/failure=对应 verify 通过/失败次。\n\nsuccess_rate=success/(success+failure)（同单位 verify 次）；零 outcome → null。",
         "properties": {
           "applied": {
             "title": "Applied",
@@ -2031,6 +2445,17 @@
           "success": {
             "title": "Success",
             "type": "integer"
+          },
+          "success_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Success Rate"
           }
         },
         "required": [
@@ -2042,8 +2467,13 @@
         "type": "object"
       },
       "WorkerRuleStatsResponse": {
-        "description": "规则执行效果统计快照。",
+        "description": "规则执行效果统计快照（semantics 显式语义注记，M185.2）。",
         "properties": {
+          "semantics": {
+            "default": "",
+            "title": "Semantics",
+            "type": "string"
+          },
           "stats": {
             "additionalProperties": {
               "$ref": "#/components/schemas/WorkerRuleStatEntry"
@@ -2206,6 +2636,56 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/v1/assistant/attachments/{session_id}/{filename}": {
+      "get": {
+        "description": "取回落盘的图像附件（M192）。\n\n404：session 不存在 / filename 非法（非 ^[A-Za-z0-9._-]+$）/\nresolve 后逸出会话附件目录（防路径穿越）/ 文件不存在。",
+        "operationId": "get_assistant_attachment_api_v1_assistant_attachments__session_id___filename__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "filename",
+            "required": true,
+            "schema": {
+              "title": "Filename",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Assistant Attachment",
+        "tags": [
+          "assistant"
+        ]
+      }
+    },
     "/api/v1/assistant/sessions": {
       "post": {
         "description": "创建助手会话。默认 mode=agent（完整 agent 管线）。\n\n复用既有 store.create + bus.emit + ps.active_project()，与 /api/v1/sessions 同语义，\n区别仅在默认 surface（对话助手）和 model_alias 字段（前端展示用）。",
@@ -2346,6 +2826,49 @@
           }
         },
         "summary": "Compact Assistant",
+        "tags": [
+          "assistant"
+        ]
+      }
+    },
+    "/api/v1/assistant/sessions/{session_id}/edit/undo": {
+      "post": {
+        "description": "撤销最近一次编辑重跑截断（M190.1，消化 L-M174-1）。\n\n- 404 会话不存在；409 运行中（RUNNING_TASKS 未完成句柄）。\n- 404 trash 空（\"no truncated events to restore\"）。\n- 409 真歧义（\"new events appended since truncation\"）：截断点后存在\n  非编辑重跑产生的新 user 消息，或批次锚点已被后续截断吞掉。\n  重跑产物（edited user 消息 + 应答）不算新事件——撤销即丢弃它们并恢复。\n- 成功 → 200 {restored: n} + emit status 事件留痕。",
+        "operationId": "undo_edit_truncate_api_v1_assistant_sessions__session_id__edit_undo_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EditUndoResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Undo Edit Truncate",
         "tags": [
           "assistant"
         ]
@@ -3522,6 +4045,45 @@
         "summary": "Metrics"
       }
     },
+    "/api/v1/project/commit_message": {
+      "post": {
+        "description": "AI commit message 草稿：工作区 git diff → LLM → conventional commit 文本（不落盘）。",
+        "operationId": "project_commit_message_api_v1_project_commit_message_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReviewRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommitMessageResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Project Commit Message"
+      }
+    },
     "/api/v1/project/context": {
       "get": {
         "description": "返回活动项目(名/host路径/沙盒路径) + git 分支;无项目 project=None。",
@@ -3769,9 +4331,48 @@
         "summary": "Project Revert"
       }
     },
+    "/api/v1/project/revert-hunk": {
+      "post": {
+        "description": "逐 hunk 拒绝：重取该文件 diff，把第 hunk_index 个 hunk 反向 apply 回工作区。\n\n防护链与 project_revert 同款；apply 失败（diff 漂移）→ 409 提示刷新重试。",
+        "operationId": "project_revert_hunk_api_v1_project_revert_hunk_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RevertHunkRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RevertHunkResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Project Revert Hunk"
+      }
+    },
     "/api/v1/project/review": {
       "post": {
-        "description": "AI 代码评审：工作区 git diff → LLM → 结构化 findings（只读，不落盘）。",
+        "description": "AI 代码评审：工作区 git diff → LLM → 结构化 findings。\n\nM186：成功后 fail-open 落盘（data/reviews/<project>/，超 50 条删最旧），\n落盘失败绝不影响响应（review_id=None）。",
         "operationId": "project_review_api_v1_project_review_post",
         "requestBody": {
           "content": {
@@ -3806,6 +4407,65 @@
           }
         },
         "summary": "Project Review"
+      }
+    },
+    "/api/v1/project/reviews": {
+      "get": {
+        "description": "评审历史列表（ts desc，摘要无 findings）。无活动项目 → 空列表（不 400）。",
+        "operationId": "project_reviews_history_api_v1_project_reviews_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewsHistoryResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Project Reviews History"
+      }
+    },
+    "/api/v1/project/reviews/{review_id}": {
+      "get": {
+        "description": "单条评审完整记录（含 findings）。非法 id/未命中/无活动项目 → 404。",
+        "operationId": "project_review_detail_api_v1_project_reviews__review_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "review_id",
+            "required": true,
+            "schema": {
+              "title": "Review Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewRecord"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Project Review Detail"
       }
     },
     "/api/v1/project/rules": {
@@ -4660,6 +5320,54 @@
           }
         },
         "summary": "Delete Scheduled Task"
+      },
+      "patch": {
+        "description": "编辑任务：白名单合并校验；调度字段实际变更 → 重算 next_run_at。",
+        "operationId": "patch_scheduled_task_api_v1_tasks__task_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "title": "Task Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TaskPatchRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScheduledTaskResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Patch Scheduled Task"
       }
     },
     "/api/v1/tasks/{task_id}/toggle": {
@@ -4713,8 +5421,40 @@
     },
     "/api/v1/worker/rules": {
       "get": {
-        "description": "规则列表 + 版本号（前端 WorkerRulesPanel mount 拉取）。",
+        "description": "规则列表 + 版本号（前端 WorkerRulesPanel mount 拉取）。\n\n缺省 = D20 契约（全量插入序）；enabled=true/false 服务端过滤；\nsort=priority → priority desc → id asc（与注入层同序，M185.3）。",
         "operationId": "worker_rules_list_api_v1_worker_rules_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "enabled",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Enabled"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "default": "insertion",
+              "enum": [
+                "insertion",
+                "priority"
+              ],
+              "title": "Sort",
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -4725,6 +5465,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
         "summary": "Worker Rules List"
@@ -4769,7 +5519,7 @@
     },
     "/api/v1/worker/rules/auto-generate": {
       "post": {
-        "description": "auto 通路：失败文本 → 模板命中 → 去重 → 入库（source=\"auto\"，priority 默认 10）。\n\nfailure_texts 缺省时读失败知识库最近 20 条未解决记录；无候选 → added=[] 不报错。",
+        "description": "auto 通路：失败文本 → 模板命中 → 去重 → 入库（source=\"auto\"，priority 默认 10）。\n\nfailure_texts 缺省时走 M190.2 多源汇聚（failure_kb ∪ 事件流 error）；\n模板全未命中且 texts 非空且 FLIPPED_RULES_LLM≠0 → LLM 兜底生成候选。\n无候选 → added=[] 不报错。",
         "operationId": "worker_rules_auto_generate_api_v1_worker_rules_auto_generate_post",
         "requestBody": {
           "content": {

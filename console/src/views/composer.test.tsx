@@ -127,7 +127,8 @@ describe('Composer — M167.4 busy 排队与停止', () => {
     const ta = screen.getByTestId('assistant-composer-input') as HTMLTextAreaElement;
     fireEvent.change(ta, { target: { value: '正常消息' } });
     fireEvent.keyDown(ta, { key: 'Enter', shiftKey: false });
-    expect(onSend).toHaveBeenCalledWith('正常消息');
+    // M192 — onSend 签名升级 (text, images):无附件时 images 为空数组
+    expect(onSend).toHaveBeenCalledWith('正常消息', []);
     expect(ta.value).toBe('');
   });
 
@@ -305,7 +306,7 @@ describe('Composer — M176 /goal 目标驱动自循环', () => {
     // 菜单打开时 Enter 会走 pick,此处直接点发送按钮走 submit 验证退化路径
     fireEvent.click(screen.getByTestId('assistant-send-btn'));
     expect(onGoal).not.toHaveBeenCalled();
-    expect(onSend).toHaveBeenCalledWith('/goal');
+    expect(onSend).toHaveBeenCalledWith('/goal', []);
   });
 
   it('无 onGoal 时 "/goal x" 退化为普通发送(向后兼容)', () => {
@@ -314,6 +315,120 @@ describe('Composer — M176 /goal 目标驱动自循环', () => {
     const ta = screen.getByTestId('assistant-composer-input') as HTMLTextAreaElement;
     fireEvent.change(ta, { target: { value: '/goal 做点事' } });
     fireEvent.keyDown(ta, { key: 'Enter', shiftKey: false });
-    expect(onSend).toHaveBeenCalledWith('/goal 做点事');
+    expect(onSend).toHaveBeenCalledWith('/goal 做点事', []);
+  });
+});
+
+// M192 — 图像附件:ImagePlus 按钮/隐藏 file input/粘贴捕获 → chips;onSend 携带 PendingImage[];
+// >4 张或单张 >2MB 拒绝并提示;agent/auto 模式按钮禁用;发送成功清空,失败保留
+describe('Composer — M192 图像附件', () => {
+  const makeFile = (name: string, size = 128, type = 'image/png') =>
+    new File([new Uint8Array(size)], name, { type });
+
+  /** 走隐藏 file input 添加文件,并等 FileReader 把缩略图 dataURL 填进 chip。 */
+  const addViaInput = async (files: File[], firstIdx = 0) => {
+    const input = screen.getByTestId('composer-attach-input');
+    fireEvent.change(input, { target: { files } });
+    await waitFor(() => {
+      const img = screen.getByTestId(`composer-att-${firstIdx}`).querySelector('img');
+      expect(img?.getAttribute('src')?.startsWith('data:')).toBe(true);
+    });
+  };
+
+  it('选择图像文件 → chips 渲染缩略图(dataURL)+name;× 移除', async () => {
+    render(<Composer onSend={vi.fn()} mode='chat' />);
+    await addViaInput([makeFile('shot.png')]);
+    const chip = screen.getByTestId('composer-att-0');
+    expect(chip.textContent).toContain('shot.png');
+    const img = chip.querySelector('img') as HTMLImageElement;
+    expect(img.getAttribute('src')?.startsWith('data:image/png;base64,')).toBe(true);
+    expect(img.getAttribute('alt')).toBe('shot.png');
+    fireEvent.click(screen.getByTestId('composer-att-remove-0'));
+    expect(screen.queryByTestId('composer-atts')).toBeNull();
+  });
+
+  it('超过 4 张 → 第 5 张拒绝并提示「最多附加 4 张」', async () => {
+    render(<Composer onSend={vi.fn()} mode='chat' />);
+    await addViaInput([1, 2, 3, 4].map((i) => makeFile(`p${i}.png`)));
+    expect(screen.getByTestId('composer-att-3')).toBeTruthy();
+    const input = screen.getByTestId('composer-attach-input');
+    fireEvent.change(input, { target: { files: [makeFile('p5.png')] } });
+    expect(screen.queryByTestId('composer-att-4')).toBeNull();
+    expect(screen.getByTestId('composer-attach-warn').textContent).toContain('最多附加 4 张');
+  });
+
+  it('单张超 2MB → 拒绝并提示,不进 chips', async () => {
+    render(<Composer onSend={vi.fn()} mode='chat' />);
+    const input = screen.getByTestId('composer-attach-input');
+    fireEvent.change(input, { target: { files: [makeFile('big.png', 2 * 1024 * 1024 + 1)] } });
+    expect(screen.queryByTestId('composer-atts')).toBeNull();
+    expect(screen.getByTestId('composer-attach-warn').textContent).toContain('超过 2MB');
+  });
+
+  it('非白名单类型(text/plain)→ 静默忽略,不进 chips 也不提示', async () => {
+    render(<Composer onSend={vi.fn()} mode='chat' />);
+    const input = screen.getByTestId('composer-attach-input');
+    fireEvent.change(input, { target: { files: [makeFile('note.txt', 64, 'text/plain')] } });
+    expect(screen.queryByTestId('composer-atts')).toBeNull();
+    expect(screen.queryByTestId('composer-attach-warn')).toBeNull();
+  });
+
+  it('textarea 粘贴剪贴板图像 → 与按钮同一入口进 chips', async () => {
+    render(<Composer onSend={vi.fn()} mode='plan' />);
+    const ta = screen.getByTestId('assistant-composer-input');
+    fireEvent.paste(ta, { clipboardData: { files: [makeFile('clip.png')] } });
+    await waitFor(() => {
+      const img = screen.getByTestId('composer-att-0').querySelector('img');
+      expect(img?.getAttribute('src')?.startsWith('data:')).toBe(true);
+    });
+    expect(screen.getByTestId('composer-att-0').textContent).toContain('clip.png');
+  });
+
+  it('agent/auto 模式附件按钮 disabled(title 提示仅 chat/plan);chat/plan 可用', () => {
+    const { unmount } = render(<Composer onSend={vi.fn()} mode='agent' />);
+    let btn = screen.getByTestId('composer-attach-btn') as HTMLButtonElement;
+    expect(btn.disabled).toBe(true);
+    expect(btn.title).toBe('仅 chat/plan 支持图像附件');
+    unmount();
+    const { unmount: unmount2 } = render(<Composer onSend={vi.fn()} mode='auto' />);
+    btn = screen.getByTestId('composer-attach-btn') as HTMLButtonElement;
+    expect(btn.disabled).toBe(true);
+    unmount2();
+    render(<Composer onSend={vi.fn()} mode='plan' />);
+    btn = screen.getByTestId('composer-attach-btn') as HTMLButtonElement;
+    expect(btn.disabled).toBe(false);
+    expect(btn.title).not.toBe('仅 chat/plan 支持图像附件');
+  });
+
+  it('onSend 第二参携带 PendingImage[](data_base64 无 data: 前缀),发送成功清空 chips', async () => {
+    const onSend = vi.fn();
+    render(<Composer onSend={onSend} mode='chat' />);
+    await addViaInput([makeFile('a.png')]);
+    const ta = screen.getByTestId('assistant-composer-input') as HTMLTextAreaElement;
+    fireEvent.change(ta, { target: { value: '看这张图' } });
+    fireEvent.keyDown(ta, { key: 'Enter', shiftKey: false });
+    expect(onSend).toHaveBeenCalledTimes(1);
+    const [text, images] = onSend.mock.calls[0] as unknown as [string, { name: string; media_type: string; data_base64: string }[]];
+    expect(text).toBe('看这张图');
+    expect(images).toHaveLength(1);
+    expect(images[0].name).toBe('a.png');
+    expect(images[0].media_type).toBe('image/png');
+    expect(images[0].data_base64.length).toBeGreaterThan(0);
+    expect(images[0].data_base64.startsWith('data:')).toBe(false);
+    // 发送成功(onSend 返回 undefined 的同步路径)→ chips 清空
+    expect(screen.queryByTestId('composer-atts')).toBeNull();
+  });
+
+  it('onSend 返回 rejected promise(发送失败)→ chips 保留供重试', async () => {
+    const onSend = vi.fn(() => Promise.reject(new Error('net down')));
+    render(<Composer onSend={onSend} mode='chat' />);
+    await addViaInput([makeFile('a.png')]);
+    const ta = screen.getByTestId('assistant-composer-input') as HTMLTextAreaElement;
+    fireEvent.change(ta, { target: { value: 'hi' } });
+    fireEvent.keyDown(ta, { key: 'Enter', shiftKey: false });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(screen.getByTestId('composer-att-0')).toBeTruthy();
   });
 });

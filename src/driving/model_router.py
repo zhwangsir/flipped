@@ -14,7 +14,9 @@ import httpx
 DEFAULT_PROXY_URL = "http://localhost:4000/v1"
 # M149: 裸 IP 100.64.201.37 因 Tailscale IP 漂移失效（全链路 000），
 # 改用 MagicDNS 主机名（= macstudio01），免疫 IP 变化
-DEFAULT_EXO_URL = "http://studio01-1:52415/v1"
+# M192: MagicDNS 主机名本身漂移——tailnet 中该节点现为 dgmt-studio01mac-studio
+# （100.67.43.40，studio01-1 已 Unknown host）。跟随 M149 决策更新主机名。
+DEFAULT_EXO_URL = "http://dgmt-studio01mac-studio:52415/v1"
 DEFAULT_WORKER_PROXY_URL = "http://host.docker.internal:4000/v1"
 
 
@@ -125,3 +127,24 @@ def resolve_worker_model_config(alias: str = "coder") -> tuple[str, str]:
         return direct_url, direct_model
 
     return direct_url, direct_model
+
+
+def resolve_vision_model_config() -> tuple[str, str]:
+    """Pick the best endpoint and model id for the vision model (M192).
+
+    chat/plan 带图像附件时使用；与 worker 路由解耦（worker 模型均 text-only）。
+    model 由 FLIPPED_VISION_MODEL 覆盖，默认 mlx-community/Qwen3-VL-4B-Instruct-4bit。
+
+    Preference order（形状同 resolve_model_config）:
+      1. LiteLLM proxy if healthy and the vision model is listed there.
+      2. Direct exo URL otherwise（健康探测失败也 best-effort 直连，
+         让 LLM 调用自身暴露清晰网络错误）。
+    """
+    model = os.environ.get("FLIPPED_VISION_MODEL", "mlx-community/Qwen3-VL-4B-Instruct-4bit")
+    proxy_url = os.environ.get("LITELLM_BASE_URL", DEFAULT_PROXY_URL)
+    direct_url = os.environ.get("FLIPPED_MODEL_BASE_URL", DEFAULT_EXO_URL)
+
+    if is_endpoint_healthy(proxy_url) and is_model_available(proxy_url, model):
+        return proxy_url, model
+
+    return direct_url, model

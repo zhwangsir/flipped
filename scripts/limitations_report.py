@@ -206,6 +206,44 @@ def _cmd_check(args: argparse.Namespace) -> int:
         for lid, text in missing:
             print(f"  - {lid} {text[:60]}")
         return 1
+
+    # M185.4 · registry 真实性校验（消化 L-M184-2）：存在性之外再验字段可信。
+    violations: list[str] = []
+    seen_ids: set[str] = set()
+    for lim in reg["limitations"]:
+        lid = str(lim.get("id", ""))
+        # 1. id 格式 ^L-M{n}-{i}$ 且 id 里程碑段 == milestone 字段
+        m = re.fullmatch(r"L-(M\d+)-(\d+)", lid)
+        if not m:
+            violations.append(f"{lid or '(empty)'}: id 格式非法（期望 L-M<n>-<i>）")
+        else:
+            if lid in seen_ids:
+                violations.append(f"{lid}: id 重复")
+            seen_ids.add(lid)
+            if m.group(1) != str(lim.get("milestone", "")):
+                violations.append(
+                    f"{lid}: id 里程碑段({m.group(1)})与 milestone 字段"
+                    f"({lim.get('milestone')})不符")
+        # 2. 枚举字段合法
+        status = lim.get("status")
+        if status not in STATUSES:
+            violations.append(f"{lid}: status 非法（{status}∉{STATUSES}）")
+        priority = lim.get("priority")
+        if priority not in PRIORITIES:
+            violations.append(f"{lid}: priority 非法（{priority}∉{PRIORITIES}）")
+        difficulty = lim.get("difficulty")
+        if difficulty not in DIFFICULTIES:
+            violations.append(
+                f"{lid}: difficulty 非法（{difficulty}∉{DIFFICULTIES}）")
+        # 3. 已处置条目必须有注记
+        if status in ("resolved", "wontfix") and not str(
+                lim.get("resolution_note", "")).strip():
+            violations.append(f"{lid}: {status} 缺 resolution_note")
+    if violations:
+        print("registry violations:")
+        for v in violations:
+            print(f"  - {v}")
+        return 1
     print(f"check ok: {len(reg['limitations'])} limitations registered")
     return 0
 

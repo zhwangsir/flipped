@@ -28,6 +28,7 @@ from .factory import router as factory_router
 
 MOCK_WORKER = os.environ.get("FLIPPED_MOCK_WORKER", "0") == "1"
 RUNNING_TASKS: dict[str, asyncio.Task] = {}  # M6.2 — 每会话运行中任务句柄，供取消
+_STALE_SEEN: set[str] = set()  # M191.4 — watchdog 两击确认用的首击标记集
 # M137：默认值收敛为统一库（FLIPPED_DB）；FLIPPED_CHECKPOINT_DB 保留向后兼容
 FLIPPED_CHECKPOINT_DB = os.environ.get("FLIPPED_CHECKPOINT_DB") or os.environ.get("FLIPPED_DB", "data/flipped.db")
 
@@ -46,11 +47,35 @@ async def lifespan(app: FastAPI):
         for f in findings:
             print(f"[safety] {f}", file=sys.stderr)
     for session in store.list():
+        # M188.2：goal 断点续跑优先于 checkpoint 恢复。goal wrapper 是纯内存协程，
+        # 无 checkpoint，但事件流可重建循环态。不能按 status==running 过滤：
+        # goal 每轮 dispatch 复用 _run_chat/_run_orchestrator，其尾段会把 store
+        # 状态写成 done/error，进程死时 status 不可靠；改由 rebuild_running 从
+        # 事件流判可续跑性（无 goal/已终态 → None，回落既有分支）。
+        # paused（审批中）不续跑 goal（登记限制），走 orchestrator checkpoint 恢复。
+        if session.status != SessionStatus.paused:
+            from api.assistant import try_resume_goal
+            t_goal = try_resume_goal(session)
+            if t_goal is not None:
+                RUNNING_TASKS[session.id] = t_goal
+                t_goal.add_done_callback(lambda _t, s=session.id: RUNNING_TASKS.pop(s, None))
+                continue
         if session.status in (SessionStatus.running, SessionStatus.paused) and session.checkpoint_db_path:
-            asyncio.create_task(_resume_orchestrator(session))
+            # M187.3：恢复任务注册进 RUNNING_TASKS（与 _dispatch_scheduled 尾段同形状），
+            # 让 scheduler 防重入能看到恢复中的会话，闭合重启后重复派发缺口
+            t = asyncio.create_task(_resume_orchestrator(session))
+            RUNNING_TASKS[session.id] = t
+            t.add_done_callback(lambda _t, s=session.id: RUNNING_TASKS.pop(s, None))
+        elif session.status == SessionStatus.running and not session.checkpoint_db_path:
+            # M187.3：无 checkpoint 的 running 会话（chat/plan 进程死后无恢复可能）
+            # → 启动时一次性标 error，不再永远假 running；paused 不动
+            store.update_status(session.id, SessionStatus.error)
     # M178.1：已安排任务定时扫描（FLIPPED_TASKS=0 不起 scheduler）
     scheduler = (asyncio.create_task(_task_scheduler())
                  if os.environ.get("FLIPPED_TASKS", "1") != "0" else None)
+    # M191.4：stale running 看门狗（FLIPPED_WATCHDOG=0 不起；独立于 FLIPPED_TASKS）
+    watchdog = (asyncio.create_task(_stale_watchdog())
+                if os.environ.get("FLIPPED_WATCHDOG", "1") != "0" else None)
     yield
     if scheduler is not None:
         scheduler.cancel()
@@ -58,9 +83,68 @@ async def lifespan(app: FastAPI):
             await scheduler
         except asyncio.CancelledError:
             pass
+    if watchdog is not None:
+        watchdog.cancel()
+        try:
+            await watchdog
+        except asyncio.CancelledError:
+            pass
     bus.set_loop(None)
     bus._connections.clear()
     store.save()
+
+
+async def _stale_sweep_once() -> None:
+    """M191.4 · watchdog 单轮扫描（两击确认）。
+
+    status==running 且 RUNNING_TASKS 无活句柄的会话：
+    首击记入 _STALE_SEEN 不动（跳过派发链 status=running 先于 create_task 的竞态窗）；
+    次击按 lifespan 同款恢复：try_resume_goal 命中 → 注册 RUNNING_TASKS；
+    否则有 checkpoint_db_path → create_task(_resume_orchestrator) 注册；
+    否则 → update_status(error) + bus.emit status「watchdog: 运行句柄丢失，标记 error」。
+    动作后弹出标记；健康/非 running 会话清标记；paused 不动（审批中合法无句柄）。
+    单会话异常隔离，不炸整轮。
+    """
+    for session in store.list():
+        sid = session.id
+        try:
+            if session.status != SessionStatus.running:
+                _STALE_SEEN.discard(sid)
+                continue
+            t = RUNNING_TASKS.get(sid)
+            if t is not None and not t.done():
+                _STALE_SEEN.discard(sid)  # 健康：活句柄在，清标记
+                continue
+            if sid not in _STALE_SEEN:
+                _STALE_SEEN.add(sid)  # 首击：只记标记不动
+                continue
+            # 次击：lifespan 同款恢复（goal 续跑优先 → checkpoint resume → 标 error）
+            from api.assistant import try_resume_goal
+            t_goal = try_resume_goal(session)
+            if t_goal is not None:
+                RUNNING_TASKS[sid] = t_goal
+                t_goal.add_done_callback(lambda _t, s=sid: RUNNING_TASKS.pop(s, None))
+            elif session.checkpoint_db_path:
+                t = asyncio.create_task(_resume_orchestrator(session))
+                RUNNING_TASKS[sid] = t
+                t.add_done_callback(lambda _t, s=sid: RUNNING_TASKS.pop(s, None))
+            else:
+                store.update_status(sid, SessionStatus.error)
+                bus.emit(sid, EventType.status, Role.system,
+                         {"status": "error", "note": "watchdog: 运行句柄丢失，标记 error"})
+            _STALE_SEEN.discard(sid)
+        except Exception:  # noqa: BLE001 单会话异常隔离，不炸整轮
+            continue
+
+
+async def _stale_watchdog() -> None:
+    """M191.4 · stale running 看门狗：每 FLIPPED_WATCHDOG_SCAN_S（默认 60s）扫一轮。"""
+    while True:
+        await asyncio.sleep(float(os.environ.get("FLIPPED_WATCHDOG_SCAN_S", "60")))
+        try:
+            await _stale_sweep_once()
+        except Exception:  # noqa: BLE001 扫描循环容错，下轮继续
+            continue
 
 
 app = FastAPI(title="flipped orchestration API", version="0.2.0", lifespan=lifespan)
@@ -494,6 +578,124 @@ async def project_revert(req: RevertRequest) -> RevertResponse:
     return RevertResponse(ok=True, path=rel, action="deleted")
 
 
+# ---------- M193.1 · 逐 hunk 拒绝（Review 面板） ----------
+
+class RevertHunkRequest(BaseModel):
+    path: str = Field(..., min_length=1)
+    hunk_index: int = Field(..., ge=0)
+
+
+class RevertHunkResponse(BaseModel):
+    ok: bool
+    path: str
+    hunk_index: int
+    action: str  # 固定 "hunk_reverted"
+
+
+def _git_file_patch(root: Path, rel: str) -> str:
+    """`git diff HEAD --no-color -- <rel>` 原文（含 header 与全部 hunk）。
+
+    非零退出 / 进程异常 → RuntimeError 带 stderr（写法同 _git_restore_file）。
+    """
+    import subprocess
+
+    try:
+        out = subprocess.run(
+            ["git", "diff", "HEAD", "--no-color", "--", rel],
+            cwd=str(root), capture_output=True, text=True, timeout=10,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise RuntimeError(f"git diff 执行失败: {exc}") from exc
+    if out.returncode != 0:
+        raise RuntimeError(out.stderr.strip() or f"git diff exit {out.returncode}")
+    return out.stdout
+
+
+def split_patch_hunks(patch: str) -> tuple[list[str], list[list[str]]]:
+    """纯函数：把单文件 unified diff 拆成 (header_lines, hunks)。
+
+    header = 首个以 "@@ " 开头的行之前的全部行；hunks[i] = 第 i 个 "@@ "
+    行起到下个 "@@ " 行或 EOF 的行列表（不含下个 @@ 行）。空 patch → ([], [])。
+    """
+    header: list[str] = []
+    hunks: list[list[str]] = []
+    cur: list[str] | None = None
+    for line in patch.splitlines():
+        if line.startswith("@@ "):
+            cur = [line]
+            hunks.append(cur)
+        elif cur is None:
+            header.append(line)
+        else:
+            cur.append(line)
+    return header, hunks
+
+
+def _git_apply_reverse(root: Path, patch_text: str) -> None:
+    """`git apply --reverse --whitespace=nowarn -`：把 patch 反向套用到工作区。
+
+    非零退出（典型：diff 漂移、工作区已变化）→ RuntimeError 带 stderr。
+    """
+    import subprocess
+
+    try:
+        out = subprocess.run(
+            ["git", "apply", "--reverse", "--whitespace=nowarn", "-"],
+            input=patch_text,
+            cwd=str(root), capture_output=True, text=True, timeout=10,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise RuntimeError(f"git apply 执行失败: {exc}") from exc
+    if out.returncode != 0:
+        raise RuntimeError(out.stderr.strip() or f"git apply exit {out.returncode}")
+
+
+@app.post(f"{API_PREFIX}/project/revert-hunk", response_model=RevertHunkResponse)
+async def project_revert_hunk(req: RevertHunkRequest) -> RevertHunkResponse:
+    """逐 hunk 拒绝：重取该文件 diff，把第 hunk_index 个 hunk 反向 apply 回工作区。
+
+    防护链与 project_revert 同款；apply 失败（diff 漂移）→ 409 提示刷新重试。
+    """
+    if os.environ.get("FLIPPED_REVIEW", "1") == "0":
+        raise HTTPException(status_code=404, detail="Review 功能已禁用")
+    root = ps.project_root()
+    if root is None:
+        raise HTTPException(status_code=400, detail="未选择项目")
+    target = (root / req.path).resolve()
+    root = root.resolve()
+    # 路径穿越防护：必须落在仓库根内（同 project_revert）
+    if target != root and not str(target).startswith(str(root) + os.sep):
+        raise HTTPException(status_code=403, detail="path outside project")
+    if target == root or target.is_dir():
+        raise HTTPException(status_code=422, detail="不能回滚目录")
+    rel = target.relative_to(root).as_posix()
+    if not await asyncio.to_thread(_is_tracked, root, rel):
+        raise HTTPException(status_code=422, detail="新文件无 hunk，请用整文件回滚")
+    try:
+        patch = await asyncio.to_thread(_git_file_patch, root, rel)
+    except RuntimeError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    if not patch.strip():
+        raise HTTPException(status_code=404, detail="该文件当前无变更")
+    header, hunks = split_patch_hunks(patch)
+    # 新增/删除文件的 diff 无法按 hunk 部分回滚，走整文件回滚
+    if any(line.startswith(("--- /dev/null", "+++ /dev/null")) for line in header):
+        raise HTTPException(status_code=422, detail="新增/删除文件请用整文件回滚")
+    if req.hunk_index >= len(hunks):
+        raise HTTPException(
+            status_code=422,
+            detail=f"hunk_index 越界（共 {len(hunks)} 个 hunk）")
+    single = "\n".join(header + hunks[req.hunk_index]) + "\n"
+    try:
+        await asyncio.to_thread(_git_apply_reverse, root, single)
+    except RuntimeError as e:
+        raise HTTPException(
+            status_code=409,
+            detail=f"工作区已变化（diff 漂移），请刷新后重试: {e}")
+    return RevertHunkResponse(ok=True, path=rel, hunk_index=req.hunk_index,
+                              action="hunk_reverted")
+
+
 # ---------- M179.1 · AI 代码评审（Review 面板「AI 评审」按钮） ----------
 
 class ReviewRequest(BaseModel):
@@ -513,11 +715,21 @@ class ReviewResponse(BaseModel):
     files_reviewed: int
     model: str
     note: str | None = None
+    review_id: str | None = None  # M186：落盘成功后的记录 id；干净工作区/落盘失败 → None
+
+
+def _reviews_dir() -> Path:
+    """评审历史根目录（每次调用现读 env，便于测试隔离）。"""
+    return Path(os.environ.get("FLIPPED_REVIEWS_DIR", "data/reviews"))
 
 
 @app.post(f"{API_PREFIX}/project/review", response_model=ReviewResponse)
 async def project_review(req: ReviewRequest) -> ReviewResponse:
-    """AI 代码评审：工作区 git diff → LLM → 结构化 findings（只读，不落盘）。"""
+    """AI 代码评审：工作区 git diff → LLM → 结构化 findings。
+
+    M186：成功后 fail-open 落盘（data/reviews/<project>/，超 50 条删最旧），
+    落盘失败绝不影响响应（review_id=None）。
+    """
     if os.environ.get("FLIPPED_AI_REVIEW", "1") == "0":
         raise HTTPException(status_code=404, detail="AI 评审功能已禁用")
     root = ps.project_root()
@@ -552,7 +764,119 @@ async def project_review(req: ReviewRequest) -> ReviewResponse:
         raise HTTPException(status_code=502, detail=f"评审结果解析失败: {e}")
     except Exception as e:  # noqa: BLE001 LLM 调用任何失败 → 502，绝不返回伪造 findings
         raise HTTPException(status_code=502, detail=f"评审模型调用失败: {e}")
-    return ReviewResponse(findings=findings, files_reviewed=len(files), model=model)
+    review_id: str | None = None
+    try:  # noqa: BLE001 落盘 fail-open：任何持久化失败都不影响评审响应
+        from .review_store import save_review
+        rec = save_review(_reviews_dir(), project=ps.active_project()["name"],
+                          model=model, files_reviewed=len(files), findings=findings)
+        review_id = rec["id"]
+    except Exception:
+        review_id = None
+    return ReviewResponse(findings=findings, files_reviewed=len(files), model=model,
+                          review_id=review_id)
+
+
+# ---------- M186 · 评审历史（Review 面板「历史」列表/详情） ----------
+
+class ReviewHistoryEntry(BaseModel):
+    id: str
+    ts: str
+    project: str
+    model: str
+    files_reviewed: int
+    findings_count: int
+
+
+class ReviewsHistoryResponse(BaseModel):
+    reviews: list[ReviewHistoryEntry]
+
+
+class ReviewRecord(BaseModel):
+    id: str
+    ts: str
+    project: str
+    model: str
+    files_reviewed: int
+    findings_count: int
+    findings: list[ReviewFinding]
+
+
+@app.get(f"{API_PREFIX}/project/reviews", response_model=ReviewsHistoryResponse)
+async def project_reviews_history() -> ReviewsHistoryResponse:
+    """评审历史列表（ts desc，摘要无 findings）。无活动项目 → 空列表（不 400）。"""
+    if os.environ.get("FLIPPED_AI_REVIEW", "1") == "0":
+        raise HTTPException(status_code=404, detail="AI 评审功能已禁用")
+    proj = ps.active_project()
+    if proj is None:
+        return ReviewsHistoryResponse(reviews=[])
+    from .review_store import list_reviews
+    return ReviewsHistoryResponse(
+        reviews=[ReviewHistoryEntry(**e)
+                 for e in list_reviews(_reviews_dir(), proj["name"])])
+
+
+@app.get(f"{API_PREFIX}/project/reviews/{{review_id}}", response_model=ReviewRecord)
+async def project_review_detail(review_id: str) -> ReviewRecord:
+    """单条评审完整记录（含 findings）。非法 id/未命中/无活动项目 → 404。"""
+    if os.environ.get("FLIPPED_AI_REVIEW", "1") == "0":
+        raise HTTPException(status_code=404, detail="AI 评审功能已禁用")
+    proj = ps.active_project()
+    if proj is None:
+        raise HTTPException(status_code=404, detail="评审记录不存在")
+    from .review_store import load_review
+    rec = load_review(_reviews_dir(), proj["name"], review_id)
+    if rec is None:
+        raise HTTPException(status_code=404, detail="评审记录不存在")
+    return ReviewRecord(**rec)
+
+
+# ---------- M186 · AI commit message 草稿（Review 面板「生成提交信息」） ----------
+
+class CommitMessageResponse(BaseModel):
+    message: str
+    model: str
+    files_count: int
+    note: str | None = None
+
+
+@app.post(f"{API_PREFIX}/project/commit_message", response_model=CommitMessageResponse)
+async def project_commit_message(req: ReviewRequest) -> CommitMessageResponse:
+    """AI commit message 草稿：工作区 git diff → LLM → conventional commit 文本（不落盘）。"""
+    if os.environ.get("FLIPPED_AI_REVIEW", "1") == "0":
+        raise HTTPException(status_code=404, detail="AI 评审功能已禁用")
+    root = ps.project_root()
+    if root is None:
+        raise HTTPException(status_code=400, detail="未选择项目")
+    import subprocess
+
+    from driving.model_router import resolve_worker_model_config
+
+    from .review import (COMMIT_SYSTEM_PROMPT, ReviewParseError,
+                         build_commit_prompt, parse_commit_reply)
+
+    base_url, model = resolve_worker_model_config(req.model or "coder")
+    try:
+        out = await asyncio.to_thread(
+            subprocess.run,
+            ["git", "diff", "HEAD", "--no-color"],
+            cwd=str(root), capture_output=True, text=True, timeout=6,
+        )
+    except (OSError, subprocess.SubprocessError) as e:
+        raise HTTPException(status_code=500, detail=f"git diff 失败: {e}")
+    files = _parse_unified_diff(out.stdout) if out.returncode == 0 else []
+    files += await asyncio.to_thread(_untracked_entries, root)
+    if not files:
+        return CommitMessageResponse(message="", model=model, files_count=0,
+                                     note="工作区干净")
+    prompt = build_commit_prompt(files)
+    try:
+        reply, _usage = await _llm_chat(base_url, model, COMMIT_SYSTEM_PROMPT, prompt)
+        message = parse_commit_reply(reply)
+    except ReviewParseError as e:
+        raise HTTPException(status_code=502, detail=f"提交信息解析失败: {e}")
+    except Exception as e:  # noqa: BLE001 LLM 调用任何失败 → 502，绝不返回伪造 message
+        raise HTTPException(status_code=502, detail=f"提交信息模型调用失败: {e}")
+    return CommitMessageResponse(message=message, model=model, files_count=len(files))
 
 
 # ---------- M180 · 项目规则系统（规则面板查看/编辑；chat/plan 注入见 _run_chat） ----------
@@ -1138,12 +1462,13 @@ PLAN_SYSTEM = (
 )
 
 
-async def _llm_chat(base_url: str, model: str, system: str, user: str,
+async def _llm_chat(base_url: str, model: str, system: str, user: str | list[dict],
                     timeout: float = 120.0) -> tuple[str, dict | None]:
     """直连 OpenAI 兼容端点做一次非流式对话补全。
 
     M169：返回 (content, usage)；usage 取响应 usage 字段（dict 含
     prompt_tokens/completion_tokens），缺失时 None。
+    M192：user 支持多模态 parts 数组（list 原样进 messages payload 的 user content）。
     """
     url = base_url.rstrip("/") + "/chat/completions"
     api_key = os.environ.get("EXO_API_KEY") or os.environ.get("OPENAI_API_KEY") or "dummy"
@@ -1163,7 +1488,7 @@ async def _llm_chat(base_url: str, model: str, system: str, user: str,
     return data["choices"][0]["message"]["content"], data.get("usage")
 
 
-async def _llm_chat_stream(base_url: str, model: str, system: str, user: str,
+async def _llm_chat_stream(base_url: str, model: str, system: str, user: str | list[dict],
                            timeout: float = 120.0, usage_box: dict | None = None):
     """直连 OpenAI 兼容端点做流式对话补全（SSE），逐 chunk yield 文本增量（M166）。
 
@@ -1172,6 +1497,7 @@ async def _llm_chat_stream(base_url: str, model: str, system: str, user: str,
 
     M169：payload 带 stream_options.include_usage；末尾 choices=[] 的 usage 汇总
     chunk 不 yield，写入 usage_box["usage"]（调用方传 dict 时）。
+    M192：user 支持多模态 parts 数组（list 原样进 messages payload 的 user content）。
     """
     url = base_url.rstrip("/") + "/chat/completions"
     api_key = os.environ.get("EXO_API_KEY") or os.environ.get("OPENAI_API_KEY") or "dummy"
@@ -1213,17 +1539,27 @@ async def _llm_chat_stream(base_url: str, model: str, system: str, user: str,
 
 
 async def _run_chat(session_id: str, task_id: str, description: str, model_alias: str, mode: str,
-                    *, rag_auto: bool = True, map_auto: bool = True, rules_auto: bool = True) -> None:
+                    *, rag_auto: bool = True, map_auto: bool = True, rules_auto: bool = True,
+                    attachments: list[dict] | None = None) -> None:
     """对话/规划模式：直连本地模型返回文本，不启动沙盒、不用工具。
 
     M166：默认 token 级流式（FLIPPED_CHAT_STREAM=0 关闭）。
     - 正常序列：token{text, seq:1..N, done:false}* → token{text:"", done:true} → 既有 message 落盘；
     - 建流失败（未产出任何 chunk 即异常）→ 静默 fallback 非流式 _llm_chat，无 token 事件；
     - 中途断流（已产出 chunk 后异常）→ token done=true 清前端流式态，再走既有 error 分支。
+
+    M192：attachments 非空 → vision 路由（resolve_vision_model_config）取 (base_url, model)；
+    逐张按 payload.path 读盘组装多模态 parts（text + image_url data URL）。
+    读盘失败单张跳过（fail-open，对齐 refs 哲学）；全部失败 → 纯 str 发送（降级不炸）。
+    attachments 为空：现状 str 路径零变化。
     """
     from driving.model_router import resolve_worker_model_config
 
-    base_url, model = resolve_worker_model_config(model_alias)
+    if attachments:
+        from driving.model_router import resolve_vision_model_config
+        base_url, model = resolve_vision_model_config()
+    else:
+        base_url, model = resolve_worker_model_config(model_alias)
     system = PLAN_SYSTEM if mode == "plan" else CHAT_SYSTEM
     # M172：chat/plan 自动注入 RAG 上下文（FLIPPED_RAG_AUTO=0 或请求级 rag_auto=False 关闭）。
     # 全程 fail-open：RAG 任何故障都不让对话失败。
@@ -1261,9 +1597,44 @@ async def _run_chat(session_id: str, task_id: str, description: str, model_alias
                 system += "\n\n" + RULES_INJECT_HEADER + "\n" + rules.markdown
         except Exception:  # noqa: BLE001 fail-open：注入失败=无注入
             pass
+    # M185.1：chat/plan 注入 scope="all" 的 worker 规则（FLIPPED_WORKER_RULES_CHAT=0 关闭）。
+    # worker-only 规则不进对话（工程约束面向执行者）；全程 fail-open。
+    worker_rules_injected = False
+    if mode in ("chat", "plan") and os.environ.get("FLIPPED_WORKER_RULES_CHAT", "1") != "0":
+        try:
+            from driving.worker_rules import (
+                WORKER_RULES_CHAT_HEADER as _WR_CHAT_HEADER,
+                WorkerRuleStore as _WRStoreChat,
+                build_worker_rules_text as _build_wr_text,
+            )
+            _wr_store = _WRStoreChat(Path(
+                os.environ.get("FLIPPED_WORKER_RULES_PATH", "data/worker_rules.json")))
+            _wr_text, _ = _build_wr_text(_wr_store.list(), scopes=("all",), max_chars=300)
+            if _wr_text:
+                system += "\n\n" + _WR_CHAT_HEADER + "\n" + _wr_text
+                worker_rules_injected = True
+        except Exception:  # noqa: BLE001 fail-open：注入失败=无注入
+            pass
     note = "规划" if mode == "plan" else "对话"
     bus.emit(session_id, EventType.status, Role.system,
              {"status": "running", "progress": 20, "note": f"{note}中（{model_alias}）"})
+
+    # M192：附件读盘组装多模态 parts；单张失败跳过（fail-open），全部失败降级纯 str
+    user_content: str | list[dict] = description
+    if attachments:
+        import base64 as _b64  # 局部 import：仅多模态分支使用，不动顶部 import 行
+        from api.assistant import attachments_dir
+        parts: list[dict] = [{"type": "text", "text": description}]
+        for att in attachments:
+            try:
+                raw = (attachments_dir() / str(att.get("path", ""))).read_bytes()
+                mt = att.get("media_type") or "image/png"
+                parts.append({"type": "image_url",
+                              "image_url": {"url": f"data:{mt};base64,{_b64.b64encode(raw).decode('ascii')}"}})
+            except Exception:  # noqa: BLE001 fail-open：单张读盘失败跳过
+                continue
+        if len(parts) > 1:
+            user_content = parts
 
     def _done_token(seq: int) -> None:
         bus.emit_transient(session_id, EventType.token, Role.worker,
@@ -1276,7 +1647,7 @@ async def _run_chat(session_id: str, task_id: str, description: str, model_alias
             seq = 0
             usage_box: dict = {}
             try:
-                async for chunk in _llm_chat_stream(base_url, model, system, description,
+                async for chunk in _llm_chat_stream(base_url, model, system, user_content,
                                                     usage_box=usage_box):
                     seq += 1
                     chunks.append(chunk)
@@ -1288,18 +1659,20 @@ async def _run_chat(session_id: str, task_id: str, description: str, model_alias
                     _done_token(seq + 1)
                     raise
                 # 建流失败：静默 fallback 非流式（无 token 事件，行为=现状）
-                reply, usage = await _llm_chat(base_url, model, system, description)
+                reply, usage = await _llm_chat(base_url, model, system, user_content)
             else:
                 _done_token(seq + 1)
                 reply = "".join(chunks)
                 usage = usage_box.get("usage")
         else:
-            reply, usage = await _llm_chat(base_url, model, system, description)
+            reply, usage = await _llm_chat(base_url, model, system, user_content)
         payload: dict[str, Any] = {"text": reply, "source": "agent"}
         if rag_k > 0:  # M172：仅命中 RAG 时附带 chunk 数，k==0 保持现状形状
             payload["rag_chunks"] = rag_k
         if map_injected:  # M173：仅实际注入地图时附带标记，未注入保持现状形状
             payload["map_injected"] = True
+        if worker_rules_injected:  # M185.1：仅实际注入 worker 规则（scope=all）时附带标记
+            payload["worker_rules_injected"] = True
         bus.emit(session_id, EventType.message, Role.worker, payload)
         # M169：per-turn token 用量事件（落盘，history 折叠进 assistant turn）+
         # 补全局计数漏 chat/plan 的缺口；统计失败不影响主流程
@@ -1429,6 +1802,7 @@ async def _wait_for_event(session_id: str, event_type: EventType, timeout: float
 from dataclasses import asdict as _asdict  # 局部 import：本段自包含，不动顶部 import 行
 from typing import Literal
 
+from .cron import CronError, validate_cron
 from .tasks import ScheduledTask, TaskRegistry, due_tasks
 
 _TASK_REGISTRY: TaskRegistry | None = None
@@ -1444,14 +1818,15 @@ def _get_task_registry() -> TaskRegistry:
 
 
 class TaskCreateRequest(BaseModel):
-    """创建已安排任务请求（M178.1）。"""
+    """创建已安排任务请求（M178.1；M187.1 增加 cron kind）。"""
     title: str = Field(..., min_length=1)
     prompt: str = Field(..., min_length=1)
     mode: str = "chat"
     model: str = "coder"
-    kind: Literal["once", "interval"] = "once"
+    kind: Literal["once", "interval", "cron"] = "once"
     run_at: str | None = None
     every_minutes: int | None = None
+    cron: str | None = None
 
 
 class ScheduledTaskResponse(BaseModel):
@@ -1464,6 +1839,7 @@ class ScheduledTaskResponse(BaseModel):
     kind: str
     run_at: str | None = None
     every_minutes: int | None = None
+    cron: str | None = None
     enabled: bool
     next_run_at: str | None = None
     last_run_at: str | None = None
@@ -1497,10 +1873,20 @@ async def create_scheduled_task(req: TaskCreateRequest) -> dict:
         raise HTTPException(status_code=422, detail="once 任务必须提供 run_at")
     if req.kind == "interval" and (req.every_minutes is None or req.every_minutes < 1):
         raise HTTPException(status_code=422, detail="interval 任务必须提供 every_minutes>=1")
+    # M187.1：cron 校验——kind=cron 必填且合法；其余 kind 带 cron → 422（防脏数据）
+    if req.kind == "cron":
+        if not req.cron:
+            raise HTTPException(status_code=422, detail="cron 任务必须提供 cron 表达式")
+        try:
+            validate_cron(req.cron)
+        except CronError as e:
+            raise HTTPException(status_code=422, detail=f"cron 表达式非法: {e}")
+    elif req.cron:
+        raise HTTPException(status_code=422, detail="仅 cron 任务可传 cron 表达式")
     task = _get_task_registry().add(
         title=req.title, prompt=req.prompt, mode=req.mode, model=req.model,
         kind=req.kind, run_at=req.run_at, every_minutes=req.every_minutes,
-        now=datetime.now(timezone.utc))
+        cron=req.cron, now=datetime.now(timezone.utc))
     return _asdict(task)
 
 
@@ -1510,6 +1896,39 @@ async def list_scheduled_tasks() -> list[dict]:
     if _tasks_feature_off():
         raise HTTPException(status_code=404, detail="任务功能已禁用")
     return [_asdict(t) for t in _get_task_registry().list()]
+
+
+class TaskPatchRequest(BaseModel):
+    """M187.2 · 编辑已安排任务请求（全字段可选，exclude_unset 语义：
+    显式传 null 会进入 fields，置空后合并非法由 registry.update 校验拦截）。"""
+    title: str | None = None
+    prompt: str | None = None
+    mode: str | None = None
+    model: str | None = None
+    kind: Literal["once", "interval", "cron"] | None = None
+    run_at: str | None = None
+    every_minutes: int | None = None
+    cron: str | None = None
+
+
+@app.patch(f"{API_PREFIX}/tasks/{{task_id}}", response_model=ScheduledTaskResponse)
+async def patch_scheduled_task(task_id: str, req: TaskPatchRequest) -> dict:
+    """编辑任务：白名单合并校验；调度字段实际变更 → 重算 next_run_at。"""
+    if _tasks_feature_off():
+        raise HTTPException(status_code=404, detail="任务功能已禁用")
+    fields = req.model_dump(exclude_unset=True)
+    if not fields:
+        raise HTTPException(status_code=422, detail="至少提供一个字段")
+    if fields.get("mode") is not None and fields["mode"] not in _TASK_ALLOWED_MODES:
+        raise HTTPException(status_code=422, detail=f"mode must be one of {_TASK_ALLOWED_MODES}")
+    try:
+        task = _get_task_registry().update(
+            task_id, now=datetime.now(timezone.utc), **fields)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    if task is None:
+        raise HTTPException(status_code=404, detail="task not found")
+    return _asdict(task)
 
 
 @app.delete(f"{API_PREFIX}/tasks/{{task_id}}", response_model=TaskDeleteResponse)
@@ -2071,6 +2490,7 @@ from driving.worker_rules import (
     WorkerRuleStats as _WorkerRuleStats,
     WorkerRuleStore as _WorkerRuleStore,
     generate_auto_rules as _generate_auto_rules,
+    generate_auto_rules_llm as _generate_auto_rules_llm,
 )
 
 
@@ -2135,22 +2555,31 @@ class WorkerRuleAutoGenRequest(BaseModel):
 
 
 class WorkerRuleAutoGenResponse(BaseModel):
-    """自动生成回执：added 为实际入库的规则，candidates 为候选条数。"""
+    """自动生成回执：added 为实际入库的规则，candidates 为候选条数。
+
+    M190.2：llm_used 标记候选是否来自 LLM 兜底（固定模板未命中时触发）。
+    """
     added: list[_WorkerRule]
     candidates: int
+    llm_used: bool = False
 
 
 class WorkerRuleStatEntry(BaseModel):
-    """单规则效果：applied=注入次；success/failure=对应 verify 通过/失败次。"""
+    """单规则效果：applied=注入次；success/failure=对应 verify 通过/失败次。
+
+    success_rate=success/(success+failure)（同单位 verify 次）；零 outcome → null。
+    """
     applied: int
     success: int
     failure: int
+    success_rate: float | None = None
 
 
 class WorkerRuleStatsResponse(BaseModel):
-    """规则执行效果统计快照。"""
+    """规则执行效果统计快照（semantics 显式语义注记，M185.2）。"""
     stats: dict[str, WorkerRuleStatEntry]
     total_runs: int
+    semantics: str = ""
 
 
 def _worker_rules_guard() -> None:
@@ -2181,12 +2610,67 @@ def _recent_failure_texts(limit: int = 20) -> list[str]:
         return []
 
 
+def _error_event_texts(limit: int = 20) -> list[str]:
+    """M190.2：扫描全会话事件流的 error 事件，取 payload 字符串值拼接（最新优先）。"""
+    out: list[str] = []
+    for sess in store.list():
+        for ev in reversed(store.events(sess.id)):
+            etype = ev.type.value if hasattr(ev.type, "value") else str(ev.type)
+            if etype != "error":
+                continue
+            text = " ".join(str(v) for v in ev.payload.values()
+                            if isinstance(v, str) and v.strip()).strip()
+            if text:
+                out.append(text)
+            if len(out) >= limit:
+                return out
+    return out
+
+
+def _collect_failure_texts(limit: int = 20) -> list[str]:
+    """M190.2 多源汇聚：failure_kb 未解决 ∪ 会话事件流 error 事件。
+
+    dedup 保序（kb 在前），单源异常各自 fail-open，总量 cap limit*2。
+    """
+    texts: list[str] = []
+    seen: set[str] = set()
+
+    def _add(items: list[str]) -> None:
+        for t in items:
+            t = (t or "").strip()
+            if t and t not in seen:
+                seen.add(t)
+                texts.append(t)
+
+    try:
+        _add(_recent_failure_texts(limit))
+    except Exception:  # noqa: BLE001 单源 fail-open
+        pass
+    try:
+        _add(_error_event_texts(limit))
+    except Exception:  # noqa: BLE001 单源 fail-open
+        pass
+    return texts[: limit * 2]
+
+
 @app.get(f"{API_PREFIX}/worker/rules", response_model=WorkerRulesResponse)
-async def worker_rules_list() -> WorkerRulesResponse:
-    """规则列表 + 版本号（前端 WorkerRulesPanel mount 拉取）。"""
+async def worker_rules_list(
+        enabled: bool | None = Query(None),
+        sort: Literal["insertion", "priority"] = Query("insertion")
+        ) -> WorkerRulesResponse:
+    """规则列表 + 版本号（前端 WorkerRulesPanel mount 拉取）。
+
+    缺省 = D20 契约（全量插入序）；enabled=true/false 服务端过滤；
+    sort=priority → priority desc → id asc（与注入层同序，M185.3）。
+    """
     _worker_rules_guard()
     store_ = _worker_rule_store()
-    return WorkerRulesResponse(version=store_.version, rules=store_.list())
+    rules = store_.list()
+    if enabled is not None:
+        rules = [r for r in rules if r.enabled is enabled]
+    if sort == "priority":
+        rules = sorted(rules, key=lambda r: (-r.priority, r.id))
+    return WorkerRulesResponse(version=store_.version, rules=rules)
 
 
 @app.post(f"{API_PREFIX}/worker/rules", response_model=_WorkerRule, status_code=201)
@@ -2256,14 +2740,23 @@ async def worker_rules_auto_generate(
         req: WorkerRuleAutoGenRequest | None = None) -> WorkerRuleAutoGenResponse:
     """auto 通路：失败文本 → 模板命中 → 去重 → 入库（source="auto"，priority 默认 10）。
 
-    failure_texts 缺省时读失败知识库最近 20 条未解决记录；无候选 → added=[] 不报错。
+    failure_texts 缺省时走 M190.2 多源汇聚（failure_kb ∪ 事件流 error）；
+    模板全未命中且 texts 非空且 FLIPPED_RULES_LLM≠0 → LLM 兜底生成候选。
+    无候选 → added=[] 不报错。
     """
     _worker_rules_guard()
-    texts = req.failure_texts if req and req.failure_texts else _recent_failure_texts()
+    texts = req.failure_texts if req and req.failure_texts else _collect_failure_texts()
     store_ = _worker_rule_store()
     candidates = _generate_auto_rules(texts, store_.list())
+    llm_used = False
+    if not candidates and texts and os.environ.get("FLIPPED_RULES_LLM", "1") != "0":
+        llm_candidates = _generate_auto_rules_llm(texts, store_.list())
+        if llm_candidates:
+            candidates = llm_candidates
+            llm_used = True
     added = [store_.add(text, source="auto") for text in candidates]
-    return WorkerRuleAutoGenResponse(added=added, candidates=len(candidates))
+    return WorkerRuleAutoGenResponse(added=added, candidates=len(candidates),
+                                     llm_used=llm_used)
 
 
 @app.get(f"{API_PREFIX}/worker/rules/stats", response_model=WorkerRuleStatsResponse)
@@ -2273,4 +2766,5 @@ async def worker_rules_stats() -> WorkerRuleStatsResponse:
     snap = _worker_rule_stats().snapshot()
     return WorkerRuleStatsResponse(
         stats={k: WorkerRuleStatEntry(**v) for k, v in snap["stats"].items()},
-        total_runs=snap["total_runs"])
+        total_runs=snap["total_runs"],
+        semantics=snap.get("semantics", ""))

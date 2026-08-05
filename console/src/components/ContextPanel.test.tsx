@@ -1,6 +1,6 @@
 import { afterEach, beforeAll, beforeEach, describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent, cleanup, waitFor, within } from '@testing-library/react';
-import { ContextPanel } from './ContextPanel';
+import { ContextPanel, filterTreeByPaths } from './ContextPanel';
 
 // jsdom 未实现 ResizeObserver / scrollIntoView
 beforeAll(() => {
@@ -47,6 +47,8 @@ import type {
   BrowserRender,
   ProjectContext,
   AiReviewResult,
+  ReviewHistoryEntry,
+  CommitMessageResult,
 } from '../types';
 
 const mockedUseApp = vi.mocked(useApp);
@@ -75,10 +77,25 @@ const baseState = {
   gitDiffLoading: false,
   loadGitDiff: vi.fn(async () => {}),
   revertGitDiffFile: vi.fn(async (_path: string) => ({ ok: true, path: _path, action: 'restored' as const })),
+  // M193.2 — 逐 hunk 拒绝
+  revertGitDiffHunk: vi.fn(async (_path: string, _i: number) => ({
+    ok: true,
+    path: _path,
+    hunk_index: _i,
+    action: 'hunk_reverted',
+  })),
   // AI 评审(M179.2)
   aiReview: { result: null as AiReviewResult | null, loading: false, error: null as string | null },
   runAiReview: vi.fn(async () => {}),
   clearAiReview: vi.fn(),
+  // 评审历史(M186.1)
+  reviewHistory: [] as ReviewHistoryEntry[],
+  reviewHistoryLoading: false,
+  loadReviewHistory: vi.fn(async () => {}),
+  openReview: vi.fn(async () => {}),
+  // AI commit message(M186.4)
+  commitMessage: { result: null as CommitMessageResult | null, loading: false, error: null as string | null },
+  generateCommit: vi.fn(async () => {}),
 };
 
 afterEach(() => {
@@ -658,6 +675,121 @@ describe('ContextPanel — 审查 tab · M177.2 文件卡增强', () => {
   });
 });
 
+// M193.2 — 逐 hunk 接受/拒绝:hunk 块渲染 + 接受进度标记(纯前端) + 拒绝内联确认流
+describe('ContextPanel — 审查 tab · M193.2 逐 hunk 接受/拒绝', () => {
+  const twoHunkDiff: GitDiffFile[] = [
+    {
+      path: 'src/two.ts',
+      added: 2,
+      removed: 2,
+      lines: [
+        { type: 'hunk', text: '@@ -1,3 +1,3 @@' },
+        { type: 'ctx', text: 'line a' },
+        { type: 'del', text: 'old 1' },
+        { type: 'add', text: 'new 1' },
+        { type: 'hunk', text: '@@ -10,3 +10,3 @@' },
+        { type: 'ctx', text: 'line b' },
+        { type: 'del', text: 'old 2' },
+        { type: 'add', text: 'new 2' },
+      ],
+    },
+  ];
+  const renderDiff = (overrides: Record<string, unknown> = {}, files: GitDiffFile[] = twoHunkDiff) => {
+    mockedUseApp.mockReturnValue({
+      ...baseState,
+      contextTab: 'diff',
+      changedFiles: [],
+      gitDiff: files,
+      ...overrides,
+    } as never);
+    return render(<ContextPanel />);
+  };
+  const hunkEl = (header: string) => screen.getByText(header).closest('.rdiff-hunk') as HTMLElement;
+
+  it('两 hunk → 各自头部渲染接受/拒绝按钮,行内容仍在块内', () => {
+    renderDiff();
+    expect(screen.getByText('@@ -1,3 +1,3 @@')).toBeInTheDocument();
+    expect(screen.getByText('@@ -10,3 +10,3 @@')).toBeInTheDocument();
+    expect(screen.getAllByTitle('接受该 hunk（保留改动）')).toHaveLength(2);
+    expect(screen.getAllByTitle('拒绝该 hunk（撤销改动回 HEAD）')).toHaveLength(2);
+    expect(within(hunkEl('@@ -1,3 +1,3 @@')).getByText('new 1')).toBeInTheDocument();
+    expect(within(hunkEl('@@ -10,3 +10,3 @@')).getByText('new 2')).toBeInTheDocument();
+  });
+
+  it('接受 → 块加 accepted 类并显示「已接受」;撤销接受 → 还原待审', () => {
+    renderDiff();
+    const el = hunkEl('@@ -1,3 +1,3 @@');
+    fireEvent.click(within(el).getByTitle('接受该 hunk（保留改动）'));
+    expect(el.classList.contains('accepted')).toBe(true);
+    expect(within(el).getByText('已接受')).toBeInTheDocument();
+    expect(within(el).queryByTitle('拒绝该 hunk（撤销改动回 HEAD）')).not.toBeInTheDocument();
+    // 另一 hunk 不受影响
+    expect(hunkEl('@@ -10,3 +10,3 @@').classList.contains('accepted')).toBe(false);
+    fireEvent.click(within(el).getByTitle('撤销接受'));
+    expect(el.classList.contains('accepted')).toBe(false);
+    expect(within(el).getByTitle('接受该 hunk（保留改动）')).toBeInTheDocument();
+  });
+
+  it('拒绝 → 内联确认 → 确认调 revertGitDiffHunk(path, index)', async () => {
+    const loadGitDiff = vi.fn(async () => {});
+    const revertGitDiffHunk = vi.fn(async (p: string, i: number) => {
+      await loadGitDiff();
+      return { ok: true, path: p, hunk_index: i, action: 'hunk_reverted' };
+    });
+    renderDiff({ loadGitDiff, revertGitDiffHunk });
+    const el = hunkEl('@@ -10,3 +10,3 @@');
+    fireEvent.click(within(el).getByTitle('拒绝该 hunk（撤销改动回 HEAD）'));
+    expect(within(el).getByText('撤销该 hunk 改动？')).toBeInTheDocument();
+    fireEvent.click(within(el).getByText('确认'));
+    await waitFor(() => expect(revertGitDiffHunk).toHaveBeenCalledWith('src/two.ts', 1));
+    await waitFor(() => expect(loadGitDiff).toHaveBeenCalled());
+    await waitFor(() => expect(within(el).queryByText('撤销该 hunk 改动？')).not.toBeInTheDocument());
+  });
+
+  it('拒绝 → 取消 → 确认态消失,按钮恢复', () => {
+    renderDiff();
+    const el = hunkEl('@@ -1,3 +1,3 @@');
+    fireEvent.click(within(el).getByTitle('拒绝该 hunk（撤销改动回 HEAD）'));
+    expect(within(el).getByText('撤销该 hunk 改动？')).toBeInTheDocument();
+    fireEvent.click(within(el).getByText('取消'));
+    expect(within(el).queryByText('撤销该 hunk 改动？')).not.toBeInTheDocument();
+    expect(within(el).getByTitle('拒绝该 hunk（撤销改动回 HEAD）')).toBeInTheDocument();
+  });
+
+  it('revertGitDiffHunk 失败 → 错误文案内联展示在对应 hunk 块', async () => {
+    const revertGitDiffHunk = vi.fn(async () => {
+      throw new Error('HTTP 409: 工作区已变化（diff 漂移），请刷新后重试');
+    });
+    renderDiff({ revertGitDiffHunk });
+    const el = hunkEl('@@ -1,3 +1,3 @@');
+    fireEvent.click(within(el).getByTitle('拒绝该 hunk（撤销改动回 HEAD）'));
+    fireEvent.click(within(el).getByText('确认'));
+    await waitFor(() =>
+      expect(within(el).getByText(/工作区已变化/)).toBeInTheDocument()
+    );
+    // 另一 hunk 块无错误
+    expect(within(hunkEl('@@ -10,3 +10,3 @@')).queryByText(/工作区已变化/)).not.toBeInTheDocument();
+  });
+
+  it('untracked/binary 文件(lines 空) → 不出 hunk 按钮(回归既有空态)', () => {
+    renderDiff({}, [
+      { path: 'src/new.ts', added: 5, removed: 0, lines: [], untracked: true },
+      { path: 'assets/logo.png', added: 0, removed: 0, lines: [], binary: true },
+    ]);
+    expect(screen.getByText('新文件 · 撤销将删除该文件')).toBeInTheDocument();
+    expect(screen.queryByTitle('接受该 hunk（保留改动）')).not.toBeInTheDocument();
+    expect(screen.queryByTitle('拒绝该 hunk（撤销改动回 HEAD）')).not.toBeInTheDocument();
+  });
+
+  it('无 hunk 行的 lines(防御 prelude) → 扁平行渲染,不出 hunk 按钮', () => {
+    renderDiff({}, [
+      { path: 'src/flat.ts', added: 1, removed: 0, lines: [{ type: 'add', text: 'x' }] },
+    ]);
+    expect(screen.getByText('x')).toBeInTheDocument();
+    expect(screen.queryByTitle('接受该 hunk（保留改动）')).not.toBeInTheDocument();
+  });
+});
+
 // M179.2 — AI 代码评审:头部「AI 评审」按钮 + findings 按文件行内渲染 + 总览行 + 其他文件分组
 describe('ContextPanel — 审查 tab · M179.2 AI 评审', () => {
   const diffFiles: GitDiffFile[] = [
@@ -772,6 +904,290 @@ describe('ContextPanel — 审查 tab · M179.2 AI 评审', () => {
     renderDiff();
     expect(screen.queryByText(/条建议/)).toBeNull();
     expect(screen.queryByText('其他文件')).toBeNull();
+  });
+});
+
+// M186.2 — findings 行号跳转:有行号的 finding 整行可点 → openFile(path, line);
+// 编辑器目标行高亮(.eln-wrap.line-target) + scrollIntoView 居中
+describe('ContextPanel — M186.2 findings 行号跳转', () => {
+  const diffFiles: GitDiffFile[] = [
+    { path: 'src/a.ts', added: 3, removed: 1, lines: [{ type: 'add', text: '+new' }] },
+  ];
+  const renderDiff = (overrides: Record<string, unknown> = {}) => {
+    mockedUseApp.mockReturnValue({
+      ...baseState,
+      contextTab: 'diff',
+      changedFiles: [],
+      gitDiff: diffFiles,
+      ...overrides,
+    } as never);
+    return render(<ContextPanel />);
+  };
+
+  it('finding.line 非空 → 整行渲染为 button.review-jump,点击调 openFile(path, line)', () => {
+    const openFile = vi.fn(async () => {});
+    renderDiff({
+      openFile,
+      aiReview: {
+        result: {
+          findings: [{ path: 'src/a.ts', line: 42, severity: 'high', message: '可能空指针' }],
+          files_reviewed: 1,
+          model: 'm',
+        },
+        loading: false,
+        error: null,
+      },
+    });
+    const btn = screen.getByText(/可能空指针/).closest('button.review-jump') as HTMLButtonElement;
+    expect(btn).toBeTruthy();
+    fireEvent.click(btn);
+    expect(openFile).toHaveBeenCalledWith('src/a.ts', 42);
+  });
+
+  it('finding.line 为 null → 保持 div 不可点(无 review-jump)', () => {
+    renderDiff({
+      aiReview: {
+        result: {
+          findings: [{ path: 'src/a.ts', line: null, severity: 'low', message: '命名含糊' }],
+          files_reviewed: 1,
+          model: 'm',
+        },
+        loading: false,
+        error: null,
+      },
+    });
+    const el = screen.getByText('命名含糊').closest('.review-finding') as HTMLElement;
+    expect(el.tagName).toBe('DIV');
+    expect(el.classList.contains('review-jump')).toBe(false);
+  });
+
+  it('openedFile.line 存在 → 目标行 .eln-wrap 加 line-target 且 scrollIntoView 居中', () => {
+    mockedUseApp.mockReturnValue({
+      ...baseState,
+      openedFile: { path: 'a.ts', content: 'l1\nl2\nl3\n', line: 2 },
+    } as never);
+    const { container } = render(<ContextPanel />);
+    const target = container.querySelector('.eln-wrap.line-target') as HTMLElement;
+    expect(target).toBeTruthy();
+    expect(target.querySelector('.gn')!.textContent).toBe('2');
+    expect(Element.prototype.scrollIntoView).toHaveBeenCalledWith({ block: 'center' });
+  });
+
+  it('openedFile.line 越界 → 不高亮也不滚动', () => {
+    mockedUseApp.mockReturnValue({
+      ...baseState,
+      openedFile: { path: 'a.ts', content: 'l1\nl2\n', line: 99 },
+    } as never);
+    const { container } = render(<ContextPanel />);
+    expect(container.querySelector('.eln-wrap.line-target')).toBeNull();
+    expect(Element.prototype.scrollIntoView).not.toHaveBeenCalled();
+  });
+});
+
+// M186.3 — 文件树「仅变更」过滤:filterTreeByPaths 纯函数 + 文件 tab 头部 toggle(默认关)+ 计数徽标
+describe('ContextPanel — M186.3 文件树「仅变更」过滤', () => {
+  it('filterTreeByPaths: 保留命中文件与祖先目录,剔除无命中子树', () => {
+    const tree: FileNode[] = [
+      {
+        name: 'src', path: 'src', type: 'dir', children: [
+          { name: 'a.ts', path: 'src/a.ts', type: 'file' },
+          { name: 'b.ts', path: 'src/b.ts', type: 'file' },
+          {
+            name: 'deep', path: 'src/deep', type: 'dir', children: [
+              { name: 'c.ts', path: 'src/deep/c.ts', type: 'file' },
+            ],
+          },
+        ],
+      },
+      {
+        name: 'docs', path: 'docs', type: 'dir', children: [
+          { name: 'd.md', path: 'docs/d.md', type: 'file' },
+        ],
+      },
+      { name: 'README.md', path: 'README.md', type: 'file' },
+    ];
+    const out = filterTreeByPaths(tree, new Set(['src/deep/c.ts']));
+    expect(out).toHaveLength(1);
+    expect(out[0].path).toBe('src');
+    expect(out[0].children).toHaveLength(1);
+    expect(out[0].children![0].path).toBe('src/deep');
+    expect(out[0].children![0].children![0].path).toBe('src/deep/c.ts');
+  });
+
+  it('filterTreeByPaths: 空集合 → 空树;多命中平铺保留', () => {
+    const tree: FileNode[] = [
+      { name: 'a.ts', path: 'a.ts', type: 'file' },
+      { name: 'b.ts', path: 'b.ts', type: 'file' },
+    ];
+    expect(filterTreeByPaths(tree, new Set())).toEqual([]);
+    expect(filterTreeByPaths(tree, new Set(['a.ts', 'b.ts']))).toHaveLength(2);
+  });
+
+  it('toggle 默认关渲染全树;开启只留变更文件+祖先;徽标=gitDiff.length;再点恢复', () => {
+    mockedUseApp.mockReturnValue({
+      ...baseState,
+      projectFiles: [
+        { name: 'src', path: 'src', type: 'dir', children: [{ name: 'a.ts', path: 'src/a.ts', type: 'file' }] },
+        { name: 'README.md', path: 'README.md', type: 'file' },
+      ],
+      gitDiff: [{ path: 'src/a.ts', added: 1, removed: 0, lines: [] }],
+    } as never);
+    render(<ContextPanel />);
+    // 默认关:全树可见
+    expect(screen.getByText('README.md')).toBeInTheDocument();
+    const toggle = screen.getByText('仅变更').closest('button') as HTMLButtonElement;
+    // 计数徽标
+    expect(within(toggle).getByText('1')).toBeInTheDocument();
+    fireEvent.click(toggle);
+    expect(screen.queryByText('README.md')).toBeNull();
+    expect(screen.getByText('src')).toBeInTheDocument();
+    expect(screen.getByText('a.ts')).toBeInTheDocument();
+    // 再点关 → 恢复全树
+    fireEvent.click(toggle);
+    expect(screen.getByText('README.md')).toBeInTheDocument();
+  });
+
+  it('开启后无命中 → 提示「无变更文件」', () => {
+    mockedUseApp.mockReturnValue({
+      ...baseState,
+      projectContext: { project: 'p', branch: null, mode: 'agent' },
+      projectFiles: [{ name: 'a.ts', path: 'a.ts', type: 'file' }],
+      gitDiff: [{ path: 'other.ts', added: 1, removed: 0, lines: [] }],
+    } as never);
+    render(<ContextPanel />);
+    fireEvent.click(screen.getByText('仅变更'));
+    expect(screen.getByText('无变更文件')).toBeInTheDocument();
+    expect(screen.queryByText('a.ts')).toBeNull();
+  });
+});
+
+// M186.1 — 评审历史:头部「历史」按钮展开下拉列表(打开时拉取),点击条目回放该次评审
+describe('ContextPanel — M186.1 评审历史', () => {
+  const diffFiles: GitDiffFile[] = [
+    { path: 'src/a.ts', added: 3, removed: 1, lines: [{ type: 'add', text: '+new' }] },
+  ];
+  const renderDiff = (overrides: Record<string, unknown> = {}) => {
+    mockedUseApp.mockReturnValue({
+      ...baseState,
+      contextTab: 'diff',
+      changedFiles: [],
+      gitDiff: diffFiles,
+      ...overrides,
+    } as never);
+    return render(<ContextPanel />);
+  };
+
+  it('点击「历史」展开并调 loadReviewHistory;空列表 → 「暂无历史评审」;再点收起(不重复拉取)', () => {
+    const loadReviewHistory = vi.fn(async () => {});
+    renderDiff({ loadReviewHistory });
+    const btn = screen.getByTitle('评审历史');
+    fireEvent.click(btn);
+    expect(loadReviewHistory).toHaveBeenCalledTimes(1);
+    expect(screen.getByText('暂无历史评审')).toBeInTheDocument();
+    fireEvent.click(btn);
+    expect(screen.queryByText('暂无历史评审')).toBeNull();
+    expect(loadReviewHistory).toHaveBeenCalledTimes(1);
+  });
+
+  it('列表渲染条目(ts/model/建议数/文件数),点击条目调 openReview(id) 并收起列表', () => {
+    const openReview = vi.fn(async () => {});
+    renderDiff({
+      openReview,
+      reviewHistory: [
+        { id: 'r1', ts: '2026-08-05T10:30:00Z', project: 'p', model: 'glm-x', files_reviewed: 2, findings_count: 3 },
+      ],
+    });
+    fireEvent.click(screen.getByTitle('评审历史'));
+    expect(screen.getByText('2026-08-05 10:30')).toBeInTheDocument();
+    const row = screen.getByText(/glm-x · 3 条建议 · 2 文件/).closest('button') as HTMLButtonElement;
+    expect(row).toBeTruthy();
+    fireEvent.click(row);
+    expect(openReview).toHaveBeenCalledWith('r1');
+    // 收起
+    expect(screen.queryByText(/glm-x · 3 条建议/)).toBeNull();
+  });
+
+  it('reviewHistoryLoading=true → 显示「载入历史…」', () => {
+    renderDiff({ reviewHistoryLoading: true });
+    fireEvent.click(screen.getByTitle('评审历史'));
+    expect(screen.getByText('载入历史…')).toBeInTheDocument();
+  });
+
+  it('aiReview.result.historical=true → 总览行显示「历史」徽标;缺省 → 无徽标', () => {
+    const { container, unmount } = renderDiff({
+      aiReview: {
+        result: { findings: [], files_reviewed: 0, model: 'm', historical: true },
+        loading: false,
+        error: null,
+      },
+    });
+    expect(container.querySelector('.review-hist-badge')).toBeTruthy();
+    expect(container.querySelector('.review-hist-badge')!.textContent).toBe('历史');
+    unmount();
+    const { container: c2 } = renderDiff({
+      aiReview: { result: { findings: [], files_reviewed: 0, model: 'm' }, loading: false, error: null },
+    });
+    expect(c2.querySelector('.review-hist-badge')).toBeNull();
+  });
+});
+
+// M186.4 — AI commit message:头部「提交信息」按钮 → LLM 按 diff 生成;结果行内展示 + 一键复制
+describe('ContextPanel — M186.4 AI commit message', () => {
+  const diffFiles: GitDiffFile[] = [
+    { path: 'src/a.ts', added: 3, removed: 1, lines: [{ type: 'add', text: '+new' }] },
+  ];
+  const renderDiff = (overrides: Record<string, unknown> = {}) => {
+    mockedUseApp.mockReturnValue({
+      ...baseState,
+      contextTab: 'diff',
+      changedFiles: [],
+      gitDiff: diffFiles,
+      ...overrides,
+    } as never);
+    return render(<ContextPanel />);
+  };
+
+  it('头部渲染「提交信息」按钮,点击调用 generateCommit()', () => {
+    const generateCommit = vi.fn(async () => {});
+    renderDiff({ generateCommit });
+    fireEvent.click(screen.getByTitle('AI 生成提交信息'));
+    expect(generateCommit).toHaveBeenCalledTimes(1);
+  });
+
+  it('loading 中按钮禁用且文案为「生成中…」', () => {
+    renderDiff({ commitMessage: { result: null, loading: true, error: null } });
+    const btn = screen.getByText('生成中…').closest('button') as HTMLButtonElement;
+    expect(btn.disabled).toBe(true);
+  });
+
+  it('生成成功 → 展示 message/model/文件数,点击「复制」调 clipboard.writeText(message)', () => {
+    const writeText = vi.fn(async () => {});
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+    renderDiff({
+      commitMessage: {
+        result: { message: 'feat: 增加评审历史', model: 'glm-x', files_count: 2, note: null },
+        loading: false,
+        error: null,
+      },
+    });
+    expect(screen.getByText('feat: 增加评审历史')).toBeInTheDocument();
+    expect(screen.getByText('glm-x · 2 个文件')).toBeInTheDocument();
+    fireEvent.click(screen.getByText('复制'));
+    expect(writeText).toHaveBeenCalledWith('feat: 增加评审历史');
+  });
+
+  it('error 非空 → 头部下方红字行(.commit-error)', () => {
+    const { container } = renderDiff({
+      commitMessage: { result: null, loading: false, error: 'HTTP 502: LLM 超时' },
+    });
+    const err = container.querySelector('.commit-error') as HTMLElement;
+    expect(err).toBeTruthy();
+    expect(err.textContent).toContain('HTTP 502: LLM 超时');
+  });
+
+  it('无 result 时不渲染提交信息块', () => {
+    renderDiff();
+    expect(screen.queryByText('复制')).toBeNull();
   });
 });
 

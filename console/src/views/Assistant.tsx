@@ -18,7 +18,7 @@
  * M169.2 — token 用量渲染:assistant turn 气泡下方逐条 usage 行(↑ prompt · ↓
  * completion),视图头部会话合计 chip;usage 事件(M165.3 防抖集合)驱动末端刷新。
  */
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useApp } from '../store';
 import type { AssistantTurn } from '../types';
 import { Composer } from './Composer';
@@ -27,6 +27,7 @@ import { MarkdownView } from '../components/MarkdownView';
 import { formatTokens } from '../lib/format';
 import { IconShield, IconX, IconCheck, IconEdit, IconFile, IconTarget, IconSmartphone } from '../icons';
 import { RemoteModal } from '../components/RemoteModal';
+import { API_BASE } from '../api';
 
 /** M175 — @ 文件引用状态中文标签(非 ok 状态展示在引用 chip 尾部)。 */
 const STATUS_CN: Record<string, string> = {
@@ -207,6 +208,20 @@ function Turn({ turn, sessionId }: { turn: AssistantTurn; sessionId: string | nu
                 ))}
               </div>
             )}
+            {turn.attachments && turn.attachments.length > 0 && sessionId && (
+              <div className='umsg-atts' data-testid='umsg-atts'>
+                {turn.attachments.map((a, i) => {
+                  // path 形如 "{session_id}/{filename}",取 basename 段拼原图 URL
+                  const fname = a.path.split('/').pop() || a.path;
+                  const url = `${API_BASE}/api/v1/assistant/attachments/${encodeURIComponent(sessionId)}/${encodeURIComponent(fname)}`;
+                  return (
+                    <a key={`${a.path}-${i}`} href={url} target='_blank' rel='noreferrer'>
+                      <img src={url} alt={a.name} />
+                    </a>
+                  );
+                })}
+              </div>
+            )}
           </>
         )}
       </div>
@@ -299,9 +314,17 @@ export function Assistant() {
     // M176 — Goal 模式:合成 busy(goal 运行中 Composer 显示停止态)+ /goal 发送 action
     composerBusy,
     sendAssistantGoal,
+    // M190.1 — 编辑重跑截断 banner(撤销/关闭;409 提示已被新事件覆盖)
+    lastTruncated,
+    undoEditTruncate,
+    dismissTruncated,
   } = useApp();
 
   const turns = useMemo(() => assistantTurns, [assistantTurns]);
+
+  // M190.1 — banner 撤销失败反馈(409=已被新事件覆盖);lastTruncated 变化时重置
+  const [truncUndoError, setTruncUndoError] = useState<string | null>(null);
+  useEffect(() => setTruncUndoError(null), [lastTruncated]);
 
   // M181.2 — 移动远程控制弹窗开关(头部「远程」按钮)
   const [remoteOpen, setRemoteOpen] = useState(false);
@@ -413,15 +436,51 @@ export function Assistant() {
         <RemoteModal sessionId={selectedSessionId} onClose={() => setRemoteOpen(false)} />
       )}
       <MessageStream turns={turns} sessionId={selectedSessionId} />
+      {/* M190.1 — 编辑重跑截断 banner:撤销恢复被截事件,可关闭;409 提示已被新事件覆盖 */}
+      {lastTruncated && lastTruncated.sessionId === selectedSessionId && (
+        <div className='trunc-banner' data-testid='trunc-banner'>
+          <span className='trunc-banner-text'>
+            已截断 {lastTruncated.count} 条事件
+          </span>
+          {truncUndoError && (
+            <span className='trunc-banner-error' data-testid='trunc-banner-error'>
+              {truncUndoError}
+            </span>
+          )}
+          <button
+            className='trunc-banner-undo'
+            data-testid='trunc-banner-undo'
+            onClick={() => {
+              undoEditTruncate(lastTruncated.sessionId).catch((e) => {
+                const msg = e instanceof Error ? e.message : String(e);
+                setTruncUndoError(
+                  msg.includes('new events appended') ? '撤销失败:截断后已追加新事件,无法恢复' : `撤销失败:${msg}`
+                );
+              });
+            }}
+          >
+            撤销
+          </button>
+          <button
+            className='trunc-banner-close'
+            data-testid='trunc-banner-close'
+            aria-label='关闭'
+            onClick={dismissTruncated}
+          >
+            <IconX size={12} />
+          </button>
+        </div>
+      )}
       {assistantError && (
         <div className='assistant-empty' style={{ padding: '6px 28px', color: 'var(--assistant-coral)' }}>
           {assistantError}
         </div>
       )}
       <Composer
-        onSend={(text) => {
-          // sendAssistantMessage 自带 try/catch + assistantError 反馈,这里不再捕获
-          sendAssistantMessage(text, selectedMode).catch(() => {});
+        onSend={(text, images) => {
+          // M192 — 原始 promise 交回 Composer:成功清空附件 chips,失败(rejected)保留供重试;
+          // rejection 由 Composer .catch 消化(错误反馈仍走 store assistantError),无未捕获 rejection
+          return sendAssistantMessage(text, selectedMode, images);
         }}
         onSlash={onSlash}
         onGoal={(objective) => {

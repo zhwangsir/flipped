@@ -68,6 +68,7 @@ function makeTask(partial: Partial<ScheduledTask> & { id: string }): ScheduledTa
     kind: partial.kind ?? 'once',
     run_at: partial.run_at ?? null,
     every_minutes: partial.every_minutes ?? null,
+    cron: partial.cron ?? null, // M187.1 — ScheduledTask 新增字段
     enabled: partial.enabled ?? true,
     next_run_at: partial.next_run_at ?? null,
     last_run_at: partial.last_run_at ?? null,
@@ -643,6 +644,7 @@ describe('Sidebar — 已安排任务视图 (M178.2)', () => {
       kind: 'once',
       run_at: new Date('2026-08-06T10:30').toISOString(),
       every_minutes: null,
+      cron: null, // M187.1 — 契约新增字段,once/interval 恒为 null
     });
     // 成功后表单收起
     await vi.waitFor(() => expect(screen.queryByLabelText('任务标题')).toBeNull());
@@ -670,6 +672,7 @@ describe('Sidebar — 已安排任务视图 (M178.2)', () => {
       kind: 'interval',
       run_at: null,
       every_minutes: 45,
+      cron: null, // M187.1 — 契约新增字段,once/interval 恒为 null
     });
   });
 

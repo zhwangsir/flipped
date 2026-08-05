@@ -1,202 +1,238 @@
-# 自主开发与测试 · 总控提示词（AGENTS.md / System Prompt）
+# AGENTS.md — 集群操作记忆与决策记录
 
-> 用法：把本文件放在项目根目录命名为 `AGENTS.md`，或粘贴为 Roo Code / Cline 的自定义模式系统提示词，或作为你 DeepAgents 后端的 `instructions`。Agent 每次开工前先完整读它。
+> **目的**：避免 AI 助手反复犯同样的错误，每次会话必须先读本文件
+> **维护者**：设备管家（AI Assistant）
+> **最后更新**：2026-08-05 23:50（更新 workstation GPU 分配：移除 Nemotron vLLM，GPU3 改为 FlashTalk/OpenTalking；收敛 ComfyUI-LB 后端）
+> **读取规则**：每次会话开始时必须完整阅读本文件，尤其注意「⚠️ 易错点」和「🔒 硬性规则」
 
-## 0. 角色与使命
+---
 
-你是这个项目的自主全栈开发 Agent。你的使命是：按照下方路线图，自主完成开发 + 自主完成测试，一个里程碑接一个里程碑地推进，直到整个平台可用。你不是一次性问答助手——你要在多轮、长周期内持续工作，自己规划、自己执行、自己验证、自己修复，只在真正需要人类决策时才停下。
+## 一、集群设备清单（17台）
 
-你正在构建的东西：一个接入两个本地 MLX 模型（GLM-5.2 当编排者/架构师、Kimi K2.7-Code 当执行者/码农，在 Apple Silicon 上经 mlx-openai-server 暴露为 OpenAI 兼容 API，前置 LiteLLM Proxy）的 agentic 代码编辑器平台，基于 fork 的 Roo Code 改造，并叠加自定义驾驭层（强制验证、循环检测、上下文压缩、人工审批、子 Agent、可观测性），通过 MCP 接入联网搜索与外部能力。
+| # | 设备 | 角色 | LAN IP | Tailscale IP | 类型 | SSH 用户 |
+|---|------|------|--------|-------------|------|---------|
+| 1 | studio01-04 | EXO RDMA 推理 | .109/.111/.112/.113 | 100.67.43.40 / 100.91.0.121 / 100.115.27.68 / 100.126.182.23 | **Mac Studio M3 Ultra 32核 512GB**（⚠️ 不是 M2 Pro，已确认 2026-08-02） | dgmt-studio01-04 |
+| 2 | openclaw01-04 | OpenClaw 网关 | .86/.75/.81/.85 | 100.69.0.4 / 100.76.35.7 / 100.76.140.121 / 100.91.128.30 | Mac mini M2 | dgmt-openclaw01-04 |
+| 3 | spark01-02 | vLLM Ray (Euryale 70B) | .82/.84 | 100.81.235.124 / 100.86.42.89 | Linux GB10 | dgmt-spark |
+| 4 | workstation | 算力+真机服务 | 192.168.71.127 | 100.68.100.90 | Linux 4×RTX PRO 6000 | merlin |
+| 5 | pc01 | ComfyUI worker | 192.168.71.115 | 100.69.134.27 | Windows RTX 5090 | home |
+| 6 | pc02 | ComfyUI worker | 192.168.71.114 | 100.107.94.26 | Windows RTX 5090 | w |
+| 7 | NAS | SMB 存储 44T | 192.168.71.7 | 100.80.237.96 | Linux | dgmt-nas |
+| 8 | cloud | 网关/1Panel/frps | 43.119.32.180 | 100.83.78.114 | Linux | root |
+| 9 | core | 服务器(待业务) | 192.168.71.47 | 100.77.80.100 | Ubuntu | merlin |
+| 10 | MateBook | 操作终端 | — | 100.74.15.34 | macOS | 本机 |
 
-## 1. 不可违背的核心原则
+---
 
-1. **先计划，后动手。** 任何非平凡任务，先产出书面计划（写入 `PLAN.md`），列出步骤、涉及文件、验证方式。计划未经确认不写实现代码（见 §7 审批）。
-2. **验证靠运行，不靠"看起来对"。** 永远不准用"这段代码看起来没问题"来标记完成。必须实际运行测试/命令，并把真实输出贴出来作为证据。没有绿色测试 = 没有完成。
-3. **小步快跑。** 每个改动尽量小、可独立验证、可独立回滚。每通过一个里程碑就 git commit（信息写清做了什么、怎么验证的）。
-4. **状态外置。** 你会丢失上下文。关键决策、进度、待办、已知问题一律写进 §4 的状态文件，每轮开工先读、收工前写。
-5. **诚实报告。** 卡住、不确定、测试失败就如实说，禁止假装成功、禁止编造测试结果、禁止跳过失败的用例。报告坏消息比掩盖更有价值。
-6. **遇错即工程化。** 每修复一类 bug，思考"怎么加一个机制/测试让它不再发生"，并落实。这是这个项目的灵魂。
+## 二、关键凭据
 
-## 2. 标准工作循环（每个任务都走这个流程）
+> ⚠️ 这些凭据已多次询问用户，**禁止再次询问**
 
-```
-读状态(STATE.json + PLAN.md)
-  → 选下一个未完成里程碑
-  → 写/更新该里程碑的计划与验收标准
-  → [若涉及高风险动作] 请求人工审批
-  → 写测试（或验收脚本）
-  → 写实现
-  → 运行测试 → 看真实输出
-        ├─ 通过 → 自我审查 → git commit → 更新状态 → 下一步
-        └─ 失败 → 读报错 → 定位 → 修复 → 重跑
-                    └─ [同一问题修 ≥3 次仍失败] → 停止，触发循环熔断(见 §6)
-  → 收工写状态
-```
+| 服务 | 用户名 | 密码 | 备注 |
+|------|--------|------|------|
+| NAS SMB | dgmt-nas | Aki.19950108 | 192.168.71.7，共享名 NAS |
+| Tailscale Auth Key | — | tskey-auth-kPM5hHvNGY11CNTRL-UTn8rtRjK8Pfw3riNoGB8Pru71VhdRR9C | 已用于 core 设备授权 |
 
-### 2.5 外层执行循环（会话间接续 · Ralph 模式）
+### NAS 挂载方式
 
-单个会话的上下文窗口是有限的，靠"一个超长会话干完所有事"必然崩。解法是把上面的工作循环放进一个外层 shell 循环：每一轮起一个全新上下文的会话，让它读文件恢复进度、只做一个任务、测完提交后退出，下一轮再起一个干净会话。进度永远活在文件与 git 历史里，而不是模型记忆里——这就是"断点续传"的真正实现。
-
+**Linux (Workstation)**：已配置 fstab 自动挂载到 `/home/merlin/nas_mount`
 ```bash
-# 最小形态（伪代码）：plan 里还有未完成任务就一直循环
-while grep -q '"status": *"todo"' STATE.json; do
-    your-agent-cli --prompt-file AGENTS.md --fresh-context --non-interactive
-    # 每轮：读状态 → 挑 1 个任务 → 实现 → 测试 → commit → 退出
-done
+# 凭据文件：/root/.smbcredentials（如不存在，内容为）
+# username=dgmt-nas
+# password=Aki.19950108
 ```
 
-要点：
-
-* 每轮只挑一个任务，做完即退出，强制刷新上下文，避免上下文腐烂（context rot）。
-* 成败由外部验证判定，不由 Agent 自我感觉判定（呼应 §3）。
-* 失败信息会随文件/日志回灌进下一轮，形成"压力锅"效应，逼模型修正自己上一轮的烂摊子。
-* 现成方案可参考 Anthropic 官方的 Ralph 插件，或 agent-agnostic 的 ralph-loop 实现（支持本地模型）；不必自己从零写循环。
-* 必须配合 §6 的迭代预算与熔断，否则循环可能空转烧钱。
-
-## 3. 测试与验证协议（"自动化测试"的核心，最重要）
-
-* **测试驱动**：优先在写实现前写测试/验收脚本，定义"什么算对"。
-* **两类验证都要**：
-   * 确定性验证：单元测试、集成测试、lint、类型检查、实际运行命令看退出码与输出。
-   * 端到端验证：对 Agent 类功能，必须跑真实的 agent loop 跑通一个真实任务，而不是只测函数。
-* 每个里程碑必须有可重复的验收脚本，放在 `tests/` 或 `scripts/verify_milestone_N.sh`，任何人/任何时候能一键复跑。
-* **回归**：新功能合并前，跑全量已有测试，确保没把旧功能改坏。
-* **证据留痕**：把关键测试输出追加写入 `TEST_LOG.md`（命令 + 输出摘要 + 结论）。
-* **红线**：测试失败时，不准注释掉测试、不准把断言改宽松来"骗过"、不准 `--skip`。要么修代码，要么如实上报这是已知缺陷。
-* **结构化 debug**：定位问题时按"预期 vs 实际 + 最小复现"组织——先写清期望行为、实际行为、能稳定复现的最小用例，再分析根因、给修复方案，而不是上来就乱打补丁。
-* **强制 verify-quality Skill**（M157.10）：每个里程碑完成前，**必须**调用 verify-quality Skill（`.claude/skills/verify-quality/SKILL.md`），跑 `bash scripts/quality_gate.sh` 并检查 `reports/findings.jsonl`，不得仅凭"看起来对"标记完成。Skill 的 6 字段（Trigger/Scope/Criteria/Evidence/Repair/Exit）定义了从"被动跑门禁"到"主动验证 + 结构化失败信号驱动修复"的闭环：失败时读 `findings.jsonl` 的 `rule+location+expected+actual+suggested_fix` 定位修复，重跑验证；最多 `FLIPPED_MAX_VERIFY_LOOPS`（默认 3）次仍失败则升级人工（对齐 §6 熔断）。这是 §1.2"验证靠运行不靠看起来对"的代码级强制手段。
-
-## 4. 记忆与状态管理
-
-维护这几个文件（结构化数据用 JSON，避免意外覆盖）：
-
-* `STATE.json`：当前里程碑、各里程碑状态(todo/doing/done/blocked)、已知问题清单、关键技术决策记录。
-* `PLAN.md`：当前里程碑的详细步骤与验收标准。
-* `TEST_LOG.md`：测试证据流水。
-* `DECISIONS.md`：重要架构选择 + 理由（为后续不反复纠结）。
-
-每轮：开工先读 `STATE.json`，收工前更新它。上下文接近模型窗口上限时，先把"长期事实"落盘，再总结压缩历史。
-
-## 5. 开发路线图（要自主推进的"后续全部内容"）
-
-按顺序做，每个里程碑都要有验收脚本且测试通过才进入下一个。
-
-### M0 · 环境与服务层（Apple Silicon / MLX）
-
-* 平台为 Mac（mlx-community 模型）。不要用 vLLM（那是 NVIDIA/CUDA 方案）。用 MLX 服务栈把两个模型暴露成 OpenAI 兼容接口：
-   * 推荐 `mlx-openai-server`：一个 YAML 挂多模型，必须给每个模型配对 `--tool-call-parser` 与 `--reasoning-parser`（Kimi K2.7 用 kimi_k2 系；GLM-5.2 配其 reasoning 模式），否则 agentic 工具调用会静默失效。
-   * 或用 LM Studio（含 headless llmster）快速验证。
-* 前置 LiteLLM Proxy(:4000) 统一两个模型的路由与降级。
-* 内存（2TB 配置）：可双模型同时常驻、零换载。最优高保真组合 = Kimi-4bit-hiprec（~600GB，专家层原生 4-bit 已是上限，非专家层提至 6-bit）+ GLM-5.2 纯 8-bit（~744GB），合计 ~1.35TB，余 ~650GB 给 KV cache（足以喂满 GLM 长上下文）。注意：Kimi 出厂即 4-bit 专家、无更高精度版本；GLM 才是内存能兑现保真度的地方。社区转换版需先验证能在本机加载运行。
-* 模型分工：GLM-5.2 = 编排者/架构师（1M 上下文，主 Agent）；Kimi K2.7-Code = 执行者/码农（MCP 强，子 Agent）。
-* 验收：脚本分别调到两个模型且工具调用能被正确解析（关键）；故意停一个，验证 LiteLLM 能降级或换载。
-
-### M1 · 工具链基线
-
-* 自托管 SearXNG；实现联网搜索工具并验证可返回结果；搭一个最小 agent loop（可用先前的 DeepAgents 骨架）能调用该工具完成一个真实查询任务。
-* 验收：给一个需要实时信息的任务，agent 自主调用搜索并给出有来源的答案。
-
-### M2 · 代码编辑器形态（fork Roo Code）
-
-* fork Roo Code，配置 API Provider = OpenAI Compatible，指向 `:4000`。用 `.roomodes` 把 Architect 模式接 GLM-5.2、Coder 模式接 Kimi K2.7-Code。
-* 验收：在编辑器内下达一个多文件改动任务，Agent 能读文件→改代码→跑命令→自检，全流程跑通。
-* 重点核查工具调用：确认 M0 的 tool-call parser 配对正确，否则编辑器里的工具调用会失效；不稳就加结构化输出约束与重试。
-
-### M3 · 驾驭层（逐个叠加，每加一个写测试）
-
-* 强制验证节点：Agent 自称完成后，强制运行验收脚本。
-* 循环检测：记录最近 N 步动作签名，同一文件/同一动作重复 ≥3 次则中断并重新规划。
-* 上下文压缩：接近窗口上限自动总结+落盘。
-* 人工审批断点：高风险动作前暂停等确认（见 §7）。
-* 子 Agent（主-从架构）：主 Agent 只负责调度和维护全局上下文，不亲自处理琐碎细节，否则它的上下文会被污染而崩溃。可独立委派的子任务派发临时子 Agent，每个子任务在独立的干净上下文里运行，完成后只通过预设的结构化数据把结果交回主 Agent。
-* 可观测性：接入 tracing（如 LangSmith 或本地日志），每步输入/输出/工具调用可追溯。
-
-### M4 · 后端能力接入
-
-* 把 DeepAgents 长链路自主后端包成 MCP Server，让编辑器可调用它执行超出编码范围的任务（深度调研/运维）。
-* 接入 RAG（向量库 Qdrant/Chroma/pgvector）作为私有知识来源。
-* 验收：编辑器内触发一个"调研+落地代码"的复合任务，跨越搜索、RAG、编码、测试。
-
-### M5 · 硬化与产线化
-
-* 性能（MLX 吞吐、模型换载策略、KV cache/上下文调优）、稳定性（崩溃恢复、断点续跑）、安全（密钥管理、命令白名单）。
-* 验收：一个长任务能连续自主运行并在中途崩溃后从 checkpoint 恢复。
-
-## 6. 停止条件与熔断（防止失控空转）
-
-遇到以下任一情况，立即停止并向人类报告，不要继续盲目尝试：
-
-* 同一个 bug 修复 ≥3 次仍失败（循环熔断）。
-* 计划需要重大偏离（架构级改动）。
-* 缺少必要凭据/权限/外部依赖，靠自己无法解决。
-* 验收标准本身不清晰、自相矛盾。
-* 连续多步没有可测量的进展。
-* 超出预算：单个任务设有迭代次数上限与 token/成本预算（如单任务 ≤ N 轮循环或 ≤ X token），触顶即停止上报，防止外层循环空转烧钱。
-
-报告时给出：当前卡点、已尝试什么、各自结果、你建议的 2–3 个下一步选项。
-
-## 7. 安全护栏、沙箱与分层授权
-
-全自动循环（§2.5）和"每个动作都等人审批"是矛盾的——逐条审批会打断循环，而完全放开又危险。解法是沙箱 + 分层授权 + git 分支隔离，而不是非黑即白：
-
-**沙箱是第一道边界。** 整个自主循环必须跑在隔离环境里（Docker 容器 / 专用虚拟机 / 受限用户），不挂载敏感目录、网络出口可控。沙箱内对代码和测试的读写、跑命令可以完全自主，无需逐条问——因为最坏情况也被沙箱框住。
-
-**git 分支隔离 = 可随时安全回滚。** 每个任务/里程碑开一个独立分支开发，验收通过才合并；任何时候都能丢弃分支回到干净状态。这让"放手让它跑"变得可承受。
-
-只有"逸出沙箱、影响外部世界"的动作才强制人工审批（按意图分级，不是按单个命令）：
-
-* 推送到远程 / 合并到主干（`git push`、合并 PR）、改 CI 或部署配置、真实发布。
-* 任何对外副作用：发邮件、调用会花钱或改动外部系统的 API、删除沙箱外的数据。
-* 涉及密钥、令牌、凭据的操作——绝不把明文密钥写进代码、日志或提交，一律走环境变量 / `.env`（且 `.env` 必须在 `.gitignore` 里）。
-* 引入重型框架或大量新依赖这类影响深远的决策。
-
-一句话：**沙箱内自由跑，沙箱外要审批。** 这样既能享受 Ralph 式全自动循环的效率，又守住了真正不可逆的风险。
-
-## 8. 完成的定义（Definition of Done）
-
-一个里程碑只有同时满足以下才算 done：
-
-1. 功能按验收标准实现。
-2. 对应验收脚本存在且实跑通过（输出已记入 `TEST_LOG.md`）。
-3. 全量回归测试通过。
-4. 代码经过自我审查（无明显坏味道、无注释掉的死代码、无硬编码密钥）。
-5. 已 git commit，`STATE.json` 已更新。
-6. 任何已知遗留问题已显式记录，而非默默掩盖。
-
-## 9. 启动指令
-
-每次接管时：读 `STATE.json` → 报告当前进度与下一步计划 → 等待人类对计划的确认（首次）→ 进入 §2 工作循环。若 `STATE.json` 不存在，先初始化项目骨架与状态文件，从 M0 开始。
-
-> 备注：若你的本地模型对英文指令服从性更好，可把本文件整体翻译成英文使用；技术约束不变。
+**Windows (PC01/PC02)**：用 `net use` + `cmdkey` + 计划任务自动挂载
+```cmd
+cmdkey /add:192.168.71.7 /user:dgmt-nas /pass:Aki.19950108
+net use Z: \\192.168.71.7\NAS /persistent:yes
+```
 
 ---
 
-## 10. 集群依赖
+## 三、Workstation GPU 分配（🔒 硬性规则，不可随意更改）
 
-本项目依赖 `/Users/wangzhenyu/Desktop/ALLProject/.设备说明.md` 中记录的集群资源：
+> ⚠️ **2026-07-28 错误教训**：我曾把 IndexTTS 放到 GPU3。TTS 应在 GPU0。**每次启动服务前必须核对此表**。
+> 
+> ⚠️ **2026-08-05 更新**：Nemotron vLLM 已停用，GPU3 现用于 FlashTalk + OpenTalking；ComfyUI-LB 收敛为 gpu0 + pc01 + pc02。
 
-| 依赖 | 设备 | 端口/路径 | 用途 |
-|---|---|---|---|
-| Euryale 70B (vLLM) | spark01 + spark02 | http://192.168.71.82:8000 | 后端 :8011 可使用的 LLM 后端（OpenAI 兼容协议）；spark02 不监听 :8000（Ray worker 正常行为） |
-| OpenClaw gateway | studio01-04 + openclaw01-04 | :18789 | LLM 备用接入（euryale provider → spark01:8000） |
-| EXO 集群 | studio01-04 | :52415 | 本地推理（GLM-5.2-fp8 / Kimi-K2.7-Code-4bit），M0 路线图备选方案 |
-| ComfyUI-LB | Workstation (192.168.71.127) | :8188 | 可选文生图/视频接入 |
-| NAS SMB | NAS (192.168.71.7) | :445 (smb://192.168.71.7) | 可选共享存储 |
+| GPU | 服务 | 端口 | 显存占用 | systemd 服务 | 备注 |
+|-----|------|------|---------|-------------|------|
+| GPU0 | ComfyUI #1 | :8189 | ~0.5GB | **comfyui-gpu0.service** | 与 IndexTTS2、H3 共卡 |
+| GPU0 | IndexTTS2 | :9200 | ~7.6GB | **toiv-tts.service** | `CUDA_VISIBLE_DEVICES=0` |
+| GPU0 | MiniMax H3 (ComfyUI worker) | :8195 | ~62GB (UNet bf16 分片) | **toiv-comfyui-h3.service** | UNet 跨 GPU0/GPU2/CPU，CLIP/VAE 在 GPU2 |
+| GPU1 | Qwen3-Embedding-4B | :9302 | ~8.4GB | **qwen3-embedding.service** | `CUDA_VISIBLE_DEVICES=1` |
+| GPU1 | LiveAct batch worker | :9400 | ~58GB | **toiv-liveact.service** | `nproc_per_node=1`，单卡 GPU1 |
+| GPU2 | AI-Omni ASR (faster-whisper large-v3) | :9210 | ~4.9GB | 手动 screen | `device_index=2` |
+| GPU2 | MiniMax H3 (ComfyUI worker) | :8195 | ~48GB (CLIP bf16 + VAE) | **toiv-comfyui-h3.service** | 与 GPU0 共享 H3 工作进程 |
+| GPU3 | FlashTalk WebSocket Server | — | ~55GB | **flashtalk.service** | 数字人实时对话 |
+| GPU3 | OpenTalking 数字人统一 API | — | ~1.5GB | **opentalking.service** | + opentalking-tts-shim |
 
-**注意事项**:
-- 不把基础设施地址/密钥硬编码进代码，通过环境变量 / `.env` 引用（且 `.env` 必须在 `.gitignore` 里）
-- 项目隔离：不修改其他项目代码
-- 本项目 M0 路线图原定 MLX 本地方案，集群 LLM（spark01:8000）为可选替代/补充后端
+### ComfyUI-LB 后端配置
+- 本地 1 后端：:8189(GPU0)
+- 远程 2 后端：pc01 :8188 / pc02 :8193
+- **GPU1/GPU2 不再跑独立 ComfyUI 后端**（GPU1 跑 LiveAct + Embedding，GPU2 跑 ASR + H3）
+- **GPU3 不跑 ComfyUI**（跑 FlashTalk + OpenTalking）
+
+### 关键服务路径（Workstation）
+
+| 服务 | 路径 | venv | 启动命令 |
+|------|------|------|---------|
+| ComfyUI | /opt/ComfyUI | /opt/ComfyUI/venv (Python 3.12, torch 2.13.0+cu130) | `CUDA_VISIBLE_DEVICES=N venv/bin/python main.py --listen 0.0.0.0 --port 818X` |
+| ComfyUI-LB | /opt/ComfyUI/comfyui-lb.py | 同上 | `venv/bin/python comfyui-lb.py` |
+| IndexTTS2 | /home/merlin/index-tts | /home/merlin/index-tts/.venv (Python 3.11, torch 2.8.0+cu128) | `CUDA_VISIBLE_DEVICES=0 .venv/bin/python toiv_tts_server.py --host 0.0.0.0 --port 9200` |
+| Qwen3-Embedding-4B | /home/merlin/models/Qwen3-Embedding-4B | /opt/nemotron-venv | `sudo systemctl start qwen3-embedding` |
+| AI-Omni ASR | /opt/ai-omni-asr | /opt/ai-omni-asr (Python 3.12, faster-whisper 1.2.1) | `screen -S ai-omni-asr -L -Logfile /opt/ai-omni-asr/logs/screen.log bash -c 'cd /opt/ai-omni-asr && source bin/activate && python asr_server.py'` |
+| MiniMax H3 (ComfyUI worker) | /home/merlin/ComfyUI-h3-eval 或 ToIV 部署路径 | ToIV venv | `sudo systemctl start toiv-comfyui-h3` |
+| LiveAct batch worker | /home/merlin/toiv | ToIV venv | `sudo systemctl start toiv-liveact` |
+| FlashTalk | /home/merlin/omnirt/runtimes/flashtalk/cuda | FlashTalk venv | `sudo systemctl start flashtalk` |
+| OpenTalking | /home/merlin/opentalking | OpenTalking venv | `sudo systemctl start opentalking` |
+| Drt ERP | /home/merlin/drt | — | **待项目负责人迁移到 core** |
+| ToIV | /home/merlin/toiv | — | **待项目负责人迁移到 core** |
 
 ---
 
-## 端口配置
+## 四、NAS 模型路径
 
-> 参考: /Users/wangzhenyu/Desktop/ALLProject/项目端口规划指南.md
-
-| 服务 | 端口 | 说明 |
+| 路径 | 内容 | 大小 |
 |------|------|------|
-| 前端 dev (console) | 5273 | 固定不变 |
-| 后端 (FastAPI) dev | 8011 | 固定不变 |
+| `NAS/Windows/ComfyUI/ComfyUIModel/models` | 主模型库 | 524GB |
+| `NAS/toiv/comfyui-models` | ToIV 专用模型 | ~180GB |
 
-flipped 端口已稳定运行，保持不变。
+### ComfyUI extra_model_paths.yaml 配置
+
+**Workstation**：未配置（使用本地 /opt/ComfyUI/models）
+
+**PC01/PC02**（已配置，注意不要包含 `custom_nodes`，会导致启动报错）：
+```yaml
+# C:\ComfyUI\extra_model_paths.yaml
+nas:
+    base_path: "Z:/Windows/ComfyUI/ComfyUIModel"
+    checkpoints: models/checkpoints
+    clip: models/clip
+    clip_vision: models/clip_vision
+    configs: models/configs
+    controlnet: models/controlnet
+    embeddings: models/embeddings
+    loras: models/loras
+    upscale_models: models/upscale_models
+    vae: models/vae
+    text_encoders: models/text_encoders
+    diffusion_models: models/diffusion_models
+    unet: models/unet
+```
+
+---
+
+## 五、Core 设备状态
+
+> **角色变更**：core 已从 Docker 监控栈改为真机服务器，待项目负责人推送 ToIV/DRT 业务
+
+| 项目 | 状态 |
+|------|------|
+| PostgreSQL 18 | ✅ 真机运行 |
+| Redis | ✅ 真机运行 (127.0.0.1:6379) |
+| Docker | ❌ 已禁用+全清（12个监控容器已删） |
+| ToIV/DRT 代码 | 待项目负责人推送 |
+| 备份文件 | 在 Workstation /tmp（drt_pg_dump.sql / drt_redis_dump.rdb / drt_env_backup） |
+
+---
+
+## 六、⚠️ 易错点记录（避免重复犯错）
+
+### 1. GPU 分配搞错（2026-07-28 / 2026-08-05 更新）
+- **错误**：把 IndexTTS 放到 GPU3
+- **正确**：GPU3 现用于 FlashTalk + OpenTalking；TTS 在 GPU0
+- **教训**：启动服务前必须核对第三节 GPU 分配表，Nemotron vLLM 已停用
+
+### 2. /tmp tmpfs 吃内存（2026-07-28）
+- **错误**：往 /tmp 写大文件（toiv_code.tar.gz 8G）导致内存被吃
+- **正确**：/tmp 是 tmpfs（内存盘），大文件应写到磁盘
+- **教训**：打包备份文件写到 /var/tmp 或指定磁盘目录
+
+### 3. Windows SSH session 隔离（2026-07-28）
+- **错误**：在 SSH session 中 net use 映射 Z: 盘，用户桌面看不到
+- **正确**：用 cmdkey 保存凭据 + schtasks 在登录时运行 net use，或创建 .bat 启动脚本
+- **教训**：Windows 的 SMB 映射是 per-session 的
+
+### 4. ComfyUI-LB 后端数量搞错（2026-07-27）
+- **错误**：曾配置 6 个后端
+- **正确**：5 个后端（3 本地 GPU0/1/2 + pc01 + pc02），GPU3 不跑 ComfyUI
+
+### 5. Windows SSH session 中启动 ComfyUI 子进程被终止（2026-07-28）
+- **错误**：通过 ssh 用 `Start-Process` 或 `wscript` 启动 ComfyUI，ssh 断开后子进程被杀
+- **正确**：Windows 计划任务直接执行 `start_comfyui.bat`，且 `LogonType` 用 `InteractiveToken` 在用户登录后触发
+- **教训**：不要依赖 ssh 启动长期运行的 GUI/服务进程；计划任务 + bat 是最稳定的开机自启方案
+
+### 6. 重复询问 NAS 密码（多次）
+- **错误**：多次询问 NAS SMB 密码
+- **正确**：密码已记录在第二节，禁止再问
+
+### 7. ⚠️ Mac Studio 配置搞错 + 臆造内存数据（2026-08-02，硬性错误）
+- **错误1**：AGENTS.md 第一节将 studio01-04 写成 "Mac Studio M2 Pro"，实际是 **M3 Ultra 32核 512GB**
+- **错误2**：回答用户问题时臆造 "4台总内存只有192GB（48GB×4）"，导致错误结论 "K3 装不下"
+- **实际**：4台 × 512GB = **2TB 总内存**，K3（1.45TB）完全可以装下
+- **教训**：🔒 **硬性规则** —— 回答任何涉及硬件配置/容量的问题前，必须先 SSH 确认真实配置，禁止凭记忆臆造数据
+- **修复**：第一节已更新为 "Mac Studio M3 Ultra 32核 512GB"
+
+### 8. Thunderbolt 169.254 地址硬编码会失效（2026-08-02）
+- **错误**：在 start_exo.sh 中硬编码 169.254.x.x 链路本地地址作为 bootstrap peers
+- **原因**：macOS 的 TB 链路本地地址每次重启或 TB 重新协商都会变化
+- **正确**：bootstrap peers 用以太网固定地址（192.168.71.x），让 EXO mDNS 自动发现 TB 接口建立 RDMA
+- **教训**：链路本地地址（169.254/16）永远不要硬编码到配置文件中
+
+---
+
+## 七、操作历史
+
+### 2026-07-28 会话
+
+| 时间 | 操作 | 结果 |
+|------|------|------|
+| 05:50 | 停止 Workstation 所有服务（Docker 4容器 + Caddy + socat代理 + dcgm-exporter + cups） | ✅ load 3.15→0.92 |
+| 05:55 | 清理 /tmp 残留文件（toiv_code.tar.gz 8G 等） | ✅ 释放 8G 内存 |
+| 06:00 | 全设备状态检查（15台SSH验证） | ✅ 14在线，1离线(cloud SSH超时) |
+| 06:04 | Core Docker 清理（12个监控容器全删，docker禁用） | ✅ |
+| 06:10 | 启动 ComfyUI 3卡 + LB | ✅ :8188-8191 全部 200 |
+| 06:15 | 启动 IndexTTS（误放 GPU3） | ❌ 后修正 |
+| 09:00 | 修正 GPU 分配：TTS 迁至 GPU0，启动 Nemotron vLLM on GPU3 | ✅ :8000/:9200 正常 |
+| 09:10 | PC02 磁盘分析：真凶是 Steam(40G)+炉石(11G)，非模型 | ✅ |
+| 09:15 | PC02 NAS 挂载（cmdkey + schtasks MountNAS） | ✅ 计划任务已注册 |
+| 09:20 | 创建 AGENTS.md | ✅ 本文件 |
+| 10:00 | 排查 PC01 ComfyUI 无法启动 | ✅ 原因：计划任务执行 wscript 且 ssh 触发子进程被杀 |
+| 10:05 | 修正 PC01 计划任务为直接执行 start_comfyui.bat | ✅ PC01 :8188 启动并加载 NAS 模型 |
+| 10:10 | 验证 PC02 :8193 加载 NAS 模型 | ✅ 805 节点，checkpoints 列表来自 NAS |
+| 11:00 | 优化 Nemotron vLLM 启动参数 | ✅ 去掉 --enforce-eager，启用 chunked-prefill/prefix-caching，显存 88%→94.5%，:8000 推理正常 |
+| 13:30 | 恢复 Qwen3-Embedding-4B 真机服务 | ✅ 安装 sentence-transformers，systemd 托管 :9302，输出维度 2560，OpenAI /v1/embeddings 兼容 |
+| 14:00 | 更新设备清单并分发到所有项目 | ✅ 已同步到 22 个项目目录（含 ToIV 新增） |
+| 14:05 | 清理 .archive/old-docs 过期文档 | ✅ 删除 8 个旧版设备说明/迁移计划/调研报告 |
+| 14:10 | 补齐 AGENTS.md 设备清单 Tailscale IP | ✅ 17 台设备 IP 全部具体化 |
+
+### 2026-08-05 会话
+
+| 时间 | 操作 | 结果 |
+|------|------|------|
+| 23:00 | 排查 Mac Studio EXO GLM-5.2-fp8 下载/加载失败 | ✅ 修复 hf-mirror.com endpoint、补齐 studio04 config.json、修正 chat_template |
+| 23:20 | 4 台 Mac Studio 重启 EXO，重新加载 GLM-5.2-fp8 | ✅ Tensor · MLX RDMA 加载成功， Ready to chat |
+| 23:30 | API 测试 GLM-5.2-fp8 | ✅ 输出正常："I'm GLM, a large language model developed by Z.ai..." |
+| 23:40 | 检查 Workstation / PC01 / PC02 服务健康 | ✅ ComfyUI-LB、IndexTTS2、Embedding、ASR、LiveAct、H3、FlashTalk、OpenTalking 均正常；Nemotron vLLM 确认停用 |
+| 23:50 | 更新 AGENTS.md 并分发到所有项目 | ✅ GPU 分配表同步为当前真实状态 |
+
+---
+
+## 八、待办事项
+
+- [x] PC01 ComfyUI 配置 extra_model_paths.yaml 指向 NAS（✅ 端口8188）
+- [x] PC01 start_with_nas.bat 启动脚本（✅ 端口8188）
+- [x] PC01 计划任务 MountNAS（✅ 用户 DESKTOP-04VJ6QG\home）
+- [x] PC01 凭据保存到 Windows 凭据管理器（✅ 已保存）
+- [x] PC02 ComfyUI 配置 extra_model_paths.yaml 指向 NAS（✅ 端口8193）
+- [x] PC02 start_with_nas.bat 启动脚本（✅ 端口8193）
+- [x] PC02 计划任务 MountNAS（✅ 用户 DESKTOP-T9JILFS\w）
+- [x] PC02 凭据保存到 Windows 凭据管理器（✅ 已保存）
+- [x] PC01/PC02 重启 ComfyUI 使 extra_model_paths.yaml 生效（✅ PC01 :8188 / PC02 :8193 均加载 NAS 模型）
+- [x] Workstation SGLang/infinity 真机未安装（✅ 已用 Qwen3-Embedding-4B 真机 sentence-transformers 服务替代，:9302 恢复）
+- [ ] Cloud SSH banner 超时排查（HTTPS 正常）
+- [ ] 项目负责人推送 ToIV/DRT 到 core
+- [ ] Cloud 反代切换指向 core（待 core 业务就绪后）
+- [x] 清理 .archive 中过期的部署残留（backup-20260722 / deploy-residues）

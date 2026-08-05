@@ -267,6 +267,48 @@ describe('WorkerRulesPanel', () => {
     expect(within(row).getByText('未应用')).toBeInTheDocument();
   });
 
+  it('M185.2 成功率=success/(success+failure) 而非 success/applied', async () => {
+    // applied=10 但 outcome 只有 4 次（2 成 2 败）→ 新公式 0.5 琥珀；旧公式 0.2 红
+    setupLoad(defaultInfo, {
+      stats: {
+        'r-auto': { applied: 10, success: 2, failure: 2 },
+      },
+      total_runs: 4,
+    });
+    render(<WorkerRulesPanel />);
+    await waitFor(() => expect(screen.getByTestId('stat-r-auto')).toBeInTheDocument());
+    expect(screen.getByTestId('stat-r-auto').className).toContain('amber');
+  });
+
+  it('M185.2 零 outcome（已注入未 verify）不渲染 bar、灰字不炸', async () => {
+    setupLoad(defaultInfo, {
+      stats: {
+        'r-auto': { applied: 3, success: 0, failure: 0 },
+      },
+      total_runs: 0,
+    });
+    render(<WorkerRulesPanel />);
+    await waitFor(() => expect(screen.getByTestId('stat-r-auto')).toBeInTheDocument());
+    const row = screen.getByTestId('stat-r-auto');
+    expect(row.className).toContain('muted');
+    expect(within(row).getByText(/应用 3/)).toBeInTheDocument();
+    expect(row.querySelector('.wrules-bar')).toBeNull();
+  });
+
+  it('M185.2 语义注记渲染（semantics 字段）', async () => {
+    setupLoad(defaultInfo, { ...defaultStats, semantics: 'applied=注入次；测试语义注记' });
+    render(<WorkerRulesPanel />);
+    await waitFor(() => expect(screen.getByTestId('wrules-semantics')).toBeInTheDocument());
+    expect(screen.getByTestId('wrules-semantics').textContent).toContain('测试语义注记');
+  });
+
+  it('M185.2 semantics 缺省 → 本地兜底文案', async () => {
+    setupLoad();
+    render(<WorkerRulesPanel />);
+    await waitFor(() => expect(screen.getByTestId('wrules-semantics')).toBeInTheDocument());
+    expect(screen.getByTestId('wrules-semantics').textContent).toContain('success_rate=success/(success+failure)');
+  });
+
   it('加载失败 → 红字 + 重试可恢复', async () => {
     mockedFetchRules.mockRejectedValueOnce(new Error('HTTP 500: boom'));
     render(<WorkerRulesPanel />);

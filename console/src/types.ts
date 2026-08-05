@@ -68,9 +68,10 @@ export interface ScheduledTask {
   prompt: string;
   mode: 'chat' | 'plan' | 'agent' | 'auto';
   model: string;
-  kind: 'once' | 'interval';
+  kind: 'once' | 'interval' | 'cron'; // M187.1 — 加 cron 表达式调度
   run_at: string | null;
   every_minutes: number | null;
+  cron: string | null; // M187.1 — kind=cron 时必填,其余 kind 为 null
   enabled: boolean;
   next_run_at: string | null;
   last_run_at: string | null;
@@ -165,6 +166,33 @@ export interface AiReviewResult {
   files_reviewed: number;
   model: string;
   note?: string | null;
+  /** M186 — POST /project/review 响应新增:本次评审落盘 id(不支持落盘时为 null) */
+  review_id?: string | null;
+  /** M186.1 — 历史回放标记(openReview 前端填入,非后端字段) */
+  historical?: boolean;
+}
+
+/** M186.1 — GET /project/reviews 列表项(ts desc,无 findings)。 */
+export interface ReviewHistoryEntry {
+  id: string;
+  ts: string;
+  project: string;
+  model: string;
+  files_reviewed: number;
+  findings_count: number;
+}
+
+/** M186.1 — GET /project/reviews/{id} 详情(含 findings)。 */
+export interface ReviewHistoryDetail extends ReviewHistoryEntry {
+  findings: ReviewFinding[];
+}
+
+/** M186.4 — POST /project/commit_message 响应:LLM 根据工作区 diff 生成的提交信息。 */
+export interface CommitMessageResult {
+  message: string;
+  model: string;
+  files_count: number;
+  note: string | null;
 }
 
 /** 浏览器真内核渲染结果（阶段②b — 选中元素追踪）。 */
@@ -389,7 +417,24 @@ export interface AssistantTurn {
   event_id?: string;
   /** M175 — user turn 的 @ 文件引用列表(后端 history 透传)。 */
   refs?: FileRefInfo[] | null;
+  /** M192 — user turn 的图像附件列表(后端 history 透传;path 形如 "{session_id}/{filename}")。 */
+  attachments?: ImageAttachmentInfo[] | null;
   created_at: string;
+}
+
+/** M192 — 待发图像附件(Composer chips;data_base64 为不含 data: 前缀的纯 base64)。 */
+export interface PendingImage {
+  name: string;
+  media_type: string;
+  data_base64: string;
+}
+
+/** M192 — user turn 图像附件元数据(后端 history 透传;原图经 /assistant/attachments 端点取回)。 */
+export interface ImageAttachmentInfo {
+  name: string;
+  media_type: string;
+  path: string; // "{session_id}/{filename}"
+  bytes: number;
 }
 
 /** M174 — POST /assistant/sessions/{sid}/messages/{event_id}/edit 响应。 */
@@ -397,7 +442,7 @@ export interface EditMessageResponse {
   ok: boolean;
   session_id: string;
   task_id: string;
-  truncated: boolean;
+  truncated: number;
   restored: boolean;
   deleted: string[];
 }
@@ -541,6 +586,7 @@ export interface WorkerRuleVersion {
   rule_count: number;
 }
 export interface WorkerRuleStatsData {
-  stats: Record<string, { applied: number; success: number; failure: number }>;
+  stats: Record<string, { applied: number; success: number; failure: number; success_rate?: number | null }>;
   total_runs: number;
+  semantics?: string;
 }

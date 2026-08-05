@@ -42,7 +42,26 @@ vi.mock('./api', () => ({
   fetchProjectFiles: vi.fn(async () => []),
   fetchProjectFile: vi.fn(async () => ''),
   fetchProjectDiff: vi.fn(async () => []),
+  revertProjectHunk: vi.fn(async (path: string, hunk_index: number) => ({
+    ok: true,
+    path,
+    hunk_index,
+    action: 'hunk_reverted',
+  })),
   reviewProject: vi.fn(async () => ({ findings: [], files_reviewed: 0, model: 'coder' })),
+  // M186.1 — 评审历史
+  fetchProjectReviews: vi.fn(async () => ({ reviews: [] })),
+  fetchProjectReview: vi.fn(async (id: string) => ({
+    id,
+    ts: '2026-08-05T10:30:00Z',
+    project: 'p',
+    model: 'glm-x',
+    files_reviewed: 1,
+    findings_count: 1,
+    findings: [{ path: 'a.ts', line: 3, severity: 'high', message: '空指针' }],
+  })),
+  // M186.4 — AI commit message
+  generateCommitMessage: vi.fn(async () => ({ message: 'feat: x', model: 'glm-x', files_count: 1, note: null })),
   openProject: vi.fn(async () => ({})),
   fetchProjects: vi.fn(async () => []),
   createProject: vi.fn(async () => ({})),
@@ -78,6 +97,12 @@ vi.mock('./api', () => ({
   approveAssistant: vi.fn(async () => ({ ok: true })),
   rejectAssistant: vi.fn(async () => ({ ok: true })),
   compactAssistant: vi.fn(async () => ({ ok: true, session_id: 'asst-1', summary: '摘要' })),
+  // M178.2/M187.2 — 已安排任务
+  fetchTasks: vi.fn(async () => []),
+  createScheduledTask: vi.fn(async (body: Record<string, unknown>) => ({ id: 'task-new', ...body })),
+  deleteTask: vi.fn(async () => ({ ok: true })),
+  toggleTask: vi.fn(async () => ({})),
+  patchTask: vi.fn(async (id: string, body: Record<string, unknown>) => ({ id, ...body })),
   editAssistantMessage: vi.fn(async () => ({
     ok: true,
     session_id: 'asst-1',
@@ -485,6 +510,35 @@ describe('AppProvider · Assistant 动作', () => {
     expect(captured!.assistantBusy).toBe(false); // finally 后复位
   });
 
+  // M192 — 图像附件:images 第三参非空 → 请求体带 images 字段(与后端契约字段名一字不差)
+  it('sendAssistantMessage: images 非空 → 请求体带 images 字段', async () => {
+    const { sendAssistantMessage } = await import('./api');
+    renderProvider();
+    await flush();
+    const images = [{ name: 'a.png', media_type: 'image/png', data_base64: 'QUJD' }];
+    await act(async () => {
+      await captured!.sendAssistantMessage('看图', 'chat', images);
+    });
+    expect(sendAssistantMessage).toHaveBeenCalledWith('asst-new', { text: '看图', mode: 'chat', images });
+  });
+
+  // M192 — 回归:无 images/空数组 → 请求体与现状完全一致(无 images 键)
+  it('sendAssistantMessage: 无 images → 请求体无 images 键(回归零变化)', async () => {
+    const { sendAssistantMessage } = await import('./api');
+    renderProvider();
+    await flush();
+    await act(async () => {
+      await captured!.sendAssistantMessage('写一个 calc.py');
+    });
+    const body = (sendAssistantMessage as ReturnType<typeof vi.fn>).mock.calls[0][1] as Record<string, unknown>;
+    expect('images' in body).toBe(false);
+    await act(async () => {
+      await captured!.sendAssistantMessage('空数组也等价无图', 'chat', []);
+    });
+    const body2 = (sendAssistantMessage as ReturnType<typeof vi.fn>).mock.calls[1][1] as Record<string, unknown>;
+    expect('images' in body2).toBe(false);
+  });
+
   it('sendAssistantMessage: API 失败 → 设置 assistantError + 重抛', async () => {
     const { sendAssistantMessage } = await import('./api');
     (sendAssistantMessage as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('model 503'));
@@ -689,6 +743,31 @@ describe('AppProvider · 项目文件操作', () => {
     expect(captured!.openedFile).toBeNull();
   });
 
+  // M186.2 — findings 行号跳转:openFile(path, line) 把目标行写进 openedFile
+  it('openFile: 带 line → openedFile 含 line(跳转目标行)', async () => {
+    const { fetchProjectFile } = await import('./api');
+    (fetchProjectFile as ReturnType<typeof vi.fn>).mockResolvedValueOnce({ path: 'src/a.ts', content: 'x\ny\n' });
+    renderProvider();
+    await flush();
+    await act(async () => {
+      await captured!.openFile('src/a.ts', 2);
+    });
+    expect(fetchProjectFile).toHaveBeenCalledWith('src/a.ts');
+    expect(captured!.openedFile).toEqual({ path: 'src/a.ts', content: 'x\ny\n', line: 2 });
+    expect(captured!.contextTab).toBe('files');
+  });
+
+  it('openFile: 带 line 失败 → 静默（openedFile 保持 null）', async () => {
+    const { fetchProjectFile } = await import('./api');
+    (fetchProjectFile as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('is binary'));
+    renderProvider();
+    await flush();
+    await act(async () => {
+      await captured!.openFile('binary.png', 5);
+    });
+    expect(captured!.openedFile).toBeNull();
+  });
+
   it('closeFile: 清空 openedFile', async () => {
     const { fetchProjectFile } = await import('./api');
     (fetchProjectFile as ReturnType<typeof vi.fn>).mockResolvedValueOnce({ path: 'src/a.ts', content: 'x' });
@@ -773,6 +852,31 @@ describe('AppProvider · browser render + git diff', () => {
     expect(captured!.gitDiff).toEqual([]);
     expect(captured!.gitDiffLoading).toBe(false);
   });
+
+  it('revertGitDiffHunk: 成功 → 调 api 并刷新 diff(M193.2)', async () => {
+    const { revertProjectHunk, fetchProjectDiff } = await import('./api');
+    renderProvider();
+    await flush();
+    vi.clearAllMocks();
+    (fetchProjectDiff as ReturnType<typeof vi.fn>).mockResolvedValueOnce({ files: [] });
+    let r: unknown;
+    await act(async () => {
+      r = await captured!.revertGitDiffHunk('src/a.ts', 1);
+    });
+    expect(revertProjectHunk).toHaveBeenCalledWith('src/a.ts', 1);
+    expect(fetchProjectDiff).toHaveBeenCalled();
+    expect((r as { action: string }).action).toBe('hunk_reverted');
+  });
+
+  it('revertGitDiffHunk: 失败 → 错误原样上抛且不刷新', async () => {
+    const { revertProjectHunk, fetchProjectDiff } = await import('./api');
+    renderProvider();
+    await flush();
+    vi.clearAllMocks();
+    (revertProjectHunk as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('HTTP 409: 漂移'));
+    await expect(captured!.revertGitDiffHunk('src/a.ts', 0)).rejects.toThrow('HTTP 409');
+    expect(fetchProjectDiff).not.toHaveBeenCalled();
+  });
 });
 
 // ---------- M179.2 · AI 代码评审 ----------
@@ -849,6 +953,140 @@ describe('AppProvider · M179.2 AI 评审', () => {
     });
     expect(captured!.aiReview.result).toBeNull();
     expect(captured!.aiReview.loading).toBe(false);
+  });
+});
+
+// ---------- M186.1 评审历史 / M186.4 AI commit message ----------
+
+describe('AppProvider · M186.1 评审历史', () => {
+  it('loadReviewHistory: 成功 → 写入列表,loading 复位', async () => {
+    const { fetchProjectReviews } = await import('./api');
+    (fetchProjectReviews as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      reviews: [
+        { id: 'r1', ts: '2026-08-05T10:30:00Z', project: 'p', model: 'glm-x', files_reviewed: 2, findings_count: 3 },
+        { id: 'r2', ts: '2026-08-04T09:00:00Z', project: 'p', model: 'coder', files_reviewed: 1, findings_count: 0 },
+      ],
+    });
+    renderProvider();
+    await flush();
+    expect(captured!.reviewHistory).toEqual([]);
+    expect(captured!.reviewHistoryLoading).toBe(false);
+    await act(async () => {
+      await captured!.loadReviewHistory();
+    });
+    expect(captured!.reviewHistoryLoading).toBe(false);
+    expect(captured!.reviewHistory).toHaveLength(2);
+    expect(captured!.reviewHistory[0].id).toBe('r1');
+    expect(captured!.reviewHistory[1].model).toBe('coder');
+  });
+
+  it('loadReviewHistory: 失败 → 静默(列表保持空,loading 复位,不抛错)', async () => {
+    const { fetchProjectReviews } = await import('./api');
+    (fetchProjectReviews as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('HTTP 500'));
+    renderProvider();
+    await flush();
+    await act(async () => {
+      await captured!.loadReviewHistory();
+    });
+    expect(captured!.reviewHistoryLoading).toBe(false);
+    expect(captured!.reviewHistory).toEqual([]);
+  });
+
+  it('openReview: 成功 → aiReview.result 回放该次评审(findings + historical=true + review_id)', async () => {
+    const { fetchProjectReview } = await import('./api');
+    (fetchProjectReview as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      id: 'r1',
+      ts: '2026-08-05T10:30:00Z',
+      project: 'p',
+      model: 'glm-x',
+      files_reviewed: 2,
+      findings_count: 1,
+      findings: [{ path: 'a.ts', line: 3, severity: 'high', message: '空指针', suggestion: '加判空' }],
+    });
+    renderProvider();
+    await flush();
+    await act(async () => {
+      await captured!.openReview('r1');
+    });
+    expect(fetchProjectReview).toHaveBeenCalledWith('r1');
+    const r = captured!.aiReview.result;
+    expect(r).not.toBeNull();
+    expect(r!.historical).toBe(true);
+    expect(r!.review_id).toBe('r1');
+    expect(r!.findings).toHaveLength(1);
+    expect(r!.files_reviewed).toBe(2);
+    expect(r!.model).toBe('glm-x');
+    expect(captured!.aiReview.loading).toBe(false);
+    expect(captured!.aiReview.error).toBeNull();
+  });
+
+  it('openReview: 失败 → 静默(aiReview 保持原状,不抛错)', async () => {
+    const { fetchProjectReview } = await import('./api');
+    (fetchProjectReview as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('HTTP 404'));
+    renderProvider();
+    await flush();
+    await act(async () => {
+      await captured!.openReview('gone');
+    });
+    expect(captured!.aiReview).toEqual({ result: null, loading: false, error: null });
+  });
+});
+
+describe('AppProvider · M186.4 AI commit message', () => {
+  it('generateCommit: 成功 → 写 result,loading 复位,error 清空', async () => {
+    const { generateCommitMessage } = await import('./api');
+    (generateCommitMessage as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      message: 'feat: 增加评审历史',
+      model: 'glm-x',
+      files_count: 2,
+      note: null,
+    });
+    renderProvider();
+    await flush();
+    expect(captured!.commitMessage).toEqual({ result: null, loading: false, error: null });
+    await act(async () => {
+      await captured!.generateCommit();
+    });
+    expect(captured!.commitMessage.loading).toBe(false);
+    expect(captured!.commitMessage.error).toBeNull();
+    expect(captured!.commitMessage.result?.message).toBe('feat: 增加评审历史');
+    expect(captured!.commitMessage.result?.model).toBe('glm-x');
+    expect(captured!.commitMessage.result?.files_count).toBe(2);
+  });
+
+  it('generateCommit: 失败 → 写 error,loading 必复位', async () => {
+    const { generateCommitMessage } = await import('./api');
+    (generateCommitMessage as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('HTTP 502: LLM 超时'));
+    renderProvider();
+    await flush();
+    await act(async () => {
+      await captured!.generateCommit();
+    });
+    expect(captured!.commitMessage.loading).toBe(false);
+    expect(captured!.commitMessage.result).toBeNull();
+    expect(captured!.commitMessage.error).toContain('502');
+  });
+
+  it('loadGitDiff 刷新 → 清空 commitMessage.result(diff 变了旧提交信息失效)', async () => {
+    const { generateCommitMessage, fetchProjectDiff } = await import('./api');
+    (generateCommitMessage as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      message: 'fix: y',
+      model: 'm',
+      files_count: 1,
+      note: null,
+    });
+    (fetchProjectDiff as ReturnType<typeof vi.fn>).mockResolvedValueOnce({ files: [] });
+    renderProvider();
+    await flush();
+    await act(async () => {
+      await captured!.generateCommit();
+    });
+    expect(captured!.commitMessage.result).not.toBeNull();
+    await act(async () => {
+      await captured!.loadGitDiff();
+    });
+    expect(captured!.commitMessage.result).toBeNull();
+    expect(captured!.commitMessage.loading).toBe(false);
   });
 });
 
@@ -1886,6 +2124,42 @@ describe('AppProvider · M167.4 assistant 消息排队与停止', () => {
     });
     await flush();
     expect(captured!.assistantQueue).toEqual([]);
+  });
+});
+
+// ---------- M187.2 — 已安排任务编辑 editTask ----------
+
+describe('AppProvider · M187.2 任务编辑 editTask', () => {
+  it('editTask: 成功 → 调 patchTask + loadTasks 回拉刷新列表', async () => {
+    const { patchTask, fetchTasks } = await import('./api');
+    (fetchTasks as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { id: 't1', title: '新标题', kind: 'cron', cron: '0 9 * * 1-5' },
+    ]);
+    renderProvider();
+    await flush();
+    const before = (fetchTasks as ReturnType<typeof vi.fn>).mock.calls.length;
+    await act(async () => {
+      await captured!.editTask('t1', { title: '新标题' });
+    });
+    expect(patchTask).toHaveBeenCalledWith('t1', { title: '新标题' });
+    const calls = (fetchTasks as ReturnType<typeof vi.fn>).mock.calls;
+    expect(calls.length).toBe(before + 1);
+    // loadTasks 结果写入 tasks state
+    expect(captured!.tasks).toHaveLength(1);
+    expect(captured!.tasks[0].title).toBe('新标题');
+  });
+
+  it('editTask: API 失败 → 原样上抛(视图兜底)且不刷新列表', async () => {
+    const { patchTask, fetchTasks } = await import('./api');
+    (patchTask as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('HTTP 422: cron 非法'));
+    renderProvider();
+    await flush();
+    const before = (fetchTasks as ReturnType<typeof vi.fn>).mock.calls.length;
+    await act(async () => {
+      await expect(captured!.editTask('t1', { cron: 'bad' })).rejects.toThrow('422');
+    });
+    expect(patchTask).toHaveBeenCalledWith('t1', { cron: 'bad' });
+    expect((fetchTasks as ReturnType<typeof vi.fn>).mock.calls.length).toBe(before);
   });
 });
 

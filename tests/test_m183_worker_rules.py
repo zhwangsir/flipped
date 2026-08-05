@@ -282,15 +282,20 @@ def test_stats_record_outcome_success_failure_and_total_runs(tmp_path):
     s.record_outcome(["wr-1", "wr-2"], False)
     snap = s.snapshot()
     assert snap["total_runs"] == 2
-    assert snap["stats"]["wr-1"] == {"applied": 0, "success": 1, "failure": 1}
+    # M185.2：snapshot 派生 success_rate（不落盘）；wr-2 零成功但 1 败 → 0.0
+    assert snap["stats"]["wr-1"] == {"applied": 0, "success": 1, "failure": 1,
+                                     "success_rate": 0.5}
     assert snap["stats"]["wr-2"]["failure"] == 1
+    assert snap["stats"]["wr-2"]["success_rate"] == 0.0
 
 
 def test_stats_bad_file_falls_back_to_empty(tmp_path):
     p = tmp_path / "stats.json"
     p.write_text("broken [[[", encoding="utf-8")
     s = WorkerRuleStats(p)
-    assert s.snapshot() == {"stats": {}, "total_runs": 0}
+    snap = s.snapshot()
+    assert snap["stats"] == {} and snap["total_runs"] == 0
+    assert snap["semantics"]  # M185.2：坏文件回退亦带语义注记
 
 
 def test_stats_persistence_roundtrip(tmp_path):
@@ -300,7 +305,9 @@ def test_stats_persistence_roundtrip(tmp_path):
     s1.record_outcome(["wr-1"], True)
     s2 = WorkerRuleStats(p)
     snap = s2.snapshot()
-    assert snap["stats"]["wr-1"] == {"applied": 1, "success": 1, "failure": 0}
+    # M185.2：snapshot 派生 success_rate=1.0（1 成 0 败）
+    assert snap["stats"]["wr-1"] == {"applied": 1, "success": 1, "failure": 0,
+                                     "success_rate": 1.0}
     assert snap["total_runs"] == 1
     snap["stats"]["wr-1"]["applied"] = 999  # snapshot 深拷贝，不影响内部
     assert s2.snapshot()["stats"]["wr-1"]["applied"] == 1

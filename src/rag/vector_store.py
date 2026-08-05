@@ -37,6 +37,16 @@ class VectorStore(abc.ABC):
         """删除整个集合（谨慎）。"""
         ...
 
+    @abc.abstractmethod
+    def get_where(self, filter: dict[str, Any]) -> list[dict[str, Any]]:
+        """按 metadata 过滤返回 [{"id": str, "metadata": dict}]（不含 text/embedding，轻量）；空结果返回 []。"""
+        ...
+
+    @abc.abstractmethod
+    def delete_ids(self, ids: list[str]) -> int:
+        """按 id 删除，返回删除条数；空列表返回 0 且不触库。"""
+        ...
+
 
 class ChromaVectorStore(VectorStore):
     """基于 Chroma 的本地持久化向量库。
@@ -113,6 +123,22 @@ class ChromaVectorStore(VectorStore):
                 "distance": distances[0][i] if distances and len(distances[0]) > i else None,
             })
         return items
+
+    def get_where(self, filter: dict[str, Any]) -> list[dict[str, Any]]:
+        results = self._collection.get(where=filter, include=["metadatas"])
+        ids = results.get("ids") or []
+        metadatas = results.get("metadatas") or []
+        # Chroma 返回平铺 list，zip 成 dict 列表；metadatas 元素可能为 None，兜底 {}
+        return [
+            {"id": doc_id, "metadata": metadatas[i] or {}}
+            for i, doc_id in enumerate(ids)
+        ]
+
+    def delete_ids(self, ids: list[str]) -> int:
+        if not ids:
+            return 0
+        self._collection.delete(ids=ids)
+        return len(ids)
 
     def delete_collection(self) -> None:
         try:

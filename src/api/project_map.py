@@ -9,8 +9,10 @@
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
+import subprocess
 import tomllib
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -70,6 +72,7 @@ class ProjectMap:
     stack: list[str] = field(default_factory=list)
     stale: bool = False
     from_cache: bool = False
+    source_fingerprint: str = ""  # M189.2：git 内容指纹（旧缓存无此键 → "" 回退 mtime 判定）
 
 
 def _now_iso() -> str:
@@ -117,6 +120,38 @@ def _scan_source_mtime(root: Path) -> float:
     except OSError:
         return 0.0
     return latest
+
+
+def _git_fingerprint(root: Path) -> str | None:
+    """M189.2 · 项目内容 git 指纹：HEAD + porcelain 全量状态的哈希。
+
+    非 git repo / git 不可用 / 超时(5s) / 任何异常 → None（调用方回退 mtime 判定）。
+    porcelain 用 --untracked-files=all：深层 untracked 新文件也可感知。
+    """
+    try:
+        probe = subprocess.run(
+            ["git", "-C", str(root), "rev-parse", "--is-inside-work-tree"],
+            capture_output=True, text=True, timeout=5,
+        )
+        if probe.returncode != 0 or probe.stdout.strip() != "true":
+            return None
+        head = subprocess.run(
+            ["git", "-C", str(root), "rev-parse", "HEAD"],
+            capture_output=True, text=True, timeout=5,
+        )
+        # 无 commit 的 repo returncode!=0 → HEAD 用空串，不算失败
+        head_sha = head.stdout.strip() if head.returncode == 0 else ""
+        status = subprocess.run(
+            ["git", "-C", str(root), "status", "--porcelain=v1", "--untracked-files=all"],
+            capture_output=True, text=True, timeout=5,
+        )
+        if status.returncode != 0:
+            return None
+        return hashlib.sha256(
+            (head_sha + "\0" + status.stdout).encode()
+        ).hexdigest()[:16]
+    except Exception:
+        return None
 
 
 # ---------- 各分节（独立容错，返回 "" 表示省略） ----------
@@ -311,6 +346,7 @@ def build_project_map(root: Path | None, *, max_chars: int = DEFAULT_MAX_CHARS) 
         generated_at=_now_iso(),
         source_mtime=_scan_source_mtime(root),
         stack=stack,
+        source_fingerprint=_git_fingerprint(root) or "",
     )
 
 
@@ -328,6 +364,7 @@ def _write_cache(root: Path, cache_dir: Path, m: ProjectMap) -> None:
             "generated_at": m.generated_at,
             "source_mtime": m.source_mtime,
             "stack": m.stack,
+            "source_fingerprint": m.source_fingerprint,
         }
         (cache_dir / f"{root.name}.json").write_text(
             json.dumps(meta, ensure_ascii=False), encoding="utf-8"
@@ -359,9 +396,15 @@ def get_project_map(
                 source_mtime=float(meta["source_mtime"]),
                 stack=list(meta["stack"]),
                 from_cache=True,
+                source_fingerprint=str(meta.get("source_fingerprint") or ""),  # 旧缓存无此键 → ""
             )
-            # 项目更新（新 mtime > 缓存 source_mtime）→ stale=True，不自动重建
-            cached.stale = _scan_source_mtime(root) > cached.source_mtime
+            # M189.2：git 项目用指纹判 stale（深层内容/untracked 新文件/commit 全感知），
+            # 非 git 或指纹缺失回退顶层 mtime（现状）
+            fp = _git_fingerprint(root)
+            if cached.source_fingerprint and fp is not None:
+                cached.stale = fp != cached.source_fingerprint
+            else:
+                cached.stale = _scan_source_mtime(root) > cached.source_mtime
             return cached
         except Exception:  # 缓存损坏按缺失处理
             pass

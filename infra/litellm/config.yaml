@@ -1,7 +1,9 @@
 # LiteLLM Proxy 配置 — flipped M0（决策 D1）
 # 链路: 客户端/编辑器 -> 本代理(:4000) -> exo 集群(:52415) -> GLM-5.2-fp8 / Kimi-K2.7-Code-4bit
-# M149: api_base 用 MagicDNS 主机名 studio01-1（原裸 IP 100.64.201.37 因 Tailscale
+# M149: api_base 用 MagicDNS 主机名（原裸 IP 100.64.201.37 因 Tailscale
 #   IP 漂移失效导致全链路 000；主机名免疫 IP 变化，对应节点 macstudio01）
+# M192: MagicDNS 主机名漂移跟进——tailnet 中该节点现为 dgmt-studio01mac-studio
+#   （100.67.43.40；旧名 studio01-1 已 Unknown host）
 # M156 双模型模式恢复: architect=GLM-5.2-fp8, coder=Kimi-K2.7-Code-4bit
 #   解除 M147-A 熔断（GLM 单模型 reasoning_content 抢占 content 路径不可代码修复）。
 #   M149 单模型作为逃生门：把 coder model 改回 GLM-5.2-fp8 + 注释 fallbacks 即可。
@@ -12,7 +14,7 @@ model_list:
   - model_name: architect
     litellm_params:
       model: openai/mlx-community/GLM-5.2-fp8
-      api_base: http://studio01-1:52415/v1
+      api_base: http://dgmt-studio01mac-studio:52415/v1
       api_key: dummy-exo-no-auth
       # M149: temperature=0 — fp8 非零 temperature 下长序列生成数值不稳定→乱码
       temperature: 0.0
@@ -26,7 +28,7 @@ model_list:
   - model_name: coder
     litellm_params:
       model: openai/mlx-community/Kimi-K2.7-Code-4bit
-      api_base: http://studio01-1:52415/v1
+      api_base: http://dgmt-studio01mac-studio:52415/v1
       api_key: dummy-exo-no-auth
       temperature: 0.0
       # Kimi-K2.7-Code 无 reasoning_content 路径抢占问题，可不传 enable_thinking；

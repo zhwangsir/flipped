@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": "2026-08-05T03:47:33.143946",
+  "updated_at": "2026-08-06T00:24:35.606381",
   "limitations": [
     {
       "id": "L-M171-1",
@@ -10,8 +10,8 @@
       "impact": "文件内容删减后旧 chunk 残留库中，检索可能召回已不存在的代码片段",
       "priority": "P1",
       "difficulty": "中",
-      "status": "open",
-      "resolution_note": "",
+      "status": "resolved",
+      "resolution_note": "M189.1 消化：VectorStore 增 get_where/delete_ids 原语，ingest_file upsert 后按 source 过滤删除旧 content_hash 残留 chunk（fail-open）",
       "target": "M185+ 候选（按 content_hash 清理残留 chunk）"
     },
     {
@@ -82,8 +82,8 @@
       "impact": "深层文件编辑不触发地图重建，chat/plan 可能注入过时的项目结构（需手动 regenerate）",
       "priority": "P1",
       "difficulty": "中",
-      "status": "open",
-      "resolution_note": "",
+      "status": "resolved",
+      "resolution_note": "M189.2 消化：_git_fingerprint（HEAD+porcelain 哈希）替代顶层 mtime 判 stale，深层内容/untracked/commit 全感知，非 git 回退 mtime",
       "target": "后续里程碑（深层变更感知或定时重建候选）"
     },
     {
@@ -118,8 +118,8 @@
       "impact": "误触编辑重跑后，被截断的后续对话事件永久丢失（前端已确认，端点无二次确认）",
       "priority": "P1",
       "difficulty": "中",
-      "status": "open",
-      "resolution_note": "",
+      "status": "resolved",
+      "resolution_note": "M190.1：session trash 机制 + POST /edit/undo + 前端截断 banner；撤销=丢弃重跑产物+按原 id 重挂（黑盒驱动契约修正），真歧义（新 user 消息/锚点丢失）409。verify_m190.sh 场景 a/b/c 通过",
       "target": "后续里程碑（软删除/回收站候选）"
     },
     {
@@ -166,8 +166,8 @@
       "impact": "用户无法 @ 图片等多模态附件（视觉端点未验证）",
       "priority": "P1",
       "difficulty": "中",
-      "status": "open",
-      "resolution_note": "",
+      "status": "resolved",
+      "resolution_note": "M192：图像附件全链接入 chat/plan——后端 ImageAttachmentIn 契约/落盘/_run_chat 多模态 parts/vision 路由/attachments 取回端点 + 前端 Composer 上传粘贴预览/历史缩略图；verify_m192.sh 单测 34 例 + 黑盒 20 断言全绿。遗留：exo VL 数据面推理超时，登记 L-M192-1 待集群恢复复验",
       "target": "M185+ 候选（视觉端点验证后接入）"
     },
     {
@@ -202,8 +202,8 @@
       "impact": "goal 达成判定为 LLM 非确定性判断，偶发误判无确定性校验兜底",
       "priority": "P1",
       "difficulty": "中",
-      "status": "open",
-      "resolution_note": "",
+      "status": "resolved",
+      "resolution_note": "M188.1 消化：CreateGoalRequest.verify_cmd 显式入参（argv 语义安全闸 422）+ _verify_deterministic 确定性优先（沙盒/host 双路径，exit 0=达成，source=verify_cmd），det 不可用 fail-safe 回落 LLM judge",
       "target": "M185+ 候选（verify_cmd 确定性校验 exit 0=达成）"
     },
     {
@@ -226,8 +226,8 @@
       "impact": "后端重启后进行中的 goal 循环中断不恢复，需人工重新发起（状态可从事件流重建）",
       "priority": "P1",
       "difficulty": "中",
-      "status": "open",
-      "resolution_note": "",
+      "status": "resolved",
+      "resolution_note": "M188.2 消化：rebuild_running 从事件流重建循环态（半途轮整轮重跑）+ lifespan goal 恢复优先于 checkpoint/error（不按 status==running 过滤，dispatch 尾段覆写状态不可靠）+ 续跑防重入 409；paused goal 不续跑登记为新限制",
       "target": "后续里程碑（goal 断点续跑候选）"
     },
     {
@@ -281,14 +281,14 @@
     {
       "id": "L-M177-4",
       "milestone": "M177",
-      "text": "文件树仅变更过滤、AI commit message、逐 hunk 接受/拒绝列后续候选（本里程碑控范围不做）",
+      "text": "逐 hunk 接受/拒绝列后续候选（文件树仅变更过滤、AI commit message 已由 M186 消化）",
       "category": "功能缺口",
-      "impact": "Review 面板缺文件树变更过滤、AI commit message、逐 hunk 接受/拒绝三项能力",
+      "impact": "",
       "priority": "P1",
-      "difficulty": "中",
-      "status": "open",
-      "resolution_note": "",
-      "target": "M185+ 候选"
+      "difficulty": "高",
+      "status": "resolved",
+      "resolution_note": "M193：后端 POST /project/revert-hunk 单 hunk patch 反向应用 + 前端 diffHunks 内容指纹分组 + Review 面板 hunk 块接受/拒绝交互。语义决策：接受=无 git 副作用的审查进度标记（前端内存），拒绝=真实工作区反向应用——遵守 L-M177-1 不碰 staging 约束。tests/test_m193_hunk.py 15 例 + verify_m193.sh 黑盒 16 断言全绿",
+      "target": "M187+ 候选"
     },
     {
       "id": "L-M178-1",
@@ -310,8 +310,8 @@
       "impact": "调度仅支持 once/interval 无 cron 表达式；任务不可编辑只能删除重建",
       "priority": "P1",
       "difficulty": "中",
-      "status": "open",
-      "resolution_note": "",
+      "status": "resolved",
+      "resolution_note": "M187.1/M187.2/M187.3 全消化：cron.py 纯逻辑 5 字段解析（Vixie dom/dow OR，字段跳跃，4 年上限，本地时区语义）+ kind=cron 创建校验 422；PATCH /tasks/{id} 部分更新（白名单+合并校验+调度字段变更重算 next_run_at）；lifespan 恢复会话注册 RUNNING_TASKS 闭合防重入跨重启缺口。verify_m187.sh 黑盒 a-f 验证",
       "target": "M185+ 候选（cron + PATCH 编辑）"
     },
     {
@@ -322,8 +322,8 @@
       "impact": "重启瞬间正在执行的任务失去防重入保护，可能被补触发重复派发",
       "priority": "P1",
       "difficulty": "中",
-      "status": "open",
-      "resolution_note": "",
+      "status": "resolved",
+      "resolution_note": "M187.3：_resume_orchestrator 句柄注册 RUNNING_TASKS+done_callback pop（恢复中会话被防重入看见，重复派发缺口闭合）；stale running 无 checkpoint 会话启动时标 error（chat/plan 不再永远假 running）。黑盒 e 项验证",
       "target": "后续里程碑（RUNNING 映射持久化候选）"
     },
     {
@@ -358,8 +358,8 @@
       "impact": "评审结果一次性不落盘，刷新/关页后结论丢失无法追溯",
       "priority": "P1",
       "difficulty": "中",
-      "status": "open",
-      "resolution_note": "",
+      "status": "resolved",
+      "resolution_note": "M186.1：评审结果持久化——review_store.py（save/list/load，cap 50 删最旧，原子写，id 穿越防护）+ review 端点 fail-open 落盘回传 review_id + GET /project/reviews（轻量列表）/reviews/{id}（完整详情）；前端历史下拉载入回放（historical 标记）。verify_m186.sh 黑盒 b1-b3 验证",
       "target": "M185+ 候选（评审历史持久化）"
     },
     {
@@ -382,8 +382,8 @@
       "impact": "findings 行号不可点击跳转，用户需手动定位文件行，评审可操作性打折",
       "priority": "P1",
       "difficulty": "中",
-      "status": "open",
-      "resolution_note": "",
+      "status": "resolved",
+      "resolution_note": "M186.2：findings 行号点击跳转——openFile(path, line?) + openedFile.line + 文件视图 line-target 高亮 scrollIntoView 居中；ReviewFindingRow line!=null 时整行 button.review-jump。vitest 覆盖有/无 line 双路径",
       "target": "M185+ 候选（跳转编辑器对应行）"
     },
     {
@@ -586,8 +586,8 @@
       "impact": "",
       "priority": "P0",
       "difficulty": "中",
-      "status": "open",
-      "resolution_note": "",
+      "status": "resolved",
+      "resolution_note": "M185.1：chat/plan 通路注入 scope=all worker 规则（WORKER_RULES_CHAT_HEADER + build_worker_rules_text scopes 参数化），FLIPPED_WORKER_RULES_CHAT=0 可关，fail-open；payload.worker_rules_injected 标记。verify_m185.sh 黑盒验证",
       "target": ""
     },
     {
@@ -598,8 +598,8 @@
       "impact": "",
       "priority": "P1",
       "difficulty": "中",
-      "status": "open",
-      "resolution_note": "",
+      "status": "resolved",
+      "resolution_note": "M190.2：_collect_failure_texts 多源汇聚（failure_kb ∪ 事件流 error）+ generate_auto_rules_llm 兜底（FLIPPED_RULES_LLM 开关，fail-open），响应增 llm_used。verify_m190.sh 场景 d/e/f 通过",
       "target": ""
     },
     {
@@ -610,8 +610,8 @@
       "impact": "",
       "priority": "P0",
       "difficulty": "中",
-      "status": "open",
-      "resolution_note": "",
+      "status": "resolved",
+      "resolution_note": "M185.2：snapshot 派生 success_rate=success/(success+failure)（零 outcome→None）+ semantics 语义注记；前端 successRate 公式修正 + 语义注记渲染。契约快照已更新",
       "target": ""
     },
     {
@@ -646,8 +646,8 @@
       "impact": "",
       "priority": "P0",
       "difficulty": "中",
-      "status": "open",
-      "resolution_note": "",
+      "status": "resolved",
+      "resolution_note": "M185.3：GET /worker/rules 支持 enabled 过滤 + sort=priority（priority desc→id asc，与注入层同序）；缺省契约不变（全量插入序）",
       "target": ""
     },
     {
@@ -670,8 +670,8 @@
       "impact": "",
       "priority": "P0",
       "difficulty": "中",
-      "status": "open",
-      "resolution_note": "",
+      "status": "resolved",
+      "resolution_note": "M185.4：check 增强 registry 真实性校验——id 格式 ^L-M<n>-<i>$、id 里程碑段==milestone 字段、枚举字段合法（status/priority/difficulty）、resolved/wontfix 必须有 resolution_note、id 唯一性",
       "target": ""
     },
     {
@@ -690,6 +690,270 @@
       "id": "L-M184-4",
       "milestone": "M184",
       "text": "报告按日生成同日覆盖（limitations_analysis_<YYYYMMDD>.md），历史报告无索引机制",
+      "category": "未分类",
+      "impact": "",
+      "priority": "P2",
+      "difficulty": "中",
+      "status": "open",
+      "resolution_note": "",
+      "target": ""
+    },
+    {
+      "id": "L-M185-1",
+      "milestone": "M185",
+      "text": "worker_rules_injected 标记只在事件层（events payload），history turn 不折叠（与 M173 map_injected 同设计），前端对话流不感知注入标记",
+      "category": "架构取舍",
+      "impact": "",
+      "priority": "P2",
+      "difficulty": "低",
+      "status": "open",
+      "resolution_note": "",
+      "target": ""
+    },
+    {
+      "id": "L-M185-2",
+      "milestone": "M185",
+      "text": "sort/enabled 查询参数仅服务端便捷，前端 WorkerRulesPanel 未接入（仍本地排序全量拉取）",
+      "category": "功能缺口",
+      "impact": "",
+      "priority": "P2",
+      "difficulty": "低",
+      "status": "open",
+      "resolution_note": "",
+      "target": ""
+    },
+    {
+      "id": "L-M185-3",
+      "milestone": "M185",
+      "text": "check 增强校验覆盖 id/枚举/注记/唯一性，不验 target 字段指向的里程碑是否真实存在",
+      "category": "功能缺口",
+      "impact": "",
+      "priority": "P2",
+      "difficulty": "低",
+      "status": "open",
+      "resolution_note": "",
+      "target": ""
+    },
+    {
+      "id": "L-M185-4",
+      "milestone": "M185",
+      "text": "chat 通路注入 max_chars=300 与 worker 通路共享预算常量，双通路独立调参需后续",
+      "category": "架构取舍",
+      "impact": "",
+      "priority": "P2",
+      "difficulty": "低",
+      "status": "open",
+      "resolution_note": "",
+      "target": ""
+    },
+    {
+      "id": "L-M186-1",
+      "milestone": "M186",
+      "text": "评审历史存应用侧 data/reviews/，换机/清数据即失（非项目 git 资产）",
+      "category": "未分类",
+      "impact": "",
+      "priority": "P2",
+      "difficulty": "中",
+      "status": "open",
+      "resolution_note": "",
+      "target": ""
+    },
+    {
+      "id": "L-M186-2",
+      "milestone": "M186",
+      "text": "findings 跳转依赖 openFile 读文件成功；二进制/超 512KB/读失败静默降级无跳转",
+      "category": "未分类",
+      "impact": "",
+      "priority": "P2",
+      "difficulty": "中",
+      "status": "open",
+      "resolution_note": "",
+      "target": ""
+    },
+    {
+      "id": "L-M186-3",
+      "milestone": "M186",
+      "text": "commit message 质量取决于 worker 模型，无人工编辑框（复制后自行修改）",
+      "category": "未分类",
+      "impact": "",
+      "priority": "P2",
+      "difficulty": "中",
+      "status": "open",
+      "resolution_note": "",
+      "target": ""
+    },
+    {
+      "id": "L-M186-4",
+      "milestone": "M186",
+      "text": "逐 hunk 接受/拒绝仍遗留（L-M177-4 改窄保留）",
+      "category": "未分类",
+      "impact": "",
+      "priority": "P2",
+      "difficulty": "中",
+      "status": "resolved",
+      "resolution_note": "M193 已交付逐 hunk 接受/拒绝（同 L-M177-4，重复条目一并关闭）",
+      "target": ""
+    },
+    {
+      "id": "L-M187-1",
+      "milestone": "M187",
+      "text": "cron 按服务器本地时区解释，跨时区部署需注意（once/interval 仍为 UTC 语义）",
+      "category": "未分类",
+      "impact": "",
+      "priority": "P2",
+      "difficulty": "中",
+      "status": "open",
+      "resolution_note": "",
+      "target": ""
+    },
+    {
+      "id": "L-M187-2",
+      "milestone": "M187",
+      "text": "cron 表达式为人类子集（*/n、范围、列表、数字），不支持英文名（JAN/MON）与特殊串（@daily）",
+      "category": "功能缺口",
+      "impact": "",
+      "priority": "P1",
+      "difficulty": "中",
+      "status": "resolved",
+      "resolution_note": "M191.3 消化：cron _MONTHS/_DOWS/_MACROS 映射 + _parse 宏展开（@yearly/@annually/@monthly/@weekly/@daily/@midnight/@hourly，其余 @ 串 CronError）+ _parse_field names 参数（MON-FRI/MON,WED/MON/2 全兼容，未知名 CronError 含字段位置）。tests/test_m191_cron_names.py + verify_m191.sh 黑盒验证",
+      "target": ""
+    },
+    {
+      "id": "L-M187-3",
+      "milestone": "M187",
+      "text": "stale running 恢复只在启动时扫一次；运行中进程死亡（kill -9）无 watchdog",
+      "category": "数据一致性",
+      "impact": "",
+      "priority": "P1",
+      "difficulty": "中",
+      "status": "resolved",
+      "resolution_note": "M191.4 消化：_STALE_SEEN 两击确认集 + _stale_sweep_once（首击记标记跳过派发竞态窗，次击 try_resume_goal→checkpoint resume→update_status(error)+bus 留痕；paused 不碰）+ _stale_watchdog（FLIPPED_WATCHDOG_SCAN_S 默认 60s）lifespan 并排启动。tests/test_m191_watchdog.py 覆盖两击确认/活句柄不碰",
+      "target": ""
+    },
+    {
+      "id": "L-M187-4",
+      "milestone": "M187",
+      "text": "编辑不触及 last_run_at/run_count 历史（历史只增不改）",
+      "category": "未分类",
+      "impact": "",
+      "priority": "P2",
+      "difficulty": "中",
+      "status": "open",
+      "resolution_note": "",
+      "target": ""
+    },
+    {
+      "id": "L-M188-1",
+      "milestone": "M188",
+      "text": "paused（审批中）goal 不续跑（走 orchestrator checkpoint 恢复，goal wrapper 循环不重建）",
+      "category": "数据一致性",
+      "impact": "",
+      "priority": "P1",
+      "difficulty": "中",
+      "status": "resolved",
+      "resolution_note": "M191.2 消化：has_pending_approval 逆序扫 approval_request/result + rebuild_running pending 守卫 return None + _resume_with_decision 尾段钩子（rebuild 命中 → emit status「goal 审批续跑」+ create_task _goal_loop(start, judge_first=True) 注册 RUNNING_TASKS）；summarize_goal_events paused 态。tests/test_m191_goal_pause_resume.py 覆盖",
+      "target": ""
+    },
+    {
+      "id": "L-M188-2",
+      "milestone": "M188",
+      "text": "verify_cmd host 路径（chat/plan）在宿主直接执行 subprocess，安全依赖 _verify_cmd_safe 双闸（白名单+危险模式），无沙盒隔离",
+      "category": "未分类",
+      "impact": "",
+      "priority": "P2",
+      "difficulty": "中",
+      "status": "open",
+      "resolution_note": "",
+      "target": ""
+    },
+    {
+      "id": "L-M188-3",
+      "milestone": "M188",
+      "text": "断点续跑以轮为原子单位：轮内 orchestrator checkpoint 不复用，半途轮整轮重跑",
+      "category": "未分类",
+      "impact": "",
+      "priority": "P2",
+      "difficulty": "中",
+      "status": "open",
+      "resolution_note": "",
+      "target": ""
+    },
+    {
+      "id": "L-M188-4",
+      "milestone": "M188",
+      "text": "续跑重建的 _judge_errors/gap 签名序列从事件流恢复，judge 熔断计数跨重启保留",
+      "category": "安全",
+      "impact": "",
+      "priority": "P0",
+      "difficulty": "中",
+      "status": "resolved",
+      "resolution_note": "M191.1 消化：judge emit 增结构化 error=verdict is None（gap 文案不变前端兼容），rebuild_running 重放结构化优先、哨兵兜底旧格式——judge 熔断计数跨重启保留且不再被真实 judge gap 撞串污染。tests/test_m191_judge_error_field.py 覆盖 error 字段往返/哨兵兜底/撞串不误计",
+      "target": ""
+    },
+    {
+      "id": "L-M189-1",
+      "milestone": "M189",
+      "text": "git 指纹边界：未 ignore 的巨大 untracked 目录会拖慢 git status（用户项目卫生问题，代码注释已说明）；非 git 项目仍回退顶层 mtime，深层编辑不感知（现状保留）",
+      "category": "性能",
+      "impact": "",
+      "priority": "P2",
+      "difficulty": "中",
+      "status": "open",
+      "resolution_note": "",
+      "target": ""
+    },
+    {
+      "id": "L-M189-2",
+      "milestone": "M189",
+      "text": "chunk 清理为 fail-open：清理异常静默跳过，陈旧数据下次 ingest 再清（不影响检索正确性，因检索按新 hash 命中）",
+      "category": "未分类",
+      "impact": "",
+      "priority": "P2",
+      "difficulty": "中",
+      "status": "open",
+      "resolution_note": "",
+      "target": ""
+    },
+    {
+      "id": "L-M192-1",
+      "milestone": "M192",
+      "text": "exo 集群 Qwen3-VL-4B 实例已放置（控制面 /state 可见 MlxRingInstance），但图像推理数据面 420s 超时无响应；对照 GLM 文本推理 60s 可返回。判定集群侧阻塞，代码侧多模态链路已经假 LLM 黑盒验证",
+      "category": "外部依赖",
+      "impact": "chat/plan 带图消息在真实 exo 端点上暂时得不到视觉模型响应（路由与组装正确，端点不答）",
+      "priority": "P1",
+      "difficulty": "低",
+      "status": "open",
+      "resolution_note": "",
+      "target": "exo 集群 VL 实例恢复后复跑 scripts/verify_m192.sh + 真实红蓝图问答"
+    },
+    {
+      "id": "L-M193-1",
+      "milestone": "M193",
+      "text": "hunk 接受状态为会话级内存标记（组件 useState + 内容指纹），刷新页面不保留——内容指纹决定不做持久化",
+      "category": "未分类",
+      "impact": "",
+      "priority": "P2",
+      "difficulty": "中",
+      "status": "open",
+      "resolution_note": "",
+      "target": ""
+    },
+    {
+      "id": "L-M193-2",
+      "milestone": "M193",
+      "text": "拒绝粒度=unified diff hunk（git 原生分组），hunk 内单行不可独立拒绝",
+      "category": "未分类",
+      "impact": "",
+      "priority": "P2",
+      "difficulty": "中",
+      "status": "open",
+      "resolution_note": "",
+      "target": ""
+    },
+    {
+      "id": "L-M193-3",
+      "milestone": "M193",
+      "text": "staged 新文件/deleted 文件的 hunk 拒绝 422 引导整文件回滚（/dev/null 侧不支持单 hunk 反向应用）",
       "category": "未分类",
       "impact": "",
       "priority": "P2",

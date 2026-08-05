@@ -26,7 +26,10 @@
 from __future__ import annotations
 
 import asyncio
+import base64
+import mimetypes
 import os
+import re
 import subprocess
 import uuid
 from dataclasses import asdict
@@ -35,6 +38,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from .schemas import Event, EventType, Role, Session, SessionStatus, TaskRequest
@@ -55,12 +59,20 @@ class CreateSessionRequest(BaseModel):
     model_alias: str = "coder"
 
 
+class ImageAttachmentIn(BaseModel):
+    """M192 · 图像附件输入（chat/plan 多模态）：纯 base64，不含 data: 前缀。"""
+    name: str = Field(..., min_length=1, max_length=128)
+    media_type: str          # 白名单 image/png|image/jpeg|image/webp|image/gif，其余 422
+    data_base64: str         # 解码后 ≤ FLIPPED_IMG_MAX_BYTES(默认 2MB)
+
+
 class SendMessageRequest(BaseModel):
     """发送消息请求。"""
     text: str = Field(..., min_length=1)
     mode: str | None = None
     model: str | None = None
     orchestrator: dict[str, Any] | None = None
+    images: list[ImageAttachmentIn] | None = None  # M192：≤ FLIPPED_IMG_MAX_COUNT(默认 4) 张
 
 
 class MessageResponse(BaseModel):
@@ -123,6 +135,7 @@ class CreateGoalRequest(BaseModel):
     mode: str | None = None            # 缺省沿用 session.mode
     model: str | None = None           # 缺省沿用 session.model
     max_iterations: int | None = None  # 缺省 FLIPPED_GOAL_MAX_ITER(5)，硬上限 20
+    verify_cmd: list[str] | None = None  # M188.1 显式确定性校验命令（优先于项目探测）
 
 
 class CreateGoalResponse(BaseModel):
@@ -152,6 +165,7 @@ class AssistantTurn(BaseModel):
     role: str                       # user | assistant | tool | approval | goal
     event_id: str | None = None     # M174：仅 user turn 回填（编辑锚点），其余 None
     refs: list[dict[str, Any]] | None = None  # M175：user turn 的 @ 文件引用清单（FileRef asdict）
+    attachments: list[dict[str, Any]] | None = None  # M192：user turn 的图像附件元数据（不含 base64）
     text: str | None = None
     tools: list[dict[str, Any]] = Field(default_factory=list)
     verdict: dict[str, Any] | None = None
@@ -208,6 +222,7 @@ def _events_to_turns(events: list[Event]) -> list[AssistantTurn]:
                 role=role,
                 event_id=ev.id if role == "user" else None,
                 refs=ev.payload.get("refs") if role == "user" else None,
+                attachments=ev.payload.get("attachments") if role == "user" else None,
                 text=ev.payload.get("text", ""),
                 created_at=ts,
             ))
@@ -271,6 +286,68 @@ def _events_to_turns(events: list[Event]) -> list[AssistantTurn]:
 
     _flush_pending()
     return turns
+
+
+# ---------- M192 · 图像附件（chat/plan 多模态） ----------
+
+_IMG_MEDIA_EXT = {
+    "image/png": ".png",
+    "image/jpeg": ".jpg",
+    "image/webp": ".webp",
+    "image/gif": ".gif",
+}
+
+# 附件下载 filename 白名单（防路径穿越第一道闸；resolve 包含性为第二道）
+_ATTACH_FILENAME_RE = re.compile(r"^[A-Za-z0-9._-]+$")
+
+
+def attachments_dir() -> Path:
+    """附件落盘根目录：FLIPPED_DATA_DIR(默认 "data")/attachments。"""
+    return Path(os.environ.get("FLIPPED_DATA_DIR", "data")) / "attachments"
+
+
+def _env_int(name: str, default: int) -> int:
+    try:
+        return int(os.environ.get(name, str(default)))
+    except ValueError:
+        return default
+
+
+def _persist_images(session_id: str, images: list[ImageAttachmentIn]) -> list[dict[str, Any]]:
+    """校验并落盘图像附件，返回 payload 元数据清单（不含 base64）。
+
+    校验全部通过才写盘（all-or-nothing）；任一违规 → 422，detail 含 name。
+    """
+    max_count = _env_int("FLIPPED_IMG_MAX_COUNT", 4)
+    if len(images) > max_count:
+        raise HTTPException(status_code=422, detail=f"图像附件最多 {max_count} 张")
+    max_bytes = _env_int("FLIPPED_IMG_MAX_BYTES", 2 * 1024 * 1024)
+
+    decoded: list[tuple[ImageAttachmentIn, bytes, str]] = []
+    for img in images:
+        ext = _IMG_MEDIA_EXT.get(img.media_type)
+        if ext is None:
+            raise HTTPException(status_code=422,
+                                detail=f"不支持的图像类型 {img.media_type}: {img.name}")
+        try:
+            raw = base64.b64decode(img.data_base64, validate=True)
+        except Exception as exc:
+            raise HTTPException(status_code=422,
+                                detail=f"图像 base64 解码失败: {img.name}") from exc
+        if len(raw) > max_bytes:
+            raise HTTPException(status_code=422,
+                                detail=f"图像超过大小限制({max_bytes}B): {img.name}")
+        decoded.append((img, raw, ext))
+
+    dest = attachments_dir() / session_id
+    dest.mkdir(parents=True, exist_ok=True)
+    out: list[dict[str, Any]] = []
+    for img, raw, ext in decoded:
+        fname = f"{uuid.uuid4().hex[:8]}{ext}"
+        (dest / fname).write_bytes(raw)
+        out.append({"name": img.name, "media_type": img.media_type,
+                    "path": f"{session_id}/{fname}", "bytes": len(raw)})
+    return out
 
 
 # ---------- M168.1 · git shadow snapshot helpers（undo 地基，宿主侧执行） ----------
@@ -422,6 +499,14 @@ async def send_assistant_message(session_id: str, req: SendMessageRequest) -> Me
     if mode not in _ALLOWED_MODES:
         raise HTTPException(status_code=422, detail=f"mode must be one of {_ALLOWED_MODES}")
 
+    # M192 · 图像附件（仅 chat/plan）：校验 + 落盘先于任何副作用（status/事件/派发），
+    # 422 时事件流与磁盘保持零污染（_persist_images all-or-nothing）。
+    payload_attachments: list[dict[str, Any]] = []
+    if req.images:
+        if mode not in ("chat", "plan"):
+            raise HTTPException(status_code=422, detail="当前模式不支持图像附件（仅 chat/plan）")
+        payload_attachments = _persist_images(session_id, req.images)
+
     task_id = f"task-{datetime.now(timezone.utc).strftime('%H%M%S')}-{uuid.uuid4().hex[:4]}"
     store.update_status(session_id, SessionStatus.running)
     bus.emit(session_id, EventType.status, Role.system,
@@ -441,6 +526,8 @@ async def send_assistant_message(session_id: str, req: SendMessageRequest) -> Me
     payload: dict[str, Any] = {"text": req.text}
     if file_refs:
         payload["refs"] = [asdict(r) for r in file_refs]
+    if payload_attachments:  # M192：图像附件元数据同位落库（不含 base64）
+        payload["attachments"] = payload_attachments
     bus.emit(session_id, EventType.message, Role.user, payload)
 
     # M168.1 · git shadow snapshot（undo 地基）：auto/agent（orchestrator 通路）会改文件，
@@ -475,10 +562,17 @@ async def send_assistant_message(session_id: str, req: SendMessageRequest) -> Me
     if mode in ("auto", "agent"):
         coro = _run_orchestrator(session_id, task_id, task_req)
     else:  # chat / plan
-        coro = _run_chat(
-            session_id, task_id, send_text,
-            req.model or session.model or "coder", mode,
-        )
+        if payload_attachments:  # M192：带图 → 透传 attachments（多模态 parts 在 _run_chat 组装）
+            coro = _run_chat(
+                session_id, task_id, send_text,
+                req.model or session.model or "coder", mode,
+                attachments=payload_attachments,
+            )
+        else:
+            coro = _run_chat(
+                session_id, task_id, send_text,
+                req.model or session.model or "coder", mode,
+            )
 
     t = asyncio.create_task(coro)
     RUNNING_TASKS[session_id] = t
@@ -495,6 +589,31 @@ async def get_assistant_history(session_id: str) -> list[AssistantTurn]:
         raise HTTPException(status_code=404, detail="session not found")
     events = store.events(session_id)
     return _events_to_turns(events)
+
+
+@router.get("/attachments/{session_id}/{filename}")
+async def get_assistant_attachment(session_id: str, filename: str) -> FileResponse:
+    """取回落盘的图像附件（M192）。
+
+    404：session 不存在 / filename 非法（非 ^[A-Za-z0-9._-]+$）/
+    resolve 后逸出会话附件目录（防路径穿越）/ 文件不存在。
+    """
+    from .main import store
+
+    if not store.get(session_id):
+        raise HTTPException(status_code=404, detail="session not found")
+    if not _ATTACH_FILENAME_RE.fullmatch(filename):
+        raise HTTPException(status_code=404, detail="attachment not found")
+    base = (attachments_dir() / session_id).resolve()
+    target = (base / filename).resolve()
+    try:
+        target.relative_to(base)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="attachment not found") from None
+    if not target.is_file():
+        raise HTTPException(status_code=404, detail="attachment not found")
+    media_type = mimetypes.guess_type(filename)[0] or "application/octet-stream"
+    return FileResponse(path=str(target), media_type=media_type)
 
 
 @router.post("/sessions/{session_id}/approve", response_model=DecisionResponse)
@@ -864,9 +983,73 @@ async def edit_assistant_message(session_id: str, event_id: str, req: EditMessag
     )
 
 
+class EditUndoResponse(BaseModel):
+    """编辑重跑撤销响应（M190.1）：restored 为恢复的事件条数。"""
+    ok: bool
+    session_id: str
+    restored: int
+
+
+@router.post("/sessions/{session_id}/edit/undo", response_model=EditUndoResponse)
+async def undo_edit_truncate(session_id: str) -> EditUndoResponse:
+    """撤销最近一次编辑重跑截断（M190.1，消化 L-M174-1）。
+
+    - 404 会话不存在；409 运行中（RUNNING_TASKS 未完成句柄）。
+    - 404 trash 空（"no truncated events to restore"）。
+    - 409 真歧义（"new events appended since truncation"）：截断点后存在
+      非编辑重跑产生的新 user 消息，或批次锚点已被后续截断吞掉。
+      重跑产物（edited user 消息 + 应答）不算新事件——撤销即丢弃它们并恢复。
+    - 成功 → 200 {restored: n} + emit status 事件留痕。
+    """
+    from .main import RUNNING_TASKS, bus, store
+
+    session = store.get(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="session not found")
+
+    existing = RUNNING_TASKS.get(session_id)
+    if existing and not existing.done():
+        raise HTTPException(status_code=409, detail="session already has a running task")
+
+    if store.trash_pending(session_id) == 0:
+        raise HTTPException(status_code=404, detail="no truncated events to restore")
+
+    restored = store.restore_trash(session_id)
+    if restored is None:
+        raise HTTPException(status_code=409, detail="new events appended since truncation")
+
+    bus.emit(session_id, EventType.status, Role.system,
+             {"status": session.status.value if hasattr(session.status, "value") else str(session.status),
+              "note": f"编辑重跑已撤销：恢复 {restored} 条事件"})
+    return EditUndoResponse(ok=True, session_id=session_id, restored=restored)
+
+
 # ---------- M176 · Goal 模式（目标驱动自循环 + 逐轮 judge 校验） ----------
 
 _GOAL_MAX_ITER_HARD_LIMIT = 20  # 硬上限，环境变量/请求都不可突破
+
+
+def _verify_cmd_safe(verify_cmd: list[str]) -> tuple[bool, str]:
+    """M188.1 · argv 语义安全双闸：首元素命令白名单 + join 危险模式 + 非 high-risk。
+
+    verify_cmd 是 argv 列表（subprocess 不走 shell），真实程序 = argv[0]，
+    后续元素是参数——不能按 join 后整串过 is_safe_command（其 normalize 会剥
+    "bash -c " 前缀把参数误判为命令）。危险模式仍对 join 整串扫描（兜底注入）。
+    """
+    from driving.approval import classify_risk
+    from driving.safety import SAFE_BASE_COMMANDS, is_dangerous_command
+    if not verify_cmd:
+        return False, "empty verify_cmd"
+    joined = " ".join(verify_cmd)
+    dangerous, reason = is_dangerous_command(joined)
+    if dangerous:
+        return False, reason
+    base = verify_cmd[0].split("/")[-1]
+    if base not in SAFE_BASE_COMMANDS:
+        return False, f"command not in whitelist: {base}"
+    if classify_risk(joined) == "high":
+        return False, "high-risk command requires approval"
+    return True, ""
 
 
 def _goal_max_iterations(requested: int | None) -> int:
@@ -906,6 +1089,15 @@ async def create_assistant_goal(session_id: str, req: CreateGoalRequest) -> Crea
     if mode not in _ALLOWED_MODES:
         raise HTTPException(status_code=422, detail=f"mode must be one of {_ALLOWED_MODES}")
 
+    # M188.1：显式 verify_cmd 校验（每项非空 str + 安全双闸）并落盘到会话
+    if req.verify_cmd is not None:
+        if any(not isinstance(c, str) or not c.strip() for c in req.verify_cmd):
+            raise HTTPException(status_code=422, detail="verify_cmd 每项须为非空字符串")
+        safe, reason = _verify_cmd_safe(req.verify_cmd)
+        if not safe:
+            raise HTTPException(status_code=422, detail=f"verify_cmd 未通过安全闸: {reason}")
+        store.update(session_id, verify_cmd=list(req.verify_cmd))
+
     max_iterations = _goal_max_iterations(req.max_iterations)
     model_alias = req.model or session.model or "coder"
     task_id = f"task-{datetime.now(timezone.utc).strftime('%H%M%S')}-{uuid.uuid4().hex[:4]}"
@@ -915,8 +1107,12 @@ async def create_assistant_goal(session_id: str, req: CreateGoalRequest) -> Crea
     bus.emit(session_id, EventType.message, Role.user,
              {"text": req.objective, "goal": {"started": True}})
     bus.emit(session_id, EventType.goal, Role.system, goal_payload("set", state))
+    # M188.2：goal 运行期间会话须为 running——否则进程死后 lifespan 看不到它，
+    # 断点续跑（try_resume_goal 只作用于 running 会话）永远不会命中
+    store.update_status(session_id, SessionStatus.running)
 
-    t = asyncio.create_task(_goal_loop(session_id, task_id, state, mode, model_alias))
+    t = asyncio.create_task(_goal_loop(session_id, task_id, state, mode, model_alias,
+                                       verify_cmd=req.verify_cmd))
     RUNNING_TASKS[session_id] = t
     t.add_done_callback(lambda _t, sid=session_id: RUNNING_TASKS.pop(sid, None))
     return CreateGoalResponse(
@@ -939,13 +1135,23 @@ async def get_assistant_goal(session_id: str) -> GoalInfoResponse:
     return GoalInfoResponse(**info)
 
 
-async def _goal_loop(session_id: str, task_id: str, state, mode: str, model_alias: str) -> None:
+async def _goal_loop(session_id: str, task_id: str, state, mode: str, model_alias: str,
+                     *, start: int = 1, verify_cmd: list[str] | None = None,
+                     judge_first: bool = False) -> None:
     """M176 · goal 自循环 wrapper：逐轮派发 → judge 校验 → 未达成续跑/终态收尾。
 
     轮内顺序 await _run_chat/_run_orchestrator（不嵌套 create_task）→ cancel 时
     CancelledError 沿 await 链传播进轮内，catch 后 emit goal stopped 再 re-raise。
     judge 任何失败 = None（fail-safe），由 record_verdict 的 judge_errors 熔断计数。
     终态（achieved/exhausted）把会话状态置 done；stopped/cancelled 由 cancel 端点自管。
+    M188.1：每轮 dispatch 后先试 _verify_deterministic（exit 0 = 达成，source=verify_cmd），
+    无可用确定性校验才回落 LLM judge（source=llm）。
+    M188.2：start 支持断点续跑从第 N 轮起重放。
+    M191.1：judge emit 增 error=verdict is None 结构化字段（gap 文案不变，前端兼容）。
+    M191.2：dispatch 后出现未答 approval_request → emit paused 干净退出（审批 parked，
+    state.status 保持 running，由审批放行钩子续跑）；judge_first=True 的首轮跳过
+    iter/dispatch 直进 verify/judge（该轮工作已由审批放行后的 resume 完成，必须判，
+    即使 i==max_iterations 也不走 max_iter 提前收尾——冤枉达成是 bug）。
     """
     from .goal import build_iter_prompt, goal_payload, record_verdict
     from .main import bus, store
@@ -953,49 +1159,67 @@ async def _goal_loop(session_id: str, task_id: str, state, mode: str, model_alia
     def _emit(phase: str, **extra) -> None:
         bus.emit(session_id, EventType.goal, Role.system, goal_payload(phase, state, **extra))
 
-    for i in range(1, state.max_iterations + 1):
+    for i in range(start, state.max_iterations + 1):
         state.iteration = i
-        prompt = build_iter_prompt(state)
-        _emit("iter", prompt=prompt, gap=state.last_gap)
-        try:
-            if mode in ("auto", "agent"):
-                # 与 send 同款：orchestrator 通路会改文件 → 派发前 git shadow 快照
-                from .main import _run_orchestrator, ps
-                root = ps.project_root()
-                snap = await asyncio.to_thread(_git_snapshot, root) if root is not None else None
-                if snap:
-                    head = await asyncio.to_thread(_git_head, root)
-                    bus.emit(session_id, EventType.snapshot, Role.system,
-                             {"snapshot": snap, "head": head, "task_id": task_id})
-                task_req = TaskRequest(
-                    description=prompt,
-                    context={
-                        "mode": mode,
-                        "model": model_alias,
-                        "orchestrator": {"require_approval": True},
-                    },
-                )
-                await _run_orchestrator(session_id, task_id, task_req)
-            else:  # chat / plan
-                from .main import _run_chat
-                await _run_chat(session_id, task_id, prompt, model_alias, mode)
-        except asyncio.CancelledError:
-            state.status = "stopped"
-            _emit("stopped")
-            raise
-        if state.stop_requested:
-            state.status = "stopped"
-            _emit("stopped")
-            return
-        if i == state.max_iterations:
-            state.status = "exhausted"
-            _emit("exhausted", reason="max_iter", gap=state.last_gap)
-            store.update_status(session_id, SessionStatus.done)
-            return
-        verdict = await _judge(state, session_id, model_alias)
+        judge_only = judge_first and i == start
+        if not judge_only:
+            prompt = build_iter_prompt(state)
+            _emit("iter", prompt=prompt, gap=state.last_gap)
+            try:
+                if mode in ("auto", "agent"):
+                    # 与 send 同款：orchestrator 通路会改文件 → 派发前 git shadow 快照
+                    from .main import _run_orchestrator, ps
+                    root = ps.project_root()
+                    snap = await asyncio.to_thread(_git_snapshot, root) if root is not None else None
+                    if snap:
+                        head = await asyncio.to_thread(_git_head, root)
+                        bus.emit(session_id, EventType.snapshot, Role.system,
+                                 {"snapshot": snap, "head": head, "task_id": task_id})
+                    orch_cfg: dict[str, Any] = {"require_approval": True}
+                    if verify_cmd:
+                        # M188.1：显式 verify_cmd 注入 cfg（优先于每轮探测，防覆盖丢显式值）
+                        orch_cfg["verify_cmd"] = list(verify_cmd)
+                    task_req = TaskRequest(
+                        description=prompt,
+                        context={
+                            "mode": mode,
+                            "model": model_alias,
+                            "orchestrator": orch_cfg,
+                        },
+                    )
+                    await _run_orchestrator(session_id, task_id, task_req)
+                else:  # chat / plan
+                    from .main import _run_chat
+                    await _run_chat(session_id, task_id, prompt, model_alias, mode)
+            except asyncio.CancelledError:
+                state.status = "stopped"
+                _emit("stopped")
+                raise
+            if state.stop_requested:
+                state.status = "stopped"
+                _emit("stopped")
+                return
+            # M191.2：orchestrator 审批 interrupt 时 await 会返回（不是挂起），
+            # wrapper 须感知 paused 并干净退出，由审批放行钩子接手续跑
+            if _has_pending_approval(store, session_id):
+                _emit("paused")
+                return
+            if i == state.max_iterations:
+                state.status = "exhausted"
+                _emit("exhausted", reason="max_iter", gap=state.last_gap)
+                store.update_status(session_id, SessionStatus.done)
+                return
+        # M188.1：确定性校验优先；不可用（None）才回落 LLM judge
+        det = await _verify_deterministic(session_id, mode)
+        if det is not None:
+            verdict, source = det, "verify_cmd"
+        else:
+            verdict, source = await _judge(state, session_id, model_alias), "llm"
         _emit("judge",
               achieved=bool(verdict and verdict.get("achieved")),
-              gap=(verdict or {}).get("gap", "") or ("judge 失败" if verdict is None else ""))
+              gap=(verdict or {}).get("gap", "") or ("judge 失败" if verdict is None else ""),
+              source=source,
+              error=verdict is None)
         decision = record_verdict(state, verdict)
         if decision == "achieved":
             _emit("achieved")
@@ -1006,6 +1230,12 @@ async def _goal_loop(session_id: str, task_id: str, state, mode: str, model_alia
             store.update_status(session_id, SessionStatus.done)
             return
         # "continue" → 下一轮（gap 已由 record_verdict 记入 state.last_gap）
+    # M191.2：judge_first 于 max 轮判 continue 的唯一脱出路径——工作已做、已判，
+    # 循环自然跑完仍 running → 补 max_iter 终态（正常路径到不了这里）
+    if state.status == "running":
+        state.status = "exhausted"
+        _emit("exhausted", reason="max_iter", gap=state.last_gap)
+        store.update_status(session_id, SessionStatus.done)
 
 
 async def _judge(state, session_id: str, model_alias: str) -> dict | None:
@@ -1042,6 +1272,85 @@ async def _judge(state, session_id: str, model_alias: str) -> dict | None:
         return parse_judge_reply(reply)
     except Exception:  # noqa: BLE001 fail-safe：judge 失败 = None，绝不上抛
         return None
+
+
+async def _verify_deterministic(session_id: str, mode: str) -> dict | None:
+    """M188.1 · verify_cmd 确定性校验（消化 L-M176-1：exit 0 = 达成）。
+
+    返回 None = 无可用确定性校验（回落 LLM judge），绝不视为失败/达成：
+    - FLIPPED_GOAL_VERIFY=0 / 会话不存在 / verify_available False → None
+    - 安全双闸（is_safe_command + classify_risk）不过 → None（fail-open，非假达成）
+    - 执行异常（沙盒不可达/host OSError 等）→ None（fail-safe）
+    非 None = verify_verdict 形状；host 执行 120s 超时 → 非达成 verdict。
+    agent/auto 在沙盒执行（改文件通路与验收同环境）；chat/plan 在 host 执行。
+    """
+    if os.environ.get("FLIPPED_GOAL_VERIFY", "1") == "0":
+        return None
+    from .goal import verify_available, verify_verdict
+    from .main import store
+
+    session = store.get(session_id)
+    if session is None:
+        return None
+    verify_cmd = list(session.verify_cmd or [])
+    if not verify_available(verify_cmd):
+        return None
+
+    safe_gate, _reason = _verify_cmd_safe(verify_cmd)
+    if not safe_gate:
+        return None  # 安全闸不过不算确定性失败，回落 LLM judge
+
+    try:
+        if mode in ("agent", "auto"):
+            from executor.openhands_worker import OpenHandsWorker
+            from executor.sandbox_verify import make_sandbox_verifier
+            verify = make_sandbox_verifier(
+                agent_host=os.environ.get("OPENHANDS_AGENT_HOST", "http://localhost:8000"),
+                working_dir=session.cwd or ".",
+                api_key=OpenHandsWorker._default_agent_api_key(),
+            )
+            ok, output = await asyncio.to_thread(verify, verify_cmd, session.cwd or "")
+        else:  # chat / plan：host 子进程（无文件改动语义，仅供显式外部校验）
+            cwd = session.cwd if (session.cwd and os.path.isdir(session.cwd)) else None
+            try:
+                proc = await asyncio.to_thread(
+                    subprocess.run, verify_cmd,
+                    capture_output=True, text=True, timeout=120, cwd=cwd)
+            except subprocess.TimeoutExpired:
+                return verify_verdict(False, "(verify 超时)")
+            ok = proc.returncode == 0
+            output = (proc.stdout or "") + (proc.stderr or "")
+        return verify_verdict(ok, output)
+    except Exception:  # noqa: BLE001 fail-safe：执行异常回落 LLM judge
+        return None
+
+
+def try_resume_goal(session) -> asyncio.Task | None:
+    """M188.2 · goal 断点续跑（消化 L-M176-3）：进程重启后重建 goal 循环。
+
+    running 会话的事件流含未终态 goal → rebuild_running 重建循环态，
+    emit status 事件（续跑起点）后 create_task(_goal_loop, start=N)。
+    返回 None = 不可续跑（调用方回落 checkpoint 恢复 / 标 error 既有分支）。
+    FLIPPED_GOAL=0 → None（整体开关与 POST /goal 一致）。
+    """
+    if os.environ.get("FLIPPED_GOAL", "1") == "0":
+        return None
+    from .goal import rebuild_running
+    from .main import bus, store
+
+    rebuilt = rebuild_running(store.events(session.id))
+    if rebuilt is None:
+        return None
+    state, start = rebuilt
+    task_id = f"task-{datetime.now(timezone.utc).strftime('%H%M%S')}-{uuid.uuid4().hex[:4]}"
+    bus.emit(session.id, EventType.status, Role.system,
+             {"status": "running",
+              "note": f"goal 断点续跑：从第 {start}/{state.max_iterations} 轮继续"})
+    return asyncio.create_task(
+        _goal_loop(session.id, task_id, state,
+                   (session.mode or "agent").lower(), session.model or "coder",
+                   start=start,
+                   verify_cmd=list(session.verify_cmd) if session.verify_cmd else None))
 
 
 async def _resume_with_decision(session_id: str, decision: str) -> None:
@@ -1089,6 +1398,25 @@ async def _resume_with_decision(session_id: str, decision: str) -> None:
             store.update_status(session_id, SessionStatus.error)
         else:
             store.update_status(session_id, SessionStatus.review)
+        # M191.2：审批放行/否决跑完该轮后，未终态 goal → 重建循环态续跑 wrapper
+        # （final 必非 None：resume 返回 None 的分支已在上面 return）
+        if os.environ.get("FLIPPED_GOAL", "1") != "0":
+            from .goal import rebuild_running
+            rebuilt = rebuild_running(store.events(session_id))
+            if rebuilt is not None:
+                from .main import RUNNING_TASKS
+                gstate, gstart = rebuilt
+                gtask_id = f"task-{datetime.now(timezone.utc).strftime('%H%M%S')}-{uuid.uuid4().hex[:4]}"
+                bus.emit(session_id, EventType.status, Role.system,
+                         {"status": "running",
+                          "note": f"goal 审批续跑：从第 {gstart}/{gstate.max_iterations} 轮校验继续"})
+                gt = asyncio.create_task(
+                    _goal_loop(session_id, gtask_id, gstate,
+                               (session.mode or "agent").lower(), session.model or "coder",
+                               start=gstart, judge_first=True,
+                               verify_cmd=list(session.verify_cmd) if session.verify_cmd else None))
+                RUNNING_TASKS[session_id] = gt
+                gt.add_done_callback(lambda _t, s=session_id: RUNNING_TASKS.pop(s, None))
     except Exception as exc:
         store.update_status(session_id, SessionStatus.error)
         bus.emit(session_id, EventType.error, Role.system,

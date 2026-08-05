@@ -15,6 +15,7 @@ import {
   fetchProjectFile,
   renderBrowser,
   fetchProjectDiff,
+  revertProjectHunk,
   reviewProject,
   revealProject,
   toggleMcpServer,
@@ -144,6 +145,19 @@ describe('api — HTTP GET 类', () => {
     const fetchMock = mockFetch(async () => okResponse({ files: [] }));
     await fetchProjectDiff();
     expect(fetchMock.mock.calls[0][0]).toContain('/api/v1/project/diff');
+  });
+
+  it('revertProjectHunk POST /project/revert-hunk(M193.2;body 带 path + hunk_index)', async () => {
+    const fetchMock = mockFetch(async () =>
+      okResponse({ ok: true, path: 'src/a.ts', hunk_index: 1, action: 'hunk_reverted' })
+    );
+    const r = await revertProjectHunk('src/a.ts', 1);
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toContain('/api/v1/project/revert-hunk');
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(init.body as string)).toEqual({ path: 'src/a.ts', hunk_index: 1 });
+    expect(r.action).toBe('hunk_reverted');
+    expect(r.hunk_index).toBe(1);
   });
 
   it('reviewProject POST /project/review(M179.2;无 model → 空 body {})', async () => {

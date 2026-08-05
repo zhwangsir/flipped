@@ -74,6 +74,9 @@ data/*.db.bak.*
 data/project_maps/
 data/worker_rule_stats.json
 
+# M186 评审历史落盘(运行时产物)
+data/reviews/
+
 # ---- 测试 / 覆盖率 / 质量门禁产物（M153） ----
 .coverage
 .coverage.*

@@ -17,6 +17,7 @@ import re
 import secrets
 import tempfile
 import time
+import urllib.request
 from pathlib import Path
 from typing import Literal
 
@@ -33,6 +34,16 @@ _BLOCKLIST: tuple[str, ...] = (
 )
 
 _HISTORY_CAP = 20
+
+# M185.1：chat/plan 通路注入 scope="all" 规则时的 system 段头
+WORKER_RULES_CHAT_HEADER = "以下是全局工作规则（必须遵守）："
+
+# M185.2：stats 语义显式化（snapshot 顶层携带，前端面板展示）
+STATS_SEMANTICS = (
+    "applied=规则注入次数；success/failure=verify 通过/失败次数"
+    "（中间迭代失败记 failure）；success_rate=success/(success+failure)，"
+    "规则效果=降低失败迭代数，非端到端任务成功率直接度量"
+)
 
 
 class WorkerRule(BaseModel):
@@ -193,13 +204,17 @@ class WorkerRuleStore:
 
 
 def build_worker_rules_text(rules: list[WorkerRule], *,
-                            max_chars: int = 300) -> tuple[str, list[str]]:
-    """渲染注入文本：enabled 且 scope∈{worker,all}；priority desc → id asc。
+                            max_chars: int = 300,
+                            scopes: tuple[str, ...] = ("worker", "all")
+                            ) -> tuple[str, list[str]]:
+    """渲染注入文本：enabled 且 scope∈scopes；priority desc → id asc。
 
+    scopes 缺省 ("worker","all") = M183 现状（worker 通路）；chat/plan 通路传
+    ("all",) 只注入全域规则（worker-only 工程约束不进对话）。
     逐条 "- {text}"，累计超 max_chars 即停（当前条整条不装）；尾部有丢弃则追加
     "…(略N条)"（此行自身需在预算内，装不下则直接截掉）。空集 → ("", [])。
     """
-    eligible = [r for r in rules if r.enabled and r.scope in ("worker", "all")]
+    eligible = [r for r in rules if r.enabled and r.scope in scopes]
     eligible.sort(key=lambda r: (-r.priority, r.id))
 
     lines: list[str] = []
@@ -265,9 +280,21 @@ class WorkerRuleStats:
         self._save()
 
     def snapshot(self) -> dict:
+        """快照：stats 每条派生 success_rate（不落盘），顶层带 semantics 说明。
+
+        success_rate = success/(success+failure)；零 outcome（无 verify 记录）→ None。
+        """
+        stats: dict[str, dict] = {}
+        for k, v in self._stats.items():
+            entry = dict(v)
+            outcomes = v["success"] + v["failure"]
+            entry["success_rate"] = (
+                v["success"] / outcomes if outcomes > 0 else None)
+            stats[k] = entry
         return {
-            "stats": {k: dict(v) for k, v in self._stats.items()},
+            "stats": stats,
             "total_runs": self._total_runs,
+            "semantics": STATS_SEMANTICS,
         }
 
 
@@ -302,3 +329,95 @@ def generate_auto_rules(failure_texts: list[str], existing: list[WorkerRule], *,
                     seen.add(key)
                     candidates.append(rule_text)
     return candidates[:max_rules]
+
+
+# ---------- M190.2 · LLM 兜底生成（消化 L-M183-2） ----------
+
+_LLM_RULE_MAX_LEN = 200
+
+_LLM_PROMPT = (
+    "你是软件工程导师。根据下列失败文本，总结最多 {max_rules} 条可执行的编码工作规则"
+    "（中文，每条一句祈使句，针对根因可落地，不重复既有规则）。"
+    "只输出 JSON 字符串数组，不要输出任何其他文字。\n\n"
+    "失败文本：\n{failures}\n\n既有规则（不要重复）：\n{existing}"
+)
+
+
+def _llm_complete(prompt: str, *, timeout: float = 30.0) -> str:
+    """POST {FLIPPED_MODEL_BASE_URL}/chat/completions 非流式，返回 content 文本。
+
+    模块级 seam：测试 monkeypatch 本函数即切断真实 HTTP。
+    """
+    base = os.environ.get("FLIPPED_MODEL_BASE_URL", "").rstrip("/")
+    if not base:
+        raise RuntimeError("FLIPPED_MODEL_BASE_URL not set")
+    req = urllib.request.Request(
+        f"{base}/chat/completions",
+        data=json.dumps({
+            "model": os.environ.get("FLIPPED_RULES_LLM_MODEL", "default"),
+            "messages": [{"role": "user", "content": prompt}],
+            "stream": False,
+        }).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        data = json.loads(resp.read().decode("utf-8"))
+    return data["choices"][0]["message"]["content"]
+
+
+def _parse_rules_json(content: str) -> list:
+    """剥离 ```json 围栏后 json.loads；失败则截取首个 [...] 块兜底；再失败 → []。"""
+    text = (content or "").strip()
+    text = re.sub(r"^```(?:json)?\s*", "", text)
+    text = re.sub(r"\s*```$", "", text)
+    try:
+        return json.loads(text)
+    except (json.JSONDecodeError, ValueError):
+        m = re.search(r"\[.*\]", text, re.DOTALL)
+        if m:
+            try:
+                return json.loads(m.group(0))
+            except (json.JSONDecodeError, ValueError):
+                return []
+        return []
+
+
+def generate_auto_rules_llm(failure_texts: list[str], existing: list[WorkerRule], *,
+                            max_rules: int = 3) -> list[str]:
+    """固定模板未命中时的 LLM 兜底：失败文本 → LLM → ≤max_rules 条规则候选。
+
+    - FLIPPED_RULES_LLM=0 或 failure_texts 为空 → []（不发起调用）。
+    - 解析 content 为 JSON array of str（剥离围栏）；非字符串项过滤。
+    - strip 去重（existing + 候选内）；每条 ≤200 字符截断。
+    - 任何异常 → []（fail-open，绝不让兜底拖垮 auto 通路）。
+    """
+    if os.environ.get("FLIPPED_RULES_LLM", "1") == "0":
+        return []
+    texts = [t.strip() for t in (failure_texts or []) if t and t.strip()]
+    if not texts:
+        return []
+    try:
+        prompt = _LLM_PROMPT.format(
+            max_rules=max_rules,
+            failures="\n".join(f"- {t}" for t in texts[:20]),
+            existing="\n".join(f"- {r.text}" for r in existing) or "（无）",
+        )
+        items = _parse_rules_json(_llm_complete(prompt))
+        if not isinstance(items, list):
+            return []
+        seen = {r.text.strip() for r in existing}
+        out: list[str] = []
+        for it in items:
+            if not isinstance(it, str):
+                continue
+            t = it.strip()[:_LLM_RULE_MAX_LEN]
+            if not t or t in seen:
+                continue
+            seen.add(t)
+            out.append(t)
+            if len(out) >= max_rules:
+                break
+        return out
+    except Exception:
+        return []

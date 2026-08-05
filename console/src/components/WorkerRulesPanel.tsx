@@ -162,10 +162,14 @@ export function WorkerRulesPanel() {
 
   const rules = (info?.rules ?? []).slice().sort((a, b) => b.priority - a.priority);
 
+  // M185.2：成功率 = success/(success+failure)（同单位 verify 次）；
+  // 旧公式 success/applied 分母分子不同单位（L-M183-3）。零 outcome → -1（效果未评）。
   const successRate = (id: string) => {
     const s = stats?.stats[id];
-    if (!s || s.applied === 0) return -1;
-    return s.success / s.applied;
+    if (!s) return -1;
+    const outcomes = s.success + s.failure;
+    if (outcomes === 0) return -1;
+    return s.success / outcomes;
   };
 
   const statClass = (rate: number) => {
@@ -290,7 +294,9 @@ export function WorkerRulesPanel() {
                 {s && s.applied > 0 ? (
                   <>
                     应用 {s.applied} · 成功 {s.success} · 失败 {s.failure}
-                    <div className={`wrules-bar ${sClass}`} style={{ width: `${Math.round(rate * 100)}%` }} />
+                    {rate >= 0 && (
+                      <div className={`wrules-bar ${sClass}`} style={{ width: `${Math.round(rate * 100)}%` }} />
+                    )}
                   </>
                 ) : (
                   <span>未应用</span>
@@ -299,6 +305,11 @@ export function WorkerRulesPanel() {
             </div>
           );
         })}
+      </div>
+      {/* M185.2：语义注记（stats.semantics，缺省本地兜底）防误读成功率口径 */}
+      <div className="wrules-semantics muted" data-testid="wrules-semantics">
+        {stats?.semantics ||
+          'applied=规则注入次数；success/failure=verify 通过/失败次数；success_rate=success/(success+failure)，规则效果=降低失败迭代数，非端到端任务成功率直接度量'}
       </div>
     </div>
   );

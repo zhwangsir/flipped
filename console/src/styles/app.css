@@ -1843,6 +1843,43 @@ body.resizing {
 }
 .rdiff-row.empty .rdiff-tx { color: var(--text-faint); font-style: italic; }
 
+/* M193.2 — 逐 hunk 接受/拒绝:hunk 块分组 + 头部操作 + 已接受态 */
+.rdiff-hunk + .rdiff-hunk { border-top: 1px solid var(--border-subtle); }
+.rdiff-hunk-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 2px 8px 2px 16px;
+  color: var(--text-faint);
+  background: var(--bg-sunken);
+}
+.rdiff-hunk-range {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rdiff-hunk-actions { flex: none; display: inline-flex; align-items: center; gap: 4px; }
+.rdiff-hunk-btn {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  padding: 1px 5px;
+  border-radius: var(--radius-sm);
+  transition: color var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease);
+}
+.rdiff-hunk-btn.accept:hover { color: var(--success); background: var(--diff-add-bg); }
+.rdiff-hunk-btn.reject:hover { color: var(--danger); background: var(--diff-del-bg); }
+.rdiff-hunk-btn:disabled { opacity: 0.5; }
+.rdiff-hunk-btn.accepted-toggle { color: var(--success); }
+.rdiff-hunk-btn.accepted-toggle:hover { background: var(--bg-hover); }
+.rdiff-hunk.accepted { box-shadow: inset 2px 0 0 var(--success); }
+.rdiff-hunk.accepted .rdiff-row { opacity: 0.45; }
+.rdiff-hunk.accepted .rdiff-hunk-head { opacity: 0.75; }
+
 /* M179.2 — AI 代码评审:severity 徽标/findings 行内/总览行/其他文件分组 */
 .rdiff-review-btn { display: inline-flex; align-items: center; gap: 4px; }
 .rdiff-review-btn svg { color: var(--orange); }
@@ -1872,8 +1909,88 @@ body.resizing {
 .review-line { color: var(--text-faint); }
 .review-suggestion { margin-top: 2px; color: var(--text-muted); }
 .review-other .rdiff-fhead { position: static; }
+/* M186.2 — findings 行号跳转:有行号的 finding 整行可点(视觉与原只读行一致,hover 出底色) */
+.review-jump {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease);
+}
+.review-jump:hover { background: var(--bg-hover); }
+/* M186.1 — 评审历史下拉列表(审查面板头部「历史」)+ 历史回放徽标 */
+.review-history {
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--bg-sunken);
+  max-height: 180px;
+  overflow-y: auto;
+}
+.review-history-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+  padding: 5px 12px;
+  font-size: var(--text-xs);
+  border-bottom: 1px solid var(--border-subtle);
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease);
+}
+.review-history-row:last-child { border-bottom: none; }
+.review-history-row:hover { background: var(--bg-hover); }
+.review-history-ts { flex: none; color: var(--text-faint); }
+.review-history-meta { color: var(--text-muted); }
+.review-history-empty { padding: 8px 12px; font-size: var(--text-xs); color: var(--text-faint); }
+.review-hist-badge {
+  flex: none;
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  color: var(--orange);
+  background: color-mix(in oklab, var(--orange) 12%, transparent);
+}
+/* M186.4 — AI commit message 结果块(复用 review-summary/review-clear 视觉) */
+.commit-msg {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 6px 12px;
+  font-size: var(--text-xs);
+  background: var(--bg-sunken);
+  border-bottom: 1px solid var(--border-subtle);
+}
+.commit-msg svg { color: var(--orange); flex: none; align-self: center; }
+.commit-msg-text { color: var(--text-primary); word-break: break-all; }
+.commit-msg-meta { flex: none; margin-left: auto; color: var(--text-faint); }
+.commit-msg .review-clear { margin-left: 0; flex: none; align-self: center; }
 
 /* 阶段② — 右侧「文件」文件树 */
+/* M186.3 — 「仅变更」过滤 toggle(文件树头部) */
+.ft-head { padding: 2px 6px 6px; }
+.ft-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  padding: 3px 9px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-subtle);
+  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+.ft-filter:hover { background: var(--bg-hover); color: var(--text-primary); }
+.ft-filter.active { background: var(--accent-soft); color: var(--text-primary); border-color: var(--accent-border); }
+.ft-filter-count {
+  font-size: 10px;
+  padding: 0 5px;
+  border-radius: 8px;
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+.ft-filter.active .ft-filter-count { background: var(--bg-surface); }
 .file-tree {
   padding: 6px 6px 20px;
   font-size: var(--text-sm);
@@ -2113,6 +2230,14 @@ body.resizing {
 }
 .eln:hover {
   background: oklch(100% 0 0 / 0.02);
+}
+/* M186.2 — findings 跳转目标行高亮:柔和底色(评审橙色系),克制动效 */
+.eln-wrap.line-target .eln {
+  background: color-mix(in oklab, var(--orange) 13%, transparent);
+  transition: background var(--dur) var(--ease);
+}
+.eln-wrap.line-target .gn {
+  color: var(--orange);
 }
 .k {
   color: var(--syn-kw);
@@ -5793,6 +5918,52 @@ select.set-select-native option {
   user-select: none;
 }
 
+/* M190.1 — 编辑重跑截断 banner:stream 与 composer 间的细条,克制不抢戏 */
+.trunc-banner {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 4px 28px 0;
+  padding: 6px 12px;
+  font-size: var(--text-xs);
+  color: var(--assistant-secondary);
+  background: var(--assistant-surface);
+  border: 1px solid var(--assistant-border);
+  border-radius: var(--radius-md, 8px);
+}
+.trunc-banner-text {
+  user-select: none;
+}
+.trunc-banner-error {
+  color: var(--assistant-coral);
+}
+.trunc-banner-undo {
+  margin-left: auto;
+  padding: 2px 10px;
+  font-size: var(--text-xs);
+  color: var(--assistant-indigo, #5b5bd6);
+  background: transparent;
+  border: 1px solid currentColor;
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+}
+.trunc-banner-undo:hover {
+  opacity: 0.85;
+}
+.trunc-banner-close {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px;
+  color: var(--assistant-secondary);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+}
+.trunc-banner-close:hover {
+  color: var(--assistant-text, currentColor);
+}
+
 /* ---------- ToolCard ---------- */
 .assistant-tool {
   align-self: flex-start;
@@ -6105,6 +6276,13 @@ select.set-select-native option {
 }
 .assistant-msg.user .umsg-ref.bad { color: var(--warning); border-color: color-mix(in srgb, var(--warning) 50%, transparent); }
 .assistant-msg.user .umsg-ref-meta { color: var(--assistant-secondary); }
+/* M192 — user 气泡图像附件缩略图行(与 umsg-refs 同位右对齐;点击新窗口开原图) */
+.assistant-msg.user .umsg-atts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; justify-content: flex-end; }
+.assistant-msg.user .umsg-atts a {
+  display: inline-block; line-height: 0; overflow: hidden;
+  border: 1px solid var(--assistant-border); border-radius: 8px;
+}
+.assistant-msg.user .umsg-atts img { width: 64px; height: 64px; object-fit: cover; display: block; }
 
 /* ---------- M167.2 · MarkdownView(Assistant 气泡内 GFM 渲染,恒定暗色 .view-assistant 作用域) ----------
  * 组件挂在 .assistant-msg .bubble 内:bubble 自带 white-space:pre-wrap,这里复位为 normal,
@@ -6471,3 +6649,7 @@ select.set-select-native option {
   color: var(--assistant-secondary); cursor: pointer;
 }
 .remote-open:hover { color: var(--assistant-text); border-color: var(--assistant-indigo); }
+
+/* ---------- M187 · 已安排任务增强(cron + 行内编辑) ---------- */
+/* TaskForm 复用于 TaskCard 行内编辑:卡片内嵌表单与上方操作行拉开间距 */
+.sched-card .sched-form { margin-top: 10px; }

@@ -1,6 +1,6 @@
 /**
  * GENERATED FILE — 请勿手改。
- * 来源: http://127.0.0.1:8182/openapi.json
+ * 来源: http://127.0.0.1:8194/openapi.json
  * 生成: node scripts/gen-api-types.mjs  (M136-B3, 零依赖)
  * 重新生成前需先启动 flipped 后端。
  */
@@ -10,6 +10,7 @@ export interface AssistantTurn {
   "role": string;
   "event_id"?: string | null;
   "refs"?: Record<string, unknown>[] | null;
+  "attachments"?: Record<string, unknown>[] | null;
   "text"?: string | null;
   "tools"?: Record<string, unknown>[];
   "verdict"?: Record<string, unknown> | null;
@@ -68,6 +69,13 @@ export interface CallToolResponse {
   "error"?: string | null;
 }
 
+export interface CommitMessageResponse {
+  "message": string;
+  "model": string;
+  "files_count": number;
+  "note"?: string | null;
+}
+
 export interface CompactResponse {
   "ok": boolean;
   "session_id": string;
@@ -88,6 +96,7 @@ export interface CreateGoalRequest {
   "mode"?: string | null;
   "model"?: string | null;
   "max_iterations"?: number | null;
+  "verify_cmd"?: string[] | null;
 }
 
 export interface CreateGoalResponse {
@@ -127,6 +136,12 @@ export interface EditMessageResponse {
   "truncated": number;
   "restored"?: boolean;
   "deleted"?: string[];
+}
+
+export interface EditUndoResponse {
+  "ok": boolean;
+  "session_id": string;
+  "restored": number;
 }
 
 export interface Event {
@@ -171,6 +186,12 @@ export interface HealthResponse {
   "ok": boolean;
   "proxy": Record<string, unknown>;
   "error"?: string | null;
+}
+
+export interface ImageAttachmentIn {
+  "name": string;
+  "media_type": string;
+  "data_base64": string;
 }
 
 export interface MessageResponse {
@@ -231,6 +252,18 @@ export interface RemoteStateResponse {
   "turns": Record<string, string>[];
 }
 
+export interface RevertHunkRequest {
+  "path": string;
+  "hunk_index": number;
+}
+
+export interface RevertHunkResponse {
+  "ok": boolean;
+  "path": string;
+  "hunk_index": number;
+  "action": string;
+}
+
 export interface RevertRequest {
   "path": string;
 }
@@ -249,6 +282,25 @@ export interface ReviewFinding {
   "suggestion"?: string | null;
 }
 
+export interface ReviewHistoryEntry {
+  "id": string;
+  "ts": string;
+  "project": string;
+  "model": string;
+  "files_reviewed": number;
+  "findings_count": number;
+}
+
+export interface ReviewRecord {
+  "id": string;
+  "ts": string;
+  "project": string;
+  "model": string;
+  "files_reviewed": number;
+  "findings_count": number;
+  "findings": ReviewFinding[];
+}
+
 export interface ReviewRequest {
   "model"?: string | null;
 }
@@ -258,6 +310,11 @@ export interface ReviewResponse {
   "files_reviewed": number;
   "model": string;
   "note"?: string | null;
+  "review_id"?: string | null;
+}
+
+export interface ReviewsHistoryResponse {
+  "reviews": ReviewHistoryEntry[];
 }
 
 export type Role = "user" | "supervisor" | "worker" | "overseer" | "verify" | "system";
@@ -283,6 +340,7 @@ export interface ScheduledTaskResponse {
   "kind": string;
   "run_at"?: string | null;
   "every_minutes"?: number | null;
+  "cron"?: string | null;
   "enabled": boolean;
   "next_run_at"?: string | null;
   "last_run_at"?: string | null;
@@ -297,6 +355,7 @@ export interface SendMessageRequest {
   "mode"?: string | null;
   "model"?: string | null;
   "orchestrator"?: Record<string, unknown> | null;
+  "images"?: ImageAttachmentIn[] | null;
 }
 
 export interface Session {
@@ -322,14 +381,26 @@ export interface TaskCreateRequest {
   "prompt": string;
   "mode"?: string;
   "model"?: string;
-  "kind"?: "once" | "interval";
+  "kind"?: "once" | "interval" | "cron";
   "run_at"?: string | null;
   "every_minutes"?: number | null;
+  "cron"?: string | null;
 }
 
 export interface TaskDeleteResponse {
   "ok": boolean;
   "id": string;
+}
+
+export interface TaskPatchRequest {
+  "title"?: string | null;
+  "prompt"?: string | null;
+  "mode"?: string | null;
+  "model"?: string | null;
+  "kind"?: "once" | "interval" | "cron" | null;
+  "run_at"?: string | null;
+  "every_minutes"?: number | null;
+  "cron"?: string | null;
 }
 
 export interface TaskRequest {
@@ -385,6 +456,7 @@ export interface WorkerRuleAutoGenRequest {
 export interface WorkerRuleAutoGenResponse {
   "added": WorkerRule[];
   "candidates": number;
+  "llm_used"?: boolean;
 }
 
 export interface WorkerRuleCreateRequest {
@@ -410,11 +482,13 @@ export interface WorkerRuleStatEntry {
   "applied": number;
   "success": number;
   "failure": number;
+  "success_rate"?: number | null;
 }
 
 export interface WorkerRuleStatsResponse {
   "stats": Record<string, WorkerRuleStatEntry>;
   "total_runs": number;
+  "semantics"?: string;
 }
 
 export interface WorkerRuleToggleRequest {
@@ -562,6 +636,18 @@ export interface paths {
       };
     };
   };
+  "/api/v1/assistant/attachments/{session_id}/{filename}": {
+    get: {
+      params: {
+        "session_id": string;
+        "filename": string;
+      };
+      requestBody: null;
+      responses: {
+        200: Record<string, unknown>;
+      };
+    };
+  };
   "/api/v1/assistant/sessions/{session_id}/approve": {
     post: {
       params: {
@@ -615,6 +701,17 @@ export interface paths {
       requestBody: EditMessageRequest;
       responses: {
         200: EditMessageResponse;
+      };
+    };
+  };
+  "/api/v1/assistant/sessions/{session_id}/edit/undo": {
+    post: {
+      params: {
+        "session_id": string;
+      };
+      requestBody: null;
+      responses: {
+        200: EditUndoResponse;
       };
     };
   };
@@ -776,12 +873,50 @@ export interface paths {
       };
     };
   };
+  "/api/v1/project/revert-hunk": {
+    post: {
+      params?: Record<string, never>;
+      requestBody: RevertHunkRequest;
+      responses: {
+        200: RevertHunkResponse;
+      };
+    };
+  };
   "/api/v1/project/review": {
     post: {
       params?: Record<string, never>;
       requestBody: ReviewRequest;
       responses: {
         200: ReviewResponse;
+      };
+    };
+  };
+  "/api/v1/project/reviews": {
+    get: {
+      params?: Record<string, never>;
+      requestBody: null;
+      responses: {
+        200: ReviewsHistoryResponse;
+      };
+    };
+  };
+  "/api/v1/project/reviews/{review_id}": {
+    get: {
+      params: {
+        "review_id": string;
+      };
+      requestBody: null;
+      responses: {
+        200: ReviewRecord;
+      };
+    };
+  };
+  "/api/v1/project/commit_message": {
+    post: {
+      params?: Record<string, never>;
+      requestBody: ReviewRequest;
+      responses: {
+        200: CommitMessageResponse;
       };
     };
   };
@@ -958,6 +1093,15 @@ export interface paths {
         200: TaskDeleteResponse;
       };
     };
+    patch: {
+      params: {
+        "task_id": string;
+      };
+      requestBody: TaskPatchRequest;
+      responses: {
+        200: ScheduledTaskResponse;
+      };
+    };
   };
   "/api/v1/tasks/{task_id}/toggle": {
     post: {
@@ -1102,7 +1246,10 @@ export interface paths {
   };
   "/api/v1/worker/rules": {
     get: {
-      params?: Record<string, never>;
+      params: {
+        "enabled"?: boolean | null;
+        "sort"?: "insertion" | "priority";
+      };
       requestBody: null;
       responses: {
         200: WorkerRulesResponse;

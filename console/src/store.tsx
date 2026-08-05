@@ -22,6 +22,8 @@ import type {
   BrowserRender,
   GitDiffFile,
   AiReviewResult,
+  ReviewHistoryEntry,
+  CommitMessageResult,
   FactorySummary,
   FactoryDetail,
   FactoryRcaHistoryResponse,
@@ -29,6 +31,7 @@ import type {
   RcaInfo,
   VerifierVerdict,
   AssistantTurn,
+  PendingImage,
   ScheduledTask,
 } from './types';
 import { eventToStreamItem, detectServerUrl } from './types';
@@ -48,7 +51,11 @@ import {
   fetchProjectFile,
   fetchProjectDiff,
   revertProjectFile as apiRevertProjectFile,
+  revertProjectHunk as apiRevertProjectHunk,
   reviewProject as apiReviewProject,
+  fetchProjectReviews as apiFetchProjectReviews,
+  fetchProjectReview as apiFetchProjectReview,
+  generateCommitMessage as apiGenerateCommitMessage,
   openProject as apiOpenProject,
   fetchProjects,
   createProject as apiCreateProject,
@@ -71,9 +78,11 @@ import {
   compactAssistant as apiCompactAssistant,
   undoAssistant as apiUndoAssistant,
   editAssistantMessage as apiEditAssistantMessage,
+  undoEditTruncate as apiUndoEditTruncate,
   type UndoAssistantResponse,
   fetchTasks as apiFetchTasks,
   createScheduledTask as apiCreateScheduledTask,
+  patchTask as apiPatchTask,
   deleteTask as apiDeleteTask,
   toggleTask as apiToggleTask,
   type CreateScheduledTaskRequest,
@@ -136,8 +145,9 @@ interface AppState {
   openProject: (path: string) => Promise<Project>;
   createProject: (name: string) => Promise<Project>;
   projectFiles: FileNode[];
-  openedFile: { path: string; content: string } | null;
-  openFile: (path: string) => Promise<void>;
+  openedFile: { path: string; content: string; line?: number } | null;
+  // M186.2 — line 为 findings 跳转目标行(打开后高亮+滚动居中);不传 = 纯打开
+  openFile: (path: string, line?: number) => Promise<void>;
   closeFile: () => void;
   browserRender: BrowserRender | null;
   browserLoading: boolean;
@@ -147,10 +157,20 @@ interface AppState {
   gitDiffLoading: boolean;
   loadGitDiff: () => Promise<void>;
   revertGitDiffFile: (path: string) => Promise<{ ok: boolean; path: string; action: 'restored' | 'deleted' }>;
+  // M193.2 — 拒绝单个 hunk(反向应用该段改动);错误原样上抛由视图兜底
+  revertGitDiffHunk: (path: string, hunkIndex: number) => Promise<{ ok: boolean; path: string; hunk_index: number; action: string }>;
   // M179.2 — AI 代码评审(Review 面板一键 LLM 审查 diff → findings 行内渲染,只读)
   aiReview: { result: AiReviewResult | null; loading: boolean; error: string | null };
   runAiReview: () => Promise<void>;
   clearAiReview: () => void;
+  // M186.1 — 评审历史(列表载入 fail-open;openReview 拉详情回放进 aiReview.result,historical 标记)
+  reviewHistory: ReviewHistoryEntry[];
+  reviewHistoryLoading: boolean;
+  loadReviewHistory: () => Promise<void>;
+  openReview: (id: string) => Promise<void>;
+  // M186.4 — AI commit message(LLM 按工作区 diff 生成提交信息,只读展示+复制)
+  commitMessage: { result: CommitMessageResult | null; loading: boolean; error: string | null };
+  generateCommit: () => Promise<void>;
   selectSession: (id: string) => void;
   createSession: (title?: string, mode?: string) => Promise<string>;
   deleteSession: (id: string) => Promise<void>;
@@ -189,7 +209,8 @@ interface AppState {
   assistantError: string | null;
   // M166.3 — assistant token 级流式(chat/plan 直聊,transient 不落盘)
   assistantStream: { text: string; active: boolean };
-  sendAssistantMessage: (text: string, mode?: string) => Promise<void>;
+  // M192 — images 为图像附件(仅 chat/plan);空/undefined 时请求体与 M192 前完全一致
+  sendAssistantMessage: (text: string, mode?: string, images?: PendingImage[]) => Promise<void>;
   approveAssistant: (sessionId: string, scope?: 'once' | 'always') => Promise<void>;
   rejectAssistant: (sessionId: string) => Promise<void>;
   clearAssistantTurns: () => void;
@@ -201,6 +222,11 @@ interface AppState {
   undoAssistant: (sessionId: string) => Promise<UndoAssistantResponse>;
   // M174 — 编辑 user 消息并重跑(成功后刷新历史;失败抛错由视图兜底)
   editAssistantMessage: (sessionId: string, eventId: string, text: string) => Promise<void>;
+  // M190.1 — 编辑重跑截断可恢复:编辑成功后记 lastTruncated,banner 撤销/关闭;
+  // 切换会话/新发送自动清除(409 = 截断点后已追加新事件,视图提示已被覆盖)
+  lastTruncated: { sessionId: string; count: number } | null;
+  undoEditTruncate: (sessionId: string) => Promise<number>;
+  dismissTruncated: () => void;
   // M167.4 — assistant 消息排队与停止(opencode 交互:running 中 Enter 入队,Esc/停止键中断)
   assistantQueue: string[];
   enqueueAssistantMessage: (text: string) => void;
@@ -218,6 +244,8 @@ interface AppState {
   addTask: (body: CreateScheduledTaskRequest) => Promise<void>;
   removeTask: (id: string) => Promise<void>;
   toggleTaskEnabled: (id: string, enabled: boolean) => Promise<void>;
+  // M187.2 — 任务编辑(成功后回拉列表;失败原样上抛由视图兜底,同 addTask 惯例)
+  editTask: (id: string, body: Partial<CreateScheduledTaskRequest>) => Promise<void>;
 }
 
 const AppContext = createContext<AppState | null>(null);
@@ -256,7 +284,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [projectContext, setProjectContext] = useState<ProjectContext | null>(null);
   const [projects, setProjects] = useState<Project[]>([]);
   const [projectFiles, setProjectFiles] = useState<FileNode[]>([]);
-  const [openedFile, setOpenedFile] = useState<{ path: string; content: string } | null>(null);
+  const [openedFile, setOpenedFile] = useState<{ path: string; content: string; line?: number } | null>(null);
   const [browserRender, setBrowserRender] = useState<BrowserRender | null>(null);
   const [browserLoading, setBrowserLoading] = useState(false);
   const [browserError, setBrowserError] = useState<string | null>(null);
@@ -268,6 +296,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
     loading: false,
     error: null,
   });
+  // M186.1 — 评审历史列表(审查面板「历史」下拉展开时拉取,fail-open)
+  const [reviewHistory, setReviewHistory] = useState<ReviewHistoryEntry[]>([]);
+  const [reviewHistoryLoading, setReviewHistoryLoading] = useState(false);
+  // M186.4 — AI commit message 结果态(一次性请求-响应,与 aiReview 同款)
+  const [commitMessage, setCommitMessage] = useState<{
+    result: CommitMessageResult | null;
+    loading: boolean;
+    error: string | null;
+  }>({ result: null, loading: false, error: null });
   const [factories, setFactories] = useState<FactorySummary[]>([]);
   const [factoryDetail, setFactoryDetail] = useState<FactoryDetail | null>(null);
   const [factoryOpen, setFactoryOpen] = useState(false);
@@ -285,6 +322,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // M151.4 · Assistant 视图状态
   const [assistantTurns, setAssistantTurns] = useState<AssistantTurn[]>([]);
   const [assistantBusy, setAssistantBusy] = useState(false);
+  // M190.1 — 最近一次编辑重跑的截断记录(banner 撤销入口)
+  const [lastTruncated, setLastTruncated] = useState<{ sessionId: string; count: number } | null>(null);
   const [assistantError, setAssistantError] = useState<string | null>(null);
   // M166.3 — assistant token 级流式累积态(done token / worker message / 会话切换时收敛)
   const [assistantStream, setAssistantStream] = useState<{ text: string; active: boolean }>({ text: '', active: false });
@@ -442,10 +481,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [refreshAfterSwitch]);
 
   // 点击文件树 → 拉真实文件内容载入编辑器
-  const openFile = useCallback(async (path: string) => {
+  // M186.2 — 可带目标行号(findings 跳转):写入 openedFile.line 由编辑器高亮+居中
+  const openFile = useCallback(async (path: string, line?: number) => {
     try {
       const r = await fetchProjectFile(path);
-      setOpenedFile({ path: r.path, content: r.content });
+      setOpenedFile({ path: r.path, content: r.content, ...(line != null ? { line } : {}) });
       setContextTab('files');
     } catch {
       /* 二进制/超大/读失败：忽略 */
@@ -470,9 +510,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   // 阶段②c — 拉工作区真实 git diff（审查面板）
   // M179.2 — diff 刷新后旧评审 findings 失效,清空 aiReview.result(保 error 供用户看到上次失败)
+  // M186.4 — 同理清空 commitMessage.result(diff 变了旧提交信息失效)
   const loadGitDiff = useCallback(async () => {
     setGitDiffLoading(true);
     setAiReview((prev) => (prev.result ? { ...prev, result: null } : prev));
+    setCommitMessage((prev) => (prev.result ? { ...prev, result: null } : prev));
     try {
       const r = await fetchProjectDiff();
       setGitDiff(r.files);
@@ -493,6 +535,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [loadGitDiff]
   );
 
+  // M193.2 — 拒绝单个 hunk,成功后刷新 diff 列表;错误原样上抛(组件本地管确认态与错误)
+  const revertGitDiffHunk = useCallback(
+    async (path: string, hunkIndex: number) => {
+      const r = await apiRevertProjectHunk(path, hunkIndex);
+      await loadGitDiff();
+      return r;
+    },
+    [loadGitDiff]
+  );
+
   // M179.2 — AI 评审:loading 置位 → 调后端 → 成功写 result/失败写 error,loading 必复位(只读)
   const runAiReview = useCallback(async () => {
     setAiReview({ result: null, loading: true, error: null });
@@ -506,6 +558,52 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const clearAiReview = useCallback(() => {
     setAiReview({ result: null, loading: false, error: null });
+  }, []);
+
+  // M186.1 — 载入评审历史列表(fail-open:失败保持原列表,loading 必复位)
+  const loadReviewHistory = useCallback(async () => {
+    setReviewHistoryLoading(true);
+    try {
+      const r = await apiFetchProjectReviews();
+      setReviewHistory(Array.isArray(r.reviews) ? r.reviews : []);
+    } catch {
+      /* fail-open:保持原列表 */
+    } finally {
+      setReviewHistoryLoading(false);
+    }
+  }, []);
+
+  // M186.1 — 回放历史评审:拉详情填入 aiReview.result(historical 标记,前端字段);
+  // 失败静默(aiReview 保持原状,与 openFile 同款)
+  const openReview = useCallback(async (id: string) => {
+    try {
+      const d = await apiFetchProjectReview(id);
+      setAiReview({
+        result: {
+          findings: d.findings,
+          files_reviewed: d.files_reviewed,
+          model: d.model,
+          note: null,
+          review_id: d.id,
+          historical: true,
+        },
+        loading: false,
+        error: null,
+      });
+    } catch {
+      /* 失败静默:aiReview 保持原状 */
+    }
+  }, []);
+
+  // M186.4 — AI commit message:loading 置位 → 调后端 → 成功写 result/失败写 error,loading 必复位
+  const generateCommit = useCallback(async () => {
+    setCommitMessage({ result: null, loading: true, error: null });
+    try {
+      const r = await apiGenerateCommitMessage();
+      setCommitMessage({ result: r, loading: false, error: null });
+    } catch (e) {
+      setCommitMessage({ result: null, loading: false, error: e instanceof Error ? e.message : String(e) });
+    }
   }, []);
 
   const toggleMcpServer = useCallback(async (name: string, enabled: boolean) => {
@@ -660,7 +758,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const sendAssistantMessageAction = useCallback(
-    async (text: string, mode?: string) => {
+    async (text: string, mode?: string, images?: PendingImage[]) => {
       const trimmed = text.trim();
       if (!trimmed) return;
       let sid = selectedSessionId;
@@ -676,7 +774,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
         await apiSendAssistantMessage(sid, {
           text: trimmed,
           ...(mode ? { mode: mode as 'auto' | 'agent' | 'chat' | 'plan' } : {}),
+          // M192 — images 非空才带字段(空/undefined → 请求体与现状零变化)
+          ...(images && images.length > 0 ? { images } : {}),
         });
+        // M190.1 — 新发送后旧截断批次不再可恢复(undo 会 409),提前清 banner
+        setLastTruncated(null);
         // 步级流:发完后立刻拉一次历史,轮询会在下面接手
         await refreshAssistantHistory(sid);
       } catch (e) {
@@ -719,6 +821,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const toggleTaskEnabled = useCallback(
     async (id: string, enabled: boolean) => {
       await apiToggleTask(id, enabled);
+      await loadTasks();
+    },
+    [loadTasks]
+  );
+
+  // M187.2 — 编辑任务:PATCH 成功后回拉列表;错误原样上抛(视图本地管错误态)
+  const editTask = useCallback(
+    async (id: string, body: Partial<CreateScheduledTaskRequest>) => {
+      await apiPatchTask(id, body);
       await loadTasks();
     },
     [loadTasks]
@@ -832,11 +943,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   // M174 — 编辑 user 消息重跑:调后端截断重跑,成功刷新对话历史(同 undo 写法);
   // 错误原样上抛(视图 .catch 兜底,不产生未捕获 rejection)
+  // M190.1 — 编辑成功后记录截断条数,供 banner 撤销入口
   const editAssistantMessageAction = useCallback(
     async (sessionId: string, eventId: string, text: string) => {
       setAssistantBusy(true);
       try {
-        await apiEditAssistantMessage(sessionId, eventId, text);
+        const r = await apiEditAssistantMessage(sessionId, eventId, text);
+        setLastTruncated(r.truncated > 0 ? { sessionId, count: r.truncated } : null);
         await refreshAssistantHistory(sessionId);
       } finally {
         setAssistantBusy(false);
@@ -845,8 +958,29 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [refreshAssistantHistory]
   );
 
+  // M190.1 — 撤销最近一次编辑重跑截断:成功刷新历史 + 清除记录,返回恢复条数;
+  // 失败(404 无批次 / 409 已被新事件覆盖)原样上抛由视图兜底
+  const undoEditTruncateAction = useCallback(
+    async (sessionId: string) => {
+      setAssistantBusy(true);
+      try {
+        const r = await apiUndoEditTruncate(sessionId);
+        setLastTruncated(null);
+        await refreshAssistantHistory(sessionId);
+        return r.restored;
+      } finally {
+        setAssistantBusy(false);
+      }
+    },
+    [refreshAssistantHistory]
+  );
+
+  const dismissTruncated = useCallback(() => setLastTruncated(null), []);
+
   // 选中会话变化 → 重拉助手历史(步级流,不是 token 流)
+  // M190.1 — 切换会话同时清除截断 banner 记录
   useEffect(() => {
+    setLastTruncated(null);
     refreshAssistantHistory(selectedSessionId);
   }, [selectedSessionId, refreshAssistantHistory]);
 
@@ -1341,9 +1475,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
         gitDiffLoading,
         loadGitDiff,
         revertGitDiffFile,
+        revertGitDiffHunk,
         aiReview,
         runAiReview,
         clearAiReview,
+        reviewHistory,
+        reviewHistoryLoading,
+        loadReviewHistory,
+        openReview,
+        commitMessage,
+        generateCommit,
         selectSession,
         createSession,
         deleteSession,
@@ -1384,6 +1525,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
         compactAssistant: compactAssistantAction,
         undoAssistant: undoAssistantAction,
         editAssistantMessage: editAssistantMessageAction,
+        lastTruncated,
+        undoEditTruncate: undoEditTruncateAction,
+        dismissTruncated,
         assistantQueue,
         enqueueAssistantMessage,
         removeAssistantQueued,
@@ -1396,6 +1540,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         addTask,
         removeTask,
         toggleTaskEnabled,
+        editTask,
       }}
     >
       {children}

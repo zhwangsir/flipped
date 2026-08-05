@@ -142,6 +142,9 @@ RESPONSE_MODEL_ALLOWLIST: frozenset[str] = frozenset({
     # 其余 3 端点（telegram webhook / channels / test）均有命名模型。
     "GET /api/v1/bot/wecom/callback",
     "POST /api/v1/bot/wecom/callback",
+    # M192 · 图像附件原图直出 FileResponse（二进制媒体），无 Pydantic 模型可挂
+    # （同 M181 remote HTML/QR 先例）。
+    "GET /api/v1/assistant/attachments/{session_id}/{filename}",
 })
 
 

@@ -28,6 +28,8 @@ class SessionStore:
         self._sessions: dict[str, Session] = {}
         self._events: dict[str, list[Event]] = {}
         self._counter: dict[str, int] = {}
+        # M190.1 — 编辑重跑截断回收站：sid → [batch...]（cap 5，先进先出）
+        self._trash: dict[str, list[dict]] = {}
         self._path: str | None = None
         # bus.emit 可从工作线程调用（factory_loop 等），所有读写需持锁
         self._lock = threading.RLock()
@@ -49,6 +51,8 @@ class SessionStore:
                 self._counter[session.id] = max(
                     [_seq_of(e.id) for e in self._events[session.id]] + [0]
                 )
+            # M190.1 — 旧格式无 trash 键 → 缺省空（向后兼容）
+            self._trash = {sid: list(batches) for sid, batches in data.get("trash", {}).items()}
 
     def save(self) -> None:
         """持久化到 JSON 文件（tmp + os.replace 原子写，防并发/崩溃写坏）。"""
@@ -58,6 +62,7 @@ class SessionStore:
             data = {
                 "sessions": [s.model_dump(mode="json") for s in self._sessions.values()],
                 "events": {sid: [e.model_dump(mode="json") for e in evs] for sid, evs in self._events.items()},
+                "trash": self._trash,
             }
             tmp = f"{self._path}.tmp"
             Path(tmp).write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -110,6 +115,7 @@ class SessionStore:
             self._sessions.pop(session_id, None)
             self._events.pop(session_id, None)
             self._counter.pop(session_id, None)
+            self._trash.pop(session_id, None)  # M190.1 连带清回收站
             self.save()
             return existed
 
@@ -158,16 +164,72 @@ class SessionStore:
     def truncate_from(self, session_id: str, event_id: str) -> int:
         """删除 seq >= seq(event_id) 的全部事件（含目标事件本身），返回删除条数。
         event_id 不存在 → 0（幂等，不报错）。_counter 不重置（单调递增红线）。
-        持锁 + save() 持久化。"""
+        M190.1：截下批次先入 trash（可恢复）再删。持锁 + save() 持久化。"""
         with self._lock:
             evs = self._events.get(session_id, [])
             idx = next((i for i, e in enumerate(evs) if e.id == event_id), None)
             if idx is None:
                 return 0
+            batch = {
+                "from_event_id": event_id,
+                "prev_event_id": evs[idx - 1].id if idx > 0 else None,
+                "events": [e.model_dump(mode="json") for e in evs[idx:]],
+            }
+            batches = self._trash.setdefault(session_id, [])
+            batches.append(batch)
+            del batches[:-5]  # cap 5，先进先出
             deleted = len(evs) - idx
             del evs[idx:]
             self.save()
             return deleted
+
+    def trash_pending(self, session_id: str) -> int:
+        """最近一批被截断事件的条数；无 → 0（M190.1）。"""
+        with self._lock:
+            batches = self._trash.get(session_id) or []
+            return len(batches[-1]["events"]) if batches else 0
+
+    def restore_trash(self, session_id: str) -> int | None:
+        """恢复最近一批截断事件（M190.1）。
+
+        语义：撤销编辑重跑 = 丢弃截断点之后的全部事件（重跑产物：edited user 消息
+        + 应答 + status/snapshot），再把 trash 批次按原 id 重挂回原位。_counter
+        单调红线不受损——被丢弃的都是截断后新 id，重挂的旧 id 接在原锚点之后，
+        列表序与 id 序保持一致，无 seq 交错。
+
+        拒绝（None 且不弹出批次）仅两种真歧义：
+        - 批次锚点 prev_event_id 在当前事件流中已不存在（被后续截断吞掉）。
+        - 截断点之后存在「非编辑重跑产生」的新 user 消息（message/user 且无
+          edited 标记）——撤销会误删用户真实新输入。
+        命中 → 弹出该批、删除截断点后事件、重挂、save，返回恢复条数。
+        """
+        with self._lock:
+            batches = self._trash.get(session_id) or []
+            if not batches:
+                return None
+            batch = batches[-1]
+            evs = self._events.get(session_id, [])
+            prev_id = batch["prev_event_id"]
+            if prev_id is None:
+                cut = 0
+            else:
+                anchor = next((i for i, e in enumerate(evs) if e.id == prev_id), None)
+                if anchor is None:
+                    return None  # 锚点丢失，拒绝且不弹出
+                cut = anchor + 1
+            for e in evs[cut:]:
+                etype = e.type.value if hasattr(e.type, "value") else str(e.type)
+                agent = e.agent.value if hasattr(e.agent, "value") else (
+                    str(e.agent) if e.agent else None)
+                if etype == "message" and agent == "user" and not e.payload.get("edited"):
+                    return None  # 截断后有真实新 user 输入，拒绝且不弹出
+            batches.pop()
+            del evs[cut:]
+            restored = [Event(**d) for d in batch["events"]]
+            evs.extend(restored)
+            self._events[session_id] = evs
+            self.save()
+            return len(restored)
 
 
 store = SessionStore()

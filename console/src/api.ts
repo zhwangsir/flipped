@@ -1,5 +1,5 @@
 /** Console ↔ orchestration-api HTTP + WebSocket 客户端。 */
-import type { Session, ApiEvent, Metrics, McpServer, McpToolInfo, McpCallResult, ProjectContext, Project, FileNode, BrowserRender, GitDiffFile, AiReviewResult, FactoryDetail, FactorySummary, FactoryRcaHistoryResponse, FailureCounterResponse, QualityTrendResponse, AssistantTurn, EditMessageResponse, ProjectMapInfo, ProjectRulesInfo, ScheduledTask, RemoteSessionInfo, BotChannelInfo, WorkerRule, WorkerRulesInfo, WorkerRuleVersion, WorkerRuleStatsData } from './types';
+import type { Session, ApiEvent, Metrics, McpServer, McpToolInfo, McpCallResult, ProjectContext, Project, FileNode, BrowserRender, GitDiffFile, AiReviewResult, ReviewHistoryEntry, ReviewHistoryDetail, CommitMessageResult, FactoryDetail, FactorySummary, FactoryRcaHistoryResponse, FailureCounterResponse, QualityTrendResponse, AssistantTurn, EditMessageResponse, ProjectMapInfo, ProjectRulesInfo, ScheduledTask, RemoteSessionInfo, BotChannelInfo, WorkerRule, WorkerRulesInfo, WorkerRuleVersion, WorkerRuleStatsData, PendingImage } from './types';
 
 // M181.2 — RemoteModal 拼接 qr_url(相对路径)需要绝对基址,导出既有常量
 export const API_BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined) || 'http://127.0.0.1:8011';
@@ -107,9 +107,34 @@ export function revertProjectFile(path: string): Promise<{ ok: boolean; path: st
   return api(`/project/revert`, { method: 'POST', body: JSON.stringify({ path }) });
 }
 
+// M193.2 — 拒绝单个 hunk:把该 hunk 改动反向应用(git apply --reverse),工作区该段回 HEAD
+export function revertProjectHunk(
+  path: string,
+  hunkIndex: number
+): Promise<{ ok: boolean; path: string; hunk_index: number; action: string }> {
+  return api('/project/revert-hunk', { method: 'POST', body: JSON.stringify({ path, hunk_index: hunkIndex }) });
+}
+
 // M179.2 — AI 代码评审:POST /project/review,LLM 审查当前工作区 diff → 结构化 findings(只读)
 export function reviewProject(model?: string): Promise<AiReviewResult> {
   return api<AiReviewResult>('/project/review', {
+    method: 'POST',
+    body: JSON.stringify(model ? { model } : {}),
+  });
+}
+
+// M186.1 — 评审历史:GET /project/reviews 列表(ts desc,无 findings) / GET /project/reviews/{id} 详情
+export function fetchProjectReviews(): Promise<{ reviews: ReviewHistoryEntry[] }> {
+  return api<{ reviews: ReviewHistoryEntry[] }>('/project/reviews');
+}
+
+export function fetchProjectReview(id: string): Promise<ReviewHistoryDetail> {
+  return api<ReviewHistoryDetail>(`/project/reviews/${encodeURIComponent(id)}`);
+}
+
+// M186.4 — AI commit message:POST /project/commit_message,LLM 根据工作区 diff 生成提交信息
+export function generateCommitMessage(model?: string): Promise<CommitMessageResult> {
+  return api<CommitMessageResult>('/project/commit_message', {
     method: 'POST',
     body: JSON.stringify(model ? { model } : {}),
   });
@@ -227,6 +252,8 @@ export interface SendAssistantMessageRequest {
   mode?: 'auto' | 'agent' | 'chat' | 'plan';
   model?: string;
   orchestrator?: Record<string, unknown>;
+  /** M192 — 图像附件(仅 chat/plan;字段名与后端契约一致,api-types.d.ts 快照重生前的本地扩展)。 */
+  images?: PendingImage[] | null;
 }
 
 export interface SendAssistantMessageResponse {
@@ -342,6 +369,21 @@ export function editAssistantMessage(
   );
 }
 
+// M190.1 — /edit/undo:撤销最近一次编辑重跑截断,恢复被截事件
+// 404 无会话或无截断批次 / 409 运行中或截断点后已追加新事件
+export interface EditUndoResponse {
+  ok: boolean;
+  session_id: string;
+  restored: number;
+}
+
+export function undoEditTruncate(sessionId: string): Promise<EditUndoResponse> {
+  return api<EditUndoResponse>(
+    `/assistant/sessions/${encodeURIComponent(sessionId)}/edit/undo`,
+    { method: 'POST' }
+  );
+}
+
 // ---- M178.2 · 已安排任务(后台任务系统;新建函数命名 createScheduledTask 以避开既有 createTask 会话任务) ----
 
 export function fetchTasks(): Promise<ScheduledTask[]> {
@@ -356,13 +398,19 @@ export interface CreateScheduledTaskRequest {
   prompt: string;
   mode?: string;
   model?: string;
-  kind?: 'once' | 'interval';
+  kind?: 'once' | 'interval' | 'cron'; // M187.1 — 加 cron
   run_at?: string | null;
   every_minutes?: number | null;
+  cron?: string | null; // M187.1 — kind=cron 时必填,其余 kind 传 null
 }
 
 export function createScheduledTask(body: CreateScheduledTaskRequest): Promise<ScheduledTask> {
   return api<ScheduledTask>('/tasks', { method: 'POST', body: JSON.stringify(body) });
+}
+
+// M187.2 — 任务编辑:PATCH /tasks/{id},错误处理同 createScheduledTask(非 2xx 抛 HTTP status+text)
+export function patchTask(id: string, body: Partial<CreateScheduledTaskRequest>): Promise<ScheduledTask> {
+  return api<ScheduledTask>(`/tasks/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(body) });
 }
 
 export function deleteTask(id: string): Promise<{ ok: boolean }> {

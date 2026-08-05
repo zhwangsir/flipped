@@ -32,6 +32,10 @@ const baseState = {
   // M176 — Goal 模式(合成 busy + /goal action)
   composerBusy: false,
   sendAssistantGoal: vi.fn(async () => {}),
+  // M190.1 — 编辑重跑截断 banner
+  lastTruncated: null,
+  undoEditTruncate: vi.fn(async () => 3),
+  dismissTruncated: vi.fn(),
 };
 
 afterEach(() => {
@@ -760,6 +764,63 @@ describe('Assistant — M175 user 消息 @ 引用行', () => {
   });
 });
 
+// M192 — 图像附件历史回放:user turn attachments 非空 → umsg-atts 缩略图行
+// (img src 指向 /api/v1/assistant/attachments/{sid}/{basename},点击新窗口开原图)
+describe('Assistant — M192 图像附件历史', () => {
+  it('attachments 非空 → umsg-atts 行,img src 按 basename 拼接 attachments 端点', () => {
+    mockedUseApp.mockReturnValue({
+      ...baseState,
+      selectedSessionId: 'sess-1',
+      assistantTurns: [
+        {
+          role: 'user',
+          text: '两张图看下',
+          tools: [],
+          created_at: '2026-08-05T00:00:00Z',
+          attachments: [
+            { name: 'red.png', media_type: 'image/png', path: 'sess-1/ab12cd34.png', bytes: 1024 },
+            { name: 'shot.webp', media_type: 'image/webp', path: 'sess-1/ff00ee11.webp', bytes: 2048 },
+          ],
+        },
+      ],
+    } as never);
+    render(<Assistant />);
+    const row = screen.getByTestId('umsg-atts');
+    const imgs = row.querySelectorAll('img');
+    expect(imgs.length).toBe(2);
+    expect(imgs[0].getAttribute('src')).toContain('/api/v1/assistant/attachments/sess-1/ab12cd34.png');
+    expect(imgs[0].getAttribute('alt')).toBe('red.png');
+    expect(imgs[1].getAttribute('src')).toContain('/api/v1/assistant/attachments/sess-1/ff00ee11.webp');
+    expect(imgs[1].getAttribute('alt')).toBe('shot.webp');
+    // 点击缩略图新窗口开原图
+    const link = imgs[0].closest('a');
+    expect(link?.getAttribute('target')).toBe('_blank');
+    expect(link?.getAttribute('rel')).toContain('noreferrer');
+    expect(link?.getAttribute('href')).toContain('/api/v1/assistant/attachments/sess-1/ab12cd34.png');
+  });
+
+  it('attachments 为 null/缺省 → 不渲染 umsg-atts', () => {
+    mockedUseApp.mockReturnValue({
+      ...baseState,
+      assistantTurns: [
+        { role: 'user', text: '普通消息', tools: [], created_at: '2026-08-05T00:00:00Z' },
+      ],
+    } as never);
+    render(<Assistant />);
+    expect(screen.queryByTestId('umsg-atts')).toBeNull();
+  });
+
+  it('Composer 接线:onSend 第三参 images 透传 sendAssistantMessage(text, mode, images)', () => {
+    const sendAssistantMessage = vi.fn(async (_t: string, _m?: string, _i?: unknown[]) => {});
+    mockedUseApp.mockReturnValue({ ...baseState, sendAssistantMessage } as never);
+    render(<Assistant />);
+    const ta = screen.getByTestId('assistant-composer-input');
+    fireEvent.change(ta, { target: { value: 'hello world' } });
+    fireEvent.keyDown(ta, { key: 'Enter', shiftKey: false });
+    expect(sendAssistantMessage).toHaveBeenCalledWith('hello world', 'agent', []);
+  });
+});
+
 // M176 — Goal 模式:goal marker 四相位渲染 + /goal 提交接线 + composerBusy 驱动停止态
 describe('Assistant — M176 Goal 模式', () => {
   it('goal turn 四相位渲染 marker(iter 含轮次+gap/achieved/exhausted/stopped)', () => {
@@ -880,5 +941,59 @@ describe('Assistant — M181.2 移动远程控制', () => {
     } finally {
       vi.unstubAllGlobals();
     }
+  });
+});
+
+// M190.1 — 编辑重跑截断 banner:撤销 / 关闭 / 409 提示已被新事件覆盖
+describe('Assistant — M190.1 截断撤销 banner', () => {
+  const trunc = { sessionId: 'sess-1', count: 4 };
+
+  it('lastTruncated 命中当前会话 → 渲染 banner 与条数', () => {
+    mockedUseApp.mockReturnValue({ ...baseState, lastTruncated: trunc } as never);
+    render(<Assistant />);
+    expect(screen.getByTestId('trunc-banner').textContent).toContain('已截断 4 条事件');
+  });
+
+  it('lastTruncated 为 null → 不渲染 banner', () => {
+    render(<Assistant />);
+    expect(screen.queryByTestId('trunc-banner')).toBeNull();
+  });
+
+  it('lastTruncated 属于其他会话 → 不渲染 banner', () => {
+    mockedUseApp.mockReturnValue({
+      ...baseState,
+      lastTruncated: { sessionId: 'sess-other', count: 2 },
+    } as never);
+    render(<Assistant />);
+    expect(screen.queryByTestId('trunc-banner')).toBeNull();
+  });
+
+  it('点「撤销」→ 调 undoEditTruncate(sessionId)', async () => {
+    const undoEditTruncate = vi.fn(async (_sid: string) => 4);
+    mockedUseApp.mockReturnValue({ ...baseState, lastTruncated: trunc, undoEditTruncate } as never);
+    render(<Assistant />);
+    fireEvent.click(screen.getByTestId('trunc-banner-undo'));
+    await waitFor(() => expect(undoEditTruncate).toHaveBeenCalledWith('sess-1'));
+    expect(screen.queryByTestId('trunc-banner-error')).toBeNull();
+  });
+
+  it('撤销 409(已被新事件覆盖)→ banner 内显示错误提示', async () => {
+    const undoEditTruncate = vi.fn(async (_sid: string) => {
+      throw new Error('409: new events appended since truncation');
+    });
+    mockedUseApp.mockReturnValue({ ...baseState, lastTruncated: trunc, undoEditTruncate } as never);
+    render(<Assistant />);
+    fireEvent.click(screen.getByTestId('trunc-banner-undo'));
+    await waitFor(() =>
+      expect(screen.getByTestId('trunc-banner-error').textContent).toContain('已追加新事件')
+    );
+  });
+
+  it('点关闭钮 → 调 dismissTruncated', () => {
+    const dismissTruncated = vi.fn();
+    mockedUseApp.mockReturnValue({ ...baseState, lastTruncated: trunc, dismissTruncated } as never);
+    render(<Assistant />);
+    fireEvent.click(screen.getByTestId('trunc-banner-close'));
+    expect(dismissTruncated).toHaveBeenCalledTimes(1);
   });
 });

@@ -121,6 +121,15 @@ def _git_files(base: Path, exts: set[str]) -> list[Path] | None:
         return None
 
 
+def _stale_ids(existing: list[dict[str, Any]], keep_hash: str) -> list[str]:
+    """返回 existing 中 content_hash 与 keep_hash 不一致（或缺失）的项的 id 列表。"""
+    return [
+        str(item["id"])
+        for item in existing
+        if (item.get("metadata") or {}).get("content_hash") != keep_hash
+    ]
+
+
 def ingest_text(text: str, metadata: dict[str, Any] | None = None, *, store: VectorStore | None = None) -> list[str]:
     store = store or ChromaVectorStore()
     docs = [{"text": text, "metadata": metadata or {}}]
@@ -151,7 +160,15 @@ def ingest_file(path: str | Path, *, store: VectorStore | None = None, project: 
         }
         for i, chunk in enumerate(chunks)
     ]
-    return store.upsert_documents(docs)
+    ids = store.upsert_documents(docs)
+    # M189.1：清理同 source 旧 content_hash 的残留 chunk（fail-open，不炸主流程）
+    try:
+        stale = _stale_ids(store.get_where({"source": str(p.resolve())}), content_hash)
+        if stale:
+            store.delete_ids(stale)
+    except Exception:
+        pass
+    return ids
 
 
 def ingest_directory(

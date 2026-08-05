@@ -1,14 +1,29 @@
 import { useState, useEffect, useRef, type ReactNode } from 'react';
 import { useApp } from '../store';
-import type { ChangedFile, FileNode, BrowserElement, GitDiffFile, ReviewFinding } from '../types';
+import type { ChangedFile, FileNode, BrowserElement, GitDiffFile, GitDiffLine, ReviewFinding } from '../types';
 import { renderMarkdown } from '../lib/markdown';
+import { splitDiffHunks } from '../lib/diffHunks';
 import { isTauri, createBrowserWebview, updateBrowserWebview, closeBrowserWebview } from '../lib/native';
 import { PtyTerminal } from './PtyTerminal';
 import { ProjectMapPanel } from './ProjectMapPanel';
 import { RulesPanel } from './RulesPanel';
-import { IconFile, IconFolder, IconTerminal, IconBrowser, IconReview, IconChat, IconX, IconChevronDown, IconEye, IconCheck, IconMap, IconRefresh, IconSparkle, IconBot, IconWand } from '../icons';
+import { IconFile, IconFolder, IconTerminal, IconBrowser, IconReview, IconChat, IconX, IconChevronDown, IconEye, IconCheck, IconMap, IconRefresh, IconSparkle, IconBot, IconWand, IconClock } from '../icons';
 import { BotChannelPanel } from './BotChannelPanel';
 import { WorkerRulesPanel } from './WorkerRulesPanel';
+
+/** M186.3 — 「仅变更」过滤:保留命中文件节点与祖先目录(目录无命中后代则剔除)。 */
+export function filterTreeByPaths(tree: FileNode[], changedPaths: Set<string>): FileNode[] {
+  const out: FileNode[] = [];
+  for (const node of tree) {
+    if (node.type === 'dir') {
+      const children = filterTreeByPaths(node.children ?? [], changedPaths);
+      if (children.length > 0) out.push({ ...node, children });
+    } else if (changedPaths.has(node.path)) {
+      out.push(node);
+    }
+  }
+  return out;
+}
 
 /** 递归文件树节点(阶段② — 右侧「文件」)。 */
 function FileTreeNode({ node, depth, activePath, onOpen }: {
@@ -219,8 +234,9 @@ function BrowserTab() {
 const REVIEW_SEVERITY_LABEL: Record<ReviewFinding['severity'], string> = { high: '高', medium: '中', low: '低' };
 
 function ReviewFindingRow({ finding, showPath = false }: { finding: ReviewFinding; showPath?: boolean }) {
-  return (
-    <div className="review-finding">
+  const { openFile } = useApp();
+  const body = (
+    <>
       <div className="review-finding-main">
         <span className={`review-badge ${finding.severity}`}>
           {REVIEW_SEVERITY_LABEL[finding.severity] ?? finding.severity}
@@ -232,17 +248,51 @@ function ReviewFindingRow({ finding, showPath = false }: { finding: ReviewFindin
         </span>
       </div>
       {finding.suggestion && <div className="review-suggestion">建议:{finding.suggestion}</div>}
+    </>
+  );
+  // M186.2 — 有行号的 finding 整行可点:跳到文件并高亮目标行;无行号保持只读 div
+  if (finding.line != null) {
+    return (
+      <button
+        type="button"
+        className="review-finding review-jump"
+        title={`跳转到 ${finding.path}:${finding.line}`}
+        onClick={() => openFile(finding.path, finding.line!)}
+      >
+        {body}
+      </button>
+    );
+  }
+  return <div className="review-finding">{body}</div>;
+}
+
+/** diff 单行渲染(add/del/ctx/hunk 符号 + 文本)。M193.2 抽出供 prelude 与 hunk 块复用。 */
+function DiffLineRow({ l }: { l: GitDiffLine }) {
+  return (
+    <div className={'rdiff-row ' + l.type}>
+      <span className="rdiff-sign">
+        {l.type === 'add' ? '+' : l.type === 'del' ? '-' : l.type === 'hunk' ? '' : ' '}
+      </span>
+      <span className="rdiff-tx">{l.text}</span>
     </div>
   );
 }
 
 /** 工作区真实 git diff 审查视图(阶段②c)。无会话变更时展示 `git diff HEAD` 的真 +/- diff。 */
 function GitDiffView() {
-  const { gitDiff, gitDiffLoading, loadGitDiff, revertGitDiffFile, aiReview, runAiReview, clearAiReview } = useApp();
+  const { gitDiff, gitDiffLoading, loadGitDiff, revertGitDiffFile, revertGitDiffHunk, aiReview, runAiReview, clearAiReview, reviewHistory, reviewHistoryLoading, loadReviewHistory, openReview, commitMessage, generateCommit } = useApp();
   // M177.2 — 逐文件撤销:确认态/进行中/错误均组件本地管理,同一时刻只允许一个卡处于确认态
   const [confirmingPath, setConfirmingPath] = useState<string | null>(null);
   const [revertingPath, setRevertingPath] = useState<string | null>(null);
   const [revertError, setRevertError] = useState<{ path: string; message: string } | null>(null);
+  // M193.2 — 逐 hunk 接受/拒绝:接受=纯前端审查进度标记(按内容指纹 key 记忆,无 git 副作用);
+  // 拒绝=真实工作区操作(内联确认态 key=`${path}#${hunkIndex}`,同文件级单卡互斥哲学)
+  const [acceptedHunks, setAcceptedHunks] = useState<Set<string>>(new Set());
+  const [confirmingHunk, setConfirmingHunk] = useState<string | null>(null);
+  const [revertingHunk, setRevertingHunk] = useState<string | null>(null);
+  const [hunkError, setHunkError] = useState<{ key: string; message: string } | null>(null);
+  // M186.1 — 评审历史下拉(展开时拉取一次列表)
+  const [historyOpen, setHistoryOpen] = useState(false);
   useEffect(() => {
     loadGitDiff();
   }, [loadGitDiff]);
@@ -257,6 +307,38 @@ function GitDiffView() {
       setRevertError({ path: f.path, message: e instanceof Error ? e.message : String(e) });
     } finally {
       setRevertingPath(null);
+    }
+  };
+
+  // M193.2 — 接受/撤销接受:无副作用无确认,仅按内容指纹 key 切换组件内存标记
+  const toggleAcceptHunk = (key: string) => {
+    setAcceptedHunks((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
+  // M193.2 — 拒绝 hunk:确认后调 store(内部刷新 diff);409 漂移等错误内联展示
+  const doRevertHunk = async (f: GitDiffFile, hunkIndex: number, hunkKey: string) => {
+    const id = `${f.path}#${hunkIndex}`;
+    setRevertingHunk(id);
+    setHunkError(null);
+    try {
+      await revertGitDiffHunk(f.path, hunkIndex);
+      setConfirmingHunk(null);
+      // 防御:该 hunk 已消失,顺带清掉可能残留的接受标记(内容变了 key 本也会自然失配)
+      setAcceptedHunks((prev) => {
+        if (!prev.has(hunkKey)) return prev;
+        const next = new Set(prev);
+        next.delete(hunkKey);
+        return next;
+      });
+    } catch (e) {
+      setHunkError({ key: id, message: e instanceof Error ? e.message : String(e) });
+    } finally {
+      setRevertingHunk(null);
     }
   };
 
@@ -300,11 +382,58 @@ function GitDiffView() {
         >
           <IconSparkle size={12} /> {aiReview.loading ? '评审中…' : 'AI 评审'}
         </button>
+        <button
+          className="rdiff-refresh rdiff-review-btn"
+          onClick={() => {
+            const next = !historyOpen;
+            setHistoryOpen(next);
+            if (next) loadReviewHistory();
+          }}
+          title="评审历史"
+        >
+          <IconClock size={12} /> 历史
+        </button>
+        <button
+          className="rdiff-refresh rdiff-review-btn"
+          onClick={() => generateCommit()}
+          disabled={commitMessage.loading}
+          title="AI 生成提交信息"
+        >
+          <IconWand size={12} /> {commitMessage.loading ? '生成中…' : '提交信息'}
+        </button>
       </div>
+      {historyOpen && (
+        <div className="review-history">
+          {reviewHistoryLoading ? (
+            <div className="review-history-empty">载入历史…</div>
+          ) : reviewHistory.length === 0 ? (
+            <div className="review-history-empty">暂无历史评审</div>
+          ) : (
+            reviewHistory.map((r) => (
+              <button
+                key={r.id}
+                type="button"
+                className="review-history-row"
+                title={`回放 ${r.ts} 的评审`}
+                onClick={() => {
+                  openReview(r.id);
+                  setHistoryOpen(false);
+                }}
+              >
+                <span className="review-history-ts mono">{r.ts.replace('T', ' ').slice(0, 16)}</span>
+                <span className="review-history-meta">
+                  {r.model} · {r.findings_count} 条建议 · {r.files_reviewed} 文件
+                </span>
+              </button>
+            ))
+          )}
+        </div>
+      )}
       {aiReview.error && <div className="review-error">AI 评审失败:{aiReview.error}</div>}
       {reviewResult && (
         <div className="review-summary">
           <IconSparkle size={12} />
+          {reviewResult.historical && <span className="review-hist-badge">历史</span>}
           <span>
             {reviewResult.findings.length} 条建议 · 评审了 {reviewResult.files_reviewed} 个文件 · {reviewResult.model}
           </span>
@@ -314,7 +443,27 @@ function GitDiffView() {
           </button>
         </div>
       )}
-      {gitDiff.map((f) => (
+      {commitMessage.error && <div className="review-error commit-error">生成提交信息失败:{commitMessage.error}</div>}
+      {commitMessage.result && (
+        <div className="commit-msg">
+          <IconWand size={12} />
+          <span className="commit-msg-text">{commitMessage.result.message}</span>
+          <span className="commit-msg-meta">
+            {commitMessage.result.model} · {commitMessage.result.files_count} 个文件
+          </span>
+          <button
+            className="review-clear"
+            onClick={() => navigator.clipboard?.writeText(commitMessage.result!.message)}
+            title="复制提交信息"
+          >
+            复制
+          </button>
+        </div>
+      )}
+      {gitDiff.map((f) => {
+        // M193.2 — 按 hunk 分组(空 lines 时结果为空,走现状空态分支)
+        const blocks = splitDiffHunks(f.path, f.lines);
+        return (
         <div className="rdiff-file" key={f.path}>
           <div className="rdiff-fhead mono">
             <IconFile size={12} />
@@ -373,18 +522,85 @@ function GitDiffView() {
                 </span>
               </div>
             ) : (
-              f.lines.map((l, i) => (
-                <div className={'rdiff-row ' + l.type} key={i}>
-                  <span className="rdiff-sign">
-                    {l.type === 'add' ? '+' : l.type === 'del' ? '-' : l.type === 'hunk' ? '' : ' '}
-                  </span>
-                  <span className="rdiff-tx">{l.text}</span>
-                </div>
-              ))
+              <>
+                {blocks.prelude.map((l, i) => (
+                  <DiffLineRow key={'p' + i} l={l} />
+                ))}
+                {blocks.hunks.map((h, hi) => {
+                  const hunkId = `${f.path}#${hi}`;
+                  const accepted = acceptedHunks.has(h.key);
+                  return (
+                    <div className={'rdiff-hunk' + (accepted ? ' accepted' : '')} key={h.key}>
+                      <div className="rdiff-hunk-head mono">
+                        <span className="rdiff-hunk-range">{h.header}</span>
+                        {accepted ? (
+                          <button
+                            className="rdiff-hunk-btn accepted-toggle"
+                            title="撤销接受"
+                            onClick={() => toggleAcceptHunk(h.key)}
+                          >
+                            <IconCheck size={11} /> 已接受
+                          </button>
+                        ) : confirmingHunk === hunkId ? (
+                          <span className="rdiff-confirm">
+                            <span className="rdiff-confirm-text">撤销该 hunk 改动？</span>
+                            <button
+                              className="rdiff-confirm-danger"
+                              disabled={revertingHunk === hunkId}
+                              onClick={() => doRevertHunk(f, hi, h.key)}
+                            >
+                              确认
+                            </button>
+                            <button
+                              className="rdiff-hunk-btn"
+                              disabled={revertingHunk === hunkId}
+                              onClick={() => {
+                                setConfirmingHunk(null);
+                                setHunkError(null);
+                              }}
+                            >
+                              取消
+                            </button>
+                          </span>
+                        ) : (
+                          <span className="rdiff-hunk-actions">
+                            <button
+                              className="rdiff-hunk-btn accept"
+                              title="接受该 hunk（保留改动）"
+                              disabled={revertingHunk === hunkId}
+                              onClick={() => toggleAcceptHunk(h.key)}
+                            >
+                              <IconCheck size={12} />
+                            </button>
+                            <button
+                              className="rdiff-hunk-btn reject"
+                              title="拒绝该 hunk（撤销改动回 HEAD）"
+                              disabled={revertingHunk === hunkId}
+                              onClick={() => {
+                                setConfirmingHunk(hunkId);
+                                setHunkError(null);
+                              }}
+                            >
+                              <IconX size={12} />
+                            </button>
+                          </span>
+                        )}
+                      </div>
+                      {h.lines.map((l, i) => (
+                        <DiffLineRow key={i} l={l} />
+                      ))}
+                      {hunkError && hunkError.key === hunkId && (
+                        <div className="rdiff-revert-error">{hunkError.message}</div>
+                      )}
+                    </div>
+                  );
+                })}
+              </>
             )}
           </div>
         </div>
-      ))}
+        );
+      })}
       {otherFindings.length > 0 && (
         <div className="rdiff-file review-other">
           <div className="rdiff-fhead mono">
@@ -487,15 +703,30 @@ export function ContextPanel() {
     openedFile,
     openFile,
     closeFile,
+    gitDiff,
   } = useApp();
   const [commentLine, setCommentLine] = useState<number | null>(null);
   const [commentText, setCommentText] = useState('');
+  // M186.3 — 文件树「仅变更」过滤开关(默认关)
+  const [changedOnly, setChangedOnly] = useState(false);
+
+  // M186.2 — findings 跳转目标行:打开文件后把目标行滚动到视口中央(高亮 class 在渲染处加)
+  const jumpLine = openedFile?.line ?? null;
+  const jumpPath = openedFile?.path ?? null;
+  useEffect(() => {
+    if (jumpLine == null) return;
+    document.querySelector('.eln-wrap.line-target')?.scrollIntoView({ block: 'center' });
+  }, [jumpLine, jumpPath]);
+
   // 面板隐藏时不渲染(改为右侧浮动启动器);文件/审查/浏览器等 surface 无需会话即可用
   if (!showContext) return null;
 
   // 「文件」tab 打开的文件 → 编辑器视图(来自文件树/@/会话变更)
   const editorSource = openedFile?.content ?? '';
   const editorLines = editorSource.split('\n');
+  // M186.2 — 跳转目标行仅在有效范围内(1..行数)才高亮
+  const editorTargetLine =
+    jumpLine != null && jumpLine >= 1 && jumpLine <= editorLines.length ? jumpLine : null;
   const editorPath = openedFile?.path ?? '';
   const editorLang = openedFile ? langOf(editorPath) : 'text';
   const crumbSegs = editorPath.split('/').filter(Boolean);
@@ -511,6 +742,11 @@ export function ContextPanel() {
   };
 
   const hasFiles = changedFiles.length > 0;
+
+  // M186.3 — 「仅变更」开启时用 gitDiff 路径集过滤文件树(保留祖先目录)
+  const visibleFiles = changedOnly
+    ? filterTreeByPaths(projectFiles, new Set(gitDiff.map((f) => f.path)))
+    : projectFiles;
 
   return (
     <section className="context">
@@ -568,7 +804,7 @@ export function ContextPanel() {
                   {editorLines.map((l, i) => {
                     const ln = i + 1;
                     return (
-                      <div className="eln-wrap" key={i}>
+                      <div className={'eln-wrap' + (ln === editorTargetLine ? ' line-target' : '')} key={i}>
                         <div className="eln">
                           <span className="gn">{ln}</span>
                           <span className="c">{highlight(l)}</span>
@@ -608,12 +844,25 @@ export function ContextPanel() {
             </>
           ) : (
             <div className="file-tree">
-              {projectFiles.length === 0 ? (
+              <div className="file-head ft-head">
+                <button
+                  className={'ft-filter' + (changedOnly ? ' active' : '')}
+                  onClick={() => setChangedOnly((v) => !v)}
+                  title="只显示 git 变更涉及的文件"
+                >
+                  仅变更 <span className="ft-filter-count">{gitDiff.length}</span>
+                </button>
+              </div>
+              {visibleFiles.length === 0 ? (
                 <div className="side-empty">
-                  {projectContext?.project ? '空项目 · 暂无文件' : '未选择项目 · 在底部「选择项目」导入或新建'}
+                  {changedOnly
+                    ? '无变更文件'
+                    : projectContext?.project
+                    ? '空项目 · 暂无文件'
+                    : '未选择项目 · 在底部「选择项目」导入或新建'}
                 </div>
               ) : (
-                projectFiles.map((n) => (
+                visibleFiles.map((n) => (
                   <FileTreeNode key={n.path} node={n} depth={0} activePath={null} onOpen={openFile} />
                 ))
               )}

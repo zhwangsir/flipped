@@ -10,12 +10,26 @@
  *   (store 自动 drain),发送键位换成停止按钮,Esc 中断当前生成;
  * - slash 命令(/clear /compact /mode /help /files)不通过 onSend,通过 onSlash 回调,
  *   让外层决定如何处置(/clear=清空对话,/help=显示帮助,etc)。
+ * - M192 — 图像附件(仅 chat/plan):ImagePlus 按钮/隐藏 file input/textarea 粘贴
+ *   三入口同一 addFiles;≤4 张、单张 ≤2MB、png/jpeg/webp/gif 白名单;onSend 升级
+ *   为 (text, images),发送成功清空 chips,onSend 返回 rejected promise 时保留供重试。
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { IconSend, IconStop } from '../icons';
+import { IconSend, IconStop, IconImagePlus } from '../icons';
 import { useApp } from '../store';
 import { fetchProjectFiles } from '../api';
-import type { FileNode } from '../types';
+import type { FileNode, PendingImage } from '../types';
+
+// M192 — 供外层(store/Assistant)引用的附件类型(定义在 types.ts,此处再导出保持 Composer 契约面)
+export type { PendingImage } from '../types';
+
+/** M192 — 图像附件约束(与后端契约 FLIPPED_IMG_MAX_COUNT / FLIPPED_IMG_MAX_BYTES 对齐)。 */
+export const IMG_MAX_COUNT = 4;
+export const IMG_MAX_BYTES = 2 * 1024 * 1024;
+const IMG_ACCEPT = ['image/png', 'image/jpeg', 'image/webp', 'image/gif'];
+
+/** M192 — chips 内部态:PendingImage + 预览 dataURL(preview 不进请求体)。 */
+type PendingAtt = PendingImage & { preview: string };
 
 const SLASH_COMMANDS: { cmd: string; desc: string }[] = [
   { cmd: '/clear', desc: '清空当前对话' },
@@ -31,7 +45,8 @@ const SLASH_COMMANDS: { cmd: string; desc: string }[] = [
 export const CHAR_WARN_THRESHOLD = 12000;
 
 export interface ComposerProps {
-  onSend: (text: string) => void;
+  /** M192 — 第二参为图像附件(无附件为空数组);返回 promise 时成功才清空 chips,失败保留供重试 */
+  onSend: (text: string, images: PendingImage[]) => void | Promise<void>;
   onSlash?: (cmd: string) => void;
   /** M176 — /goal <目标> 提交回调(带参时优先于 onSend) */
   onGoal?: (objective: string) => void;
@@ -69,6 +84,70 @@ export function Composer({
   // 供 atQuery 优先消费(用户再次输入时清空)
   const pendingCursorRef = useRef<number | null>(null);
   const taRef = useRef<HTMLTextAreaElement>(null);
+  // M192 — 图像附件 chips 状态(pendingRef 镜像供 addFiles 同步读取最新张数,防快速连选竞态)
+  const [pending, setPending] = useState<PendingAtt[]>([]);
+  const pendingRef = useRef<PendingAtt[]>([]);
+  const [attachWarn, setAttachWarn] = useState<string | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+  // M192 — 仅 chat/plan 支持图像附件(agent/auto 的 supervisor/worker 模型为 text-only)
+  const imageEnabled = mode === 'chat' || mode === 'plan';
+
+  /** M192 — 按钮选文件/粘贴共用入口:白名单过滤 → 张数/大小校验 → FileReader 读 dataURL 进 chips。 */
+  const addFiles = (files: File[]) => {
+    const imgs = files.filter((f) => IMG_ACCEPT.includes(f.type));
+    if (imgs.length === 0) return; // 非图像静默忽略(文本粘贴不受影响)
+    let warn: string | null = null;
+    const accepted: { att: PendingAtt; file: File }[] = [];
+    let count = pendingRef.current.length;
+    for (const f of imgs) {
+      if (count >= IMG_MAX_COUNT) {
+        warn = `最多附加 ${IMG_MAX_COUNT} 张图片`;
+        break;
+      }
+      if (f.size > IMG_MAX_BYTES) {
+        warn = `图片 ${f.name} 超过 2MB 上限`;
+        continue;
+      }
+      count += 1;
+      accepted.push({ att: { name: f.name, media_type: f.type, data_base64: '', preview: '' }, file: f });
+    }
+    if (accepted.length > 0) {
+      const next = [...pendingRef.current, ...accepted.map((a) => a.att)];
+      pendingRef.current = next;
+      setPending(next);
+    }
+    setAttachWarn(warn);
+    // 异步读 dataURL,按对象 identity 回写占位 chip(移除过的自动跳过)
+    for (const { att, file } of accepted) {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const dataUrl = String(reader.result || '');
+        const comma = dataUrl.indexOf(',');
+        const b64 = comma >= 0 ? dataUrl.slice(comma + 1) : dataUrl; // 剥掉 "data:<mt>;base64," 前缀
+        setPending((prev) => {
+          const idx = prev.indexOf(att);
+          if (idx < 0) return prev;
+          const copy = [...prev];
+          copy[idx] = { ...att, data_base64: b64, preview: dataUrl };
+          pendingRef.current = copy;
+          return copy;
+        });
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const removeAtt = (i: number) => {
+    const copy = pendingRef.current.filter((_, j) => j !== i);
+    pendingRef.current = copy;
+    setPending(copy);
+  };
+
+  const clearAtts = () => {
+    pendingRef.current = [];
+    setPending([]);
+    setAttachWarn(null);
+  };
   // M167.4 — 排队/停止能力直接取自 store,Assistant 无需新增 props
   // (assistantQueue 兜底 []:旧 mock 未提供该字段时不炸渲染)
   const {
@@ -183,8 +262,25 @@ export function Composer({
       setText('');
       return;
     }
-    onSend(trimmed);
+    // M192 — 附件随消息发出(preview 仅本地展示,不进请求体);
+    // onSend 返回 promise:成功清空 chips,失败(rejected)保留供重试;
+    // 返回 void(旧调用方):按同步成功处理,与 text 清空时机一致
+    const images: PendingImage[] = pendingRef.current.map(({ name, media_type, data_base64 }) => ({
+      name,
+      media_type,
+      data_base64,
+    }));
+    const res = onSend(trimmed, images);
     setText('');
+    if (res && typeof (res as Promise<void>).then === 'function') {
+      Promise.resolve(res)
+        .then(() => clearAtts())
+        .catch(() => {
+          /* 发送失败:保留 chips 供重试(错误反馈走 store assistantError) */
+        });
+    } else {
+      clearAtts();
+    }
   };
 
   const pickSlash = (cmd: string) => {
@@ -305,6 +401,61 @@ export function Composer({
             ))}
           </div>
         )}
+        {pending.length > 0 && (
+          <div
+            className='composer-atts'
+            data-testid='composer-atts'
+            style={{ display: 'flex', flexWrap: 'wrap', gap: 6, padding: '8px 12px 0' }}
+          >
+            {pending.map((p, i) => (
+              <span
+                key={`${i}-${p.name}`}
+                className='chip'
+                data-testid={`composer-att-${i}`}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
+              >
+                {p.preview && (
+                  <img
+                    src={p.preview}
+                    alt={p.name}
+                    style={{ width: 32, height: 32, objectFit: 'cover', borderRadius: 4, display: 'block' }}
+                  />
+                )}
+                <span>{p.name}</span>
+                <button
+                  type='button'
+                  data-testid={`composer-att-remove-${i}`}
+                  aria-label={`移除图片 ${p.name}`}
+                  onClick={() => removeAtt(i)}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    padding: 0,
+                    cursor: 'pointer',
+                    color: 'inherit',
+                    font: 'inherit',
+                    lineHeight: 1,
+                  }}
+                >
+                  ×
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
+        {/* M192 — 隐藏 file input:ImagePlus 按钮触发;accept 与后端白名单一致 */}
+        <input
+          ref={fileRef}
+          type='file'
+          accept='image/png,image/jpeg,image/webp,image/gif'
+          multiple
+          data-testid='composer-attach-input'
+          style={{ display: 'none' }}
+          onChange={(e) => {
+            addFiles(Array.from(e.target.files ?? []));
+            e.target.value = ''; // 允许重选同一文件
+          }}
+        />
         <textarea
           ref={taRef}
           data-testid='assistant-composer-input'
@@ -316,6 +467,16 @@ export function Composer({
           onChange={(e) => {
             pendingCursorRef.current = null;
             setText(e.target.value);
+          }}
+          onPaste={(e) => {
+            // M192 — 剪贴板图像文件与按钮选文件走同一入口;纯文本粘贴不受影响
+            const files = Array.from(e.clipboardData?.files ?? []).filter((f) =>
+              IMG_ACCEPT.includes(f.type)
+            );
+            if (files.length > 0) {
+              e.preventDefault();
+              addFiles(files);
+            }
           }}
           onKeyDown={(e) => {
             if (slashOpen && matches.length > 0) {
@@ -405,6 +566,32 @@ export function Composer({
             </select>
           )}
           <span className='spacer' />
+          {/* M192 — 图像附件按钮(仅 chat/plan 可用;agent/auto 禁用并说明原因) */}
+          <button
+            type='button'
+            data-testid='composer-attach-btn'
+            aria-label='添加图像附件'
+            title={imageEnabled ? '添加图像附件' : '仅 chat/plan 支持图像附件'}
+            disabled={disabled || !imageEnabled}
+            onClick={() => fileRef.current?.click()}
+            style={{
+              background: 'none',
+              border: 'none',
+              padding: 4,
+              cursor: disabled || !imageEnabled ? 'not-allowed' : 'pointer',
+              color: 'inherit',
+              opacity: disabled || !imageEnabled ? 0.35 : 0.8,
+              display: 'inline-flex',
+              alignItems: 'center',
+            }}
+          >
+            <IconImagePlus size={15} />
+          </button>
+          {attachWarn && (
+            <span className='char-warn' data-testid='composer-attach-warn'>
+              {attachWarn}
+            </span>
+          )}
           {overCharLimit && (
             <span className='char-warn' data-testid='assistant-char-warn'>
               字符数 {text.length} 已超 12k 警告线
