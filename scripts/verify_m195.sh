@@ -54,7 +54,7 @@ rc=$?
 if [ $rc -eq 1 ] && echo "$out" | grep -q "L-M999-1" && echo "$out" | grep -q "M12345"; then
   pass "a.target 指向不存在里程碑 → check 退出 1 且点名 L-M999-1/M12345"
 else
-  bad "a.target 存在性校验未生效（rc=$rc out=$out）"
+  bad "a.target 存在性校验未生效（rc=${rc} out=${out}）"
 fi
 
 # b) report 两次生成 → index.md 去重（该文件名只 1 行）

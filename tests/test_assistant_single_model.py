@@ -143,25 +143,30 @@ def test_run_chat_passes_glm_to_llm_chat(chat_client, monkeypatch):
 
     monkeypatch.setattr("api.main._llm_chat", _fake_llm_chat)
 
-    # 建一个 chat 会话 → 发消息 → _run_chat 异步跑
-    sid = chat_client.post(
-        "/api/v1/assistant/sessions",
-        json={"title": "chat-glm", "mode": "chat"},
-    ).json()["id"]
-    r = chat_client.post(
-        f"/api/v1/assistant/sessions/{sid}/messages",
-        json={"text": "hello", "mode": "chat", "model": "coder"},
-    )
-    assert r.status_code == 200, r.text
+    # M197.2 注记：starlette 0.50 TestClient 非 with 模式每个请求独立 portal，
+    # 请求结束即 Runner.close → _cancel_all_tasks——_run_chat 里 to_thread 的
+    # 真 yield 点会让游离后台任务被 cancel（基线时全是假 yield 故幸存）。
+    # with 常驻 portal，游离任务可跨请求跑完。
+    with chat_client:
+        # 建一个 chat 会话 → 发消息 → _run_chat 异步跑
+        sid = chat_client.post(
+            "/api/v1/assistant/sessions",
+            json={"title": "chat-glm", "mode": "chat"},
+        ).json()["id"]
+        r = chat_client.post(
+            f"/api/v1/assistant/sessions/{sid}/messages",
+            json={"text": "hello", "mode": "chat", "model": "coder"},
+        )
+        assert r.status_code == 200, r.text
 
-    # _run_chat 异步跑，轮询 store.events 直到看到 worker 消息或超时
-    import time
-    deadline = time.time() + 5.0
-    while time.time() < deadline:
-        # captured 已在异步任务里被填充（_fake_llm_chat 同步段）
-        if captured["model"] is not None:
-            break
-        time.sleep(0.05)
+        # _run_chat 异步跑，轮询 store.events 直到看到 worker 消息或超时
+        import time
+        deadline = time.time() + 5.0
+        while time.time() < deadline:
+            # captured 已在异步任务里被填充（_fake_llm_chat 同步段）
+            if captured["model"] is not None:
+                break
+            time.sleep(0.05)
 
     assert captured["model"] == GLM, (
         f"_llm_chat 应收到 {GLM}（M149 单模型），实际 {captured['model']!r}"

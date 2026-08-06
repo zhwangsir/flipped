@@ -41,6 +41,9 @@ else
 fi
 
 say "3) orchestration-api 真实后端 (:$BACKEND_PORT)"
+# M197.5（消化 L-M181-4）：FLIPPED_BIND_ALL=1 一键局域网模式——绑 0.0.0.0 手机扫码可达
+BIND_HOST="127.0.0.1"
+[ "${FLIPPED_BIND_ALL:-0}" = "1" ] && BIND_HOST="0.0.0.0" && echo "  · FLIPPED_BIND_ALL=1 → 绑 0.0.0.0（局域网可达）"
 if up "http://127.0.0.1:$BACKEND_PORT/api/v1/sessions"; then
   echo "  ✓ 已在运行"
 else
@@ -49,7 +52,7 @@ else
     FLIPPED_MODEL_BASE_URL="$EXO" \
     FLIPPED_ARCHITECT_MODEL="${FLIPPED_ARCHITECT_MODEL:-mlx-community/GLM-5.2-fp8}" \
     FLIPPED_SESSION_STORE_PATH="${FLIPPED_SESSION_STORE_PATH:-$ROOT/.sessions.json}" \
-    nohup .venv/bin/python -m uvicorn api.main:app --host 127.0.0.1 --port "$BACKEND_PORT" \
+    nohup .venv/bin/python -m uvicorn api.main:app --host "$BIND_HOST" --port "$BACKEND_PORT" \
     > "$LOGDIR/backend.log" 2>&1 &
   echo "  · pid $! → $LOGDIR/backend.log"
   waitfor "http://127.0.0.1:$BACKEND_PORT/api/v1/sessions" "后端就绪" 40 || echo "  ⚠ 后端启动超时,看 $LOGDIR/backend.log"

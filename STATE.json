@@ -1,8 +1,8 @@
 {
   "project": "flipped",
   "description": "接入本地 MLX 双模型(GLM-5.2 编排者 / Kimi-K2.7-Code 执行者)的 agentic 代码编辑器平台。fork Roo Code + 自定义驾驭层(强制验证/循环检测/上下文压缩/人工审批/子Agent/可观测性) + MCP 联网与外部能力。",
-  "updated": "2026-08-05",
-  "current_milestone": "M193 done（逐 hunk 接受/拒绝，消化 L-M177-4(P1/高)；后端 POST /project/revert-hunk 单 hunk patch 反向应用 + 前端 diffHunks 内容指纹分组 + Review 面板 hunk 块交互；接受=无 git 副作用进度标记遵守 L-M177-1 不碰 staging 约束。全量 pytest 2705/vitest 930/build/quality_gate 全绿。P1 限制仅剩 L-M192-1：exo VL 数据面无响应（2026-08-05 复验未恢复，纯文本也超时），待集群恢复复验。）",
+  "updated": "2026-08-06",
+  "current_milestone": "M197 done（registry P2 批消化 6 条：_git_files 子目录 pathspec / RAG 注入 to_thread 异步化+Chroma 单例修并发 KeyError / _git_fingerprint 超时降级 / verify_cmd rlimits+env 净化 / FLIPPED_BIND_ALL 一键局域网 / classify 全表打分+stats。全量 pytest 2769/vitest 955/tsc/build 全绿，verify_m197.sh 6 场景三连绿。registry 82 条仅剩 1 条 open：L-M192-1 exo VL 数据面（2026-08-06 复验#3：HTTP 200 头即时返回但 body 90s/200s 挂起无 token，runner 推理卡死），待集群侧修复后复验。）",
   "key_facts": {
     "dev_host": "Apple M5 Max, 128GB RAM, 1.1TB 可用磁盘 — 开发/控制节点，非模型宿主",
     "model_cluster": "exo 集群 @ http://dgmt-studio01mac-studio:52415（M192 跟进：tailnet MagicDNS 名已从 studio01-1 漂移为 dgmt-studio01mac-studio，100.67.43.40；旧裸 IP 100.64.201.37 已于 2026-07-22 失效）；公网 https://dgmt.top/exo (需 Bearer token)",
@@ -3986,7 +3986,7 @@
       },
       "verify": "scripts/verify_m192.sh（单测 34 例 + 黑盒 20 断言全绿）；exo VL 真实推理待集群恢复复验（L-M192-1）",
       "known_limitations": [
-        "exo 集群 Qwen3-VL-4B 实例已放置（控制面 /state 可见 MlxRingInstance），但图像推理数据面 420s 超时无响应；对照 GLM 文本推理 60s 可返回。判定集群侧阻塞，代码侧多模态链路已经假 LLM 黑盒验证。2026-08-06 复验#2：实例曾被卸载，重新放置（POST /instance）后数据面仍 6×120s 超时，排除实例状态腐烂——VL runner 本体问题，需进节点查 runner 日志；GLM 数据面 2.3s 健康"
+        "exo 集群 Qwen3-VL-4B 实例已放置（控制面 /state 可见 MlxRingInstance），但图像推理数据面 420s 超时无响应；对照 GLM 文本推理 60s 可返回。判定集群侧阻塞，代码侧多模态链路已经假 LLM 黑盒验证。2026-08-06 复验#2：实例曾被卸载，重新放置（POST /instance）后数据面仍 6×120s 超时，排除实例状态腐烂——VL runner 本体问题，需进节点查 runner 日志；GLM 数据面 2.3s 健康。2026-08-06 复验#3（M197 收尾）：studio01:52415 /v1/models 目录正常列出 Qwen3-VL-4B-Instruct-4bit，但数据面 POST chat/completions（8×8 红图 max_tokens=8）HTTP 200 响应头即时返回、body 生成 90s/200s 两次均挂起无任何 token——runner 接收请求后推理卡死，仍阻塞"
       ]
     },
     "M193": {
@@ -4054,6 +4054,23 @@
         "M196.5": "verify_m196.sh 场景 a-e + 全量回归（pytest 2749 / vitest 955 / tsc / build 全绿）+ registry 4 条 resolved + STATE/TEST_LOG 更新"
       },
       "verify": "scripts/verify_m196.sh（单测 15 例 + 黑盒场景 a-e 共 27 断言全绿）",
+      "known_limitations": []
+    },
+    "M197": {
+      "title": "registry P2 批消化（性能三连 + verify_cmd 安全闸 + 局域网一键 + classify 升级）",
+      "status": "done",
+      "completed": "2026-08-06",
+      "summary": "registry open 中 6 条 P2 一次批消化。M197.1（消化 L-M171-2）：rag/ingest._git_files 子目录摄入改 git ls-files pathspec 限定（-- <relpath>），不再全 repo 列举后过滤；toplevel 省略 pathspec 保持原语义，base 不在 toplevel 下回退 None→rglob。M197.2（消化 L-M172-3）：_run_chat RAG 注入改 asyncio.to_thread 异步化，build_rag_context 不再阻塞 event loop；异步化暴露并修复真生产 bug——rag_context 每次新建 ChromaVectorStore，返回后 GC 使 chromadb SharedSystemClient refcount 归零逐出 System，并发查询 KeyError 被 fail-open 吞掉表现为 rag_chunks=0（verify_m197.sh 场景 b 实测复现）：rag_context 默认 store 进程级单例持活（双检锁）。另修复 starlette 0.50 TestClient 非 with 模式每请求独立 portal、请求结束 Runner.close→_cancel_all_tasks 导致 to_thread 真 yield 点的游离任务被 cancel（test_assistant_single_model 改 with 常驻 portal）。M197.3（消化 L-M189-1）：_git_fingerprint 对 git status --untracked-files=all 加 5s 超时，超时自动降级 normal 重试（双超时 None→调用方回退 mtime）；FLIPPED_FP_UNTRACKED=normal env 直跳。M197.4（消化 L-M188-2）：verify_cmd host 执行加固——_verify_rlimits（preexec_fn：CPU 120s + AS 1GB，macOS AS setrlimit 抛 ValueError 静默跳过为既定设计）+ _verify_env 白名单净化（剥 AWS_SECRET_ACCESS_KEY/OPENAI_API_KEY 等，FLIPPED_VERIFY_ENV_KEEP 追加放行）；_verify_cmd_safe 双闸保留在前。M197.5（消化 L-M181-4）：scripts/dev_up.sh + console/predev.sh 新增 FLIPPED_BIND_ALL=1 一键局域网（BIND_HOST 变量化 0.0.0.0），缺省 127.0.0.1 不改安全面。M197.6（消化 L-M184-1）：limitations_report classify 首个命中即返回升级为全表打分制（多类命中取命中数最多者，平手按类序）+ --stats 报告各类分布与未命中率。验收：tests/test_m197_p2_batch.py 20 例全绿；scripts/verify_m197.sh 黑盒 6 场景（a. 子目录 pathspec 摄入只列 sub/ 下文件；b. RAG 异步化真接线 rag_chunks>=1；c. 指纹超时降级；d. verify_cmd rlimits+env 净化；e. FLIPPED_BIND_ALL 起 0.0.0.0 后端 LAN IP 健康检查 200；f. classify 打分+stats）连续三次全绿；全量回归 pytest 2769 passed/15 skipped、vitest 955、tsc、build 全绿。registry 6 条 resolved 后 82 条：resolved 46/wontfix 35/open 1（仅 L-M192-1 exo VL 数据面，复验#3 仍阻塞：HTTP 200 响应头即时返回但 body 生成 90s/200s 两次挂起无 token，runner 推理卡死）。",
+      "subtasks": {
+        "M197.1": "_git_files 子目录 pathspec 作用域列举（消化 L-M171-2）",
+        "M197.2": "RAG 注入 asyncio.to_thread 异步化（消化 L-M172-3）+ Chroma 默认 store 单例化修并发 KeyError + TestClient with 常驻 portal 修复",
+        "M197.3": "_git_fingerprint untracked 超时降级 + FLIPPED_FP_UNTRACKED env 覆盖（消化 L-M189-1）",
+        "M197.4": "verify_cmd host 执行 _verify_rlimits 资源闸 + _verify_env 白名单净化（消化 L-M188-2）",
+        "M197.5": "FLIPPED_BIND_ALL=1 一键局域网（消化 L-M181-4）——dev_up.sh/predev.sh BIND_HOST 变量化",
+        "M197.6": "classify 全表打分制 + --stats 未命中率报告（消化 L-M184-1）",
+        "M197.7": "verify_m197.sh 6 场景三连全绿 + 全量回归（pytest 2769/vitest 955/tsc/build）+ registry 6 条 resolved + L-M192-1 复验#3 注记 + STATE/TEST_LOG 更新"
+      },
+      "verify": "scripts/verify_m197.sh（单测 20 例 + 黑盒 6 场景连续三次全绿）",
       "known_limitations": []
     }
   },

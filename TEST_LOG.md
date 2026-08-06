@@ -8858,3 +8858,86 @@ $ scripts/limitations_report.py check → ok: 82 limitations registered
   / 安全 1；1 条 P1 外部依赖 L-M192-1 待 exo 集群 VL 恢复复验）。
 
 ---
+
+## M197 — registry P2 批消化（性能三连 + 安全闸 + 局域网一键 + classify 升级）（2026-08-06）
+
+**范围**：_git_files 子目录 pathspec（L-M171-2）/ RAG 注入 to_thread 异步化
+（L-M172-3）/ _git_fingerprint 超时降级（L-M189-1）/ verify_cmd rlimits+env 净化
+（L-M188-2）/ FLIPPED_BIND_ALL 一键局域网（L-M181-4）/ classify 全表打分+stats
+（L-M184-1）。
+**副产品**：异步化暴露并修复 2 个真 bug（Chroma 并发 KeyError、TestClient 游离
+任务被取消）。
+
+**改动文件**：
+- `src/rag/ingest.py`：`_git_files` 子目录摄入改 `git ls-files -- <relpath>`
+  pathspec 限定，git 侧直接列子目录；toplevel 省略 pathspec 保持原语义；base 不在
+  toplevel 下回退 None→rglob。
+- `src/api/main.py`：`_run_chat` RAG 注入改 `asyncio.to_thread(build_rag_context, …)`，
+  同步 Chroma 查询不再阻塞 event loop。
+- `src/api/rag_context.py`：默认 store 进程级单例持活（`_default_store` + 双检锁）。
+- `src/api/project_map.py`：`_git_fingerprint` 对 `--untracked-files=all` 加 5s 超时，
+  超时降级 normal 重试（双超时 None→调用方回退 mtime）；`FLIPPED_FP_UNTRACKED=normal`
+  env 直跳 all 模式。
+- `src/api/assistant.py`：verify_cmd host 执行加固——`_verify_rlimits`（preexec_fn：
+  RLIMIT_CPU 120s + RLIMIT_AS 1GB；macOS AS setrlimit ValueError 静默跳过为既定设计）
+  + `_verify_env` 白名单净化（默认仅 PATH 等少数存活，`FLIPPED_VERIFY_ENV_KEEP`
+  逗号分隔追加放行）；`_verify_cmd_safe` 双闸保留在前。
+- `scripts/dev_up.sh` / `console/predev.sh`：`FLIPPED_BIND_ALL=1` → BIND_HOST=0.0.0.0
+  变量化 `--host "$BIND_HOST"`；缺省 127.0.0.1 不改安全面。
+- `scripts/limitations_report.py`：classify 首个命中即返回升级为全表打分制（多类
+  命中取命中数最多者，平手按类序）+ `--stats` 报告各类分布与未命中率。
+- `tests/test_m197_p2_batch.py`（新）：20 例覆盖六子任务 + 并发单例回归。
+- `tests/test_assistant_single_model.py`：`test_run_chat_passes_glm_to_llm_chat`
+  改 `with chat_client:` 常驻 portal（见教训 2）。
+- `scripts/verify_m197.sh`（新）：黑盒 6 场景（a. 子目录 pathspec 摄入只列 sub/
+  下文件；b. RAG 异步化真接线 rag_chunks>=1；c. 指纹超时降级；d. verify_cmd
+  rlimits+env 净化；e. FLIPPED_BIND_ALL 起 0.0.0.0 后端 LAN IP 健康检查 200；
+  f. classify 打分+stats）。
+
+**测试证据**：
+```
+$ pytest tests/test_m197_p2_batch.py -q → 20 passed
+$ scripts/verify_m197.sh → 6 场景全绿（连续三次）
+$ pytest tests/ -x -q → 2769 passed, 15 skipped
+$ npx vitest run → 955 passed (36 files)
+$ npx tsc --noEmit → 0 错误；npm run build → ✓ built
+$ scripts/limitations_report.py check → ok: 82 limitations registered
+```
+
+**关键决策与教训**：
+1. **Chroma PersistentClient 必须进程级持活**：`rag_context.build_rag_context`
+   历史上每次调用新建 `ChromaVectorStore`（PersistentClient），返回后实例被 GC →
+   chromadb `SharedSystemClient` refcount 归零 → 底层 System 被逐出全局缓存 →
+   并发线程查询 KeyError「Collection … does not exist」→ 被 fail-open 吞掉表现为
+   rag_chunks=0（verify_m197.sh 场景 b 实测复现：预摄入 marker 后 chat 应答
+   rag_chunks 恒 0）。修复：`_default_store` 进程级单例 + 双检锁，store=None 时
+   全部命中同一持活实例。教训：第三方库的「实例即资源」语义（client 持有底层
+   system 引用计数）不能按无状态工厂用；并发回归测试（8 线程并发查询全命中）
+   是这类 bug 唯一可靠的探针。
+2. **starlette 0.50 TestClient 非 with 模式会杀游离后台任务**：每个请求独立
+   anyio portal，请求结束 `Runner.close()` → `_cancel_all_tasks()`——`_run_chat`
+   里 `asyncio.to_thread` 的真 yield 点让游离任务被 cancel；基线时全是假 yield
+   （同步段跑完）故幸存，M197.2 引入真 yield 后暴露。修法：`with TestClient(app)`
+   常驻 portal，游离任务可跨请求跑完。教训：TestClient 测异步后台任务一律用
+   with 模式，别依赖「假 yield 幸存」的偶然。
+3. **macOS RLIMIT_AS 不可设**：`setrlimit(RLIMIT_AS, 1GB)` 抛 ValueError
+   （current limit exceeds maximum limit）——`_verify_rlimits` 对 AS 失败静默跳过
+   是既定设计（CPU 闸必设，AS 闸尽力而为），单测按平台二态断言（1GB 或
+   RLIM_INFINITY），不依赖「超限分配被杀」断言（macOS 惰性虚拟内存本就不强制）。
+4. **macOS /var 是 /private/var 的 symlink**：verify 脚本断言路径前缀前必须对
+   两侧都 `resolve()`，否则 relative_to 因前缀不同假失败。
+5. **端口预检要覆盖所有测试端口**：verify_m197.sh 场景 e 默认 LAN_PORT=8200 被
+   他项目长期占用，且 macOS 下 0.0.0.0:8200 与 127.0.0.1:8200 可共存绑定——健康
+   检查请求被路由到旧进程造成「20s 未就绪」假象。修法：预检纳入 LAN_PORT +
+   默认改 8297 冷门端口。
+
+**registry 消化结果（M197）**：
+- 6 条 open → resolved：L-M171-2（_git_files pathspec）、L-M172-3（RAG to_thread
+  异步化）、L-M189-1（指纹超时降级）、L-M188-2（verify_cmd rlimits+env 净化）、
+  L-M181-4（FLIPPED_BIND_ALL 一键局域网）、L-M184-1（classify 全表打分+stats）。
+- 消化后 82 条：**resolved 46 / wontfix 35 / open 1**（仅 L-M192-1 P1 外部依赖：
+  2026-08-06 复验#3——studio01:52415 /v1/models 目录正常列出 Qwen3-VL-4B，
+  数据面 HTTP 200 响应头即时返回但 body 生成 90s/200s 两次挂起无 token，
+  runner 接收请求后推理卡死，待集群侧修复后复验 scripts/verify_m192.sh）。
+
+---

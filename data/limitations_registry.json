@@ -22,8 +22,8 @@
       "impact": "超大 monorepo 首次摄入有一次性全量文件列举延迟（本地操作，可接受）",
       "priority": "P2",
       "difficulty": "中",
-      "status": "open",
-      "resolution_note": "",
+      "status": "resolved",
+      "resolution_note": "M197.1 消化：_git_files 子目录摄入改用 git ls-files pathspec 限定（-- <relpath>），git 侧直接列子目录，不再全量列举后过滤；base==toplevel 省略 pathspec 保持原语义，base 不在 toplevel 下回退 None(rglob)。tests/test_m197_p2_batch.py 3 例 + verify_m197.sh 场景 a 覆盖",
       "target": "后续里程碑"
     },
     {
@@ -70,8 +70,8 @@
       "impact": "同步 Chroma 查询当前毫秒级无感；库极大后可能阻塞请求线程",
       "priority": "P2",
       "difficulty": "中",
-      "status": "open",
-      "resolution_note": "",
+      "status": "resolved",
+      "resolution_note": "M197.2 消化：_run_chat RAG 注入改 asyncio.to_thread 异步化（build_rag_context 在 worker 线程执行，不阻塞 event loop）；顺带修复异步化暴露的 Chroma 并发 KeyError——rag_context 默认 store 进程级单例持活（PersistentClient 不再随调用 GC 逐出 SharedSystemClient）。tests/test_m197_p2_batch.py to_thread 线程断言 + 8 线程并发命中回归 + verify_m197.sh 场景 b 覆盖",
       "target": "后续里程碑（库规模增大后再评估异步化）"
     },
     {
@@ -478,8 +478,8 @@
       "impact": "默认 127.0.0.1 绑定下手机扫码不可达，需手动 --host 0.0.0.0 或设 FLIPPED_REMOTE_HOST（仅文案提示）",
       "priority": "P2",
       "difficulty": "中",
-      "status": "open",
-      "resolution_note": "",
+      "status": "resolved",
+      "resolution_note": "M197.5 消化：scripts/dev_up.sh + console/predev.sh 新增 FLIPPED_BIND_ALL=1 一键局域网模式（BIND_HOST 变量化 0.0.0.0），缺省仍 127.0.0.1 不改安全面。tests/test_m197_p2_batch.py 3 例 grep 断言 + verify_m197.sh 场景 e（LAN_PORT 起 0.0.0.0 后端，LAN IP 健康检查 200）覆盖",
       "target": "后续里程碑（一键局域网模式候选）"
     },
     {
@@ -658,8 +658,8 @@
       "impact": "",
       "priority": "P2",
       "difficulty": "中",
-      "status": "open",
-      "resolution_note": "",
+      "status": "resolved",
+      "resolution_note": "M197.6 消化：classify 从首个命中即返回升级为全表打分制（多类命中取命中数最多者，平手按类序），新增 --stats 报告各类分布与未命中率。tests/test_m197_p2_batch.py 3 例（多命中取高分/--stats 输出/人工校正不踩）覆盖",
       "target": ""
     },
     {
@@ -862,8 +862,8 @@
       "impact": "",
       "priority": "P2",
       "difficulty": "中",
-      "status": "open",
-      "resolution_note": "",
+      "status": "resolved",
+      "resolution_note": "M197.4 消化：verify_cmd host 执行加固——_verify_rlimits（preexec_fn，CPU 120s + AS 1GB，macOS AS 不可设静默跳过既定设计）+ _verify_env 环境净化（白名单制剥敏感变量，FLIPPED_VERIFY_ENV_KEEP 追加放行）；_verify_cmd_safe 双闸保留。tests/test_m197_p2_batch.py 4 例（净化/KEEP 扩展/spy 断言 rlimits+env/子进程真生效）覆盖",
       "target": ""
     },
     {
@@ -898,8 +898,8 @@
       "impact": "",
       "priority": "P2",
       "difficulty": "中",
-      "status": "open",
-      "resolution_note": "",
+      "status": "resolved",
+      "resolution_note": "M197.3 消化：_git_fingerprint 对 git status --untracked-files=all 加 5s 超时，超时自动降级 --untracked-files=normal 重试（仍超时返回 None 由调用方回退 mtime）；FLIPPED_FP_UNTRACKED=normal env 可直接跳过 all 模式。巨大 untracked 目录不再拖死指纹计算。tests/test_m197_p2_batch.py 4 例（降级/双超时 None/env 跳过/真实回归）覆盖",
       "target": ""
     },
     {
@@ -917,7 +917,7 @@
     {
       "id": "L-M192-1",
       "milestone": "M192",
-      "text": "exo 集群 Qwen3-VL-4B 实例已放置（控制面 /state 可见 MlxRingInstance），但图像推理数据面 420s 超时无响应；对照 GLM 文本推理 60s 可返回。判定集群侧阻塞，代码侧多模态链路已经假 LLM 黑盒验证。2026-08-06 复验#2：实例曾被卸载，重新放置（POST /instance）后数据面仍 6×120s 超时，排除实例状态腐烂——VL runner 本体问题，需进节点查 runner 日志；GLM 数据面 2.3s 健康",
+      "text": "exo 集群 Qwen3-VL-4B 实例已放置（控制面 /state 可见 MlxRingInstance），但图像推理数据面 420s 超时无响应；对照 GLM 文本推理 60s 可返回。判定集群侧阻塞，代码侧多模态链路已经假 LLM 黑盒验证。2026-08-06 复验#2：实例曾被卸载，重新放置（POST /instance）后数据面仍 6×120s 超时，排除实例状态腐烂——VL runner 本体问题，需进节点查 runner 日志；GLM 数据面 2.3s 健康。2026-08-06 复验#3（M197 收尾）：studio01:52415 /v1/models 目录正常列出 Qwen3-VL-4B-Instruct-4bit，但数据面 POST chat/completions（8×8 红图 max_tokens=8）HTTP 200 响应头即时返回、body 生成 90s/200s 两次均挂起无任何 token——runner 接收请求后推理卡死，仍阻塞",
       "category": "外部依赖",
       "impact": "chat/plan 带图消息在真实 exo 端点上暂时得不到视觉模型响应（路由与组装正确，端点不答）",
       "priority": "P1",

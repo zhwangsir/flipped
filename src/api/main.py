@@ -1603,8 +1603,14 @@ async def _run_chat(session_id: str, task_id: str, description: str, model_alias
         try:
             from api.rag_context import build_rag_context
             sess = store.get(session_id)
-            rag_ctx, rag_k = build_rag_context(description, project=getattr(sess, "project_name", None))
+            # M197.2（消化 L-M172-3）：Chroma 查询走 SQLite/文件 IO，to_thread 不阻塞 event loop
+            rag_ctx, rag_k = await asyncio.to_thread(
+                build_rag_context, description,
+                project=getattr(sess, "project_name", None))
         except Exception:  # noqa: BLE001 fail-open：注入失败=无注入
+            if os.environ.get("FLIPPED_RAG_DEBUG") == "1":  # 临时诊断
+                import traceback
+                traceback.print_exc()
             rag_ctx, rag_k = "", 0
     if rag_ctx:
         system = system + "\n\n" + rag_ctx

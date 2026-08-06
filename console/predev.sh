@@ -9,15 +9,19 @@ ROOT="$(cd "$HERE/.." && pwd)"                          # repo root
 BACKEND_PORT="${FLIPPED_BACKEND_PORT:-8011}"
 BACKEND_HEALTH="http://127.0.0.1:${BACKEND_PORT}/api/v1/sessions"
 
+# M197.5（消化 L-M181-4）：FLIPPED_BIND_ALL=1 一键局域网模式——绑 0.0.0.0 手机可达
+BIND_HOST="127.0.0.1"
+[ "${FLIPPED_BIND_ALL:-0}" = "1" ] && BIND_HOST="0.0.0.0"
+
 if curl -sf -o /dev/null "$BACKEND_HEALTH" 2>/dev/null; then
   echo "[predev] 后端 :$BACKEND_PORT 已在运行,跳过"
 elif [ -x "$ROOT/.venv/bin/python" ]; then
-  echo "[predev] 起 orchestration-api :$BACKEND_PORT"
+  echo "[predev] 起 orchestration-api :$BACKEND_PORT (host=$BIND_HOST)"
   mkdir -p "$ROOT/logs"
   ( cd "$ROOT" \
     && NO_PROXY="100.64.201.37,localhost,127.0.0.1,::1" no_proxy="100.64.201.37,localhost,127.0.0.1,::1" \
        PYTHONPATH=src EXO_API_KEY="${EXO_API_KEY:-dummy}" \
-       nohup .venv/bin/python -m uvicorn api.main:app --host 127.0.0.1 --port "$BACKEND_PORT" \
+       nohup .venv/bin/python -m uvicorn api.main:app --host "$BIND_HOST" --port "$BACKEND_PORT" \
        > "$ROOT/logs/tauri-backend.log" 2>&1 & )
 else
   echo "[predev] ⚠ 未找到 .venv;跳过后端自启(请手动起后端 :$BACKEND_PORT)"

@@ -113,7 +113,7 @@ FAKEEOF
 $PY "$TMPD/fake_llm.py" "${FAKE_PORT}" "$TMPD/llm_requests.jsonl" &
 FAKE_PID=$!
 
-# ---- 起服（cwd=$TMPD：data/reviews 指向 $TMPD/data，不碰真仓库）----
+# ---- 起服（cwd=${TMPD}：data/reviews 指向 $TMPD/data，不碰真仓库）----
 cd "$TMPD"
 FLIPPED_PROJECTS_DIR="$TMPD/projects" \
 FLIPPED_DB="$TMPD/flipped.db" \

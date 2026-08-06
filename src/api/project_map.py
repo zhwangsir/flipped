@@ -127,6 +127,11 @@ def _git_fingerprint(root: Path) -> str | None:
 
     非 git repo / git 不可用 / 超时(5s) / 任何异常 → None（调用方回退 mtime 判定）。
     porcelain 用 --untracked-files=all：深层 untracked 新文件也可感知。
+
+    M197.3（消化 L-M189-1）：未 ignore 的巨大 untracked 目录会拖慢
+    `--untracked-files=all` 的 status——首试超时（TimeoutExpired）后降级
+    `--untracked-files=normal` 重试一次（仍感知顶层新目录，深层文件感知降级），
+    再超时 → None。env FLIPPED_FP_UNTRACKED=all|normal 显式指定首试模式。
     """
     try:
         probe = subprocess.run(
@@ -141,17 +146,32 @@ def _git_fingerprint(root: Path) -> str | None:
         )
         # 无 commit 的 repo returncode!=0 → HEAD 用空串，不算失败
         head_sha = head.stdout.strip() if head.returncode == 0 else ""
-        status = subprocess.run(
-            ["git", "-C", str(root), "status", "--porcelain=v1", "--untracked-files=all"],
-            capture_output=True, text=True, timeout=5,
-        )
-        if status.returncode != 0:
+        untracked = os.environ.get("FLIPPED_FP_UNTRACKED", "all").strip().lower()
+        if untracked not in ("all", "normal"):
+            untracked = "all"
+        status = _porcelain_status(root, untracked)
+        if status is None and untracked == "all":  # 超时/失败 → normal 降级重试一次
+            status = _porcelain_status(root, "normal")
+        if status is None:
             return None
         return hashlib.sha256(
-            (head_sha + "\0" + status.stdout).encode()
+            (head_sha + "\0" + status).encode()
         ).hexdigest()[:16]
     except Exception:
         return None
+
+
+def _porcelain_status(root: Path, untracked: str) -> str | None:
+    """`git status --porcelain=v1 --untracked-files=<mode>` stdout；rc!=0/超时/异常 → None。"""
+    try:
+        out = subprocess.run(
+            ["git", "-C", str(root), "status", "--porcelain=v1",
+             f"--untracked-files={untracked}"],
+            capture_output=True, text=True, timeout=5,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return out.stdout if out.returncode == 0 else None
 
 
 # ---------- 各分节（独立容错，返回 "" 表示省略） ----------

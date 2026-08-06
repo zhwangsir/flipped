@@ -1305,6 +1305,50 @@ async def _judge(state, session_id: str, model_alias: str) -> dict | None:
         return None
 
 
+# M197.4（消化 L-M188-2）：host verify_cmd 子进程加固
+# env 净化白名单：只留运行测试/编译器必需的基础变量，剥掉 API key/token 等敏感值；
+# FLIPPED_VERIFY_ENV_KEEP（逗号分隔）可追加放行项。
+_VERIFY_ENV_WHITELIST = (
+    "PATH", "HOME", "LANG", "LC_ALL", "LC_CTYPE", "TZ", "TMPDIR", "TEMP", "TMP",
+    "USER", "LOGNAME", "SHELL", "TERM", "VIRTUAL_ENV", "NODE_ENV", "CI",
+    "FLIPPED_MOCK_ORCHESTRATOR", "FLIPPED_MODEL_BASE_URL",
+)
+
+
+def _verify_env() -> dict[str, str]:
+    """verify_cmd 子进程环境：白名单净化 + FLIPPED_VERIFY_ENV_KEEP 扩展。"""
+    keep = set(_VERIFY_ENV_WHITELIST)
+    extra = os.environ.get("FLIPPED_VERIFY_ENV_KEEP", "")
+    keep |= {k.strip() for k in extra.split(",") if k.strip()}
+    return {k: v for k, v in os.environ.items() if k in keep}
+
+
+def _verify_rlimits() -> None:
+    """preexec_fn：POSIX rlimit 闸（CPU 120s / 地址空间 1GB）。非 POSIX/失败静默。
+
+    仅作资源耗尽缓解，不是安全沙盒；安全仍依赖 _verify_cmd_safe 双闸。
+    """
+    try:
+        import resource
+        resource.setrlimit(resource.RLIMIT_CPU, (120, 120))
+        resource.setrlimit(resource.RLIMIT_AS, (1 << 30, 1 << 30))
+    except Exception:  # noqa: BLE001 非 POSIX（Windows）或权限不足 → 跳过，不阻断 verify
+        pass
+
+
+def _run_verify_host(verify_cmd: list[str], cwd: str | None) -> subprocess.CompletedProcess:
+    """host 路径执行 verify_cmd：120s 超时 + rlimit 资源闸 + env 白名单净化（M197.4）。
+
+    preexec_fn 在非 POSIX 平台不被 subprocess 接受 → 平台探测后传 None。
+    """
+    preexec = _verify_rlimits if os.name == "posix" else None
+    return subprocess.run(
+        verify_cmd,
+        capture_output=True, text=True, timeout=120, cwd=cwd,
+        env=_verify_env(), preexec_fn=preexec,
+    )
+
+
 async def _verify_deterministic(session_id: str, mode: str) -> dict | None:
     """M188.1 · verify_cmd 确定性校验（消化 L-M176-1：exit 0 = 达成）。
 
@@ -1344,9 +1388,7 @@ async def _verify_deterministic(session_id: str, mode: str) -> dict | None:
         else:  # chat / plan：host 子进程（无文件改动语义，仅供显式外部校验）
             cwd = session.cwd if (session.cwd and os.path.isdir(session.cwd)) else None
             try:
-                proc = await asyncio.to_thread(
-                    subprocess.run, verify_cmd,
-                    capture_output=True, text=True, timeout=120, cwd=cwd)
+                proc = await asyncio.to_thread(_run_verify_host, verify_cmd, cwd)
             except subprocess.TimeoutExpired:
                 return verify_verdict(False, "(verify 超时)")
             ok = proc.returncode == 0

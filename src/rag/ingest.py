@@ -101,8 +101,14 @@ def _chunk_structured(
 
 
 def _git_files(base: Path, exts: set[str]) -> list[Path] | None:
-    """git repo 内返回 git 清单（含 gitignore 过滤）；任何异常返回 None 回退 rglob。"""
+    """git repo 内返回 git 清单（含 gitignore 过滤）；任何异常返回 None 回退 rglob。
+
+    M197.1（消化 L-M171-2）：ls-files 加 pathspec `-- <base相对toplevel路径>`，
+    超大 monorepo 只列举目标子目录而非全 repo；base==toplevel 时省略 pathspec
+    保持原语义（pathspec 空 = 全量，但显式传 "." 会改变 --others 输出基线，故省略）。
+    """
     try:
+        base = base.resolve()
         probe = subprocess.run(
             ["git", "-C", str(base), "rev-parse", "--is-inside-work-tree"],
             capture_output=True, text=True, timeout=5,
@@ -116,10 +122,15 @@ def _git_files(base: Path, exts: set[str]) -> list[Path] | None:
         if top.returncode != 0:
             return None
         toplevel = Path(top.stdout.strip()).resolve()
-        listing = subprocess.run(
-            ["git", "-C", str(toplevel), "ls-files", "-z", "--cached", "--others", "--exclude-standard"],
-            capture_output=True, text=True, timeout=5,
-        )
+        cmd = ["git", "-C", str(toplevel), "ls-files", "-z",
+               "--cached", "--others", "--exclude-standard"]
+        try:  # base 相对 toplevel 的子目录路径 → pathspec 限定列举范围
+            rel_base = base.relative_to(toplevel)
+            if rel_base.parts:  # base != toplevel
+                cmd += ["--", str(rel_base)]
+        except ValueError:
+            return None  # base 不在 toplevel 下（异常布局）→ 回退 rglob
+        listing = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
         if listing.returncode != 0:
             return None
         files: list[Path] = []

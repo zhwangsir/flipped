@@ -157,23 +157,31 @@ def _cmd_harvest(args: argparse.Namespace) -> int:
 # classify：关键词规则表填 category + 建议 priority/difficulty
 # --------------------------------------------------------------------
 def _classify_text(text: str):
-    """按序首个命中即停；无命中返回 None。"""
+    """M197.6（消化 L-M184-1）：全表打分制——每条规则计命中关键词数，
+    命中数最多者胜；同分按 CLASSIFY_RULES 表序（安全 > 功能缺口 > …）。
+    全零（无命中）返回 None。比「按序首命中即停」更抗措辞顺序干扰。
+    """
     low = text.lower()
+    best = None
+    best_score = 0
     for category, keywords, priority, difficulty in CLASSIFY_RULES:
-        for kw in keywords:
-            if kw.lower() in low:
-                return category, priority, difficulty
-    return None
+        score = sum(1 for kw in keywords if kw.lower() in low)
+        if score > best_score:
+            best_score = score
+            best = (category, priority, difficulty)
+    return best
 
 
 def _cmd_classify(args: argparse.Namespace) -> int:
     reg = _load_registry(args.registry)
     classified = 0
+    unhit = 0
     for lim in reg["limitations"]:
         if lim.get("category") != "未分类":
             continue
         hit = _classify_text(lim.get("text", ""))
         if hit is None:
+            unhit += 1
             continue
         category, priority, difficulty = hit
         lim["category"] = category
@@ -185,6 +193,11 @@ def _cmd_classify(args: argparse.Namespace) -> int:
         classified += 1
     _save_registry(args.registry, reg)
     print(f"classified {classified} entries")
+    if getattr(args, "stats", False):  # M197.6：规则表覆盖度自查
+        total = classified + unhit
+        rate = (unhit / total * 100) if total else 0.0
+        print(f"classify stats: {total} 未分类候选 → 命中 {classified} / 未命中 {unhit}"
+              f"（未命中率 {rate:.1f}%）")
     return 0
 
 
@@ -492,6 +505,10 @@ def build_parser() -> argparse.ArgumentParser:
     pc = sub.add_parser("classify", help="关键词规则表填充分类与建议优先级/难度")
     pc.add_argument(
         "--registry", default=DEFAULT_REGISTRY_PATH, help="registry JSON 路径"
+    )
+    pc.add_argument(
+        "--stats", action="store_true",
+        help="打印未命中率统计（M197.6：规则表覆盖度自查）",
     )
     pc.set_defaults(func=_cmd_classify)
 
