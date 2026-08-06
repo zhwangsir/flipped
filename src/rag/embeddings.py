@@ -85,7 +85,13 @@ class SentenceTransformerEmbeddings(EmbeddingModel):
 
 
 def _default_embedding() -> EmbeddingModel:
-    """生产环境优先用 sentence-transformers；否则 mock。"""
+    """生产环境优先用 sentence-transformers；否则 mock。
+
+    M196.3：`RAG_EMBEDDING=mock` 强制 MockEmbedding——黑盒/CI 保 hermetic，
+    不因 venv 恰好装了 sentence-transformers 而变成模型下载依赖。
+    """
+    if os.environ.get("RAG_EMBEDDING", "").strip().lower() == "mock":
+        return MockEmbedding()
     try:
         emb = SentenceTransformerEmbeddings()
         emb.dim()  # 强制加载，失败则 fallback

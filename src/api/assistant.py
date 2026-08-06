@@ -371,20 +371,37 @@ def _git_snapshot(root) -> str | None:
 
     输出为空（工作区无变更）→ 回退 `git rev-parse HEAD`；非 git repo / 失败 → None。
     调用方须用 asyncio.to_thread 包裹，防 subprocess 阻塞 event loop。
+
+    M196：拷贝/同步来的 repo（project_open 的 copytree、cp -R、rsync、解压 tarball）
+    index stat 缓存与文件实际不匹配（racy index），首次 `git stash create` 会 rc=1
+    空 stderr 假失败；先 `git update-index -q --refresh` 刷新 index 再重试一次。
     """
-    try:
-        out = subprocess.run(
-            ["git", "stash", "create"],
-            cwd=str(root), capture_output=True, text=True, timeout=10,
-        )
-    except (OSError, subprocess.SubprocessError):
+    def _stash_create() -> str | None:
+        """返回 stash hash / 空串（干净工作区）；失败 None。"""
+        try:
+            out = subprocess.run(
+                ["git", "stash", "create"],
+                cwd=str(root), capture_output=True, text=True, timeout=10,
+            )
+        except (OSError, subprocess.SubprocessError):
+            return None
+        if out.returncode != 0:
+            return None
+        return out.stdout.strip()
+
+    snap = _stash_create()
+    if snap is None:  # 疑似 racy index：刷新后重试一次（幂等只读，安全）
+        try:
+            subprocess.run(
+                ["git", "update-index", "-q", "--refresh"],
+                cwd=str(root), capture_output=True, text=True, timeout=10,
+            )
+        except (OSError, subprocess.SubprocessError):
+            pass
+        snap = _stash_create()
+    if snap is None:
         return None
-    if out.returncode != 0:
-        return None
-    snap = out.stdout.strip()
-    if snap:
-        return snap
-    return _git_head(root)
+    return snap if snap else _git_head(root)
 
 
 def _git_restore(root, snapshot: str) -> None:

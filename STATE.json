@@ -4040,6 +4040,21 @@
       },
       "verify": "scripts/verify_m195.sh（单测 12 例 + CLI 黑盒 a-c + HTTP 黑盒 d/e 全绿）",
       "known_limitations": []
+    },
+    "M196": {
+      "title": "测试覆盖黑盒批 + 评审历史项目资产化（编辑重跑 git restore / cron agent snapshot / RAG 真接线 / reviews 三级解析+legacy 迁移）",
+      "status": "done",
+      "completed": "2026-08-06",
+      "summary": "registry open 中可代码消化 4 条批消化。M196.1（消化 L-M174-4）：verify_m196.sh 场景 a 真实黑盒——agent 会话首轮 snapshot 事件经 git cat-file -t==commit、head==rev-parse HEAD 校验；手动弄脏 file.txt 后编辑重跑 200 restored=true、文件回滚 HEAD、truncated>=2、重跑 done。过程抓到真生产 bug：project_open 的 copytree 使 repo index stat 缓存与文件不匹配（racy index），首次 git stash create rc=1 空 stderr 假失败 → snapshot=None → undo 地基缺失；修 _git_snapshot：rc!=0 时先 git update-index -q --refresh 再重试一次（幂等只读），补 3 单测（copytree 行为级/mock 机制级/非 repo 边界）。M196.2（消化 L-M178-4）：场景 b——POST /tasks(mode=agent, once, scan=1s) 经 scheduler 自动建会话，snapshot 事件同款 git 校验，会话到终态。M196.3（消化 L-M172-2）：rag/embeddings._default_embedding 增 RAG_EMBEDDING=mock 短路开关（不实例化 ST，保黑盒/CI hermetic）+2 单测；场景 c 真接线——预摄入 marker 后 chat 提问，假 LLM 捕获 system 含 RAG_CONTEXT_HEADER+marker 文本，应答 payload.rag_chunks>=1。M196.4（消化 L-M186-1）：_reviews_dir 三级解析（env FLIPPED_REVIEWS_DIR > 活动项目 {root}/.flipped/reviews 项目资产 > data/reviews 兜底）+ _reviews_dir_migrated 挂三端点；review_store.migrate_legacy_reviews 应用侧 legacy 一次性 move 迁入（幂等/fail-open/src==dst 守卫）；评审历史随项目 repo 走。M196.5：verify_m196.sh 场景 a-e 全绿 + 全量回归（pytest 2749/vitest 955/tsc/build 全绿，API 契约快照因 project_review docstring 变更登记更新）。registry 4 条 resolved 后 82 条：resolved 40/wontfix 35/open 7。",
+      "subtasks": {
+        "M196.1": "agent 编辑重跑 git restore 真实黑盒（消化 L-M174-4）+ racy index 真 bug 修复（_git_snapshot update-index --refresh 重试 + 3 单测）",
+        "M196.2": "定时任务 agent 模式 git snapshot 黑盒（消化 L-M178-4）——POST /tasks once + scheduler scan=1s",
+        "M196.3": "RAG 真接线黑盒（消化 L-M172-2）——RAG_EMBEDDING=mock 短路开关 + 假 LLM 捕获 system 注入铁证",
+        "M196.4": "评审历史项目资产化（消化 L-M186-1）——_reviews_dir 三级解析 + migrate_legacy_reviews 一次性 move + 三端点挂接",
+        "M196.5": "verify_m196.sh 场景 a-e + 全量回归（pytest 2749 / vitest 955 / tsc / build 全绿）+ registry 4 条 resolved + STATE/TEST_LOG 更新"
+      },
+      "verify": "scripts/verify_m196.sh（单测 15 例 + 黑盒场景 a-e 共 27 断言全绿）",
+      "known_limitations": []
     }
   },
   "architecture_decisions": [

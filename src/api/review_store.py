@@ -4,11 +4,16 @@
 .json；tmp+os.replace 原子写（同 driving.worker_rules 惯例）；写后超
 REVIEW_HISTORY_CAP 按文件名升序删最旧。读侧宽松：目录不存在 → []/None；
 坏 JSON 跳过不炸；load 的 review_id 含「/」「..」或为空 → None（路径穿越防护）。
+
+M196.4：新增 migrate_legacy_reviews——应用侧 legacy data/reviews/<project> 一次性
+迁入项目资产位置（{root}/.flipped/reviews/<project>），shutil.move 原子语义、
+fail-open 返回是否迁移。
 """
 from __future__ import annotations
 
 import json
 import os
+import shutil
 import tempfile
 import uuid
 from datetime import datetime, timezone
@@ -104,4 +109,24 @@ def load_review(reviews_dir: Path, project: str, review_id: str) -> dict | None:
     return _read_record(Path(reviews_dir) / project / f"{review_id}.json")
 
 
-__all__ = ["REVIEW_HISTORY_CAP", "save_review", "list_reviews", "load_review"]
+def migrate_legacy_reviews(legacy_dir: Path, reviews_dir: Path, project: str) -> bool:
+    """M196.4 · 应用侧 legacy 评审历史一次性迁入项目资产位置（fail-open）。
+
+    legacy_dir/project 存在且 reviews_dir/project 不存在 → shutil.move 整目录
+    迁过去，返回 True；其余情形（无 legacy / 目标已有 / IO 失败）→ False 不炸。
+    同一 project 幂等：move 成功后 legacy 源消失，二次调用自然 False。
+    """
+    src = Path(legacy_dir) / project
+    dst = Path(reviews_dir) / project
+    try:
+        if src.resolve() == dst.resolve() or not src.is_dir() or dst.exists():
+            return False
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(src), str(dst))
+        return True
+    except OSError:
+        return False
+
+
+__all__ = ["REVIEW_HISTORY_CAP", "save_review", "list_reviews", "load_review",
+           "migrate_legacy_reviews"]

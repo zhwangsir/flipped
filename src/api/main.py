@@ -731,16 +731,38 @@ class ReviewResponse(BaseModel):
 
 
 def _reviews_dir() -> Path:
-    """评审历史根目录（每次调用现读 env，便于测试隔离）。"""
-    return Path(os.environ.get("FLIPPED_REVIEWS_DIR", "data/reviews"))
+    """评审历史根目录（每次调用现读 env，便于测试隔离）。
+
+    M196.4（消化 L-M186-1）三级解析：env FLIPPED_REVIEWS_DIR 显式覆盖 >
+    活动项目 {root}/.flipped/reviews（项目资产，随 repo 走）> data/reviews 兜底。
+    """
+    env = os.environ.get("FLIPPED_REVIEWS_DIR")
+    if env:
+        return Path(env)
+    root = ps.project_root()
+    if root is not None:
+        return Path(root) / ".flipped" / "reviews"
+    return Path("data/reviews")
+
+
+def _reviews_dir_migrated(project: str) -> Path:
+    """_reviews_dir() + 应用侧 legacy data/reviews/<project> 一次性迁入（M196.4）。
+
+    env 显式覆盖时跳过迁移（测试隔离语义不动）；迁移 fail-open 不影响主流程。
+    """
+    target = _reviews_dir()
+    if not os.environ.get("FLIPPED_REVIEWS_DIR"):
+        from .review_store import migrate_legacy_reviews
+        migrate_legacy_reviews(Path("data/reviews"), target, project)
+    return target
 
 
 @app.post(f"{API_PREFIX}/project/review", response_model=ReviewResponse)
 async def project_review(req: ReviewRequest) -> ReviewResponse:
     """AI 代码评审：工作区 git diff → LLM → 结构化 findings。
 
-    M186：成功后 fail-open 落盘（data/reviews/<project>/，超 50 条删最旧），
-    落盘失败绝不影响响应（review_id=None）。
+    M186：成功后 fail-open 落盘（M196.4 起默认 {root}/.flipped/reviews/<project>/，
+    超 50 条删最旧；env FLIPPED_REVIEWS_DIR 可覆盖），落盘失败绝不影响响应（review_id=None）。
     """
     if os.environ.get("FLIPPED_AI_REVIEW", "1") == "0":
         raise HTTPException(status_code=404, detail="AI 评审功能已禁用")
@@ -779,7 +801,8 @@ async def project_review(req: ReviewRequest) -> ReviewResponse:
     review_id: str | None = None
     try:  # noqa: BLE001 落盘 fail-open：任何持久化失败都不影响评审响应
         from .review_store import save_review
-        rec = save_review(_reviews_dir(), project=ps.active_project()["name"],
+        rec = save_review(_reviews_dir_migrated(ps.active_project()["name"]),
+                          project=ps.active_project()["name"],
                           model=model, files_reviewed=len(files), findings=findings)
         review_id = rec["id"]
     except Exception:
@@ -824,7 +847,7 @@ async def project_reviews_history() -> ReviewsHistoryResponse:
     from .review_store import list_reviews
     return ReviewsHistoryResponse(
         reviews=[ReviewHistoryEntry(**e)
-                 for e in list_reviews(_reviews_dir(), proj["name"])])
+                 for e in list_reviews(_reviews_dir_migrated(proj["name"]), proj["name"])])
 
 
 @app.get(f"{API_PREFIX}/project/reviews/{{review_id}}", response_model=ReviewRecord)
@@ -836,7 +859,7 @@ async def project_review_detail(review_id: str) -> ReviewRecord:
     if proj is None:
         raise HTTPException(status_code=404, detail="评审记录不存在")
     from .review_store import load_review
-    rec = load_review(_reviews_dir(), proj["name"], review_id)
+    rec = load_review(_reviews_dir_migrated(proj["name"]), proj["name"], review_id)
     if rec is None:
         raise HTTPException(status_code=404, detail="评审记录不存在")
     return ReviewRecord(**rec)

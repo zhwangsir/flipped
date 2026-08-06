@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": "2026-08-06T04:40:09.900785",
+  "updated_at": "2026-08-06T17:01:06.255274",
   "limitations": [
     {
       "id": "L-M171-1",
@@ -58,8 +58,8 @@
       "impact": "system 注入/rag_chunks 接线层仅有单测 mock 证据，黑盒回归不覆盖真 LLM 路径",
       "priority": "P2",
       "difficulty": "低",
-      "status": "open",
-      "resolution_note": "",
+      "status": "resolved",
+      "resolution_note": "M196.3: RAG_EMBEDDING=mock 强制 MockEmbedding 保 hermetic（embeddings.py 短路开关+2 单测）；verify_m196.sh 场景 c 真接线黑盒——预摄入 marker 后 chat 提问，假 LLM 捕获 system 含 RAG_CONTEXT_HEADER+marker 文本，应答 payload.rag_chunks>=1",
       "target": "后续里程碑"
     },
     {
@@ -154,8 +154,8 @@
       "impact": "agent 模式真实 git restore 路径无黑盒回归保障，仅靠单测 mock",
       "priority": "P2",
       "difficulty": "低",
-      "status": "open",
-      "resolution_note": "",
+      "status": "resolved",
+      "resolution_note": "M196.1: verify_m196.sh 场景 a 真实黑盒——agent 会话 snapshot 事件经 git cat-file/rev-parse 校验，手动弄脏 file.txt 后编辑重跑 200 restored=true、文件回滚 HEAD、truncated>=2、重跑 done。过程抓到真 bug：copytree repo racy index 致首次 git stash create rc=1 假失败，已修 _git_snapshot（update-index --refresh 后重试）并补 3 单测",
       "target": "后续里程碑（可用临时 git 仓库补黑盒）"
     },
     {
@@ -334,8 +334,8 @@
       "impact": "agent/auto 模式定时任务的 git snapshot 派发分支无黑盒保障，仅单测覆盖",
       "priority": "P2",
       "difficulty": "低",
-      "status": "open",
-      "resolution_note": "",
+      "status": "resolved",
+      "resolution_note": "M196.2: verify_m196.sh 场景 b——POST /tasks(mode=agent, once) 经 scheduler(scan=1s) 自动建会话，事件流 snapshot 经 git cat-file -t==commit、head==rev-parse HEAD 校验，会话到终态",
       "target": "后续里程碑"
     },
     {
@@ -754,8 +754,8 @@
       "impact": "",
       "priority": "P2",
       "difficulty": "中",
-      "status": "open",
-      "resolution_note": "",
+      "status": "resolved",
+      "resolution_note": "M196.4: _reviews_dir 三级解析（env FLIPPED_REVIEWS_DIR > 活动项目 {root}/.flipped/reviews 项目资产 > data/reviews 兜底）；migrate_legacy_reviews 应用侧 legacy 一次性 move 迁入（幂等 fail-open）；评审历史随项目 repo 走，换机/清数据不失。12 单测+黑盒场景 e/d",
       "target": ""
     },
     {

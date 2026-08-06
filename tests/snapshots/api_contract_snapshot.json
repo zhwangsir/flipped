@@ -4424,7 +4424,7 @@
     },
     "/api/v1/project/review": {
       "post": {
-        "description": "AI 代码评审：工作区 git diff → LLM → 结构化 findings。\n\nM186：成功后 fail-open 落盘（data/reviews/<project>/，超 50 条删最旧），\n落盘失败绝不影响响应（review_id=None）。",
+        "description": "AI 代码评审：工作区 git diff → LLM → 结构化 findings。\n\nM186：成功后 fail-open 落盘（M196.4 起默认 {root}/.flipped/reviews/<project>/，\n超 50 条删最旧；env FLIPPED_REVIEWS_DIR 可覆盖），落盘失败绝不影响响应（review_id=None）。",
         "operationId": "project_review_api_v1_project_review_post",
         "requestBody": {
           "content": {

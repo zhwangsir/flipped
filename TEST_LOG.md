@@ -8785,3 +8785,76 @@ $ scripts/limitations_report.py check → ok: 82 limitations registered
 - 报告：`reports/limitations_analysis_20260806.md`（index.md 索引机制首次生效）。
 
 ---
+
+## M196 — 测试覆盖黑盒批 + 评审历史项目资产化（2026-08-06）
+
+**范围**：agent 编辑重跑 git restore 黑盒（L-M174-4）/ 定时任务 agent snapshot 黑盒
+（L-M178-4）/ RAG 真接线黑盒（L-M172-2）/ 评审历史项目资产化（L-M186-1）。
+**副产品**：黑盒抓到并修复 1 个真生产 bug（racy index 首轮 snapshot 假失败）。
+
+**改动文件**：
+- `src/api/assistant.py`：`_git_snapshot` racy index 自愈——copytree/rsync/解压来的
+  repo index stat 缓存与文件不匹配，首次 `git stash create` rc=1 空 stderr 假失败；
+  rc!=0 时先 `git update-index -q --refresh` 刷新再重试一次（幂等只读）。
+- `src/rag/embeddings.py`：`_default_embedding` 增 `RAG_EMBEDDING=mock` 短路开关
+  （大小写/空白容忍）——黑盒/CI 保 hermetic，不因 venv 恰好装了 ST 变模型下载依赖。
+- `src/api/main.py`：`_reviews_dir` 三级解析（env FLIPPED_REVIEWS_DIR > 活动项目
+  `{root}/.flipped/reviews` 项目资产 > data/reviews 兜底）+ `_reviews_dir_migrated`
+  （env 未设时触发 legacy 迁移）挂 POST /project/review、GET /project/reviews、
+  GET /project/reviews/{id} 三端点。
+- `src/api/review_store.py`：`migrate_legacy_reviews`——legacy data/reviews/<project>
+  一次性 move 进项目资产位（幂等/fail-open/src==dst 守卫/目标已有不覆盖）。
+- 测试：`tests/test_m196_reviews_dir.py`（15 例：三级解析 3 + 迁移逻辑 4 + 端点级 3
+  + RAG mock 2 + racy index 3）。
+- 验收：`scripts/verify_m196.sh`（单测 + 黑盒场景 a-e 共 27 断言）。
+
+**验收证据**：
+```
+$ bash scripts/verify_m196.sh
+  → 单测 15 例全绿
+  → e) 预置 legacy data/reviews/<proj>/old.json → GET /project/reviews 可见
+       且 legacy 目录 move 消失；二次 GET 幂等
+  → a) agent 会话首轮 snapshot 事件 git cat-file -t==commit、head==rev-parse HEAD；
+       手动弄脏 file.txt → 编辑重跑 200 restored=true、file.txt 回滚 HEAD、
+       truncated>=2、重跑 done
+  → b) POST /tasks(mode=agent, once, scan=1s) → scheduler 自动建会话，
+       snapshot 事件同款 git 校验通过，会话到终态
+  → c) 预摄入 RAG marker（RAG_EMBEDDING=mock 独立进程）→ chat 提问 →
+       假 LLM 捕获 system 含 RAG_CONTEXT_HEADER + marker 全文；rag_chunks>=1
+  → d) 弄脏工作区 → POST /project/review 200 review_id 非空 →
+       落盘 {proj}/.flipped/reviews/<name>/<id>.json；列表 ts desc 首位；详情一致
+  → M196 验收：全部通过 ✅
+
+$ PYTHONPATH=src .venv/bin/python -m pytest tests/ -q
+  → 2749 passed, 15 skipped（契约快照因 project_review docstring 变更登记更新）
+$ cd console && npx vitest run → 36 files / 955 tests 全过
+$ npx tsc --noEmit → 0 错误；npm run build → ✓ built
+$ scripts/limitations_report.py check → ok: 82 limitations registered
+```
+
+**关键决策与教训**：
+1. **黑盒测试的真价值：抓到单测 mock 层永远抓不到的 bug**。M196.1 场景 a 首轮
+   agent 会话 snapshot 事件缺失——根因是 project_open 的 `shutil.copytree` 使 repo
+   index stat 缓存（mtime/inode）与拷贝后文件不匹配（racy index），首次
+   `git stash create` rc=1 空 stderr 假失败 → snapshot=None → 事件流无 snapshot →
+   编辑重跑无法 restore。单测全 mock `_git_snapshot` 永远发现不了；真实 git 仓库
+   + 真实 copytree 路径才暴露。教训：关键路径（undo 地基）必须有真实黑盒兜底。
+2. **racy index 是 git 经典陷阱**：`cp -R`/`shutil.copytree`/rsync/解压 tarball 后
+   首个触碰 index 的只读命令可能 rc=1（无 stderr）。自愈手段：`git update-index
+   -q --refresh` 刷新 stat 缓存后重试——幂等只读，对正常 repo 无副作用。
+   修复位置选在生产代码而非 verify 脚本：任何用户打开外部项目（copytree 流程）
+   首轮 agent 消息都会踩中，非测试环境特有。
+3. **RAG_EMBEDDING=mock 短路开关**：`_default_embedding` 优先查 env 再尝试实例化
+   ST——黑盒/CI 行为与开发机 venv 内容解耦，hermetic 由 env 显式保证。
+4. **评审历史 = 项目资产**：与 `.flipped/rules.md` 同哲学——评审记录随项目 repo 走，
+   换机/清 data 目录不失；env 显式覆盖语义保留给测试隔离；legacy data/reviews
+   一次性 move 迁移（幂等，二次调用自然 False）。
+
+**registry 消化结果（M196）**：
+- 4 条 open → resolved：L-M174-4（agent 编辑重跑 git restore 黑盒）、L-M178-4
+  （cron agent snapshot 黑盒）、L-M172-2（RAG 真接线黑盒）、L-M186-1（评审历史
+  项目资产化）。
+- 消化后 82 条：**resolved 40 / wontfix 35 / open 7**（6 条 P2：性能 3 / 功能缺口 2
+  / 安全 1；1 条 P1 外部依赖 L-M192-1 待 exo 集群 VL 恢复复验）。
+
+---
