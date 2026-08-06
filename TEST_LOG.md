@@ -8941,3 +8941,29 @@ $ scripts/limitations_report.py check → ok: 82 limitations registered
   runner 接收请求后推理卡死，待集群侧修复后复验 scripts/verify_m192.sh）。
 
 ---
+
+## M198 — registry 清仓：L-M192-1 exo VL 数据面消化（2026-08-06）
+
+**根因**：exo 下载器 assert+append bug 致模型文件损坏——
+`model.safetensors.partial` 尺寸与预期不符、SHA256 校验不通过，VL runner
+接收请求后推理卡死（控制面 /state 与 /v1/models 目录均正常，数据面 HTTP 200
+响应头即时返回但 body 挂起无任何 token）。
+
+**修复**：
+1. 补齐 12 个缺失小文件（README.md / vocab.json 等）；
+2. `curl -C -` 断点续传重下 3.09GB model.safetensors，SHA256 与上游
+   x-linked-etag 一致
+   （90eeb02604181dbcccd0a30a1f550a4a8928ca7dcbee4aee1449239306cfdfca）；
+3. 重启实例，文本推理（"What is 2+2?"→"4"）与图像推理恢复。
+
+**验收**：
+- `scripts/verify_m192.sh` 复跑：单测 + 黑盒 6 场景 20 断言全绿
+  （a. chat 2 图 vision 路由 parts 数组 base64 一致 + 事件元数据 + history
+  透传 + 终态 done；b. agent 带图 422 零污染；c. >2MB 422 含 name；
+  d. 第 5 张 422；e. GET 字节一致取回/404 防护三连；f. 无图回归 worker
+  路由纯 str）。
+- 真实端点红蓝双图问答（studio01:52415，2×64×64 PNG，max_tokens=32）：
+  返回「red blue」（prompt_tokens=160, completion_tokens=3），VL 数据面健康。
+
+**registry 终态**：82 条 **open 归零**（resolved 47 / wontfix 35），
+`limitations_report.py check ok`。

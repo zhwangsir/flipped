@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": "2026-08-06T17:01:06.255274",
+  "updated_at": "2026-08-06T22:06:09.162980",
   "limitations": [
     {
       "id": "L-M171-1",
@@ -922,8 +922,8 @@
       "impact": "chat/plan 带图消息在真实 exo 端点上暂时得不到视觉模型响应（路由与组装正确，端点不答）",
       "priority": "P1",
       "difficulty": "低",
-      "status": "open",
-      "resolution_note": "",
+      "status": "resolved",
+      "resolution_note": "2026-08-06 消化：根因系 exo 下载器 assert+append bug 致模型文件损坏（model.safetensors.partial 尺寸不符、SHA256 不过）——补齐 12 个缺失小文件 + curl -C - 断点续传重下 3.09GB model.safetensors，SHA256 与上游 x-linked-etag 一致（90eeb026…dfca）；重启实例后文本推理（2+2→4）与图像推理正常。验收复跑：verify_m192.sh 单测+黑盒 20 断言全绿；真实端点红蓝双图问答 studio01:52415 返回「red blue」（prompt_tokens=160, completion_tokens=3），VL 数据面恢复健康",
       "target": "exo 集群 VL 实例恢复后复跑 scripts/verify_m192.sh + 真实红蓝图问答"
     },
     {
