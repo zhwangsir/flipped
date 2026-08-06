@@ -46,6 +46,18 @@ def _model_id_for_alias(alias: str) -> str:
     return env_map.get(alias, alias)
 
 
+def list_model_aliases() -> list[dict[str, str]]:
+    """可用模型 alias 清单（M195.3，消化 L-M194-2）。
+
+    从 _model_id_for_alias 的 alias 集合派生，env 覆盖实时反映（运行期读，
+    不缓存）。前端评审模型下拉等动态选项由此供给，替代硬编码。
+    """
+    return [
+        {"alias": a, "model": _model_id_for_alias(a)}
+        for a in ("coder", "architect", "supervisor", "overseer", "monitor")
+    ]
+
+
 def _headers() -> dict[str, str] | None:
     key = _api_key()
     return {"Authorization": f"Bearer {key}"} if key else None

@@ -239,6 +239,15 @@ def _cmd_check(args: argparse.Namespace) -> int:
         if status in ("resolved", "wontfix") and not str(
                 lim.get("resolution_note", "")).strip():
             violations.append(f"{lid}: {status} 缺 resolution_note")
+        # 4. M195.2 · target 存在性校验（消化 L-M185-3）：
+        #    target 为 ^M\d+$ 格式时必须指向 STATE.json 真实存在的里程碑；
+        #    「后续里程碑」等非 M 格式跳过（不约束自由文本）。
+        target = str(lim.get("target") or "").strip()
+        if re.fullmatch(r"M\d+", target):
+            known_ms = set(state.get("milestones", {}).keys())
+            if target not in known_ms:
+                violations.append(
+                    f"{lid}: target 指向不存在的里程碑（{target}）")
     if violations:
         print("registry violations:")
         for v in violations:
@@ -425,6 +434,29 @@ def _render_report(reg: dict, registry_path: str, report_date: str) -> str:
     return "\n".join(lines)
 
 
+def _update_report_index(out: str, report_date: str, total: int) -> None:
+    """M195.2 · 报告索引（消化 L-M184-4）：reports/index.md 按文件名去重维护。
+
+    每行：- [文件名](文件名) — YYYY-MM-DD · N 条。同文件重复生成只更新不追加。
+    索引文件与报告同目录（out 的 parent）。
+    """
+    index_path = Path(out).parent / "index.md"
+    name = os.path.basename(out)
+    entry = f"- [{name}]({name}) — {report_date} · {total} 条"
+    lines: list[str] = []
+    if index_path.exists():
+        lines = index_path.read_text(encoding="utf-8").splitlines()
+    header = "# 已知限制分析报告索引"
+    if not lines or lines[0].strip() != header:
+        lines = [header, ""] + [l for l in lines if l.strip().startswith("- ")]
+    kept = [l for l in lines if not l.startswith(f"- [{name}](")]
+    kept.append(entry)
+    # 保持头部在前，条目按文件名排序（文件名含日期 → 时间序）
+    head = [l for l in kept if not l.startswith("- [")]
+    items = sorted(l for l in kept if l.startswith("- ["))
+    index_path.write_text("\n".join(head + items) + "\n", encoding="utf-8")
+
+
 def _cmd_report(args: argparse.Namespace) -> int:
     out = args.out or os.path.join(
         DEFAULT_REPORT_DIR,
@@ -434,6 +466,7 @@ def _cmd_report(args: argparse.Namespace) -> int:
     md = _render_report(reg, args.registry, _report_date(out))
     Path(out).parent.mkdir(parents=True, exist_ok=True)
     Path(out).write_text(md, encoding="utf-8")
+    _update_report_index(out, _report_date(out), len(reg["limitations"]))
     print(f"report written: {out} ({len(reg['limitations'])} limitations)")
     return 0
 

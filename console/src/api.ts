@@ -123,6 +123,11 @@ export function reviewProject(model?: string): Promise<AiReviewResult> {
   });
 }
 
+// M195.3 — 模型 alias 清单:GET /models/aliases,评审模型下拉动态选项(替代硬编码)
+export function listModelAliases(): Promise<{ aliases: { alias: string; model: string }[] }> {
+  return api<{ aliases: { alias: string; model: string }[] }>('/models/aliases');
+}
+
 // M186.1 — 评审历史:GET /project/reviews 列表(ts desc,无 findings) / GET /project/reviews/{id} 详情
 export function fetchProjectReviews(): Promise<{ reviews: ReviewHistoryEntry[] }> {
   return api<{ reviews: ReviewHistoryEntry[] }>('/project/reviews');

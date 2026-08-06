@@ -6,14 +6,13 @@
 
 | 分类 | 数量 |
 | --- | --- |
-| 未分类 | 24 |
-| 功能缺口 | 19 |
-| 架构取舍 | 19 |
-| 安全 | 7 |
-| 数据一致性 | 5 |
+| 架构取舍 | 32 |
+| 功能缺口 | 26 |
+| 安全 | 9 |
+| 数据一致性 | 6 |
 | 性能 | 4 |
 | 测试覆盖 | 3 |
-| 外部依赖 | 1 |
+| 外部依赖 | 2 |
 
 | 优先级 | 数量 |
 | --- | --- |
@@ -23,10 +22,10 @@
 
 | 状态 | 数量 |
 | --- | --- |
-| open | 51 |
+| open | 11 |
 | in_progress | 0 |
-| resolved | 31 |
-| wontfix | 0 |
+| resolved | 36 |
+| wontfix | 35 |
 
 ## 2. 全量明细
 
@@ -56,21 +55,25 @@
 
 | 分类 | 优先级 | 难度 | 状态 | 目标 |
 | --- | --- | --- | --- | --- |
-| 功能缺口 | P2 | 中 | open | 后续里程碑 |
+| 功能缺口 | P2 | 中 | resolved | 后续里程碑 |
 
 > markdown fenced code block 内行首 # 会被当标题切段（不豁免，留作后续增强）
 
 影响：含 fenced code block 的 markdown 会被误切段，该文件检索粒度变粗
 
+处置：M195.1 消化：_split_markdown 增 fenced code block 围栏状态跟踪（```/~~~），围栏内行首 # 不再当标题切段；未闭合围栏余下全文保守不切段。tests/test_m195_p2_batch.py 覆盖
+
 ### L-M172-1 · M172
 
 | 分类 | 优先级 | 难度 | 状态 | 目标 |
 | --- | --- | --- | --- | --- |
-| 架构取舍 | P2 | 低 | open | 后续里程碑（token 级预算候选） |
+| 架构取舍 | P2 | 低 | wontfix | 后续里程碑（token 级预算候选） |
 
 > 截断按字符数非 token（CJK/ASCII 等宽对待，max_chars=2400 是保守预算，token 只少不超）
 
 影响：注入预算按字符截断偏保守，实际 token 占用只少不超，无上下文溢出风险
+
+处置：既定设计（M195.4 清仓）：截断按字符数非 token 是保守预算，token 占用只少不超，无溢出风险
 
 ### L-M172-2 · M172
 
@@ -108,21 +111,25 @@
 
 | 分类 | 优先级 | 难度 | 状态 | 目标 |
 | --- | --- | --- | --- | --- |
-| 架构取舍 | P2 | 低 | open | 后续里程碑 |
+| 架构取舍 | P2 | 低 | wontfix | 后续里程碑 |
 
 > 注入固定 max_chars=1600（保守预算，token 只少不超），无请求级调参
 
 影响：地图注入预算固定 1600 字符偏保守，token 只少不超；暂不支持请求级调参
 
+处置：既定设计（M195.4 清仓）：地图注入固定 max_chars=1600 保守预算，token 只少不超
+
 ### L-M173-3 · M173
 
 | 分类 | 优先级 | 难度 | 状态 | 目标 |
 | --- | --- | --- | --- | --- |
-| 架构取舍 | P2 | 低 | open | 后续里程碑 |
+| 架构取舍 | P2 | 低 | wontfix | 后续里程碑 |
 
 > 目录用途推断为启发式（目录名映射表），未知目录只列子项名不瞎编
 
 影响：未知目录在地图中只有子项名无用途说明（宁缺毋滥不瞎编）
+
+处置：既定设计（M195.4 清仓）：目录用途启发式宁缺毋滥不瞎编，未知目录只列子项名
 
 ### L-M174-1 · M174
 
@@ -140,21 +147,25 @@
 
 | 分类 | 优先级 | 难度 | 状态 | 目标 |
 | --- | --- | --- | --- | --- |
-| 架构取舍 | P2 | 低 | open | 后续里程碑 |
+| 架构取舍 | P2 | 低 | wontfix | 后续里程碑 |
 
 > agent 模式只回滚到该轮快照=该轮及之后文件改动全撤销；chat/plan 无文件操作纯对话截断
 
 影响：agent 会话编辑重跑会连带撤销该轮及之后的全部文件改动，回滚范围需用户知晓
 
+处置：既定设计（M195.4 清仓）：agent 编辑重跑连带撤销该轮及之后文件改动，语义已向用户明示
+
 ### L-M174-3 · M174
 
 | 分类 | 优先级 | 难度 | 状态 | 目标 |
 | --- | --- | --- | --- | --- |
-| 架构取舍 | P2 | 低 | open | 后续里程碑（对话历史组装候选） |
+| 架构取舍 | P2 | 低 | wontfix | 后续里程碑（对话历史组装候选） |
 
 > chat/plan _run_chat 本身无 LLM 对话历史（单消息无状态），重跑不带前序对话上下文——与现状行为一致，未额外引入历史组装
 
 影响：chat/plan 重跑不带前序对话上下文（单消息无状态语义，与现状一致）
+
+处置：既定设计（M195.4 清仓）：chat/plan 单消息无状态语义，重跑不带前序对话上下文与现状一致
 
 ### L-M174-4 · M174
 
@@ -182,21 +193,25 @@
 
 | 分类 | 优先级 | 难度 | 状态 | 目标 |
 | --- | --- | --- | --- | --- |
-| 架构取舍 | P2 | 低 | open | 后续里程碑 |
+| 架构取舍 | P2 | 低 | wontfix | 后续里程碑 |
 
 > 展开是发送时一次性行为（历史 @token 不重放；edit 重跑按新文本重新展开，行为自然正确）
 
 影响：历史消息中的 @token 不回放展开（仅发送时一次性展开，edit 重跑按新文本重新展开）
 
+处置：既定设计（M195.4 清仓）：@ 展开发送时一次性，历史 token 不回放，edit 重跑按新文本重展开
+
 ### L-M175-3 · M175
 
 | 分类 | 优先级 | 难度 | 状态 | 目标 |
 | --- | --- | --- | --- | --- |
-| 架构取舍 | P2 | 低 | open | 后续里程碑（限额调参候选） |
+| 架构取舍 | P2 | 低 | wontfix | 后续里程碑（限额调参候选） |
 
 > 补全候选上限 8 条、单文件 32KB/总量 64KB/5 文件上限；skipped 状态仅提示不注入
 
 影响：大文件/多文件 @ 引用受限额截断（32KB/64KB/5 文件），skipped 文件不进上下文仅提示
+
+处置：既定设计（M195.4 清仓）：@ 引用限额（8 候选/32KB/64KB/5 文件）为注入防护预算
 
 ### L-M176-1 · M176
 
@@ -214,11 +229,13 @@
 
 | 分类 | 优先级 | 难度 | 状态 | 目标 |
 | --- | --- | --- | --- | --- |
-| 架构取舍 | P2 | 低 | open | 后续里程碑 |
+| 架构取舍 | P2 | 低 | wontfix | 后续里程碑 |
 
 > goal 运行中普通消息/edit/undo 全 409（wrapper 持 RUNNING_TASKS 全周期，与现状一致）
 
 影响：goal 长跑期间会话被独占，普通消息/edit/undo 均被 409 拒绝
+
+处置：既定设计（M195.4 清仓）：goal 长跑独占会话 409 防重入，与 wrapper RUNNING_TASKS 语义一致
 
 ### L-M176-3 · M176
 
@@ -248,31 +265,37 @@
 
 | 分类 | 优先级 | 难度 | 状态 | 目标 |
 | --- | --- | --- | --- | --- |
-| 架构取舍 | P2 | 低 | open | 后续里程碑 |
+| 架构取舍 | P2 | 低 | wontfix | 后续里程碑 |
 
 > revert 只动 worktree，绝不清 staging area、绝不整仓 reset/checkout
 
 影响：revert 不影响 staging area（安全设计），已暂存改动需用户自行处理
 
+处置：既定安全设计（M195.4 清仓）：revert 只动 worktree 不碰 staging area、不整仓 reset
+
 ### L-M177-2 · M177
 
 | 分类 | 优先级 | 难度 | 状态 | 目标 |
 | --- | --- | --- | --- | --- |
-| 架构取舍 | P2 | 低 | open | 后续里程碑 |
+| 架构取舍 | P2 | 低 | wontfix | 后续里程碑 |
 
 > untracked 回滚=unlink 仅限 ls-files 判定的常规文件；symlink 删链不删目标（天然安全）
 
 影响：symlink 回滚仅删链不删目标（天然安全）；非常规文件不纳入回滚
 
+处置：既定安全设计（M195.4 清仓）：symlink 回滚删链不删目标，天然安全
+
 ### L-M177-3 · M177
 
 | 分类 | 优先级 | 难度 | 状态 | 目标 |
 | --- | --- | --- | --- | --- |
-| 架构取舍 | P2 | 低 | open | 后续里程碑 |
+| 架构取舍 | P2 | 低 | wontfix | 后续里程碑 |
 
 > 行内确认=ZCode rewind 安全摘要的最小等价（动作文案写清后果），不做二次 modal
 
 影响：回滚确认仅行内文案摘要，无二次 modal 拦截（动作文案已写清后果）
+
+处置：既定设计（M195.4 清仓）：行内确认文案写清后果，不做二次 modal
 
 ### L-M177-4 · M177
 
@@ -290,11 +313,13 @@
 
 | 分类 | 优先级 | 难度 | 状态 | 目标 |
 | --- | --- | --- | --- | --- |
-| 架构取舍 | P2 | 低 | open | 后续里程碑（执行结果回填任务卡候选） |
+| 架构取舍 | P2 | 低 | wontfix | 后续里程碑（执行结果回填任务卡候选） |
 
 > mark_run(done) 语义=「派发成功」非「任务执行完成」（执行结果在会话事件流，任务卡可跳转查看）
 
 影响：任务卡状态=派发成功而非执行完成，执行结果需跳转会话事件流查看
+
+处置：既定设计（M195.4 清仓）：mark_run(done)=派发成功语义，执行结果在会话事件流查看
 
 ### L-M178-2 · M178
 
@@ -334,11 +359,13 @@
 
 | 分类 | 优先级 | 难度 | 状态 | 目标 |
 | --- | --- | --- | --- | --- |
-| 架构取舍 | P2 | 低 | open | 后续里程碑（预算内送新文件头部候选） |
+| 架构取舍 | P2 | 低 | wontfix | 后续里程碑（预算内送新文件头部候选） |
 
 > untracked 文件按契约只送路径+行数（不送内容），LLM 对新文件只能做有限评审——预算与注入防护的既定取舍
 
 影响：新增文件评审深度有限（LLM 只见路径+行数不见内容），预算与注入防护的既定取舍
+
+处置：既定设计（M195.4 清仓）：untracked 文件只送路径+行数，预算与注入防护取舍
 
 ### L-M179-2 · M179
 
@@ -392,21 +419,25 @@
 
 | 分类 | 优先级 | 难度 | 状态 | 目标 |
 | --- | --- | --- | --- | --- |
-| 架构取舍 | P2 | 低 | open | 后续里程碑 |
+| 架构取舍 | P2 | 低 | wontfix | 后续里程碑 |
 
 > files 记录全部命中文件（含被截断丢弃的节），截断注记追加在预算外（可能略超 max_chars）
 
 影响：截断注记追加在预算外，极端情况注入略超 max_chars（注记量级，token 影响极小）
 
+处置：既定设计（M195.4 清仓）：截断注记追加在预算外，量级极小无 token 风险
+
 ### L-M180-3 · M180
 
 | 分类 | 优先级 | 难度 | 状态 | 目标 |
 | --- | --- | --- | --- | --- |
-| 架构取舍 | P2 | 低 | open | 后续里程碑 |
+| 架构取舍 | P2 | 低 | wontfix | 后续里程碑 |
 
 > 内容空白的规则文件视为不命中（满足「空规则零注入」红线）
 
 影响：空白规则文件静默不命中（空规则零注入红线），用户可能困惑为何不生效
+
+处置：既定设计（M195.4 清仓）：空白规则文件不命中，满足空规则零注入红线
 
 ### L-M180-4 · M180
 
@@ -424,31 +455,37 @@
 
 | 分类 | 优先级 | 难度 | 状态 | 目标 |
 | --- | --- | --- | --- | --- |
-| 安全 | P2 | 低 | open | 后续里程碑 |
+| 安全 | P2 | 低 | wontfix | 后续里程碑 |
 
 > 远程面只读会话 + 发消息 + 审批三能力；不暴露文件树/终端/项目写/其他会话（token 绑定单会话）
 
 影响：移动端仅三能力（只读/发消息/审批），桌面端能力不暴露（token 绑定单会话的安全围栏）
 
+处置：既定安全设计（M195.4 清仓）：远程面三能力（只读/发消息/审批）token 绑定单会话围栏
+
 ### L-M181-2 · M181
 
 | 分类 | 优先级 | 难度 | 状态 | 目标 |
 | --- | --- | --- | --- | --- |
-| 安全 | P2 | 低 | open | 后续里程碑 |
+| 安全 | P2 | 低 | wontfix | 后续里程碑 |
 
 > token 单活制：同 session 重复签发旧 token 即失效；TTL 默认 1800s（FLIPPED_REMOTE_TTL_S）过期即 purge
 
 影响：重复签发使旧手机端立即失效；30 分钟 TTL 过期需重新扫码
 
+处置：既定安全设计（M195.4 清仓）：token 单活制 + TTL 1800s 过期 purge
+
 ### L-M181-3 · M181
 
 | 分类 | 优先级 | 难度 | 状态 | 目标 |
 | --- | --- | --- | --- | --- |
-| 架构取舍 | P2 | 低 | open | 后续里程碑 |
+| 架构取舍 | P2 | 低 | wontfix | 后续里程碑 |
 
 > 远程发消息走 canonical handler 缺省行为（不支持请求级 mode/model 覆盖），语义=console 发送
 
 影响：手机端发消息固定 console 语义，不能按请求覆盖 mode/model
+
+处置：既定设计（M195.4 清仓）：远程发消息=console 发送语义，不支持请求级 mode/model 覆盖
 
 ### L-M181-4 · M181
 
@@ -476,71 +513,85 @@
 
 | 分类 | 优先级 | 难度 | 状态 | 目标 |
 | --- | --- | --- | --- | --- |
-| 架构取舍 | P2 | 低 | open | 后续里程碑 |
+| 架构取舍 | P2 | 低 | wontfix | 后续里程碑 |
 
 > 移动页为零构建自包含 HTML（非 React），与 console 前端无共享组件
 
 影响：移动页零构建自包含 HTML 与 React 主前端各自演进，样式/组件存在双倍维护面
 
+处置：既定设计（M195.4 清仓）：移动页零构建自包含 HTML，与 React 主前端各自演进
+
 ### L-M182-1 · M182
 
 | 分类 | 优先级 | 难度 | 状态 | 目标 |
 | --- | --- | --- | --- | --- |
-| 未分类 | P2 | 中 | open | — |
+| 外部依赖 | P2 | 中 | wontfix | — |
 
 > 个人微信无官方 bot API，落地企业微信应用回调；个人微信接入不在路线图
 
 影响：（待评估）
 
+处置：既定路线图（M195.4 清仓）：个人微信无官方 bot API，接入不在路线图；企业微信应用回调已落地
+
 ### L-M182-2 · M182
 
 | 分类 | 优先级 | 难度 | 状态 | 目标 |
 | --- | --- | --- | --- | --- |
-| 性能 | P2 | 中 | open | — |
+| 性能 | P2 | 中 | resolved | — |
 
 > 入站回复经轮询 history 实现（FLIPPED_BOT_REPLY_TIMEOUT_S 默认 90s），超时发固定兜底文案；长任务超 90s 仅收兜底文案不阻塞后台执行
 
 影响：（待评估）
 
+处置：M195.4 消化：FLIPPED_BOT_REPLY_TIMEOUT_S env 已支持（bot_channel.py 默认 90s，非法值回落 90）；长任务超时发兜底文案不阻塞后台执行为既定语义
+
 ### L-M182-3 · M182
 
 | 分类 | 优先级 | 难度 | 状态 | 目标 |
 | --- | --- | --- | --- | --- |
-| 未分类 | P2 | 中 | open | — |
+| 安全 | P2 | 中 | wontfix | — |
 
 > 一 chat 绑定一会话（mode=chat）；bot 会话不暴露文件树/终端/项目写等 console 能力
 
 影响：（待评估）
 
+处置：既定安全设计（M195.4 清仓）：一 chat 绑定一会话，bot 会话不暴露 console 能力围栏
+
 ### L-M182-4 · M182
 
 | 分类 | 优先级 | 难度 | 状态 | 目标 |
 | --- | --- | --- | --- | --- |
-| 未分类 | P2 | 中 | open | — |
+| 架构取舍 | P2 | 中 | wontfix | — |
 
 > WeCom 依赖 pycryptodome，缺失时 available()=False 优雅降级（channels configured=false 不炸后端）
 
 影响：（待评估）
 
+处置：既定设计（M195.4 清仓）：pycryptodome 缺失时优雅降级 configured=false，不炸后端
+
 ### L-M182-5 · M182
 
 | 分类 | 优先级 | 难度 | 状态 | 目标 |
 | --- | --- | --- | --- | --- |
-| 未分类 | P2 | 中 | open | — |
+| 架构取舍 | P2 | 中 | wontfix | — |
 
 > outbound 走平台主动 send API（Telegram sendMessage/WeCom 应用消息），非 webhook 被动回复
 
 影响：（待评估）
 
+处置：既定设计（M195.4 清仓）：outbound 走平台主动 send API 而非 webhook 被动回复
+
 ### L-M182-6 · M182
 
 | 分类 | 优先级 | 难度 | 状态 | 目标 |
 | --- | --- | --- | --- | --- |
-| 未分类 | P2 | 中 | open | — |
+| 架构取舍 | P2 | 中 | wontfix | — |
 
 > 身份映射 platform+chat_id→session_id 单映射，同 chat 多用户共享会话（群聊场景无逐用户隔离）
 
 影响：（待评估）
+
+处置：既定设计（M195.4 清仓）：身份映射 chat 级单映射，群聊共享会话
 
 ### L-M183-1 · M183
 
@@ -582,7 +633,7 @@
 
 | 分类 | 优先级 | 难度 | 状态 | 目标 |
 | --- | --- | --- | --- | --- |
-| 未分类 | P2 | 中 | resolved | — |
+| 功能缺口 | P2 | 中 | resolved | — |
 
 > worker 规则与项目规则共享 300 字符预算（worker 规则优先在前，超出尾部整条丢弃），超长规则可能不生效
 
@@ -594,7 +645,7 @@
 
 | 分类 | 优先级 | 难度 | 状态 | 目标 |
 | --- | --- | --- | --- | --- |
-| 未分类 | P2 | 中 | resolved | — |
+| 功能缺口 | P2 | 中 | resolved | — |
 
 > history cap 20 版本，更早版本不可回滚
 
@@ -618,7 +669,7 @@
 
 | 分类 | 优先级 | 难度 | 状态 | 目标 |
 | --- | --- | --- | --- | --- |
-| 未分类 | P2 | 中 | open | — |
+| 功能缺口 | P2 | 中 | open | — |
 
 > classify 为关键词启发式（六类映射），命中率依赖限制文本措辞，人工校正为准（不踩人工已分类条目）
 
@@ -640,31 +691,37 @@
 
 | 分类 | 优先级 | 难度 | 状态 | 目标 |
 | --- | --- | --- | --- | --- |
-| 未分类 | P2 | 中 | open | — |
+| 架构取舍 | P2 | 中 | wontfix | — |
 
 > registry 人工字段（priority/difficulty/target/impact）需人工维护，脚本不自动评估
 
 影响：（待评估）
 
+处置：既定流程（M195.4 清仓）：registry 人工字段（priority/difficulty/target/impact）人工维护，脚本不自动评估
+
 ### L-M184-4 · M184
 
 | 分类 | 优先级 | 难度 | 状态 | 目标 |
 | --- | --- | --- | --- | --- |
-| 未分类 | P2 | 中 | open | — |
+| 功能缺口 | P2 | 中 | resolved | — |
 
 > 报告按日生成同日覆盖（limitations_analysis_<YYYYMMDD>.md），历史报告无索引机制
 
 影响：（待评估）
 
+处置：M195.2 消化：report 生成后自动维护 reports/index.md 索引（按文件名去重，条目按文件名排序=时间序）
+
 ### L-M185-1 · M185
 
 | 分类 | 优先级 | 难度 | 状态 | 目标 |
 | --- | --- | --- | --- | --- |
-| 架构取舍 | P2 | 低 | open | — |
+| 架构取舍 | P2 | 低 | wontfix | — |
 
 > worker_rules_injected 标记只在事件层（events payload），history turn 不折叠（与 M173 map_injected 同设计），前端对话流不感知注入标记
 
 影响：（待评估）
+
+处置：既定设计（M195.4 清仓）：worker_rules_injected 标记只在事件层，与 M173 map_injected 同设计
 
 ### L-M185-2 · M185
 
@@ -682,11 +739,13 @@
 
 | 分类 | 优先级 | 难度 | 状态 | 目标 |
 | --- | --- | --- | --- | --- |
-| 功能缺口 | P2 | 低 | open | — |
+| 功能缺口 | P2 | 低 | resolved | — |
 
 > check 增强校验覆盖 id/枚举/注记/唯一性，不验 target 字段指向的里程碑是否真实存在
 
 影响：（待评估）
+
+处置：M195.2 消化：check 增 target 存在性校验——target 为 ^M\d+$ 格式时必须指向 STATE.json 真实里程碑，自由文本跳过
 
 ### L-M185-4 · M185
 
@@ -704,7 +763,7 @@
 
 | 分类 | 优先级 | 难度 | 状态 | 目标 |
 | --- | --- | --- | --- | --- |
-| 未分类 | P2 | 中 | open | — |
+| 数据一致性 | P2 | 中 | open | — |
 
 > 评审历史存应用侧 data/reviews/，换机/清数据即失（非项目 git 资产）
 
@@ -714,17 +773,19 @@
 
 | 分类 | 优先级 | 难度 | 状态 | 目标 |
 | --- | --- | --- | --- | --- |
-| 未分类 | P2 | 中 | open | — |
+| 架构取舍 | P2 | 中 | wontfix | — |
 
 > findings 跳转依赖 openFile 读文件成功；二进制/超 512KB/读失败静默降级无跳转
 
 影响：（待评估）
 
+处置：既定设计（M195.4 清仓）：findings 跳转 fail-open 静默降级（二进制/超 512KB/读失败）
+
 ### L-M186-3 · M186
 
 | 分类 | 优先级 | 难度 | 状态 | 目标 |
 | --- | --- | --- | --- | --- |
-| 未分类 | P2 | 中 | resolved | — |
+| 功能缺口 | P2 | 中 | resolved | — |
 
 > commit message 质量取决于 worker 模型，无人工编辑框（复制后自行修改）
 
@@ -736,7 +797,7 @@
 
 | 分类 | 优先级 | 难度 | 状态 | 目标 |
 | --- | --- | --- | --- | --- |
-| 未分类 | P2 | 中 | resolved | — |
+| 功能缺口 | P2 | 中 | resolved | — |
 
 > 逐 hunk 接受/拒绝仍遗留（L-M177-4 改窄保留）
 
@@ -748,11 +809,13 @@
 
 | 分类 | 优先级 | 难度 | 状态 | 目标 |
 | --- | --- | --- | --- | --- |
-| 未分类 | P2 | 中 | open | — |
+| 架构取舍 | P2 | 中 | wontfix | — |
 
 > cron 按服务器本地时区解释，跨时区部署需注意（once/interval 仍为 UTC 语义）
 
 影响：（待评估）
+
+处置：既定设计（M195.4 清仓）：cron 按服务器本地时区解释，once/interval 为 UTC 语义
 
 ### L-M187-2 · M187
 
@@ -782,11 +845,13 @@
 
 | 分类 | 优先级 | 难度 | 状态 | 目标 |
 | --- | --- | --- | --- | --- |
-| 未分类 | P2 | 中 | open | — |
+| 架构取舍 | P2 | 中 | wontfix | — |
 
 > 编辑不触及 last_run_at/run_count 历史（历史只增不改）
 
 影响：（待评估）
+
+处置：既定设计（M195.4 清仓）：编辑不触及 last_run_at/run_count，历史只增不改
 
 ### L-M188-1 · M188
 
@@ -804,7 +869,7 @@
 
 | 分类 | 优先级 | 难度 | 状态 | 目标 |
 | --- | --- | --- | --- | --- |
-| 未分类 | P2 | 中 | open | — |
+| 安全 | P2 | 中 | open | — |
 
 > verify_cmd host 路径（chat/plan）在宿主直接执行 subprocess，安全依赖 _verify_cmd_safe 双闸（白名单+危险模式），无沙盒隔离
 
@@ -814,11 +879,13 @@
 
 | 分类 | 优先级 | 难度 | 状态 | 目标 |
 | --- | --- | --- | --- | --- |
-| 未分类 | P2 | 中 | open | — |
+| 架构取舍 | P2 | 中 | wontfix | — |
 
 > 断点续跑以轮为原子单位：轮内 orchestrator checkpoint 不复用，半途轮整轮重跑
 
 影响：（待评估）
+
+处置：既定设计（M195.4 清仓）：断点续跑以轮为原子单位，半途轮整轮重跑
 
 ### L-M188-4 · M188
 
@@ -846,11 +913,13 @@
 
 | 分类 | 优先级 | 难度 | 状态 | 目标 |
 | --- | --- | --- | --- | --- |
-| 未分类 | P2 | 中 | open | — |
+| 架构取舍 | P2 | 中 | wontfix | — |
 
 > chunk 清理为 fail-open：清理异常静默跳过，陈旧数据下次 ingest 再清（不影响检索正确性，因检索按新 hash 命中）
 
 影响：（待评估）
+
+处置：既定设计（M195.4 清仓）：chunk 清理 fail-open，检索按新 hash 命中不受影响
 
 ### L-M192-1 · M192
 
@@ -866,51 +935,61 @@
 
 | 分类 | 优先级 | 难度 | 状态 | 目标 |
 | --- | --- | --- | --- | --- |
-| 未分类 | P2 | 中 | open | — |
+| 架构取舍 | P2 | 中 | wontfix | — |
 
 > hunk 接受状态为会话级内存标记（组件 useState + 内容指纹），刷新页面不保留——内容指纹决定不做持久化
 
 影响：（待评估）
 
+处置：既定设计（M195.4 清仓）：hunk 接受=会话级内存审查标记（内容指纹），不做持久化
+
 ### L-M193-2 · M193
 
 | 分类 | 优先级 | 难度 | 状态 | 目标 |
 | --- | --- | --- | --- | --- |
-| 未分类 | P2 | 中 | open | — |
+| 架构取舍 | P2 | 中 | wontfix | — |
 
 > 拒绝粒度=unified diff hunk（git 原生分组），hunk 内单行不可独立拒绝
 
 影响：（待评估）
 
+处置：既定设计（M195.4 清仓）：拒绝粒度=git 原生 unified diff hunk
+
 ### L-M193-3 · M193
 
 | 分类 | 优先级 | 难度 | 状态 | 目标 |
 | --- | --- | --- | --- | --- |
-| 未分类 | P2 | 中 | open | — |
+| 架构取舍 | P2 | 中 | wontfix | — |
 
 > staged 新文件/deleted 文件的 hunk 拒绝 422 引导整文件回滚（/dev/null 侧不支持单 hunk 反向应用）
 
 影响：（待评估）
 
+处置：既定设计（M195.4 清仓）：staged 新文件/deleted 文件 hunk 拒绝 422 引导整文件回滚
+
 ### L-M194-1 · M194
 
 | 分类 | 优先级 | 难度 | 状态 | 目标 |
 | --- | --- | --- | --- | --- |
-| 未分类 | P2 | 中 | open | — |
+| 架构取舍 | P2 | 中 | wontfix | — |
 
 > goal 展开为启动时一次性行为（与 M175 发送时展开同哲学，续跑不重展开）
 
 影响：（待评估）
 
+处置：既定设计（M195.4 清仓）：goal @ 展开启动时一次性，续跑不重展开（与 M175 同哲学）
+
 ### L-M194-2 · M194
 
 | 分类 | 优先级 | 难度 | 状态 | 目标 |
 | --- | --- | --- | --- | --- |
-| 未分类 | P2 | 中 | open | — |
+| 功能缺口 | P2 | 中 | resolved | — |
 
 > 评审模型选项硬编码（coder/architect/默认），未接动态 alias 列表
 
 影响：（待评估）
+
+处置：M195.3 消化：后端 GET /models/aliases（env 覆盖实时反映）+ 前端 ContextPanel 挂载拉取动态渲染下拉，失败回落 architect 硬编码
 
 ## 3. 优先级×难度矩阵
 
@@ -925,6 +1004,7 @@
 ### 已消化
 
 - L-M171-1 M189.1 消化：VectorStore 增 get_where/delete_ids 原语，ingest_file upsert 后按 source 过滤删除旧 content_hash 残留 chunk（fail-open）
+- L-M171-3 M195.1 消化：_split_markdown 增 fenced code block 围栏状态跟踪（```/~~~），围栏内行首 # 不再当标题切段；未闭合围栏余下全文保守不切段。tests/test_m195_p2_batch.py 覆盖
 - L-M173-1 M189.2 消化：_git_fingerprint（HEAD+porcelain 哈希）替代顶层 mtime 判 stale，深层内容/untracked/commit 全感知，非 git 回退 mtime
 - L-M174-1 M190.1：session trash 机制 + POST /edit/undo + 前端截断 banner；撤销=丢弃重跑产物+按原 id 重挂（黑盒驱动契约修正），真歧义（新 user 消息/锚点丢失）409。verify_m190.sh 场景 a/b/c 通过
 - L-M175-1 M192：图像附件全链接入 chat/plan——后端 ImageAttachmentIn 契约/落盘/_run_chat 多模态 parts/vision 路由/attachments 取回端点 + 前端 Composer 上传粘贴预览/历史缩略图；verify_m192.sh 单测 34 例 + 黑盒 20 断言全绿。遗留：exo VL 数据面推理超时，登记 L-M192-1 待集群恢复复验
@@ -940,6 +1020,7 @@
 - L-M180-1 M183 消化：worker 规则注入系统落地（agent 通路手动 CRUD + auto 通路自动生成 + 版本回滚 + 执行效果统计）
 - L-M180-4 M194.6 消化：Launcher 镜像「地图」入口加「规则」入口（IconScrollText），点击切 ContextPanel rules tab
 - L-M181-5 M182 消化：Bot Channel 多平台接入落地（Telegram webhook + 企业微信回调 + 统一消息接口 + 状态监控）
+- L-M182-2 M195.4 消化：FLIPPED_BOT_REPLY_TIMEOUT_S env 已支持（bot_channel.py 默认 90s，非法值回落 90）；长任务超时发兜底文案不阻塞后台执行为既定语义
 - L-M183-1 M185.1：chat/plan 通路注入 scope=all worker 规则（WORKER_RULES_CHAT_HEADER + build_worker_rules_text scopes 参数化），FLIPPED_WORKER_RULES_CHAT=0 可关，fail-open；payload.worker_rules_injected 标记。verify_m185.sh 黑盒验证
 - L-M183-2 M190.2：_collect_failure_texts 多源汇聚（failure_kb ∪ 事件流 error）+ generate_auto_rules_llm 兜底（FLIPPED_RULES_LLM 开关，fail-open），响应增 llm_used。verify_m190.sh 场景 d/e/f 通过
 - L-M183-3 M185.2：snapshot 派生 success_rate=success/(success+failure)（零 outcome→None）+ semantics 语义注记；前端 successRate 公式修正 + 语义注记渲染。契约快照已更新
@@ -947,7 +1028,9 @@
 - L-M183-5 M194.3 消化：history cap 运行期读 FLIPPED_WORKER_RULES_HISTORY_CAP（默认 20，clamp [1,500]，非法回落 20）
 - L-M183-6 M185.3：GET /worker/rules 支持 enabled 过滤 + sort=priority（priority desc→id asc，与注入层同序）；缺省契约不变（全量插入序）
 - L-M184-2 M185.4：check 增强 registry 真实性校验——id 格式 ^L-M<n>-<i>$、id 里程碑段==milestone 字段、枚举字段合法（status/priority/difficulty）、resolved/wontfix 必须有 resolution_note、id 唯一性
+- L-M184-4 M195.2 消化：report 生成后自动维护 reports/index.md 索引（按文件名去重，条目按文件名排序=时间序）
 - L-M185-2 M194.7 消化：WorkerRulesPanel 带 sort/enabled 参数服务端拉取（M185.3 端点），失败回落本地排序；加 enabled 过滤开关
+- L-M185-3 M195.2 消化：check 增 target 存在性校验——target 为 ^M\d+$ 格式时必须指向 STATE.json 真实里程碑，自由文本跳过
 - L-M185-4 M194.2 消化：chat 通路改读 FLIPPED_CHAT_RULES_MAX_CHARS（缺省回落 worker 值），双通路独立调参就绪
 - L-M186-3 M194.5 消化：commit message 展示改 textarea 可编辑，复制按钮取编辑后文本
 - L-M186-4 M193 已交付逐 hunk 接受/拒绝（同 L-M177-4，重复条目一并关闭）
@@ -955,6 +1038,7 @@
 - L-M187-3 M191.4 消化：_STALE_SEEN 两击确认集 + _stale_sweep_once（首击记标记跳过派发竞态窗，次击 try_resume_goal→checkpoint resume→update_status(error)+bus 留痕；paused 不碰）+ _stale_watchdog（FLIPPED_WATCHDOG_SCAN_S 默认 60s）lifespan 并排启动。tests/test_m191_watchdog.py 覆盖两击确认/活句柄不碰
 - L-M188-1 M191.2 消化：has_pending_approval 逆序扫 approval_request/result + rebuild_running pending 守卫 return None + _resume_with_decision 尾段钩子（rebuild 命中 → emit status「goal 审批续跑」+ create_task _goal_loop(start, judge_first=True) 注册 RUNNING_TASKS）；summarize_goal_events paused 态。tests/test_m191_goal_pause_resume.py 覆盖
 - L-M188-4 M191.1 消化：judge emit 增结构化 error=verdict is None（gap 文案不变前端兼容），rebuild_running 重放结构化优先、哨兵兜底旧格式——judge 熔断计数跨重启保留且不再被真实 judge gap 撞串污染。tests/test_m191_judge_error_field.py 覆盖 error 字段往返/哨兵兜底/撞串不误计
+- L-M194-2 M195.3 消化：后端 GET /models/aliases（env 覆盖实时反映）+ 前端 ContextPanel 挂载拉取动态渲染下拉，失败回落 architect 硬编码
 
 ### 当前迭代 P0
 
@@ -967,7 +1051,6 @@
 ### 候选池 P2/wontfix
 
 - L-M171-2 _git_files 以 repo toplevel 列举再按子目录过滤，超大 repo 有一次性列举开销（本地操作可接… → 后续里程碑
-- L-M171-3 markdown fenced code block 内行首 # 会被当标题切段（不豁免，留作后续增强） → 后续里程碑
 - L-M172-1 截断按字符数非 token（CJK/ASCII 等宽对待，max_chars=2400 是保守预算，token 只少不超… → 后续里程碑（token 级预算候选）
 - L-M172-2 黑盒不覆盖接线层真 LLM 路径（system 注入/rag_chunks 证据在单测 mock 层，避免烧模型 fla… → 后续里程碑
 - L-M172-3 注入检索为同步本地 Chroma 查询（毫秒级），未做异步化；若未来库极大可再优化 → 后续里程碑（库规模增大后再评估异步化）
@@ -993,16 +1076,13 @@
 - L-M181-4 host=127.0.0.1 时仅 host_note 文案提示，不自动改绑定（需 --host 0.0.0.0 起后端… → 后续里程碑（一键局域网模式候选）
 - L-M181-6 移动页为零构建自包含 HTML（非 React），与 console 前端无共享组件 → 后续里程碑
 - L-M182-1 个人微信无官方 bot API，落地企业微信应用回调；个人微信接入不在路线图
-- L-M182-2 入站回复经轮询 history 实现（FLIPPED_BOT_REPLY_TIMEOUT_S 默认 90s），超时发固定…
 - L-M182-3 一 chat 绑定一会话（mode=chat）；bot 会话不暴露文件树/终端/项目写等 console 能力
 - L-M182-4 WeCom 依赖 pycryptodome，缺失时 available()=False 优雅降级（channels co…
 - L-M182-5 outbound 走平台主动 send API（Telegram sendMessage/WeCom 应用消息），非 w…
 - L-M182-6 身份映射 platform+chat_id→session_id 单映射，同 chat 多用户共享会话（群聊场景无逐用户…
 - L-M184-1 classify 为关键词启发式（六类映射），命中率依赖限制文本措辞，人工校正为准（不踩人工已分类条目）
 - L-M184-3 registry 人工字段（priority/difficulty/target/impact）需人工维护，脚本不自动评…
-- L-M184-4 报告按日生成同日覆盖（limitations_analysis_<YYYYMMDD>.md），历史报告无索引机制
 - L-M185-1 worker_rules_injected 标记只在事件层（events payload），history turn 不…
-- L-M185-3 check 增强校验覆盖 id/枚举/注记/唯一性，不验 target 字段指向的里程碑是否真实存在
 - L-M186-1 评审历史存应用侧 data/reviews/，换机/清数据即失（非项目 git 资产）
 - L-M186-2 findings 跳转依赖 openFile 读文件成功；二进制/超 512KB/读失败静默降级无跳转
 - L-M187-1 cron 按服务器本地时区解释，跨时区部署需注意（once/interval 仍为 UTC 语义）
@@ -1015,7 +1095,6 @@
 - L-M193-2 拒绝粒度=unified diff hunk（git 原生分组），hunk 内单行不可独立拒绝
 - L-M193-3 staged 新文件/deleted 文件的 hunk 拒绝 422 引导整文件回滚（/dev/null 侧不支持单 h…
 - L-M194-1 goal 展开为启动时一次性行为（与 M175 发送时展开同哲学，续跑不重展开）
-- L-M194-2 评审模型选项硬编码（coder/architect/默认），未接动态 alias 列表
 
 ## 5. 跟踪机制说明
 

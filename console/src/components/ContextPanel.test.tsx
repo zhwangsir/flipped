@@ -35,11 +35,13 @@ vi.mock('../api', () => ({
   saveProjectRules: vi.fn(),
   fetchProjectMap: vi.fn(),
   regenerateProjectMap: vi.fn(),
+  // M195.3 — 评审模型下拉动态化:默认空清单 → 组件保持回落选项
+  listModelAliases: vi.fn(async () => ({ aliases: [] })),
 }));
 
 import { useApp } from '../store';
 import { isTauri } from '../lib/native';
-import { fetchProjectRules } from '../api';
+import { fetchProjectRules, listModelAliases } from '../api';
 import type {
   ChangedFile,
   FileNode,
@@ -966,6 +968,70 @@ describe('ContextPanel — 审查 tab · M194.4 评审模型选择', () => {
       },
     });
     expect(screen.getByText('0 条建议 · 评审了 1 个文件 · architect')).toBeInTheDocument();
+  });
+});
+
+// M195.3 — 评审模型下拉动态化:挂载拉 /models/aliases,成功→动态选项;失败/空→回落 architect
+describe('ContextPanel — 审查 tab · M195.3 评审模型动态下拉', () => {
+  const diffFiles: GitDiffFile[] = [
+    { path: 'src/a.ts', added: 3, removed: 1, lines: [{ type: 'add', text: '+new' }] },
+  ];
+  const renderDiff = (overrides: Record<string, unknown> = {}) => {
+    mockedUseApp.mockReturnValue({
+      ...baseState,
+      contextTab: 'diff',
+      changedFiles: [],
+      gitDiff: diffFiles,
+      ...overrides,
+    } as never);
+    return render(<ContextPanel />);
+  };
+  const mockedAliases = vi.mocked(listModelAliases);
+  const optionLabels = () =>
+    [...(screen.getByTitle('评审模型') as HTMLSelectElement).options].map((o) => o.textContent);
+
+  beforeEach(() => {
+    mockedAliases.mockReset();
+  });
+
+  it('alias 拉取成功 → 下拉渲染动态 alias 选项(默认项保留在首)', async () => {
+    mockedAliases.mockResolvedValue({
+      aliases: [
+        { alias: 'coder', model: 'm-coder' },
+        { alias: 'architect', model: 'm-arch' },
+        { alias: 'supervisor', model: 'm-sup' },
+      ],
+    });
+    renderDiff();
+    await waitFor(() => {
+      expect(optionLabels()).toEqual(['默认 · coder', 'coder', 'architect', 'supervisor']);
+    });
+  });
+
+  it('alias 拉取失败 → 回落 M194.4 硬编码 architect 选项', async () => {
+    mockedAliases.mockRejectedValue(new Error('boom'));
+    renderDiff();
+    await waitFor(() => expect(mockedAliases).toHaveBeenCalled());
+    expect(optionLabels()).toEqual(['默认 · coder', 'architect']);
+  });
+
+  it('alias 返回空清单 → 保持回落选项(不渲染空下拉)', async () => {
+    mockedAliases.mockResolvedValue({ aliases: [] });
+    renderDiff();
+    await waitFor(() => expect(mockedAliases).toHaveBeenCalled());
+    expect(optionLabels()).toEqual(['默认 · coder', 'architect']);
+  });
+
+  it('动态选项可选:选 supervisor 后点「AI 评审」→ runAiReview("supervisor")', async () => {
+    mockedAliases.mockResolvedValue({
+      aliases: [{ alias: 'coder', model: 'm1' }, { alias: 'supervisor', model: 'm3' }],
+    });
+    const runAiReview = vi.fn(async () => {});
+    renderDiff({ runAiReview });
+    await waitFor(() => expect(optionLabels()).toContain('supervisor'));
+    fireEvent.change(screen.getByTitle('评审模型'), { target: { value: 'supervisor' } });
+    fireEvent.click(screen.getByText('AI 评审'));
+    expect(runAiReview).toHaveBeenCalledWith('supervisor');
   });
 });
 

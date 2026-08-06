@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": "2026-08-06T04:03:33.665621",
+  "updated_at": "2026-08-06T04:40:09.900785",
   "limitations": [
     {
       "id": "L-M171-1",
@@ -34,8 +34,8 @@
       "impact": "含 fenced code block 的 markdown 会被误切段，该文件检索粒度变粗",
       "priority": "P2",
       "difficulty": "中",
-      "status": "open",
-      "resolution_note": "",
+      "status": "resolved",
+      "resolution_note": "M195.1 消化：_split_markdown 增 fenced code block 围栏状态跟踪（```/~~~），围栏内行首 # 不再当标题切段；未闭合围栏余下全文保守不切段。tests/test_m195_p2_batch.py 覆盖",
       "target": "后续里程碑"
     },
     {
@@ -46,8 +46,8 @@
       "impact": "注入预算按字符截断偏保守，实际 token 占用只少不超，无上下文溢出风险",
       "priority": "P2",
       "difficulty": "低",
-      "status": "open",
-      "resolution_note": "",
+      "status": "wontfix",
+      "resolution_note": "既定设计（M195.4 清仓）：截断按字符数非 token 是保守预算，token 占用只少不超，无溢出风险",
       "target": "后续里程碑（token 级预算候选）"
     },
     {
@@ -94,8 +94,8 @@
       "impact": "地图注入预算固定 1600 字符偏保守，token 只少不超；暂不支持请求级调参",
       "priority": "P2",
       "difficulty": "低",
-      "status": "open",
-      "resolution_note": "",
+      "status": "wontfix",
+      "resolution_note": "既定设计（M195.4 清仓）：地图注入固定 max_chars=1600 保守预算，token 只少不超",
       "target": "后续里程碑"
     },
     {
@@ -106,8 +106,8 @@
       "impact": "未知目录在地图中只有子项名无用途说明（宁缺毋滥不瞎编）",
       "priority": "P2",
       "difficulty": "低",
-      "status": "open",
-      "resolution_note": "",
+      "status": "wontfix",
+      "resolution_note": "既定设计（M195.4 清仓）：目录用途启发式宁缺毋滥不瞎编，未知目录只列子项名",
       "target": "后续里程碑"
     },
     {
@@ -130,8 +130,8 @@
       "impact": "agent 会话编辑重跑会连带撤销该轮及之后的全部文件改动，回滚范围需用户知晓",
       "priority": "P2",
       "difficulty": "低",
-      "status": "open",
-      "resolution_note": "",
+      "status": "wontfix",
+      "resolution_note": "既定设计（M195.4 清仓）：agent 编辑重跑连带撤销该轮及之后文件改动，语义已向用户明示",
       "target": "后续里程碑"
     },
     {
@@ -142,8 +142,8 @@
       "impact": "chat/plan 重跑不带前序对话上下文（单消息无状态语义，与现状一致）",
       "priority": "P2",
       "difficulty": "低",
-      "status": "open",
-      "resolution_note": "",
+      "status": "wontfix",
+      "resolution_note": "既定设计（M195.4 清仓）：chat/plan 单消息无状态语义，重跑不带前序对话上下文与现状一致",
       "target": "后续里程碑（对话历史组装候选）"
     },
     {
@@ -178,8 +178,8 @@
       "impact": "历史消息中的 @token 不回放展开（仅发送时一次性展开，edit 重跑按新文本重新展开）",
       "priority": "P2",
       "difficulty": "低",
-      "status": "open",
-      "resolution_note": "",
+      "status": "wontfix",
+      "resolution_note": "既定设计（M195.4 清仓）：@ 展开发送时一次性，历史 token 不回放，edit 重跑按新文本重展开",
       "target": "后续里程碑"
     },
     {
@@ -190,8 +190,8 @@
       "impact": "大文件/多文件 @ 引用受限额截断（32KB/64KB/5 文件），skipped 文件不进上下文仅提示",
       "priority": "P2",
       "difficulty": "低",
-      "status": "open",
-      "resolution_note": "",
+      "status": "wontfix",
+      "resolution_note": "既定设计（M195.4 清仓）：@ 引用限额（8 候选/32KB/64KB/5 文件）为注入防护预算",
       "target": "后续里程碑（限额调参候选）"
     },
     {
@@ -214,8 +214,8 @@
       "impact": "goal 长跑期间会话被独占，普通消息/edit/undo 均被 409 拒绝",
       "priority": "P2",
       "difficulty": "低",
-      "status": "open",
-      "resolution_note": "",
+      "status": "wontfix",
+      "resolution_note": "既定设计（M195.4 清仓）：goal 长跑独占会话 409 防重入，与 wrapper RUNNING_TASKS 语义一致",
       "target": "后续里程碑"
     },
     {
@@ -250,8 +250,8 @@
       "impact": "revert 不影响 staging area（安全设计），已暂存改动需用户自行处理",
       "priority": "P2",
       "difficulty": "低",
-      "status": "open",
-      "resolution_note": "",
+      "status": "wontfix",
+      "resolution_note": "既定安全设计（M195.4 清仓）：revert 只动 worktree 不碰 staging area、不整仓 reset",
       "target": "后续里程碑"
     },
     {
@@ -262,8 +262,8 @@
       "impact": "symlink 回滚仅删链不删目标（天然安全）；非常规文件不纳入回滚",
       "priority": "P2",
       "difficulty": "低",
-      "status": "open",
-      "resolution_note": "",
+      "status": "wontfix",
+      "resolution_note": "既定安全设计（M195.4 清仓）：symlink 回滚删链不删目标，天然安全",
       "target": "后续里程碑"
     },
     {
@@ -274,8 +274,8 @@
       "impact": "回滚确认仅行内文案摘要，无二次 modal 拦截（动作文案已写清后果）",
       "priority": "P2",
       "difficulty": "低",
-      "status": "open",
-      "resolution_note": "",
+      "status": "wontfix",
+      "resolution_note": "既定设计（M195.4 清仓）：行内确认文案写清后果，不做二次 modal",
       "target": "后续里程碑"
     },
     {
@@ -298,8 +298,8 @@
       "impact": "任务卡状态=派发成功而非执行完成，执行结果需跳转会话事件流查看",
       "priority": "P2",
       "difficulty": "低",
-      "status": "open",
-      "resolution_note": "",
+      "status": "wontfix",
+      "resolution_note": "既定设计（M195.4 清仓）：mark_run(done)=派发成功语义，执行结果在会话事件流查看",
       "target": "后续里程碑（执行结果回填任务卡候选）"
     },
     {
@@ -346,8 +346,8 @@
       "impact": "新增文件评审深度有限（LLM 只见路径+行数不见内容），预算与注入防护的既定取舍",
       "priority": "P2",
       "difficulty": "低",
-      "status": "open",
-      "resolution_note": "",
+      "status": "wontfix",
+      "resolution_note": "既定设计（M195.4 清仓）：untracked 文件只送路径+行数，预算与注入防护取舍",
       "target": "后续里程碑（预算内送新文件头部候选）"
     },
     {
@@ -406,8 +406,8 @@
       "impact": "截断注记追加在预算外，极端情况注入略超 max_chars（注记量级，token 影响极小）",
       "priority": "P2",
       "difficulty": "低",
-      "status": "open",
-      "resolution_note": "",
+      "status": "wontfix",
+      "resolution_note": "既定设计（M195.4 清仓）：截断注记追加在预算外，量级极小无 token 风险",
       "target": "后续里程碑"
     },
     {
@@ -418,8 +418,8 @@
       "impact": "空白规则文件静默不命中（空规则零注入红线），用户可能困惑为何不生效",
       "priority": "P2",
       "difficulty": "低",
-      "status": "open",
-      "resolution_note": "",
+      "status": "wontfix",
+      "resolution_note": "既定设计（M195.4 清仓）：空白规则文件不命中，满足空规则零注入红线",
       "target": "后续里程碑"
     },
     {
@@ -442,8 +442,8 @@
       "impact": "移动端仅三能力（只读/发消息/审批），桌面端能力不暴露（token 绑定单会话的安全围栏）",
       "priority": "P2",
       "difficulty": "低",
-      "status": "open",
-      "resolution_note": "",
+      "status": "wontfix",
+      "resolution_note": "既定安全设计（M195.4 清仓）：远程面三能力（只读/发消息/审批）token 绑定单会话围栏",
       "target": "后续里程碑"
     },
     {
@@ -454,8 +454,8 @@
       "impact": "重复签发使旧手机端立即失效；30 分钟 TTL 过期需重新扫码",
       "priority": "P2",
       "difficulty": "低",
-      "status": "open",
-      "resolution_note": "",
+      "status": "wontfix",
+      "resolution_note": "既定安全设计（M195.4 清仓）：token 单活制 + TTL 1800s 过期 purge",
       "target": "后续里程碑"
     },
     {
@@ -466,8 +466,8 @@
       "impact": "手机端发消息固定 console 语义，不能按请求覆盖 mode/model",
       "priority": "P2",
       "difficulty": "低",
-      "status": "open",
-      "resolution_note": "",
+      "status": "wontfix",
+      "resolution_note": "既定设计（M195.4 清仓）：远程发消息=console 发送语义，不支持请求级 mode/model 覆盖",
       "target": "后续里程碑"
     },
     {
@@ -502,20 +502,20 @@
       "impact": "移动页零构建自包含 HTML 与 React 主前端各自演进，样式/组件存在双倍维护面",
       "priority": "P2",
       "difficulty": "低",
-      "status": "open",
-      "resolution_note": "",
+      "status": "wontfix",
+      "resolution_note": "既定设计（M195.4 清仓）：移动页零构建自包含 HTML，与 React 主前端各自演进",
       "target": "后续里程碑"
     },
     {
       "id": "L-M182-1",
       "milestone": "M182",
       "text": "个人微信无官方 bot API，落地企业微信应用回调；个人微信接入不在路线图",
-      "category": "未分类",
+      "category": "外部依赖",
       "impact": "",
       "priority": "P2",
       "difficulty": "中",
-      "status": "open",
-      "resolution_note": "",
+      "status": "wontfix",
+      "resolution_note": "既定路线图（M195.4 清仓）：个人微信无官方 bot API，接入不在路线图；企业微信应用回调已落地",
       "target": ""
     },
     {
@@ -526,56 +526,56 @@
       "impact": "",
       "priority": "P2",
       "difficulty": "中",
-      "status": "open",
-      "resolution_note": "",
+      "status": "resolved",
+      "resolution_note": "M195.4 消化：FLIPPED_BOT_REPLY_TIMEOUT_S env 已支持（bot_channel.py 默认 90s，非法值回落 90）；长任务超时发兜底文案不阻塞后台执行为既定语义",
       "target": ""
     },
     {
       "id": "L-M182-3",
       "milestone": "M182",
       "text": "一 chat 绑定一会话（mode=chat）；bot 会话不暴露文件树/终端/项目写等 console 能力",
-      "category": "未分类",
+      "category": "安全",
       "impact": "",
       "priority": "P2",
       "difficulty": "中",
-      "status": "open",
-      "resolution_note": "",
+      "status": "wontfix",
+      "resolution_note": "既定安全设计（M195.4 清仓）：一 chat 绑定一会话，bot 会话不暴露 console 能力围栏",
       "target": ""
     },
     {
       "id": "L-M182-4",
       "milestone": "M182",
       "text": "WeCom 依赖 pycryptodome，缺失时 available()=False 优雅降级（channels configured=false 不炸后端）",
-      "category": "未分类",
+      "category": "架构取舍",
       "impact": "",
       "priority": "P2",
       "difficulty": "中",
-      "status": "open",
-      "resolution_note": "",
+      "status": "wontfix",
+      "resolution_note": "既定设计（M195.4 清仓）：pycryptodome 缺失时优雅降级 configured=false，不炸后端",
       "target": ""
     },
     {
       "id": "L-M182-5",
       "milestone": "M182",
       "text": "outbound 走平台主动 send API（Telegram sendMessage/WeCom 应用消息），非 webhook 被动回复",
-      "category": "未分类",
+      "category": "架构取舍",
       "impact": "",
       "priority": "P2",
       "difficulty": "中",
-      "status": "open",
-      "resolution_note": "",
+      "status": "wontfix",
+      "resolution_note": "既定设计（M195.4 清仓）：outbound 走平台主动 send API 而非 webhook 被动回复",
       "target": ""
     },
     {
       "id": "L-M182-6",
       "milestone": "M182",
       "text": "身份映射 platform+chat_id→session_id 单映射，同 chat 多用户共享会话（群聊场景无逐用户隔离）",
-      "category": "未分类",
+      "category": "架构取舍",
       "impact": "",
       "priority": "P2",
       "difficulty": "中",
-      "status": "open",
-      "resolution_note": "",
+      "status": "wontfix",
+      "resolution_note": "既定设计（M195.4 清仓）：身份映射 chat 级单映射，群聊共享会话",
       "target": ""
     },
     {
@@ -618,7 +618,7 @@
       "id": "L-M183-4",
       "milestone": "M183",
       "text": "worker 规则与项目规则共享 300 字符预算（worker 规则优先在前，超出尾部整条丢弃），超长规则可能不生效",
-      "category": "未分类",
+      "category": "功能缺口",
       "impact": "",
       "priority": "P2",
       "difficulty": "中",
@@ -630,7 +630,7 @@
       "id": "L-M183-5",
       "milestone": "M183",
       "text": "history cap 20 版本，更早版本不可回滚",
-      "category": "未分类",
+      "category": "功能缺口",
       "impact": "",
       "priority": "P2",
       "difficulty": "中",
@@ -654,7 +654,7 @@
       "id": "L-M184-1",
       "milestone": "M184",
       "text": "classify 为关键词启发式（六类映射），命中率依赖限制文本措辞，人工校正为准（不踩人工已分类条目）",
-      "category": "未分类",
+      "category": "功能缺口",
       "impact": "",
       "priority": "P2",
       "difficulty": "中",
@@ -678,24 +678,24 @@
       "id": "L-M184-3",
       "milestone": "M184",
       "text": "registry 人工字段（priority/difficulty/target/impact）需人工维护，脚本不自动评估",
-      "category": "未分类",
+      "category": "架构取舍",
       "impact": "",
       "priority": "P2",
       "difficulty": "中",
-      "status": "open",
-      "resolution_note": "",
+      "status": "wontfix",
+      "resolution_note": "既定流程（M195.4 清仓）：registry 人工字段（priority/difficulty/target/impact）人工维护，脚本不自动评估",
       "target": ""
     },
     {
       "id": "L-M184-4",
       "milestone": "M184",
       "text": "报告按日生成同日覆盖（limitations_analysis_<YYYYMMDD>.md），历史报告无索引机制",
-      "category": "未分类",
+      "category": "功能缺口",
       "impact": "",
       "priority": "P2",
       "difficulty": "中",
-      "status": "open",
-      "resolution_note": "",
+      "status": "resolved",
+      "resolution_note": "M195.2 消化：report 生成后自动维护 reports/index.md 索引（按文件名去重，条目按文件名排序=时间序）",
       "target": ""
     },
     {
@@ -706,8 +706,8 @@
       "impact": "",
       "priority": "P2",
       "difficulty": "低",
-      "status": "open",
-      "resolution_note": "",
+      "status": "wontfix",
+      "resolution_note": "既定设计（M195.4 清仓）：worker_rules_injected 标记只在事件层，与 M173 map_injected 同设计",
       "target": ""
     },
     {
@@ -730,8 +730,8 @@
       "impact": "",
       "priority": "P2",
       "difficulty": "低",
-      "status": "open",
-      "resolution_note": "",
+      "status": "resolved",
+      "resolution_note": "M195.2 消化：check 增 target 存在性校验——target 为 ^M\\d+$ 格式时必须指向 STATE.json 真实里程碑，自由文本跳过",
       "target": ""
     },
     {
@@ -750,7 +750,7 @@
       "id": "L-M186-1",
       "milestone": "M186",
       "text": "评审历史存应用侧 data/reviews/，换机/清数据即失（非项目 git 资产）",
-      "category": "未分类",
+      "category": "数据一致性",
       "impact": "",
       "priority": "P2",
       "difficulty": "中",
@@ -762,19 +762,19 @@
       "id": "L-M186-2",
       "milestone": "M186",
       "text": "findings 跳转依赖 openFile 读文件成功；二进制/超 512KB/读失败静默降级无跳转",
-      "category": "未分类",
+      "category": "架构取舍",
       "impact": "",
       "priority": "P2",
       "difficulty": "中",
-      "status": "open",
-      "resolution_note": "",
+      "status": "wontfix",
+      "resolution_note": "既定设计（M195.4 清仓）：findings 跳转 fail-open 静默降级（二进制/超 512KB/读失败）",
       "target": ""
     },
     {
       "id": "L-M186-3",
       "milestone": "M186",
       "text": "commit message 质量取决于 worker 模型，无人工编辑框（复制后自行修改）",
-      "category": "未分类",
+      "category": "功能缺口",
       "impact": "",
       "priority": "P2",
       "difficulty": "中",
@@ -786,7 +786,7 @@
       "id": "L-M186-4",
       "milestone": "M186",
       "text": "逐 hunk 接受/拒绝仍遗留（L-M177-4 改窄保留）",
-      "category": "未分类",
+      "category": "功能缺口",
       "impact": "",
       "priority": "P2",
       "difficulty": "中",
@@ -798,12 +798,12 @@
       "id": "L-M187-1",
       "milestone": "M187",
       "text": "cron 按服务器本地时区解释，跨时区部署需注意（once/interval 仍为 UTC 语义）",
-      "category": "未分类",
+      "category": "架构取舍",
       "impact": "",
       "priority": "P2",
       "difficulty": "中",
-      "status": "open",
-      "resolution_note": "",
+      "status": "wontfix",
+      "resolution_note": "既定设计（M195.4 清仓）：cron 按服务器本地时区解释，once/interval 为 UTC 语义",
       "target": ""
     },
     {
@@ -834,12 +834,12 @@
       "id": "L-M187-4",
       "milestone": "M187",
       "text": "编辑不触及 last_run_at/run_count 历史（历史只增不改）",
-      "category": "未分类",
+      "category": "架构取舍",
       "impact": "",
       "priority": "P2",
       "difficulty": "中",
-      "status": "open",
-      "resolution_note": "",
+      "status": "wontfix",
+      "resolution_note": "既定设计（M195.4 清仓）：编辑不触及 last_run_at/run_count，历史只增不改",
       "target": ""
     },
     {
@@ -858,7 +858,7 @@
       "id": "L-M188-2",
       "milestone": "M188",
       "text": "verify_cmd host 路径（chat/plan）在宿主直接执行 subprocess，安全依赖 _verify_cmd_safe 双闸（白名单+危险模式），无沙盒隔离",
-      "category": "未分类",
+      "category": "安全",
       "impact": "",
       "priority": "P2",
       "difficulty": "中",
@@ -870,12 +870,12 @@
       "id": "L-M188-3",
       "milestone": "M188",
       "text": "断点续跑以轮为原子单位：轮内 orchestrator checkpoint 不复用，半途轮整轮重跑",
-      "category": "未分类",
+      "category": "架构取舍",
       "impact": "",
       "priority": "P2",
       "difficulty": "中",
-      "status": "open",
-      "resolution_note": "",
+      "status": "wontfix",
+      "resolution_note": "既定设计（M195.4 清仓）：断点续跑以轮为原子单位，半途轮整轮重跑",
       "target": ""
     },
     {
@@ -906,12 +906,12 @@
       "id": "L-M189-2",
       "milestone": "M189",
       "text": "chunk 清理为 fail-open：清理异常静默跳过，陈旧数据下次 ingest 再清（不影响检索正确性，因检索按新 hash 命中）",
-      "category": "未分类",
+      "category": "架构取舍",
       "impact": "",
       "priority": "P2",
       "difficulty": "中",
-      "status": "open",
-      "resolution_note": "",
+      "status": "wontfix",
+      "resolution_note": "既定设计（M195.4 清仓）：chunk 清理 fail-open，检索按新 hash 命中不受影响",
       "target": ""
     },
     {
@@ -930,60 +930,60 @@
       "id": "L-M193-1",
       "milestone": "M193",
       "text": "hunk 接受状态为会话级内存标记（组件 useState + 内容指纹），刷新页面不保留——内容指纹决定不做持久化",
-      "category": "未分类",
+      "category": "架构取舍",
       "impact": "",
       "priority": "P2",
       "difficulty": "中",
-      "status": "open",
-      "resolution_note": "",
+      "status": "wontfix",
+      "resolution_note": "既定设计（M195.4 清仓）：hunk 接受=会话级内存审查标记（内容指纹），不做持久化",
       "target": ""
     },
     {
       "id": "L-M193-2",
       "milestone": "M193",
       "text": "拒绝粒度=unified diff hunk（git 原生分组），hunk 内单行不可独立拒绝",
-      "category": "未分类",
+      "category": "架构取舍",
       "impact": "",
       "priority": "P2",
       "difficulty": "中",
-      "status": "open",
-      "resolution_note": "",
+      "status": "wontfix",
+      "resolution_note": "既定设计（M195.4 清仓）：拒绝粒度=git 原生 unified diff hunk",
       "target": ""
     },
     {
       "id": "L-M193-3",
       "milestone": "M193",
       "text": "staged 新文件/deleted 文件的 hunk 拒绝 422 引导整文件回滚（/dev/null 侧不支持单 hunk 反向应用）",
-      "category": "未分类",
+      "category": "架构取舍",
       "impact": "",
       "priority": "P2",
       "difficulty": "中",
-      "status": "open",
-      "resolution_note": "",
+      "status": "wontfix",
+      "resolution_note": "既定设计（M195.4 清仓）：staged 新文件/deleted 文件 hunk 拒绝 422 引导整文件回滚",
       "target": ""
     },
     {
       "id": "L-M194-1",
       "milestone": "M194",
       "text": "goal 展开为启动时一次性行为（与 M175 发送时展开同哲学，续跑不重展开）",
-      "category": "未分类",
+      "category": "架构取舍",
       "impact": "",
       "priority": "P2",
       "difficulty": "中",
-      "status": "open",
-      "resolution_note": "",
+      "status": "wontfix",
+      "resolution_note": "既定设计（M195.4 清仓）：goal @ 展开启动时一次性，续跑不重展开（与 M175 同哲学）",
       "target": ""
     },
     {
       "id": "L-M194-2",
       "milestone": "M194",
       "text": "评审模型选项硬编码（coder/architect/默认），未接动态 alias 列表",
-      "category": "未分类",
+      "category": "功能缺口",
       "impact": "",
       "priority": "P2",
       "difficulty": "中",
-      "status": "open",
-      "resolution_note": "",
+      "status": "resolved",
+      "resolution_note": "M195.3 消化：后端 GET /models/aliases（env 覆盖实时反映）+ 前端 ContextPanel 挂载拉取动态渲染下拉，失败回落 architect 硬编码",
       "target": ""
     }
   ]

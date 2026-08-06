@@ -1023,6 +1023,39 @@
         "title": "MetricsResponse",
         "type": "object"
       },
+      "ModelAliasEntry": {
+        "description": "M195.3 · 单个模型 alias → 解析后模型 id。",
+        "properties": {
+          "alias": {
+            "title": "Alias",
+            "type": "string"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          }
+        },
+        "required": [
+          "alias",
+          "model"
+        ],
+        "title": "ModelAliasEntry",
+        "type": "object"
+      },
+      "ModelAliasesResponse": {
+        "description": "M195.3 · GET /models/aliases 响应：可用 alias 清单。",
+        "properties": {
+          "aliases": {
+            "items": {
+              "$ref": "#/components/schemas/ModelAliasEntry"
+            },
+            "title": "Aliases",
+            "type": "array"
+          }
+        },
+        "title": "ModelAliasesResponse",
+        "type": "object"
+      },
       "ProjectMapInfo": {
         "description": "M173 · 项目结构地图（Zread 式全局概览）。",
         "properties": {
@@ -4043,6 +4076,25 @@
           }
         },
         "summary": "Metrics"
+      }
+    },
+    "/api/v1/models/aliases": {
+      "get": {
+        "description": "可用模型 alias → 解析后模型 id 清单（env 覆盖实时反映，运行期读不缓存）。\n\n前端评审模型下拉等动态选项由此供给，替代硬编码 coder/architect。",
+        "operationId": "model_aliases_api_v1_models_aliases_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelAliasesResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Model Aliases"
       }
     },
     "/api/v1/project/commit_message": {

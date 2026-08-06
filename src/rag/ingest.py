@@ -17,6 +17,8 @@ CODE_EXTS = {".py", ".js", ".ts", ".html", ".css", ".yaml", ".yml", ".json"}
 
 _HEADING_RE = re.compile(r"^#{1,6}\s", re.MULTILINE)
 _BLANK_RUN_RE = re.compile(r"\n\s*\n+")
+# M195.1：fenced code block 围栏行（``` 或 ~~~，可带 info string），消化 L-M171-3
+_FENCE_RE = re.compile(r"^\s*(`{3,}|~{3,})")
 
 
 def _chunk(text: str, chunk_size: int = DEFAULT_CHUNK_SIZE, overlap: int = DEFAULT_CHUNK_OVERLAP) -> list[str]:
@@ -32,11 +34,26 @@ def _chunk(text: str, chunk_size: int = DEFAULT_CHUNK_SIZE, overlap: int = DEFAU
 
 
 def _split_markdown(text: str) -> list[str]:
-    """按标题行切段，标题行归入其下段首。"""
+    """按标题行切段，标题行归入其下段首。
+
+    M195.1：fenced code block（```/~~~ 围栏对内）的行首 # 不当标题——
+    代码注释/脚本里的 # 是内容不是结构。围栏未闭合时余下全文视为 fence 内
+    （保守不切段，避免把代码注释切成碎段）。
+    """
     sections: list[str] = []
     current: list[str] = []
+    fence_marker: str | None = None  # 非 None = 在 fence 内，值为围栏字符（` 或 ~）
     for line in text.split("\n"):
-        if _HEADING_RE.match(line):
+        m = _FENCE_RE.match(line)
+        if m:
+            ch = m.group(1)[0]
+            if fence_marker is None:
+                fence_marker = ch
+            elif ch == fence_marker:
+                fence_marker = None  # 闭合（同字符围栏；简化不校验长度递增）
+            current.append(line)
+            continue
+        if fence_marker is None and _HEADING_RE.match(line):
             if current:
                 sections.append("\n".join(current))
             current = [line]

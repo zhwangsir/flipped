@@ -102,6 +102,17 @@ class MetricsResponse(BaseModel):
     context: dict[str, Any] = Field(default_factory=dict)
 
 
+class ModelAliasEntry(BaseModel):
+    """M195.3 · 单个模型 alias → 解析后模型 id。"""
+    alias: str
+    model: str
+
+
+class ModelAliasesResponse(BaseModel):
+    """M195.3 · GET /models/aliases 响应：可用 alias 清单。"""
+    aliases: list[ModelAliasEntry] = Field(default_factory=list)
+
+
 class ProjectMapInfo(BaseModel):
     """M173 · 项目结构地图（Zread 式全局概览）。"""
     markdown: str

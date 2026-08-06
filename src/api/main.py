@@ -20,7 +20,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 from .events import EventBus, get_bus
-from .schemas import BrowserRenderRequest, Event, EventType, HealthResponse, MetricsResponse, ProjectMapResponse, Role, Session, SessionStatus, TaskRequest, TaskResponse
+from .schemas import BrowserRenderRequest, Event, EventType, HealthResponse, MetricsResponse, ModelAliasesResponse, ProjectMapResponse, Role, Session, SessionStatus, TaskRequest, TaskResponse
 from .session import SessionStore, store
 from driving.safety import validate_secrets
 from metrics import COLLECTOR
@@ -187,6 +187,18 @@ async def health() -> HealthResponse:
 @app.get(f"{API_PREFIX}/metrics", response_model=MetricsResponse)
 async def metrics() -> MetricsResponse:
     return MetricsResponse(**COLLECTOR.snapshot())
+
+
+# ---------- M195.3 · 模型 alias 清单（消化 L-M194-2） ----------
+
+@app.get(f"{API_PREFIX}/models/aliases", response_model=ModelAliasesResponse)
+async def model_aliases() -> dict[str, Any]:
+    """可用模型 alias → 解析后模型 id 清单（env 覆盖实时反映，运行期读不缓存）。
+
+    前端评审模型下拉等动态选项由此供给，替代硬编码 coder/architect。
+    """
+    from driving.model_router import list_model_aliases
+    return {"aliases": list_model_aliases()}
 
 
 # ---------- RCA 失败计数（M95） ----------

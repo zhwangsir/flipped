@@ -8722,3 +8722,66 @@ registry 重复条目（恢复会话产物），STATE.json M192 文本补齐复�
 harvest 0 added/0 stale，check ok（82 条）。
 
 ---
+
+## M195 — P2 功能缺口批消化第二波（2026-08-06）
+
+**范围**：fence 豁免（L-M171-3）/ limitations_report 增强（L-M185-3+L-M184-4）/
+模型 alias 动态下拉（L-M194-2）/ registry 清仓（既定设计批 wontfix + 未分类定类）。
+
+**改动文件**：
+- `src/rag/ingest.py`：`_FENCE_RE` 围栏正则（```/~~~ 同字符开合）+ `_split_markdown`
+  围栏状态跟踪——围栏内行首 # 不当标题；未闭合围栏余下全文保守不切段。
+- `scripts/limitations_report.py`：check 增 target 存在性校验（`^M\d+$` 必须指向
+  STATE.json 真实里程碑，自由文本跳过）；`_update_report_index` 维护 reports/index.md
+  （按文件名去重，条目按文件名排序=时间序）。
+- `src/driving/model_router.py`：`list_model_aliases()`——5 alias 运行期读 env 不缓存。
+- `src/api/main.py` + `src/api/schemas.py`：GET /models/aliases（ModelAliasesResponse）。
+- `console/src/api.ts` + `ContextPanel.tsx`：`listModelAliases` + 评审模型下拉动态化
+  （挂载拉取，失败/空回落 architect 硬编码保持 M194.4 现状行为）。
+- `data/limitations_registry.json`：M195.4 清仓（详见下）。
+- 测试：`tests/test_m195_p2_batch.py`（12 例）+ `ContextPanel.test.tsx` M195.3 套件。
+- 验收：`scripts/verify_m195.sh`。
+
+**验收证据**：
+```
+$ bash scripts/verify_m195.sh
+  → 单测 12 例全绿
+  → CLI 黑盒：a) target=M12345 不存在 → check 退出 1 点名 L-M999-1/M12345
+              b) report 重复生成 → index.md 同名只 1 行（去重）
+              c) 真实 registry check ok（82 条过增强校验）
+  → HTTP 黑盒：d) /models/aliases 200，5 alias 齐全，architect 默认 GLM-5.2-fp8
+              e) 启动 env FLIPPED_CODER_MODEL=m195-override-coder → coder 反映覆盖值
+  → M195 验收：全部通过 ✅
+
+$ PYTHONPATH=src .venv/bin/python -m pytest tests/ -q
+  → 2734 passed, 15 skipped
+$ cd console && npx vitest run → 36 files / 955 tests 全过
+$ npx tsc --noEmit → 0 错误；npm run build → ✓ built
+$ scripts/limitations_report.py check → ok: 82 limitations registered
+```
+
+**关键决策与教训**：
+1. **fence 未闭合 = 保守不切段**：代码块作者忘闭合围栏时，余下全文视为 fence 内——
+   宁可不切段（检索粒度粗）也不把代码注释切成碎段（检索噪音）。
+2. **target 校验只约束 M 格式**：「后续里程碑」等自由文本跳过——校验机器可判定的
+   错误（指向不存在里程碑），不约束人的自由表达。
+3. **alias 清单运行期读 env 不缓存**：`list_model_aliases` 每次调用重读
+   `_model_id_for_alias`，env 覆盖实时反映——前端下拉永远与后端路由一致。
+4. **同文件多 Edit 禁止并行**：M195.4 定类时同批 5 个并行 Edit 同文件，L-M184-3/
+   L-M189-2 两条被覆盖丢失（后写覆盖先写）——同文件编辑必须串行。
+5. **既定设计批 wontfix 的判定标准**：安全围栏（token 单活/三能力/revert 不碰
+   staging）、fail-open 降级、保守预算（token 只少不超）、语义既定（派发成功/
+   一次性展开/轮原子）——「修了反而破坏设计意图」的条目全部闭环。
+
+**registry 清仓结果（M195.4）**：
+- 23 条「未分类」全部定类：外部依赖 1 / 安全 3 / 架构取舍 14 / 功能缺口 4 /
+  数据一致性 1。
+- 34 条既定设计 → wontfix（逐条注记「既定设计（M195.4 清仓）：…」）。
+- 5 条 → resolved：L-M171-3（fence 豁免）、L-M185-3 + L-M184-4（report 增强）、
+  L-M194-2（alias 动态下拉）、L-M182-2（FLIPPED_BOT_REPLY_TIMEOUT_S env 已支持）。
+- 清仓后 82 条：**resolved 36 / wontfix 35 / open 11**（10 条 P2：性能 3 /
+  测试覆盖 3 / 功能缺口 2 / 数据一致性 1 / 安全 1；1 条 P1 外部依赖 L-M192-1
+  待 exo 集群 VL 恢复复验）。未分类清零。
+- 报告：`reports/limitations_analysis_20260806.md`（index.md 索引机制首次生效）。
+
+---

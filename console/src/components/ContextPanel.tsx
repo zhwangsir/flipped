@@ -10,6 +10,7 @@ import { RulesPanel } from './RulesPanel';
 import { IconFile, IconFolder, IconTerminal, IconBrowser, IconReview, IconChat, IconX, IconChevronDown, IconEye, IconCheck, IconMap, IconRefresh, IconSparkle, IconBot, IconWand, IconClock } from '../icons';
 import { BotChannelPanel } from './BotChannelPanel';
 import { WorkerRulesPanel } from './WorkerRulesPanel';
+import { listModelAliases } from '../api';
 
 /** M186.3 — 「仅变更」过滤:保留命中文件节点与祖先目录(目录无命中后代则剔除)。 */
 export function filterTreeByPaths(tree: FileNode[], changedPaths: Set<string>): FileNode[] {
@@ -323,6 +324,20 @@ function GitDiffView() {
   const [historyOpen, setHistoryOpen] = useState(false);
   // M194.4 — 评审模型选择('' = 默认 coder,不发 model 字段;'architect' 显式传参)
   const [reviewModel, setReviewModel] = useState('');
+  // M195.3 — 评审模型下拉动态化(消化 L-M194-2):挂载时拉 GET /models/aliases,
+  // 失败回落 M194.4 硬编码 ['architect'] 保持现状行为
+  const [modelAliases, setModelAliases] = useState<string[]>(['architect']);
+  useEffect(() => {
+    let alive = true;
+    listModelAliases()
+      .then((d) => {
+        if (!alive) return;
+        const aliases = (d.aliases || []).map((a) => a.alias).filter(Boolean);
+        if (aliases.length > 0) setModelAliases(aliases);
+      })
+      .catch(() => { /* 回落硬编码,保持现状 */ });
+    return () => { alive = false; };
+  }, []);
   useEffect(() => {
     loadGitDiff();
   }, [loadGitDiff]);
@@ -404,7 +419,8 @@ function GitDiffView() {
         <button className="rdiff-refresh" onClick={() => loadGitDiff()} title="刷新">
           刷新
         </button>
-        {/* M194.4 — 评审模型选择:默认 '' 不传 model(后端 coder),非默认显式传参 */}
+        {/* M194.4 — 评审模型选择:默认 '' 不传 model(后端 coder),非默认显式传参;
+            M195.3 — 选项动态化(挂载拉 /models/aliases,失败回落 architect) */}
         <select
           className="rdiff-model"
           title="评审模型"
@@ -412,7 +428,9 @@ function GitDiffView() {
           onChange={(e) => setReviewModel(e.target.value)}
         >
           <option value="">默认 · coder</option>
-          <option value="architect">architect</option>
+          {modelAliases.map((a) => (
+            <option key={a} value={a}>{a}</option>
+          ))}
         </select>
         <button
           className="rdiff-refresh rdiff-review-btn"
