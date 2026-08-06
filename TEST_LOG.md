@@ -8967,3 +8967,20 @@ $ scripts/limitations_report.py check → ok: 82 limitations registered
 
 **registry 终态**：82 条 **open 归零**（resolved 47 / wontfix 35），
 `limitations_report.py check ok`。
+
+## M198 补 · 全量回归 + verify 脚本复跑（2026-08-06）
+
+**全量回归**：pytest 2769 passed / 15 skipped；vitest 955 全绿；tsc 0 错；
+build OK；quality_gate 通过（py_cov 86.68 / fe_lines_cov 91.64）。
+
+**verify 脚本复跑（当前代码代际 28 + 1 个）**：
+- verify_m170 ~ m197（28 个）+ verify_assistant.sh 全绿。
+- 复跑抓到 2 处老脚本断言过期（非真回归，已修）：
+  1. **verify_m183.sh l3**：M190.2 起 auto-generate 模板未命中会 LLM 兜底
+     （_LLM_PROMPT「软件工程导师」），该请求先写入 capture 文件——l3 原取
+     第一行当 worker chat 注入 prompt 的假设破裂。修为扫描全部行找含
+     「规则A：先想再写」的请求再断言顺序（l2 进程内 applied 顺序本就正确，
+     功能无回归）。
+  2. **verify_m184.sh**：硬编码 registry 42 条（a2/b/e2/f 共 4 处）——
+     M195+ 批量登记后已达 82 条。修为脚本开头动态读取 N 并替换全部断言。
+     教训：对「会随里程碑演进的规模数」一律动态读取，不写死。

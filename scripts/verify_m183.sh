@@ -350,9 +350,17 @@ check("l2.worker_rules_applied 含启用规则且按 priority desc（idB 在 idA
 
 cap_prompt = ""
 try:
+    # M190.2 起 auto-generate 模板未命中会 LLM 兜底并先写入 capture，
+    # 第一行不再是 worker chat 请求——扫描全部行找含注入规则的 prompt
     with open(os.environ["CAPTURE_PATH"], encoding="utf-8") as fh:
-        first = json.loads(fh.readline())
-    cap_prompt = first["messages"][0]["content"]
+        for line in fh:
+            if not line.strip():
+                continue
+            msgs = json.loads(line).get("messages", [])
+            text = "\n".join(str(m.get("content", "")) for m in msgs)
+            if "规则A：先想再写" in text:
+                cap_prompt = text
+                break
 except Exception as e:  # noqa: BLE001
     cap_prompt = f"<capture read failed: {e}>"
 check("l3.假 LLM 捕获 prompt：规则B 在 规则A 前注入，规则C（停用）不出现",

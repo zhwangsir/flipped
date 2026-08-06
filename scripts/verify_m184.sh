@@ -31,18 +31,23 @@ echo "== M184-1 单测（20 例） =="
 PYTHONPATH=src $PY -m pytest tests/test_m184_limitations.py -q \
   && pass "M184 单测全绿" || bad "M184 单测失败"
 
-echo "== M184-2 真实数据流（STATE.json ×42 → registry → classify → set-status → report → check 正反例） =="
+echo "== M184-2 真实数据流（STATE.json ×N → registry → classify → set-status → report → check 正反例） =="
 
-# ---------- a. harvest：42 条登记 ----------
+# registry 条目数随里程碑演进（M184 时 42 → M198 已 82），动态读取不断言死数
+N=$($PY -c "import json; print(len(json.load(open('$REG', encoding='utf-8'))['limitations']))")
+echo "  · 当前 registry 条目数 N=${N}"
+
+# ---------- a. harvest：N 条登记 ----------
 OUT=$($PY scripts/limitations_report.py harvest --state STATE.json --registry "$REG" 2>&1)
 echo "  $OUT"
 echo "$OUT" | grep -qE "^harvested [0-9]+ limitations \([0-9]+ added, [0-9]+ stale\)$" \
   && pass "a1.harvest exit 0 且打印摘要格式正确" || bad "a1.harvest 摘要格式异常: $OUT"
-$PY - "$REG" <<'PYEOF'
+$PY - "$REG" "$N" <<'PYEOF'
 import json, re, sys
 reg = json.load(open(sys.argv[1], encoding="utf-8"))
+n_expected = int(sys.argv[2])
 lims = reg["limitations"]
-ok = (len(lims) == 42
+ok = (len(lims) == n_expected
       and all(re.fullmatch(r"L-M\d+-\d+", lim.get("id", "")) for lim in lims)
       and all(lim.get("status") in ("open", "in_progress", "resolved", "wontfix") for lim in lims)
       and all("category" in lim and "priority" in lim and "difficulty" in lim
@@ -50,12 +55,12 @@ ok = (len(lims) == 42
               for lim in lims))
 sys.exit(0 if ok else 1)
 PYEOF
-[ $? -eq 0 ] && pass "a2.registry 42 条：id 格式 L-M{n}-{i} + 人工字段齐" \
+[ $? -eq 0 ] && pass "a2.registry ${N} 条：id 格式 L-M{n}-{i} + 人工字段齐" \
              || bad "a2.registry 条目数/字段异常"
 
 # ---------- b. harvest 幂等 ----------
 OUT=$($PY scripts/limitations_report.py harvest --state STATE.json --registry "$REG" 2>&1)
-echo "$OUT" | grep -q "harvested 42 limitations (0 added, 0 stale)" \
+echo "$OUT" | grep -q "harvested ${N} limitations (0 added, 0 stale)" \
   && pass "b.harvest 幂等：二次跑 0 added 0 stale" || bad "b.harvest 非幂等: $OUT"
 
 # ---------- c. classify ----------
@@ -110,8 +115,8 @@ echo "  $OUT"
   && grep -q "## 5. 跟踪机制说明" "$REPORT" \
   && pass "e1.report 落盘且五节标题齐（${REPORT}）" || bad "e1.report 缺节或未落盘"
 grep -q "L-M180-1" "$REPORT" && grep -q "L-M181-5" "$REPORT" \
-  && grep -q "总数：42" "$REPORT" \
-  && pass "e2.report 含全部关键 id 与总数 42" || bad "e2.report 缺 id/总数"
+  && grep -q "总数：${N}" "$REPORT" \
+  && pass "e2.report 含全部关键 id 与总数 ${N}" || bad "e2.report 缺 id/总数"
 awk '/### 已消化/,/### 当前迭代 P0/' "$REPORT" | grep -q "L-M180-1" \
   && awk '/### 已消化/,/### 当前迭代 P0/' "$REPORT" | grep -q "L-M181-5" \
   && pass "e3.「已消化」节含 L-M180-1 / L-M181-5" || bad "e3.「已消化」节缺已消化条目"
@@ -120,8 +125,8 @@ awk '/### 已消化/,/### 当前迭代 P0/' "$REPORT" | grep -q "L-M180-1" \
 OUT=$($PY scripts/limitations_report.py check --state STATE.json --registry "$REG" 2>&1)
 RC=$?
 echo "  $OUT"
-[ $RC -eq 0 ] && echo "$OUT" | grep -q "check ok: 42 limitations registered" \
-  && pass "f.check 正例：exit 0 + 42 条登记" || bad "f.check 正例失败: rc=$RC $OUT"
+[ $RC -eq 0 ] && echo "$OUT" | grep -q "check ok: ${N} limitations registered" \
+  && pass "f.check 正例：exit 0 + ${N} 条登记" || bad "f.check 正例失败: rc=$RC $OUT"
 
 # ---------- g. check 反例：篡改 STATE 副本多一条未登记 ----------
 $PY - "$TMPD/state_tampered.json" <<'PYEOF'

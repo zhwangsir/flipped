@@ -2,7 +2,7 @@
  "project": "flipped",
  "description": "接入本地 MLX 双模型(GLM-5.2 编排者 / Kimi-K2.7-Code 执行者)的 agentic 代码编辑器平台。fork Roo Code + 自定义驾驭层(强制验证/循环检测/上下文压缩/人工审批/子Agent/可观测性) + MCP 联网与外部能力。",
  "updated": "2026-08-06",
- "current_milestone": "M198 done（registry 清仓：L-M192-1 exo VL 数据面消化——模型文件损坏修复（SHA256 对齐上游）+ verify_m192.sh 复跑全绿 + 真实红蓝双图问答「red blue」。registry 82 条 open 归零（47 resolved），check ok。）",
+ "current_milestone": "M198 done（registry 清仓：L-M192-1 exo VL 数据面消化 + 全量回归复跑收官。pytest 2769/vitest 955/tsc/build/quality_gate 全绿；verify_m170~m197 28 个 + verify_assistant 全绿；修复 2 处老脚本断言过期：verify_m183 l3 capture 扫描（M190.2 LLM 兜底致首行假设破裂）、verify_m184 registry 条数动态化（42→82）。registry 82 条 open 归零。）",
  "key_facts": {
   "dev_host": "Apple M5 Max, 128GB RAM, 1.1TB 可用磁盘 — 开发/控制节点，非模型宿主",
   "model_cluster": "exo 集群 @ http://dgmt-studio01mac-studio:52415（M192 跟进：tailnet MagicDNS 名已从 studio01-1 漂移为 dgmt-studio01mac-studio，100.67.43.40；旧裸 IP 100.64.201.37 已于 2026-07-22 失效）；公网 https://dgmt.top/exo (需 Bearer token)",
