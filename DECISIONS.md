@@ -22,7 +22,7 @@
 - **决策**：M0 必须用真实带 `tools` 的请求实测两模型返回结构化 `tool_calls`（而非把调用塞进 content）。不稳则在驾驭层加结构化输出约束 + 重试（呼应 M2）。
 - **理由**：验证靠运行不靠看（§1.2）；这是后续一切的地基。
 - **现状**：因集群推理 502 暂时 blocked，已由后台监控 `monitor_cluster.py` 在集群恢复后自动复验。
-- **调研确认(2026-06-29)**：exo **原生支持结构化 tool_calls**（按模型分派解析器，无 `--tool-call-parser` CLI flag）；Kimi-K2 与 GLM 均有 exo 专用解析器 + 单测 → **M0.4 大概率通过**。唯一风险是 K2.7/GLM-5.2 版本命名匹配，以实测为准。详见 [research-exo-toolcalling.md](research-exo-toolcalling.md)。
+- **调研确认(2026-06-29)**：exo **原生支持结构化 tool_calls**（按模型分派解析器，无 `--tool-call-parser` CLI flag）；Kimi-K2 与 GLM 均有 exo 专用解析器 + 单测 → **M0.4 大概率通过**。唯一风险是 K2.7/GLM-5.2 版本命名匹配，以实测为准（调研记录 docs/research-exo-toolcalling.md 已于 2026-08-11 文档清仓删除，结论固化于此）。
 
 ## D4 · M2 编辑器基座 = Cline（已定 2026-06-29）
 - **日期**：2026-06-29 ｜ **批准**：⏳ pending（ISSUE-2）
@@ -46,7 +46,7 @@
 
 ## D6 · agent 框架 = LangGraph
 - **日期**：2026-06-29 ｜ **批准**：用户（"用成熟框架"）+ 调研推荐
-- **背景**：M1 需 agent loop；用户选"用成熟框架"。调研对比 LangGraph/Pydantic-AI/OpenAI Agents SDK/AutoGen/LlamaIndex（详见 [research-agent-frameworks.md](research-agent-frameworks.md)）。
+- **背景**：M1 需 agent loop；用户选"用成熟框架"。调研对比 LangGraph/Pydantic-AI/OpenAI Agents SDK/AutoGen/LlamaIndex（调研记录 docs/research-agent-frameworks.md 已于 2026-08-11 文档清仓删除，结论固化于下文）。
 - **决策**：选 **LangGraph**。决定性理由：唯一把**原生执行态 checkpoint** 做进核心架构 → 直接支撑 M5 崩溃恢复/断点续跑 + M3 人工审批中断恢复（同源机制），且主-从双模型(GLM supervisor / Kimi worker)天然契合。
 - **现状**：M1 已装 `langgraph==1.2.6`+`langchain-openai==1.3.3`，用 `create_react_agent` 跑通 ReAct loop。M3/M5 再加 checkpoint-sqlite/supervisor/langsmith，并迁移到 `langchain.agents.create_agent`。
 
@@ -65,7 +65,7 @@
 
 ## D9 · 驾驭层（M3）三层分工，不 fork Cline
 - **日期**：2026-06-29 ｜ **批准**：调研(task wuw3zewas) + 推荐
-- **决策**：6 件套按"Cline 原生 / hooks 单步守门 / LangGraph 跨步状态机"分工，**不需 fork(B)**。详见 [research-cline-hooks-driving-layer.md](research-cline-hooks-driving-layer.md)。
+- **决策**：6 件套按"Cline 原生 / hooks 单步守门 / LangGraph 跨步状态机"分工，**不需 fork(B)**（调研记录 docs/research-cline-hooks-driving-layer.md 已于 2026-08-11 文档清仓删除，结论固化于下文）。
   - **A（Cline 原生/hooks）**：上下文压缩(Auto Compact 零代码)、可观测采集(PostToolUse 日志 hook)、单步守门(PreToolUse)、日常审批(Plan/Act+auto-approve)。
   - **C（LangGraph，复用 M1/D6）**：强制验证、循环检测、子Agent主从(supervisor)、硬审批断点(interrupt)、可观测归档(checkpoint)。
 - **理由**：Cline hooks 是单次调用边界回调（无跨步记忆、不能强制下一步），LangGraph 的 checkpoint+interrupt+supervisor 正好补跨步状态机这层。
