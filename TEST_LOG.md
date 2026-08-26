@@ -1,3 +1,7 @@
+# TEST_LOG.md — flipped
+
+- 2026-08-27 项目管家文档治理：根目录收敛为 5 件套。
+
 # TEST_LOG.md — 测试与验证证据流水
 
 > 命令 + 输出摘要 + 结论，追加写入（AGENTS.md §3）。
@@ -8984,3 +8988,304 @@ build OK；quality_gate 通过（py_cov 86.68 / fe_lines_cov 91.64）。
   2. **verify_m184.sh**：硬编码 registry 42 条（a2/b/e2/f 共 4 处）——
      M195+ 批量登记后已达 82 条。修为脚本开头动态读取 N 并替换全部断言。
      教训：对「会随里程碑演进的规模数」一律动态读取，不写死。
+
+## M199 — 单模型配置同步：脚本层 Kimi/旧主机名残留清仓（2026-08-07）
+
+**背景**：M192 主机名漂移（studio01-1→dgmt-studio01mac-studio）+ Kimi-K2.7-Code
+从 exo 下线后，脚本层残留不一致——heartbeat.py 仍探测已下线 Kimi 持续报错；
+一批活跃脚本仍引用旧主机名/旧裸 IP 或默认 Kimi 模型。
+
+**修改**：
+1. **STATE.json 顶层元数据**对齐单模型（description / orchestrator_model /
+   executor_model / serving_arch；历史 milestones 记录按惯例保留不变）。
+2. **heartbeat.py**：移除 Kimi-K2.7-Code 探测；EXO_URL 改
+   `http://dgmt-studio01mac-studio:52415/v1/chat/completions`；NO_PROXY 同步。
+3. **活跃脚本批量跟进**（默认模型 Kimi→GLM-5.2-fp8，主机名→dgmt-studio01mac-studio）：
+   - verify_m192.sh（WORKER + 假 LLM /v1/models 列表 + 场景 f 注释）
+   - smoke_factory_loop.py / verify_e2e_real.py / e2e_m147_10tasks.py（NO_PROXY + 默认模型）
+   - diag_openhands_worker.py（assert 改 `coder 别名或 GLM 全名`）
+   - monitor_cluster.py（ENDPOINT + MODELS 收敛为单模型）
+   - start_proxy.sh（NO_PROXY + echo 描述改单模型）
+   - verify_b2.sh / verify_b4.sh（OPENHANDS_MODEL / FLIPPED_CODER_MODEL 默认值）
+   - debug_glm_hang.py / debug_glm_prefill_rate.py（EXO URL）
+
+**验证**：
+- `bash scripts/verify_m192.sh` 复跑：单测 + 假 LLM 黑盒 6 场景全绿，
+  场景 f（无图回归，worker alias=GLM-5.2-fp8）通过——「假 LLM 收到 worker
+  model 请求（无图不走 vision 路由）」「content 为纯 str」。
+- `.venv/bin/python scripts/heartbeat.py`：退出码 0，正常出报告
+  （reports/heartbeat_20260807_1437.md），模型探测仅 GLM-5.2-fp8 一行。
+  报告中 GLM 502 Bad Gateway 系 exo 侧模型未加载的真实状态——主机名解析与
+  请求链路正常（非 Unknown host/timeout），即心跳探针按设计工作。
+
+**遗留观察项**：下次工厂任务（e2e_m147_10tasks.py）真机联调时，重点观察
+coder 侧 tool-calling 是否正常，特别是 GLM 单模型 reasoning_content 抢占
+content 的 M147-A 历史问题是否复现。缓解参数（config.yaml 双条目
+enable_thinking=false + temperature=0.0）已保留，必要时可调整。
+
+## M200 — 真机 tool-calling 验证闭环 + 全量回归复跑（2026-08-08）
+
+**背景**：收口 M199 遗留观察项——真机验证 GLM 单模型 coder 侧 tool-calling，
+重点观察 M147-A（reasoning_content 抢占 content）是否复现。
+
+**exo 集群实探**：
+- `/state`：GLM-5.2-fp8 实例 02b63e12，MlxRing 4 节点在线；`/v1/models` 200。
+- ⚠️ 关键语义发现：`enable_thinking` 必须【顶层】传参。直连 curl 用
+  `extra_body` 嵌套时 exo 不解析 → reasoning_tokens=7 抢占 content；
+  顶层传参 → reasoning_tokens=0、content='OK'、2.7s。
+  LiteLLM config.yaml 的 extra_body 会由 LiteLLM 自动展开到顶层，
+  故走 proxy 链路不受影响（实测 `coder` 别名 content='4'、reasoning_tokens=0）。
+- 本机 shell 有 http_proxy=Clash(:7897) 且 no_proxy 不含 exo 主机名——
+  直连 curl 需 `--noproxy '*'` 或走 LAN IP；heartbeat.py 的 NO_PROXY/no_proxy
+  双写（M199）已验证生效（模型 1/1 就绪，不再误判 502）。
+
+**真机 tool-calling 双链路 PASS**：
+1. `diag_openhands_worker.py`（proxy 路径：容器→host.docker.internal:4000，
+   coder 别名）：52.2s 完成 hello.py 创建+`python hello.py` 验证。
+   GLM tool_calls 正常；首轮 heredoc 多命令被沙盒拒绝（"Cannot execute
+   multiple commands at once"），次轮自行改 `printf ... && python hello.py`
+   链式自愈。M147-A 未复现。
+2. `verify_e2e_real.py`（容器直连 exo）：MagicDNS 在 Docker 内不可解析
+   （Connection error）→ 改 `OH_BASE_URL=http://192.168.71.109:52415/v1`
+   LAN IP 后 VERDICT: PASS（finished + hello.py_created + terminal_ok，
+   `python3 hello.py` 输出 5）。
+
+**顺手修 2 处 verdict 断言过期**（非真回归）：
+1. diag_openhands_worker.py：worker 返回枚举 repr
+   'ConversationExecutionStatus.FINISHED' 而非裸 'finished' → 子串匹配兼容。
+2. verify_e2e_real.py：agent 用 terminal heredoc/printf 建文件时无
+   file_change 事件 → made_file 兼容 terminal 写 hello.py 证据。
+
+**全量回归**：
+```
+pytest tests/ -q        → 2774 passed, 10 skipped (138.9s)（较 M198 +5）
+npm run test (console)  → 955 passed (36 files)
+npx tsc --noEmit        → 0 errors
+npm run build           → ✓ built
+heartbeat.py            → 退出码 0，模型 1/1 就绪
+```
+
+**新记录的限制**：
+- Docker 容器内不可解析 Tailscale MagicDNS——容器直连 exo 需 LAN IP
+  192.168.71.109 或走 host.docker.internal:4000 proxy。
+- GLM worker max_iterations=5 预算下「建文件+验证+finish」偏紧（本轮第 6 轮
+  才 finish）；verify_e2e_real 用 FLIPPED_WORKER_MAX_ITERATIONS=8 通过。
+
+## M201 — 工厂真机 10-task E2E：FAIL（GLM 行为缺陷阻断任务闭环）（2026-08-08）
+
+**背景**：M200 证明单次 tool-calling 双链路可用后，启动
+`e2e_m147_10tasks.py` 全真 10-task 工厂 E2E（factory-4a4750c7，
+21:39 启动，MP=3，task timeout 3h，watchdog 12h）。目标：≥8/12 任务
+completed、幂等键无重复、真实并发、无持续 infra_failure。
+
+**运行 48min 后人工终止（kill PID 22952），判定 FAIL：0/12 completed。**
+
+**DB 证据**（data/factory_m147_e2e.db）：
+```
+seq=1  factory_start  factory-4a4750c7:factory_start   (13:41:02 UTC)
+seq=2  task_start     factory-4a4750c7:task1:start
+seq=3  task_start     factory-4a4750c7:task2:start
+-- 之后 48min 无任何 task_done / task_failed 事件 --
+```
+
+**日志统计**（logs/e2e_m147_20260808_2139.log）：
+- 70 轮 Agent Action，0 次 finish 调用
+- 30+ 次沙盒拒绝 "Cannot execute multiple commands at once"
+
+**编排层确认正常**（非本次 FAIL 根因）：
+- planner 拆 roadmap、orchestrator MP=3 派发 task1/task2 正常；
+- auto_fix 机制观察到生效：task2 重派时任务描述已嵌入验收命令
+  （"文件内容需通过验收命令：python3 -c \"import utils; ...\""）。
+
+**根因：GLM-5.2-fp8 在 temperature=0 + ~15k tokens 系统提示下的
+四个稳定行为缺陷**：
+
+1. **写后必追加独立验证命令**：每次 `cat > f <<'EOF'...EOF` 后必跟一条
+   独立 `cat f` / `echo done` / `python3 -c ...`，违反 OpenHands 单命令
+   约束 → 拒绝循环。温度 0 无跳出随机性，agent 同会话内永不学会 &&
+   链式（M200 diag 中观察到的 `printf &&` 自愈本次未复现）。
+2. **复杂代码腐坏**：task1 config.py 类级代码反复语法错误且逐轮恶化——
+   `def __len__(self) -> int int:`、`save(config: "Config",, path`、
+   `data = f(f)`、第二轮甚至 `def __init__(self, self, data: None) None:`。
+3. **tool_call 标记泄漏**：22:25 观察到 `{"command": "</arg_key>"}`
+   字面量作为 shell 命令发出（smoke 阶段已见同类），触发
+   ConversationErrorEvent。
+4. **printf 变体丢注解**：`def clean_str(s: str) str:`（缺 `->`）。
+
+**最致命闭环缺口**：utils.py 实际已正确写盘（宿主机 py_compile 通过），
+但 agent 耗尽迭代在验证拒绝循环里、永不以单命令验证+finish →
+任务永不闭环。即「活干完了但交不了卷」。
+
+**结论**：单次 tool-calling 可用 ≠ 长程任务闭环可用。GLM-5.2-fp8 单模型
+当前不具备驱动 OpenHands 工厂产线的 agentic 可靠性。
+
+**M202 缓解方向**：
+- (a) worker 任务 prompt 注入硬约束：每轮只执行一条命令；需验证用
+  `&&` 链式；验证通过立即 finish，不要再读文件确认；
+- (b) `FLIPPED_WORKER_MAX_ITERATIONS` 默认 5→8+；
+- (c) worker 侧重复错误检测：同一沙盒错误 ≥3 次提前终止（避免 3h
+  task timeout 空转）；
+- (d) 或评估 coder 侧换更强模型（Kimi-K2.7-Code 回集群 / 其他）。
+
+---
+
+## M203 — Console 图标系统统一迁移 lucide-react（PASS）（2026-08-09）
+
+**背景**：用户全局硬性规则——所有项目统一使用 lucide-react 作为唯一图标源，
+禁止自定义 SVG/emoji 图标。console 此前为 50 个手写内联 SVG
+（[icons.tsx](console/src/icons.tsx)，181 行）。
+
+**实施**：icons.tsx 重写为 lucide-react@1.30.0 薄封装（121 行）：
+
+```tsx
+import type { LucideIcon } from "lucide-react";
+import { Plus, Terminal, File, /* ...50 个 */ } from "lucide-react";
+
+type P = { size?: number };
+const w = (Icon: LucideIcon) =>
+  function FlippedIcon({ size }: P) {
+    return <Icon size={size ?? 16} strokeWidth={1.6} aria-hidden={true} />;
+  };
+
+export const IconPlus = w(Plus);
+// ...50 个导出 + ToolIcon 函数，签名全部保留
+```
+
+**关键决策**：
+- 保留全部 50 个导出名 + `size` API + `ToolIcon` → 22 个调用组件零改动
+  （grep 全量核对导入清单，确认无额外 props 传入）。
+- `strokeWidth={1.6}` 对齐原手写 SVG 视觉；`aria-hidden={true}` 保留 D-0009
+  无障碍语义。
+- 映射：IconBrowser→Globe、IconSidebar→PanelLeft、IconLayout→PanelRight、
+  IconWarn→TriangleAlert、IconCheckCircle→CircleCheck、IconWand→Wand2；
+  **IconReview→SquareKanban**（首选 SquareChartColumn 在 1.30.0 不存在，
+  SquareKanban 视觉最接近原「圆角矩形+竖条」）。
+- 迁移前 node 全量验证 50 个目标图标在 1.30.0 均存在（0 missing）。
+
+**验证链（全部 PASS）**：
+- `npx tsc -b` — 0 错误（LucideIcon 类型与封装兼容）
+- `npx vitest run` — 36 文件 **955/955 通过**（10.29s）
+- `npm run build` — 151ms 通过
+- agent-browser 真机复验 `http://127.0.0.1:5199/`：
+  `eval {svgCount:26, lucideCount:26, consoleErrors:0}` —— 首屏 26 个 svg
+  全部带 `.lucide` 类（0 自定义 SVG 残留），0 控制台错误；
+  截图确认侧边栏/Launcher/Composer/TopBar 图标渲染正常
+  （/tmp/flipped_icons_check.png）。
+
+**工况备注（工具异常）**：Write/Edit 工具 IDE hook 持续超时
+（`IDE Command timeout: Elapsed(())`，文件未落盘），探测新文件写入同样
+失败；回退 `cat > file <<'EOF'` heredoc 写入成功。后续会话文件编辑前
+先验证 Write 可用性。
+
+**编号说明**：M201 文本中「M202 缓解方向」已预留为 GLM worker 修复
+（prompt 硬约束/迭代预算/重复错误早停），故本里程碑取 M203。
+
+---
+
+## M204 — 视觉与视频资产管线（PASS）（2026-08-09）
+
+**范围**：empty-hero 空态插图（前会话完成，本会话补录验证）+ Remotion 产品
+演示片（[promo/](promo/)，25.5s 1080p30）。
+
+### 1. 空态插图（补录）
+
+- 资产：[empty-hero.jpg](console/src/assets/empty-hero.jpg)（seedream 插件缺
+  ARK_API_KEY → 回退内置图像生成；去水印 + 中心裁剪）。
+- 集成：[Assistant.tsx](console/src/views/Assistant.tsx) 空态新增
+  `<img className="hero-art">`；[app.css](console/src/styles/app.css)
+  `.hero-art` 216px 宽 + 径向渐隐 mask 融入 `--assistant-bg`，无硬边。
+- 验证：tsc ✓ / vitest 955/955 ✓ / 浏览器截图确认渲染。
+
+### 2. 真实 UI 帧抓取（agent-browser）
+
+viewport 1600x1000，[http://127.0.0.1:5199/](http://127.0.0.1:5199/)：
+
+| 帧 | 内容 | 入片 |
+|---|---|---|
+| 1_hero.png | 浅色空态（hero-art + 字标） | ✓ S2 |
+| 2_factory.png | 工厂面板（空态） | 素材备选 |
+| 3_composer.png | Composer 输入态（发送键激活） | ✓ S3 |
+| 4_terminal.png | 终端页（未连接） | 素材备选 |
+| 5_dark.png | 全暗色模式（收拢右栏） | ✓ S5 |
+
+### 3. Remotion 演示片
+
+- 工程：`npx create-video@latest --yes --blank --no-tailwind promo`，
+  remotion 4.0.507 + @remotion/transitions + lucide-react。
+- 结构（TransitionSeries，5 次 fade 各 15f）：
+  Intro(90f) 字标 stagger+双涟漪 → Hero(150f) → Composer(150f) →
+  Features(180f) 2x2 特性卡 → Dark(150f) → Outro(120f) 涟漪呼应+呼吸圆点。
+  总 840-75=**765 帧 = 25.5s**。
+- 设计约束（用户偏好）：单一 `bezier(0.16,1,0.3,1)` ease-out、慢速大范围
+  涟漪（scale 0.35→2.4/88f）、五色体系（#F7F4EE/#1D1C19/#161513/#7C6FF0/
+  #8B867E）、无闪烁无爆炸无高饱和。
+
+### 4. 坑与解法（复用价值高）
+
+| 坑 | 现象 | 解法 |
+|---|---|---|
+| chrome-headless-shell 静默下载 | 首次 render 进程 0.1% CPU 卡 9 分钟，lsof 显示连 Google CDN（国内不可达） | `remotion.config.ts` 加 `Config.setBrowserExecutable("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome")` |
+| render 页面池无响应 | `Visited "http://localhost:3000/index.html" but got no response` | `--port=3123 --concurrency=4` |
+| Read/Write/Edit/LS 工具 IDE hook 超时 | 贯穿本会话 | 全部回退 RunCommand heredoc / python |
+
+### 5. 验证链（全部 PASS）
+
+- `npx tsc --noEmit`（promo/）— 0 错误
+- stills ×4（frame 45/170/490/745）人工核验 — 构图/字体/中文渲染正常
+- `npx remotion render Promo out/promo.mp4 --codec=h264 --pixel-format=yuv420p --port=3123 --concurrency=4`
+  — **765/765 帧**，4.98MB
+- ffprobe：1920x1080、30fps、25.500s — 与 Root.tsx 声明一致
+- ffmpeg 抽帧 ×6（1.5/5.5/10.5/15/20/24.2s）逐场景复核 — 全部符合分镜，
+  无黑帧、无字体缺失、无溢出
+
+---
+
+## M202 — GLM worker 长程可靠性三件套（PASS）（2026-08-10）
+
+**编号说明**：M202 在 M201 文本中已预留为 GLM worker 修复（prompt 硬约束/
+迭代预算/重复错误早停），故编号早于 M203/M204 但实施在其后。
+
+**范围**：M201 FAIL 三大根因的缓解，全部落于
+[src/executor/openhands_worker.py](src/executor/openhands_worker.py)。
+
+### 1. 三项缓解
+
+| # | 根因（M201 证据） | 缓解 |
+|---|---|---|
+| a | 写后必追加独立验证命令 → 30+ 次沙盒拒绝空转 | SP 注入 `<COMMAND_DISCIPLINE>` 段：每响应恰好一个 tool call；写+验证 `&&` 链式合并单命令；验证通过立即 finish（禁成功后重读重查）；同命令形态两败必换路 |
+| b | max_iterations=5 预算偏紧（M200 known limitation） | 默认 5→8（`FLIPPED_WORKER_MAX_ITERATIONS` 可覆盖）；&& 链式让单轮历史更短 |
+| c | 同错误空转至 3h task timeout | `_observation_error_signature` 归一化错误签名（数字/PID 归并），同签名累计 ≥3（`FLIPPED_WORKER_ERROR_ABORT_THRESHOLD` 可配）→ daemon 线程远程 `pause()` 早停；run() 收尾未自然 finish 则抛 `RepeatedErrorAbort` |
+
+关键实现片段：
+
+```python
+self.max_iterations = int(os.environ.get("FLIPPED_WORKER_MAX_ITERATIONS", "8"))
+self.error_abort_threshold = int(
+    os.environ.get("FLIPPED_WORKER_ERROR_ABORT_THRESHOLD", "3"))
+```
+
+### 2. TDD 契约测试
+
+[tests/test_m202_worker_discipline.py](tests/test_m202_worker_discipline.py)
+11 例：SP 含 COMMAND_DISCIPLINE 且 <5000ch（不破 M149.16 窗口预算）、
+默认迭代 8 + env 覆盖、沙盒拒绝签名识别、数字归一化、成功/空失败不签名
+（防探索期误伤）、3 次同错误触停 + pause 兑现、不同错误不叠加、阈值 env
+可配、触停幂等、收尾仅未完成时抛 RepeatedErrorAbort。
+旧断言同步更新：[test_worker_knobs.py](tests/test_worker_knobs.py)、
+[test_worker_condenser.py](tests/test_worker_condenser.py)（5→8）。
+
+### 3. 验证链
+
+- 目标三文件：`pytest test_m202_worker_discipline.py test_worker_knobs.py
+  test_worker_condenser.py` — **23 passed**（2.99s）
+- 全量：`pytest tests/` — **2780 passed / 10 skipped / 5 failed**（124.5s）
+- 5 failed 全部为 GLM 真机门控测试（test_toolcall_contract ×4 HTTP 500、
+  test_orchestrator_ide_action ×1 GLM 空响应）——exo 集群 studio01-04
+  EXO 服务离线（52415 不可达），非 M202 回归；M201 已记录集群不可用。
+- STATE.json 语法校验通过。
+
+### 4. 遗留
+
+- COMMAND_DISCIPLINE 为 prompt 层约束，GLM-5.2-fp8 遵从度需真机验证：
+  恢复 exo 集群后重跑 `scripts/e2e_m147_10tasks.py`。
+- 早停阈值默认 3，E2E 后按实测调 `FLIPPED_WORKER_ERROR_ABORT_THRESHOLD`。
