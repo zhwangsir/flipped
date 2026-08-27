@@ -3,6 +3,14 @@
 > 给一个目标，它自己**拆解 → 写码 → 跑测 → 修错 → 循环直到验收通过 → 提交成果**。
 > 全程本地运行、数据不出机器、单模型同源驱动、多 Agent 监督驾驭。
 
+> 文档时点：**2026-08-27**。集群 / EXO / GPU 以 [`../ToIV/AGENTS.md`](../ToIV/AGENTS.md) 为准。本文不复制凭据。
+
+**仓库**：origin = https://gitee.com/Winery_z/flipped.git ；github 备份 = https://github.com/zhwangsir/flipped.git 。当前分支 `main`（`f35c5dd`）。提交差 origin/github **0 / 0**（登记册曾记 +47 未推送，已被 08-23 推送与 08-27 文档提交覆盖）。登记册状态：活跃（08-14）。端口：**console :5273** / **orchestration-api :8011**。
+
+文档五件套：README / AGENTS / DEVELOPMENT / STATE.json / TEST_LOG。DECISIONS.md、设备说明.md 已归档。
+
+`STATE.json` updated=2026-08-10：M202 / M204 done；全量 pytest **2780 passed**，**5 failed** 均为 exo 集群离线门控项。下一步：恢复 exo 后重跑工厂 10-task E2E。ToIV/AGENTS.md（2026-08-27）记 Mac Studio 全线已下线、studio01-04 Tailscale 离线——**不要把下文「4× Mac Studio 在线推理」写成现网事实**。
+
 ---
 
 ## 核心特色
@@ -10,7 +18,7 @@
 ### 单模型同源驱动，多 Agent 分工驾驭
 - **GLM-5.2-fp8（mlx-community/GLM-5.2-fp8）** — 编排与执行同源：需求拆解、全局调度、沙盒内改代码跑测皆由它承担（Kimi-K2.7-Code 已下线）
 - 经 **LiteLLM Proxy（:4000）** 统一路由，architect/coder 别名抽象，换回双模型只需改 env
-- 推理经 **exo 集群**（4× Mac Studio M3 Ultra 512GB，MLX RDMA，共 2TB 统一内存）
+- 推理设计上经 exo 集群（MLX RDMA）。现网在线状态见 ToIV/AGENTS.md，2026-08-27 记 Studio 已下线
 - 关键参数：`temperature=0` + `reasoning_effort="none"`（EXO 1.0.71+ 唯一真正关闭 thinking 的开关，防 reasoning_content 抢占 content）
 - 视觉能力暂不可用（exo 无视觉模型），带图对话自动降级纯文本
 
@@ -47,7 +55,7 @@
 - **移动端适配** + **可访问性**（axe WCAG 2 A/AA 零违规）
 
 ### 质量保证（用数字说话）
-- **后端**：2769+ pytest 全绿（15 skipped），覆盖率 86.68%
+- **后端**：STATE 2026-08-10 记 2780 passed，5 failed（exo 离线门控）；既有 README 曾写 2769+ / 15 skipped，覆盖率 86.68%
 - **前端**：955 vitest 全绿，行覆盖 91.64%（tsc 0 错）
 - **E2E**：79 Playwright 用例（布局 / 面板 / 移动端 / a11y / 工厂 / 控制台错误）
 - **a11y**：axe 扫描 8 场景全部零违规
@@ -100,7 +108,7 @@
 
 ```bash
 # 1) 克隆
-git clone https://github.com/zhwangsir/flipped.git
+git clone https://gitee.com/Winery_z/flipped.git
 cd flipped
 
 # 2) 后端 orchestration-api (:8011)
@@ -126,7 +134,7 @@ cd console && cargo tauri dev
 
 ```bash
 # 后端
-PYTHONPATH=src .venv/bin/python -m pytest -q     # 2769+ passed, 15 skipped
+PYTHONPATH=src .venv/bin/python -m pytest -q     # STATE 2026-08-10: 2780 passed, 5 failed exo
 
 # 前端
 cd console
@@ -139,7 +147,7 @@ npx playwright test  # 79 passed (E2E)
 
 ---
 
-## 当前状态（2026-08-10）
+## 当前状态（STATE.json 2026-08-10；集群现网见 ToIV 2026-08-27）
 
 **里程碑 M0 → M204 共 207 条**（其中 M201 failed：GLM 长程行为缺陷阻断 10-task E2E；M202 已落地缓解三件套）。
 
@@ -171,11 +179,11 @@ npx playwright test  # 79 passed (E2E)
 
 | 文件 | 用途 |
 |---|---|
-| [AGENTS.md](AGENTS.md) | **集群操作记忆与决策记录**（17 台设备清单 / GPU 分配 / 凭据 / 易错点 / EXO 重启 playbook）——每次会话必读 |
+| [AGENTS.md](AGENTS.md) | 本项目规则；集群见 ../ToIV/AGENTS.md |
 | [STATE.json](STATE.json) | 里程碑状态机（M0→M204 全量记录、当前状态、known limitations） |
-| [DECISIONS.md](DECISIONS.md) | 关键技术决策记录（D1–D16+） |
+| [DEVELOPMENT.md](DEVELOPMENT.md) | 归档索引（含原 DECISIONS.md） |
 | [TEST_LOG.md](TEST_LOG.md) | 测试证据流水（按里程碑时序） |
-| [设备说明.md](设备说明.md) | 集群设备详细说明 |
+| （设备说明已归档，勿在本仓库复制集群表） |
 | [shell/BUILD.md](shell/BUILD.md) | 构建与发布指南 |
 
 > 自主开发：本仓库由 AI Agent 按 AGENTS.md 流程推进（先计划 → 验证靠运行 → 小步提交 → 状态外置）。
