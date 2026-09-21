@@ -1586,13 +1586,27 @@ async def _run_chat(session_id: str, task_id: str, description: str, model_alias
     M192：attachments 非空 → vision 路由（resolve_vision_model_config）取 (base_url, model)；
     逐张按 payload.path 读盘组装多模态 parts（text + image_url data URL）。
     读盘失败单张跳过（fail-open，对齐 refs 哲学）；全部失败 → 纯 str 发送（降级不炸）。
+    单模型模式预检：路由落到 exo 直连端点且 /models 清单确认不含视觉模型（exo
+    已无 Qwen3-VL）→ emit 系统提示并丢弃图像，回落纯文本 coder 路径（fail-open）。
+    仅对真实 exo 端点探测（不碰测试 mock URL / proxy 链路）；探测失败≠模型不存在，
+    不降级（与 M192 fail-open 哲学一致）。
     attachments 为空：现状 str 路径零变化。
     """
     from driving.model_router import resolve_worker_model_config
 
     if attachments:
+        from driving import model_router as _mr
         from driving.model_router import resolve_vision_model_config
         base_url, model = resolve_vision_model_config()
+        # 单模型模式：仅当路由落到真实 exo 直连端点且确认不含视觉模型才降级
+        # （不碰测试 mock URL / proxy 链路；探测失败≠模型不存在，fail-open 不降级）
+        _direct_url = os.environ.get("FLIPPED_MODEL_BASE_URL", _mr.DEFAULT_EXO_URL)
+        if base_url == _direct_url and _mr.is_endpoint_healthy(base_url) \
+                and not _mr.is_model_available(base_url, model):
+            bus.emit(session_id, EventType.message, Role.system,
+                     {"text": "视觉模型不可用，图像已忽略，已切换纯文本对话"})
+            attachments = None
+            base_url, model = resolve_worker_model_config(model_alias)
     else:
         base_url, model = resolve_worker_model_config(model_alias)
     system = PLAN_SYSTEM if mode == "plan" else CHAT_SYSTEM

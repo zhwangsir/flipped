@@ -1,0 +1,115 @@
+{
+  "model": "mlx-community/GLM-5.2-fp8",
+  "label": "GLM-5.2-fp8",
+  "endpoint": "http://192.168.71.109:52415/v1",
+  "results": [
+    {
+      "id": "fib_recursive",
+      "category": "python_basic",
+      "name": "递归斐波那契",
+      "gen_ok": true,
+      "latency": 57.38143491744995,
+      "tokens": {
+        "prompt_tokens": 72,
+        "completion_tokens": 851,
+        "total_tokens": 923,
+        "prompt_tokens_details": {
+          "cached_tokens": 13,
+          "audio_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 676,
+          "audio_tokens": 0,
+          "accepted_prediction_tokens": 0,
+          "rejected_prediction_tokens": 0
+        }
+      },
+      "reasoning_length": 2713,
+      "reasoning_preview": "We need to write a Python function `fib(n: int) -> int` that returns the nth Fibonacci number using recursion with memoization. Include type hints and a docstring. Only output the code block.\n\nWe shou",
+      "code_length": 613,
+      "code_preview": "from functools import lru_cache\n\n@lru_cache(maxsize=None)\ndef fib(n: int) -> int:\n    \"\"\"Return the nth Fibonacci number using recursion with memoization.\n\n    The Fibonacci sequence is defined as:\n    fib(0) = 0, fib(1) = 1, and fib(n) = fib(n-1) + fib(n-2) for n > 1.\n\n    Args:\n        n: A non-ne",
+      "code_full": "from functools import lru_cache\n\n@lru_cache(maxsize=None)\ndef fib(n: int) -> int:\n    \"\"\"Return the nth Fibonacci number using recursion with memoization.\n\n    The Fibonacci sequence is defined as:\n    fib(0) = 0, fib(1) = 1, and fib(n) = fib(n-1) + fib(n-2) for n > 1.\n\n    Args:\n        n: A non-negative integer representing the index in the Fibonacci sequence.\n\n    Returns:\n        The nth Fibonacci number.\n\n    Raises:\n        ValueError: If n is negative.\n    \"\"\"\n    if n < 0:\n        raise ValueError(\"n must be a non-negative integer\")\n    if n <= 1:\n        return n\n    return fib(n - 1) + fib(n - 2)",
+      "quality": {
+        "checks": {
+          "type_hints": true,
+          "docstring": true,
+          "memoization": true,
+          "recursion": true
+        },
+        "passed": 4,
+        "total": 4,
+        "score": 1.0
+      },
+      "run": {
+        "ok": true,
+        "tests_passed": 6,
+        "tests_total": 6,
+        "errors": [],
+        "output": "ALL_TESTS_PASSED",
+        "stderr": ""
+      },
+      "text_match": null,
+      "scores": {
+        "correctness": 1.0,
+        "quality": 1.0,
+        "completeness": 1.0,
+        "total": 1.0
+      },
+      "retried_with_no_thinking": false
+    },
+    {
+      "id": "binary_search",
+      "category": "python_basic",
+      "name": "二分查找",
+      "gen_ok": true,
+      "latency": 30.665464162826538,
+      "tokens": {
+        "prompt_tokens": 74,
+        "completion_tokens": 480,
+        "total_tokens": 554,
+        "prompt_tokens_details": {
+          "cached_tokens": 15,
+          "audio_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 318,
+          "audio_tokens": 0,
+          "accepted_prediction_tokens": 0,
+          "rejected_prediction_tokens": 0
+        }
+      },
+      "reasoning_length": 1330,
+      "reasoning_preview": "We need to write a Python function `binary_search(arr: list[int], target: int) -> int` that returns the index of target in a sorted array, or -1 if not found. Handle edge cases (empty array, target no",
+      "code_length": 611,
+      "code_preview": "def binary_search(arr: list[int], target: int) -> int:\n    \"\"\"\n    Perform binary search on a sorted array to find the target value.\n\n    Args:\n        arr: A list of integers sorted in ascending order.\n        target: The integer value to search for.\n\n    Returns:\n        The index of the target in",
+      "code_full": "def binary_search(arr: list[int], target: int) -> int:\n    \"\"\"\n    Perform binary search on a sorted array to find the target value.\n\n    Args:\n        arr: A list of integers sorted in ascending order.\n        target: The integer value to search for.\n\n    Returns:\n        The index of the target in the array if found, otherwise -1.\n    \"\"\"\n    left, right = 0, len(arr) - 1\n    while left <= right:\n        mid = left + (right - left) // 2\n        if arr[mid] == target:\n            return mid\n        elif arr[mid] < target:\n            left = mid + 1\n        else:\n            right = mid - 1\n    return -1",
+      "quality": {
+        "checks": {
+          "type_hints": true,
+          "docstring": true,
+          "edge_empty": false,
+          "while_loop": true
+        },
+        "passed": 3,
+        "total": 4,
+        "score": 0.75
+      },
+      "run": {
+        "ok": true,
+        "tests_passed": 7,
+        "tests_total": 7,
+        "errors": [],
+        "output": "ALL_TESTS_PASSED",
+        "stderr": ""
+      },
+      "text_match": null,
+      "scores": {
+        "correctness": 1.0,
+        "quality": 0.75,
+        "completeness": 1.0,
+        "total": 0.925
+      },
+      "retried_with_no_thinking": false
+    }
+  ]
+}

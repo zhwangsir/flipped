@@ -1,12 +1,19 @@
 # LiteLLM Proxy 配置 — flipped M0（决策 D1）
-# 链路: 客户端/编辑器 -> 本代理(:4000) -> exo 集群(:52415) -> GLM-5.2-fp8 / Kimi-K2.7-Code-4bit
+# 链路: 客户端/编辑器 -> 本代理(:4000) -> exo 集群(:52415) -> GLM-5.2-fp8
 # M149: api_base 用 MagicDNS 主机名（原裸 IP 100.64.201.37 因 Tailscale
 #   IP 漂移失效导致全链路 000；主机名免疫 IP 变化，对应节点 macstudio01）
 # M192: MagicDNS 主机名漂移跟进——tailnet 中该节点现为 dgmt-studio01mac-studio
 #   （100.67.43.40；旧名 studio01-1 已 Unknown host）
-# M156 双模型模式恢复: architect=GLM-5.2-fp8, coder=Kimi-K2.7-Code-4bit
-#   解除 M147-A 熔断（GLM 单模型 reasoning_content 抢占 content 路径不可代码修复）。
-#   M149 单模型作为逃生门：把 coder model 改回 GLM-5.2-fp8 + 注释 fallbacks 即可。
+# ⚠️ 2026-08-10：MagicDNS（Tailscale IP 100.67.43.40:52415）返回 502，
+#   api_base 改回 LAN 固定 IP 192.168.71.109（studio01，AGENTS.md 设备清单
+#   固定分配）。Tailscale 502 根因待查，查清楚前勿改回主机名。
+# 当前单模型模式: architect/coder 均 -> GLM-5.2-fp8（exo 集群现存唯一模型）。
+#   Kimi-K2.7-Code 已下线，回归 M149 单模型语义。M147-A 熔断缓解：
+#   两条目均保留 enable_thinking: false + temperature 0.0，防止 GLM
+#   reasoning_content 抢占 content 路径导致 coder 卡死（硬性规则，勿删）。
+# ⚠️ 2026-08-10 真机实测（EXO 1.0.71）：顶层 enable_thinking / chat_template_kwargs
+#   均被 EXO 忽略，仅 reasoning_effort: "none" 真正关闭 thinking
+#   （reasoning_tokens 29→0）。extra_body 已补该字段，勿删。
 # 启动: litellm --config infra/litellm/config.yaml --port 4000
 
 model_list:
@@ -14,7 +21,7 @@ model_list:
   - model_name: architect
     litellm_params:
       model: openai/mlx-community/GLM-5.2-fp8
-      api_base: http://dgmt-studio01mac-studio:52415/v1
+      api_base: http://192.168.71.109:52415/v1
       api_key: dummy-exo-no-auth
       # M149: temperature=0 — fp8 非零 temperature 下长序列生成数值不稳定→乱码
       temperature: 0.0
@@ -22,29 +29,31 @@ model_list:
         enable_thinking: false
         chat_template_kwargs:
           enable_thinking: false
+        reasoning_effort: "none"
 
-  # M156: coder(执行者) -> Kimi-K2.7-Code-4bit（双模型恢复，Kimi 在 exo 已就绪）
-  #   M149 期间临时改 GLM-5.2-fp8 是因 Kimi 掉线；现恢复双模型分工。
+  # 当前单模型模式：coder(执行者) 与 architect 同源 -> GLM-5.2-fp8。
+  #   Kimi-K2.7-Code 已下线；若未来恢复双模型，改回 Kimi 并同步恢复
+  #   单向 fallback（coder -> architect）与 .env / model_router 默认值。
   - model_name: coder
     litellm_params:
-      model: openai/mlx-community/Kimi-K2.7-Code-4bit
-      api_base: http://dgmt-studio01mac-studio:52415/v1
+      model: openai/mlx-community/GLM-5.2-fp8
+      api_base: http://192.168.71.109:52415/v1
       api_key: dummy-exo-no-auth
+      # M149: temperature=0 — fp8 非零 temperature 下长序列生成数值不稳定→乱码
       temperature: 0.0
-      # Kimi-K2.7-Code 无 reasoning_content 路径抢占问题，可不传 enable_thinking；
-      # 但保留 false 与 architect 一致，避免 chat_template 误打开思考模式。
+      # M147-A 缓解（硬性规则）：enable_thinking=false 防 reasoning_content
+      # 抢占 content 路径导致 coder 卡死，单模型期必须保留。
+      # 2026-08-10 起必须叠加 reasoning_effort: "none"（EXO 1.0.71 唯一生效开关）。
       extra_body:
         enable_thinking: false
         chat_template_kwargs:
           enable_thinking: false
+        reasoning_effort: "none"
 
 router_settings:
-  # M156 恢复跨模型单向降级: coder 失败 → fallback architect（不同后端，有意义）。
-  #   M149.12 单模型期删除此 fallback 是因 coder/architect 同后端互环放大超时；
-  #   双模型恢复后必须改回单向，避免 Kimi 临时抖动直接挂任务。
-  #   注意：architect 不配置 fallback，避免反向互环。
-  fallbacks:
-    - coder: [architect]
+  # 当前单模型模式：coder 与 architect 同后端（GLM-5.2-fp8），coder→architect
+  #   互环 fallback 只会放大超时，已删除（M149.12 结论）。
+  #   若未来恢复双模型（coder=Kimi），再恢复单向 fallbacks: coder: [architect]。
   num_retries: 2
   timeout: 600          # 本地大模型首 token 慢, 调大避免误触发降级
   allowed_fails: 3

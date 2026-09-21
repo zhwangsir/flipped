@@ -1,0 +1,42 @@
+{
+  "bug_tasks": [
+    10,
+    92,
+    129,
+    154
+  ],
+  "results": [
+    {
+      "task_id": "HumanEval/10",
+      "gen_ok": true,
+      "latency": 34.932612657547,
+      "completion_preview": "def make_palindrome(string: str) -> str:\n    if not string:\n        return \"\"\n    for i in range(len(string)):\n        if is_palindrome(string[i:]):\n            return string + string[:i][::-1]\n    re",
+      "passed": false,
+      "error": "Traceback (most recent call last):\n  File \"/tmp/tmp73haffdf.py\", line 25, in <module>\n    check(make_palindrome)\n  File \"/tmp/tmp73haffdf.py\", line 19, in check\n    assert candidate('x') == 'x'\n           ^^^^^^^^^^^^^^\n  File \"/tmp/tmp73haffdf.py\", line 5, in make_palindrome\n    if is_palindrome(st"
+    },
+    {
+      "task_id": "HumanEval/92",
+      "gen_ok": true,
+      "latency": 41.824512243270874,
+      "completion_preview": "",
+      "passed": false,
+      "error": "Traceback (most recent call last):\n  File \"/tmp/tmpzbyagba7.py\", line 40, in <module>\n    check(any_int)\n  File \"/tmp/tmpzbyagba7.py\", line 25, in check\n    assert candidate(2, 3, 1)==True, \"This prints if this assert fails 1 (good for debugging!)\"\n           ^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError:"
+    },
+    {
+      "task_id": "HumanEval/129",
+      "gen_ok": true,
+      "latency": 39.34793758392334,
+      "completion_preview": "def minPath(grid, k):\n    \"\"\"\n    Given a grid with N rows and N columns (N >= 2) and a positive integer k, \n    each cell of the grid contains a value. Every integer in the range [1, N * N]\n    inclu",
+      "passed": false,
+      "error": "Traceback (most recent call last):\n  File \"/tmp/tmplgpf6g2s.py\", line 52, in <module>\n    check(minPath)\n  File \"/tmp/tmplgpf6g2s.py\", line 36, in check\n    assert candidate([[1, 2, 3], [4, 5, 6], [7, 8, 9]], 3) == [1, 2, 1]\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAss"
+    },
+    {
+      "task_id": "HumanEval/154",
+      "gen_ok": true,
+      "latency": 20.525730848312378,
+      "completion_preview": "def cycpattern_check(a , b):\n    \"\"\"You are given 2 words. You need to return True if the second word or any of its rotations is a substring in the first word\n    cycpattern_check(\"abcd\",\"abd\") => Fal",
+      "passed": true,
+      "error": ""
+    }
+  ]
+}

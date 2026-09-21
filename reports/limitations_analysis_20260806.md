@@ -22,9 +22,9 @@
 
 | 状态 | 数量 |
 | --- | --- |
-| open | 11 |
+| open | 0 |
 | in_progress | 0 |
-| resolved | 36 |
+| resolved | 47 |
 | wontfix | 35 |
 
 ## 2. 全量明细
@@ -45,11 +45,13 @@
 
 | 分类 | 优先级 | 难度 | 状态 | 目标 |
 | --- | --- | --- | --- | --- |
-| 性能 | P2 | 中 | open | 后续里程碑 |
+| 性能 | P2 | 中 | resolved | 后续里程碑 |
 
 > _git_files 以 repo toplevel 列举再按子目录过滤，超大 repo 有一次性列举开销（本地操作可接受）
 
 影响：超大 monorepo 首次摄入有一次性全量文件列举延迟（本地操作，可接受）
+
+处置：M197.1 消化：_git_files 子目录摄入改用 git ls-files pathspec 限定（-- <relpath>），git 侧直接列子目录，不再全量列举后过滤；base==toplevel 省略 pathspec 保持原语义，base 不在 toplevel 下回退 None(rglob)。tests/test_m197_p2_batch.py 3 例 + verify_m197.sh 场景 a 覆盖
 
 ### L-M171-3 · M171
 
@@ -79,21 +81,25 @@
 
 | 分类 | 优先级 | 难度 | 状态 | 目标 |
 | --- | --- | --- | --- | --- |
-| 测试覆盖 | P2 | 低 | open | 后续里程碑 |
+| 测试覆盖 | P2 | 低 | resolved | 后续里程碑 |
 
 > 黑盒不覆盖接线层真 LLM 路径（system 注入/rag_chunks 证据在单测 mock 层，避免烧模型 flaky）
 
 影响：system 注入/rag_chunks 接线层仅有单测 mock 证据，黑盒回归不覆盖真 LLM 路径
 
+处置：M196.3: RAG_EMBEDDING=mock 强制 MockEmbedding 保 hermetic（embeddings.py 短路开关+2 单测）；verify_m196.sh 场景 c 真接线黑盒——预摄入 marker 后 chat 提问，假 LLM 捕获 system 含 RAG_CONTEXT_HEADER+marker 文本，应答 payload.rag_chunks>=1
+
 ### L-M172-3 · M172
 
 | 分类 | 优先级 | 难度 | 状态 | 目标 |
 | --- | --- | --- | --- | --- |
-| 性能 | P2 | 中 | open | 后续里程碑（库规模增大后再评估异步化） |
+| 性能 | P2 | 中 | resolved | 后续里程碑（库规模增大后再评估异步化） |
 
 > 注入检索为同步本地 Chroma 查询（毫秒级），未做异步化；若未来库极大可再优化
 
 影响：同步 Chroma 查询当前毫秒级无感；库极大后可能阻塞请求线程
+
+处置：M197.2 消化：_run_chat RAG 注入改 asyncio.to_thread 异步化（build_rag_context 在 worker 线程执行，不阻塞 event loop）；顺带修复异步化暴露的 Chroma 并发 KeyError——rag_context 默认 store 进程级单例持活（PersistentClient 不再随调用 GC 逐出 SharedSystemClient）。tests/test_m197_p2_batch.py to_thread 线程断言 + 8 线程并发命中回归 + verify_m197.sh 场景 b 覆盖
 
 ### L-M173-1 · M173
 
@@ -171,11 +177,13 @@
 
 | 分类 | 优先级 | 难度 | 状态 | 目标 |
 | --- | --- | --- | --- | --- |
-| 测试覆盖 | P2 | 低 | open | 后续里程碑（可用临时 git 仓库补黑盒） |
+| 测试覆盖 | P2 | 低 | resolved | 后续里程碑（可用临时 git 仓库补黑盒） |
 
 > 黑盒不覆盖 agent 模式 git restore（证据在单测 mock 层，不碰真实 git 仓库）
 
 影响：agent 模式真实 git restore 路径无黑盒回归保障，仅靠单测 mock
+
+处置：M196.1: verify_m196.sh 场景 a 真实黑盒——agent 会话 snapshot 事件经 git cat-file/rev-parse 校验，手动弄脏 file.txt 后编辑重跑 200 restored=true、文件回滚 HEAD、truncated>=2、重跑 done。过程抓到真 bug：copytree repo racy index 致首次 git stash create rc=1 假失败，已修 _git_snapshot（update-index --refresh 后重试）并补 3 单测
 
 ### L-M175-1 · M175
 
@@ -349,11 +357,13 @@
 
 | 分类 | 优先级 | 难度 | 状态 | 目标 |
 | --- | --- | --- | --- | --- |
-| 测试覆盖 | P2 | 低 | open | 后续里程碑 |
+| 测试覆盖 | P2 | 低 | resolved | 后续里程碑 |
 
 > 黑盒验证 chat 模式通路；agent/auto 模式的 git snapshot 分支由单测覆盖
 
 影响：agent/auto 模式定时任务的 git snapshot 派发分支无黑盒保障，仅单测覆盖
+
+处置：M196.2: verify_m196.sh 场景 b——POST /tasks(mode=agent, once) 经 scheduler(scan=1s) 自动建会话，事件流 snapshot 经 git cat-file -t==commit、head==rev-parse HEAD 校验，会话到终态
 
 ### L-M179-1 · M179
 
@@ -491,11 +501,13 @@
 
 | 分类 | 优先级 | 难度 | 状态 | 目标 |
 | --- | --- | --- | --- | --- |
-| 功能缺口 | P2 | 中 | open | 后续里程碑（一键局域网模式候选） |
+| 功能缺口 | P2 | 中 | resolved | 后续里程碑（一键局域网模式候选） |
 
 > host=127.0.0.1 时仅 host_note 文案提示，不自动改绑定（需 --host 0.0.0.0 起后端或设 FLIPPED_REMOTE_HOST）
 
 影响：默认 127.0.0.1 绑定下手机扫码不可达，需手动 --host 0.0.0.0 或设 FLIPPED_REMOTE_HOST（仅文案提示）
+
+处置：M197.5 消化：scripts/dev_up.sh + console/predev.sh 新增 FLIPPED_BIND_ALL=1 一键局域网模式（BIND_HOST 变量化 0.0.0.0），缺省仍 127.0.0.1 不改安全面。tests/test_m197_p2_batch.py 3 例 grep 断言 + verify_m197.sh 场景 e（LAN_PORT 起 0.0.0.0 后端，LAN IP 健康检查 200）覆盖
 
 ### L-M181-5 · M181
 
@@ -669,11 +681,13 @@
 
 | 分类 | 优先级 | 难度 | 状态 | 目标 |
 | --- | --- | --- | --- | --- |
-| 功能缺口 | P2 | 中 | open | — |
+| 功能缺口 | P2 | 中 | resolved | — |
 
 > classify 为关键词启发式（六类映射），命中率依赖限制文本措辞，人工校正为准（不踩人工已分类条目）
 
 影响：（待评估）
+
+处置：M197.6 消化：classify 从首个命中即返回升级为全表打分制（多类命中取命中数最多者，平手按类序），新增 --stats 报告各类分布与未命中率。tests/test_m197_p2_batch.py 3 例（多命中取高分/--stats 输出/人工校正不踩）覆盖
 
 ### L-M184-2 · M184
 
@@ -763,11 +777,13 @@
 
 | 分类 | 优先级 | 难度 | 状态 | 目标 |
 | --- | --- | --- | --- | --- |
-| 数据一致性 | P2 | 中 | open | — |
+| 数据一致性 | P2 | 中 | resolved | — |
 
 > 评审历史存应用侧 data/reviews/，换机/清数据即失（非项目 git 资产）
 
 影响：（待评估）
+
+处置：M196.4: _reviews_dir 三级解析（env FLIPPED_REVIEWS_DIR > 活动项目 {root}/.flipped/reviews 项目资产 > data/reviews 兜底）；migrate_legacy_reviews 应用侧 legacy 一次性 move 迁入（幂等 fail-open）；评审历史随项目 repo 走，换机/清数据不失。12 单测+黑盒场景 e/d
 
 ### L-M186-2 · M186
 
@@ -869,11 +885,13 @@
 
 | 分类 | 优先级 | 难度 | 状态 | 目标 |
 | --- | --- | --- | --- | --- |
-| 安全 | P2 | 中 | open | — |
+| 安全 | P2 | 中 | resolved | — |
 
 > verify_cmd host 路径（chat/plan）在宿主直接执行 subprocess，安全依赖 _verify_cmd_safe 双闸（白名单+危险模式），无沙盒隔离
 
 影响：（待评估）
+
+处置：M197.4 消化：verify_cmd host 执行加固——_verify_rlimits（preexec_fn，CPU 120s + AS 1GB，macOS AS 不可设静默跳过既定设计）+ _verify_env 环境净化（白名单制剥敏感变量，FLIPPED_VERIFY_ENV_KEEP 追加放行）；_verify_cmd_safe 双闸保留。tests/test_m197_p2_batch.py 4 例（净化/KEEP 扩展/spy 断言 rlimits+env/子进程真生效）覆盖
 
 ### L-M188-3 · M188
 
@@ -903,11 +921,13 @@
 
 | 分类 | 优先级 | 难度 | 状态 | 目标 |
 | --- | --- | --- | --- | --- |
-| 性能 | P2 | 中 | open | — |
+| 性能 | P2 | 中 | resolved | — |
 
 > git 指纹边界：未 ignore 的巨大 untracked 目录会拖慢 git status（用户项目卫生问题，代码注释已说明）；非 git 项目仍回退顶层 mtime，深层编辑不感知（现状保留）
 
 影响：（待评估）
+
+处置：M197.3 消化：_git_fingerprint 对 git status --untracked-files=all 加 5s 超时，超时自动降级 --untracked-files=normal 重试（仍超时返回 None 由调用方回退 mtime）；FLIPPED_FP_UNTRACKED=normal env 可直接跳过 all 模式。巨大 untracked 目录不再拖死指纹计算。tests/test_m197_p2_batch.py 4 例（降级/双超时 None/env 跳过/真实回归）覆盖
 
 ### L-M189-2 · M189
 
@@ -925,11 +945,13 @@
 
 | 分类 | 优先级 | 难度 | 状态 | 目标 |
 | --- | --- | --- | --- | --- |
-| 外部依赖 | P1 | 低 | open | exo 集群 VL 实例恢复后复跑 scripts/verify_m192.sh + 真实红蓝图问答 |
+| 外部依赖 | P1 | 低 | resolved | exo 集群 VL 实例恢复后复跑 scripts/verify_m192.sh + 真实红蓝图问答 |
 
-> exo 集群 Qwen3-VL-4B 实例已放置（控制面 /state 可见 MlxRingInstance），但图像推理数据面 420s 超时无响应；对照 GLM 文本推理 60s 可返回。判定集群侧阻塞，代码侧多模态链路已经假 LLM 黑盒验证。2026-08-06 复验#2：实例曾被卸载，重新放置（POST /instance）后数据面仍 6×120s 超时，排除实例状态腐烂——VL runner 本体问题，需进节点查 runner 日志；GLM 数据面 2.3s 健康
+> exo 集群 Qwen3-VL-4B 实例已放置（控制面 /state 可见 MlxRingInstance），但图像推理数据面 420s 超时无响应；对照 GLM 文本推理 60s 可返回。判定集群侧阻塞，代码侧多模态链路已经假 LLM 黑盒验证。2026-08-06 复验#2：实例曾被卸载，重新放置（POST /instance）后数据面仍 6×120s 超时，排除实例状态腐烂——VL runner 本体问题，需进节点查 runner 日志；GLM 数据面 2.3s 健康。2026-08-06 复验#3（M197 收尾）：studio01:52415 /v1/models 目录正常列出 Qwen3-VL-4B-Instruct-4bit，但数据面 POST chat/completions（8×8 红图 max_tokens=8）HTTP 200 响应头即时返回、body 生成 90s/200s 两次均挂起无任何 token——runner 接收请求后推理卡死，仍阻塞
 
 影响：chat/plan 带图消息在真实 exo 端点上暂时得不到视觉模型响应（路由与组装正确，端点不答）
+
+处置：2026-08-06 消化：根因系 exo 下载器 assert+append bug 致模型文件损坏（model.safetensors.partial 尺寸不符、SHA256 不过）——补齐 12 个缺失小文件 + curl -C - 断点续传重下 3.09GB model.safetensors，SHA256 与上游 x-linked-etag 一致（90eeb026…dfca）；重启实例后文本推理（2+2→4）与图像推理正常。验收复跑：verify_m192.sh 单测+黑盒 20 断言全绿；真实端点红蓝双图问答 studio01:52415 返回「red blue」（prompt_tokens=160, completion_tokens=3），VL 数据面恢复健康
 
 ### L-M193-1 · M193
 
@@ -1004,9 +1026,13 @@
 ### 已消化
 
 - L-M171-1 M189.1 消化：VectorStore 增 get_where/delete_ids 原语，ingest_file upsert 后按 source 过滤删除旧 content_hash 残留 chunk（fail-open）
+- L-M171-2 M197.1 消化：_git_files 子目录摄入改用 git ls-files pathspec 限定（-- <relpath>），git 侧直接列子目录，不再全量列举后过滤；base==toplevel 省略 pathspec 保持原语义，base 不在 toplevel 下回退 None(rglob)。tests/test_m197_p2_batch.py 3 例 + verify_m197.sh 场景 a 覆盖
 - L-M171-3 M195.1 消化：_split_markdown 增 fenced code block 围栏状态跟踪（```/~~~），围栏内行首 # 不再当标题切段；未闭合围栏余下全文保守不切段。tests/test_m195_p2_batch.py 覆盖
+- L-M172-2 M196.3: RAG_EMBEDDING=mock 强制 MockEmbedding 保 hermetic（embeddings.py 短路开关+2 单测）；verify_m196.sh 场景 c 真接线黑盒——预摄入 marker 后 chat 提问，假 LLM 捕获 system 含 RAG_CONTEXT_HEADER+marker 文本，应答 payload.rag_chunks>=1
+- L-M172-3 M197.2 消化：_run_chat RAG 注入改 asyncio.to_thread 异步化（build_rag_context 在 worker 线程执行，不阻塞 event loop）；顺带修复异步化暴露的 Chroma 并发 KeyError——rag_context 默认 store 进程级单例持活（PersistentClient 不再随调用 GC 逐出 SharedSystemClient）。tests/test_m197_p2_batch.py to_thread 线程断言 + 8 线程并发命中回归 + verify_m197.sh 场景 b 覆盖
 - L-M173-1 M189.2 消化：_git_fingerprint（HEAD+porcelain 哈希）替代顶层 mtime 判 stale，深层内容/untracked/commit 全感知，非 git 回退 mtime
 - L-M174-1 M190.1：session trash 机制 + POST /edit/undo + 前端截断 banner；撤销=丢弃重跑产物+按原 id 重挂（黑盒驱动契约修正），真歧义（新 user 消息/锚点丢失）409。verify_m190.sh 场景 a/b/c 通过
+- L-M174-4 M196.1: verify_m196.sh 场景 a 真实黑盒——agent 会话 snapshot 事件经 git cat-file/rev-parse 校验，手动弄脏 file.txt 后编辑重跑 200 restored=true、文件回滚 HEAD、truncated>=2、重跑 done。过程抓到真 bug：copytree repo racy index 致首次 git stash create rc=1 假失败，已修 _git_snapshot（update-index --refresh 后重试）并补 3 单测
 - L-M175-1 M192：图像附件全链接入 chat/plan——后端 ImageAttachmentIn 契约/落盘/_run_chat 多模态 parts/vision 路由/attachments 取回端点 + 前端 Composer 上传粘贴预览/历史缩略图；verify_m192.sh 单测 34 例 + 黑盒 20 断言全绿。遗留：exo VL 数据面推理超时，登记 L-M192-1 待集群恢复复验
 - L-M176-1 M188.1 消化：CreateGoalRequest.verify_cmd 显式入参（argv 语义安全闸 422）+ _verify_deterministic 确定性优先（沙盒/host 双路径，exit 0=达成，source=verify_cmd），det 不可用 fail-safe 回落 LLM judge
 - L-M176-3 M188.2 消化：rebuild_running 从事件流重建循环态（半途轮整轮重跑）+ lifespan goal 恢复优先于 checkpoint/error（不按 status==running 过滤，dispatch 尾段覆写状态不可靠）+ 续跑防重入 409；paused goal 不续跑登记为新限制
@@ -1014,11 +1040,13 @@
 - L-M177-4 M193：后端 POST /project/revert-hunk 单 hunk patch 反向应用 + 前端 diffHunks 内容指纹分组 + Review 面板 hunk 块接受/拒绝交互。语义决策：接受=无 git 副作用的审查进度标记（前端内存），拒绝=真实工作区反向应用——遵守 L-M177-1 不碰 staging 约束。tests/test_m193_hunk.py 15 例 + verify_m193.sh 黑盒 16 断言全绿
 - L-M178-2 M187.1/M187.2/M187.3 全消化：cron.py 纯逻辑 5 字段解析（Vixie dom/dow OR，字段跳跃，4 年上限，本地时区语义）+ kind=cron 创建校验 422；PATCH /tasks/{id} 部分更新（白名单+合并校验+调度字段变更重算 next_run_at）；lifespan 恢复会话注册 RUNNING_TASKS 闭合防重入跨重启缺口。verify_m187.sh 黑盒 a-f 验证
 - L-M178-3 M187.3：_resume_orchestrator 句柄注册 RUNNING_TASKS+done_callback pop（恢复中会话被防重入看见，重复派发缺口闭合）；stale running 无 checkpoint 会话启动时标 error（chat/plan 不再永远假 running）。黑盒 e 项验证
+- L-M178-4 M196.2: verify_m196.sh 场景 b——POST /tasks(mode=agent, once) 经 scheduler(scan=1s) 自动建会话，事件流 snapshot 经 git cat-file -t==commit、head==rev-parse HEAD 校验，会话到终态
 - L-M179-2 M186.1：评审结果持久化——review_store.py（save/list/load，cap 50 删最旧，原子写，id 穿越防护）+ review 端点 fail-open 落盘回传 review_id + GET /project/reviews（轻量列表）/reviews/{id}（完整详情）；前端历史下拉载入回放（historical 标记）。verify_m186.sh 黑盒 b1-b3 验证
 - L-M179-3 M194.4 消化：ContextPanel 评审按钮旁加模型下拉（默认 coder / architect），选择透传 reviewProject(model)，结果区显示本次模型
 - L-M179-4 M186.2：findings 行号点击跳转——openFile(path, line?) + openedFile.line + 文件视图 line-target 高亮 scrollIntoView 居中；ReviewFindingRow line!=null 时整行 button.review-jump。vitest 覆盖有/无 line 双路径
 - L-M180-1 M183 消化：worker 规则注入系统落地（agent 通路手动 CRUD + auto 通路自动生成 + 版本回滚 + 执行效果统计）
 - L-M180-4 M194.6 消化：Launcher 镜像「地图」入口加「规则」入口（IconScrollText），点击切 ContextPanel rules tab
+- L-M181-4 M197.5 消化：scripts/dev_up.sh + console/predev.sh 新增 FLIPPED_BIND_ALL=1 一键局域网模式（BIND_HOST 变量化 0.0.0.0），缺省仍 127.0.0.1 不改安全面。tests/test_m197_p2_batch.py 3 例 grep 断言 + verify_m197.sh 场景 e（LAN_PORT 起 0.0.0.0 后端，LAN IP 健康检查 200）覆盖
 - L-M181-5 M182 消化：Bot Channel 多平台接入落地（Telegram webhook + 企业微信回调 + 统一消息接口 + 状态监控）
 - L-M182-2 M195.4 消化：FLIPPED_BOT_REPLY_TIMEOUT_S env 已支持（bot_channel.py 默认 90s，非法值回落 90）；长任务超时发兜底文案不阻塞后台执行为既定语义
 - L-M183-1 M185.1：chat/plan 通路注入 scope=all worker 规则（WORKER_RULES_CHAT_HEADER + build_worker_rules_text scopes 参数化），FLIPPED_WORKER_RULES_CHAT=0 可关，fail-open；payload.worker_rules_injected 标记。verify_m185.sh 黑盒验证
@@ -1027,17 +1055,22 @@
 - L-M183-4 M194.2 消化：build_worker_rules_text max_chars=None 时读 FLIPPED_WORKER_RULES_MAX_CHARS（默认 300 零行为变化），显式传参优先
 - L-M183-5 M194.3 消化：history cap 运行期读 FLIPPED_WORKER_RULES_HISTORY_CAP（默认 20，clamp [1,500]，非法回落 20）
 - L-M183-6 M185.3：GET /worker/rules 支持 enabled 过滤 + sort=priority（priority desc→id asc，与注入层同序）；缺省契约不变（全量插入序）
+- L-M184-1 M197.6 消化：classify 从首个命中即返回升级为全表打分制（多类命中取命中数最多者，平手按类序），新增 --stats 报告各类分布与未命中率。tests/test_m197_p2_batch.py 3 例（多命中取高分/--stats 输出/人工校正不踩）覆盖
 - L-M184-2 M185.4：check 增强 registry 真实性校验——id 格式 ^L-M<n>-<i>$、id 里程碑段==milestone 字段、枚举字段合法（status/priority/difficulty）、resolved/wontfix 必须有 resolution_note、id 唯一性
 - L-M184-4 M195.2 消化：report 生成后自动维护 reports/index.md 索引（按文件名去重，条目按文件名排序=时间序）
 - L-M185-2 M194.7 消化：WorkerRulesPanel 带 sort/enabled 参数服务端拉取（M185.3 端点），失败回落本地排序；加 enabled 过滤开关
 - L-M185-3 M195.2 消化：check 增 target 存在性校验——target 为 ^M\d+$ 格式时必须指向 STATE.json 真实里程碑，自由文本跳过
 - L-M185-4 M194.2 消化：chat 通路改读 FLIPPED_CHAT_RULES_MAX_CHARS（缺省回落 worker 值），双通路独立调参就绪
+- L-M186-1 M196.4: _reviews_dir 三级解析（env FLIPPED_REVIEWS_DIR > 活动项目 {root}/.flipped/reviews 项目资产 > data/reviews 兜底）；migrate_legacy_reviews 应用侧 legacy 一次性 move 迁入（幂等 fail-open）；评审历史随项目 repo 走，换机/清数据不失。12 单测+黑盒场景 e/d
 - L-M186-3 M194.5 消化：commit message 展示改 textarea 可编辑，复制按钮取编辑后文本
 - L-M186-4 M193 已交付逐 hunk 接受/拒绝（同 L-M177-4，重复条目一并关闭）
 - L-M187-2 M191.3 消化：cron _MONTHS/_DOWS/_MACROS 映射 + _parse 宏展开（@yearly/@annually/@monthly/@weekly/@daily/@midnight/@hourly，其余 @ 串 CronError）+ _parse_field names 参数（MON-FRI/MON,WED/MON/2 全兼容，未知名 CronError 含字段位置）。tests/test_m191_cron_names.py + verify_m191.sh 黑盒验证
 - L-M187-3 M191.4 消化：_STALE_SEEN 两击确认集 + _stale_sweep_once（首击记标记跳过派发竞态窗，次击 try_resume_goal→checkpoint resume→update_status(error)+bus 留痕；paused 不碰）+ _stale_watchdog（FLIPPED_WATCHDOG_SCAN_S 默认 60s）lifespan 并排启动。tests/test_m191_watchdog.py 覆盖两击确认/活句柄不碰
 - L-M188-1 M191.2 消化：has_pending_approval 逆序扫 approval_request/result + rebuild_running pending 守卫 return None + _resume_with_decision 尾段钩子（rebuild 命中 → emit status「goal 审批续跑」+ create_task _goal_loop(start, judge_first=True) 注册 RUNNING_TASKS）；summarize_goal_events paused 态。tests/test_m191_goal_pause_resume.py 覆盖
+- L-M188-2 M197.4 消化：verify_cmd host 执行加固——_verify_rlimits（preexec_fn，CPU 120s + AS 1GB，macOS AS 不可设静默跳过既定设计）+ _verify_env 环境净化（白名单制剥敏感变量，FLIPPED_VERIFY_ENV_KEEP 追加放行）；_verify_cmd_safe 双闸保留。tests/test_m197_p2_batch.py 4 例（净化/KEEP 扩展/spy 断言 rlimits+env/子进程真生效）覆盖
 - L-M188-4 M191.1 消化：judge emit 增结构化 error=verdict is None（gap 文案不变前端兼容），rebuild_running 重放结构化优先、哨兵兜底旧格式——judge 熔断计数跨重启保留且不再被真实 judge gap 撞串污染。tests/test_m191_judge_error_field.py 覆盖 error 字段往返/哨兵兜底/撞串不误计
+- L-M189-1 M197.3 消化：_git_fingerprint 对 git status --untracked-files=all 加 5s 超时，超时自动降级 --untracked-files=normal 重试（仍超时返回 None 由调用方回退 mtime）；FLIPPED_FP_UNTRACKED=normal env 可直接跳过 all 模式。巨大 untracked 目录不再拖死指纹计算。tests/test_m197_p2_batch.py 4 例（降级/双超时 None/env 跳过/真实回归）覆盖
+- L-M192-1 2026-08-06 消化：根因系 exo 下载器 assert+append bug 致模型文件损坏（model.safetensors.partial 尺寸不符、SHA256 不过）——补齐 12 个缺失小文件 + curl -C - 断点续传重下 3.09GB model.safetensors，SHA256 与上游 x-linked-etag 一致（90eeb026…dfca）；重启实例后文本推理（2+2→4）与图像推理正常。验收复跑：verify_m192.sh 单测+黑盒 20 断言全绿；真实端点红蓝双图问答 studio01:52415 返回「red blue」（prompt_tokens=160, completion_tokens=3），VL 数据面恢复健康
 - L-M194-2 M195.3 消化：后端 GET /models/aliases（env 覆盖实时反映）+ 前端 ContextPanel 挂载拉取动态渲染下拉，失败回落 architect 硬编码
 
 ### 当前迭代 P0
@@ -1046,19 +1079,15 @@
 
 ### 近期 P1
 
-- L-M192-1 exo 集群 Qwen3-VL-4B 实例已放置（控制面 /state 可见 MlxRingInstance），但图像推… → exo 集群 VL 实例恢复后复跑 scripts/verify_m192.sh + 真实红蓝图问答
+（无）
 
 ### 候选池 P2/wontfix
 
-- L-M171-2 _git_files 以 repo toplevel 列举再按子目录过滤，超大 repo 有一次性列举开销（本地操作可接… → 后续里程碑
 - L-M172-1 截断按字符数非 token（CJK/ASCII 等宽对待，max_chars=2400 是保守预算，token 只少不超… → 后续里程碑（token 级预算候选）
-- L-M172-2 黑盒不覆盖接线层真 LLM 路径（system 注入/rag_chunks 证据在单测 mock 层，避免烧模型 fla… → 后续里程碑
-- L-M172-3 注入检索为同步本地 Chroma 查询（毫秒级），未做异步化；若未来库极大可再优化 → 后续里程碑（库规模增大后再评估异步化）
 - L-M173-2 注入固定 max_chars=1600（保守预算，token 只少不超），无请求级调参 → 后续里程碑
 - L-M173-3 目录用途推断为启发式（目录名映射表），未知目录只列子项名不瞎编 → 后续里程碑
 - L-M174-2 agent 模式只回滚到该轮快照=该轮及之后文件改动全撤销；chat/plan 无文件操作纯对话截断 → 后续里程碑
 - L-M174-3 chat/plan _run_chat 本身无 LLM 对话历史（单消息无状态），重跑不带前序对话上下文——与现状行为一… → 后续里程碑（对话历史组装候选）
-- L-M174-4 黑盒不覆盖 agent 模式 git restore（证据在单测 mock 层，不碰真实 git 仓库） → 后续里程碑（可用临时 git 仓库补黑盒）
 - L-M175-2 展开是发送时一次性行为（历史 @token 不重放；edit 重跑按新文本重新展开，行为自然正确） → 后续里程碑
 - L-M175-3 补全候选上限 8 条、单文件 32KB/总量 64KB/5 文件上限；skipped 状态仅提示不注入 → 后续里程碑（限额调参候选）
 - L-M176-2 goal 运行中普通消息/edit/undo 全 409（wrapper 持 RUNNING_TASKS 全周期，与现状… → 后续里程碑
@@ -1066,30 +1095,24 @@
 - L-M177-2 untracked 回滚=unlink 仅限 ls-files 判定的常规文件；symlink 删链不删目标（天然安全） → 后续里程碑
 - L-M177-3 行内确认=ZCode rewind 安全摘要的最小等价（动作文案写清后果），不做二次 modal → 后续里程碑
 - L-M178-1 mark_run(done) 语义=「派发成功」非「任务执行完成」（执行结果在会话事件流，任务卡可跳转查看） → 后续里程碑（执行结果回填任务卡候选）
-- L-M178-4 黑盒验证 chat 模式通路；agent/auto 模式的 git snapshot 分支由单测覆盖 → 后续里程碑
 - L-M179-1 untracked 文件按契约只送路径+行数（不送内容），LLM 对新文件只能做有限评审——预算与注入防护的既定取舍 → 后续里程碑（预算内送新文件头部候选）
 - L-M180-2 files 记录全部命中文件（含被截断丢弃的节），截断注记追加在预算外（可能略超 max_chars） → 后续里程碑
 - L-M180-3 内容空白的规则文件视为不命中（满足「空规则零注入」红线） → 后续里程碑
 - L-M181-1 远程面只读会话 + 发消息 + 审批三能力；不暴露文件树/终端/项目写/其他会话（token 绑定单会话） → 后续里程碑
 - L-M181-2 token 单活制：同 session 重复签发旧 token 即失效；TTL 默认 1800s（FLIPPED_REM… → 后续里程碑
 - L-M181-3 远程发消息走 canonical handler 缺省行为（不支持请求级 mode/model 覆盖），语义=conso… → 后续里程碑
-- L-M181-4 host=127.0.0.1 时仅 host_note 文案提示，不自动改绑定（需 --host 0.0.0.0 起后端… → 后续里程碑（一键局域网模式候选）
 - L-M181-6 移动页为零构建自包含 HTML（非 React），与 console 前端无共享组件 → 后续里程碑
 - L-M182-1 个人微信无官方 bot API，落地企业微信应用回调；个人微信接入不在路线图
 - L-M182-3 一 chat 绑定一会话（mode=chat）；bot 会话不暴露文件树/终端/项目写等 console 能力
 - L-M182-4 WeCom 依赖 pycryptodome，缺失时 available()=False 优雅降级（channels co…
 - L-M182-5 outbound 走平台主动 send API（Telegram sendMessage/WeCom 应用消息），非 w…
 - L-M182-6 身份映射 platform+chat_id→session_id 单映射，同 chat 多用户共享会话（群聊场景无逐用户…
-- L-M184-1 classify 为关键词启发式（六类映射），命中率依赖限制文本措辞，人工校正为准（不踩人工已分类条目）
 - L-M184-3 registry 人工字段（priority/difficulty/target/impact）需人工维护，脚本不自动评…
 - L-M185-1 worker_rules_injected 标记只在事件层（events payload），history turn 不…
-- L-M186-1 评审历史存应用侧 data/reviews/，换机/清数据即失（非项目 git 资产）
 - L-M186-2 findings 跳转依赖 openFile 读文件成功；二进制/超 512KB/读失败静默降级无跳转
 - L-M187-1 cron 按服务器本地时区解释，跨时区部署需注意（once/interval 仍为 UTC 语义）
 - L-M187-4 编辑不触及 last_run_at/run_count 历史（历史只增不改）
-- L-M188-2 verify_cmd host 路径（chat/plan）在宿主直接执行 subprocess，安全依赖 _verify…
 - L-M188-3 断点续跑以轮为原子单位：轮内 orchestrator checkpoint 不复用，半途轮整轮重跑
-- L-M189-1 git 指纹边界：未 ignore 的巨大 untracked 目录会拖慢 git status（用户项目卫生问题，代码…
 - L-M189-2 chunk 清理为 fail-open：清理异常静默跳过，陈旧数据下次 ingest 再清（不影响检索正确性，因检索按新…
 - L-M193-1 hunk 接受状态为会话级内存标记（组件 useState + 内容指纹），刷新页面不保留——内容指纹决定不做持久化
 - L-M193-2 拒绝粒度=unified diff hunk（git 原生分组），hunk 内单行不可独立拒绝

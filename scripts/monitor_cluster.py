@@ -10,13 +10,15 @@ import time
 import datetime
 import urllib.request
 
-ENDPOINT = "http://100.64.201.37:52415/v1/chat/completions"
+# M192: 主机名漂移跟进——tailnet 中该节点现为 dgmt-studio01mac-studio
+# （旧裸 IP 100.64.201.37 / 旧名 studio01-1 均已失效）
+ENDPOINT = "http://dgmt-studio01mac-studio:52415/v1/chat/completions"
 PROJECT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 LOG = os.path.join(PROJECT, "TEST_LOG.md")
 
+# 当前单模型模式：Kimi-K2.7-Code 已从 exo 下线，不再探测（避免持续报错）
 MODELS = [
-    ("GLM-5.2 (编排者)", "mlx-community/GLM-5.2-fp8"),
-    ("Kimi-K2.7-Code (执行者)", "mlx-community/Kimi-K2.7-Code-4bit"),
+    ("GLM-5.2 (编排/执行同源)", "mlx-community/GLM-5.2-fp8"),
 ]
 MAX_ITERS = int(os.environ.get("MONITOR_MAX_ITERS", "30"))   # 上限，防止失控空转 (AGENTS.md §6)
 SLEEP_SECS = int(os.environ.get("MONITOR_SLEEP", "120"))

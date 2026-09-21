@@ -177,8 +177,8 @@ def test_models_aliases_endpoint() -> None:
     assert isinstance(aliases, list) and len(aliases) >= 2
     by_alias = {a["alias"]: a for a in aliases}
     assert "coder" in by_alias and "architect" in by_alias
-    # 默认映射（无 env 时）
-    assert "Kimi-K2.7-Code" in by_alias["coder"]["model"]
+    # 默认映射（无 env 时）——单模型模式，coder 与 architect 同源
+    assert "GLM-5.2" in by_alias["coder"]["model"]
     assert "GLM-5.2" in by_alias["architect"]["model"]
 
 

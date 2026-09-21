@@ -11,12 +11,14 @@ def _worker(**kw):
 def test_defaults_unchanged(monkeypatch):
     """M131 质量优先：默认 timeout=3600s（1小时）；
     M149.20：max_iterations=15（非 200，GLM-5.2-fp8 稳定窗口约束）；
-    M3.1：max_iterations=5（非 15，进一步匹配 2-3 轮窗口极限）。"""
+    M3.1：max_iterations=5（非 15，进一步匹配 2-3 轮窗口极限）；
+    M202(b)：max_iterations=8（COMMAND_DISCIPLINE 单轮做更多事 +
+    重复错误早停兜底，契约见 test_m202_worker_discipline.py）。"""
     monkeypatch.delenv("FLIPPED_WORKER_TIMEOUT", raising=False)
     monkeypatch.delenv("FLIPPED_WORKER_MAX_ITERATIONS", raising=False)
     w = _worker()
     assert w.timeout == 3600.0
-    assert w.max_iterations == 5
+    assert w.max_iterations == 8
 
 
 def test_env_overrides(monkeypatch):
@@ -45,6 +47,8 @@ def test_thinking_default_disabled(monkeypatch):
     assert body == {
         "enable_thinking": False,
         "chat_template_kwargs": {"enable_thinking": False},
+        # EXO 1.0.71+ 唯一生效的关 thinking 开关（2026-08-10 真机实测）
+        "reasoning_effort": "none",
     }
 
 

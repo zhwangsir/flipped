@@ -1117,6 +1117,16 @@ def default_orchestrator_fn(task: FactoryTask, state: FactoryState) -> TaskResul
 
     if t.is_alive():
         # 线程仍在跑（GLM/Kimi 卡住）——放弃等待，标记超时
+        # M203(b)：超时只 abandon 线程杀不掉其 worker 会话（2026-08-11 E2E
+        # 实测：task1 僵尸会话继续占 EXO 串行队列，后续 attempt LLM 调用被
+        # 排队拉长 7-8min → 更多超时 → 更多僵尸，自我强化）。主动远程 pause
+        # 所有仍活跃的 worker 会话释放队列；fail-open 绝不拖垮收尾。
+        try:
+            from executor.openhands_worker import OpenHandsWorker
+            OpenHandsWorker.cancel_all_active(
+                reason=f"task_timeout({task_timeout}s) task={task.id}")
+        except Exception:  # noqa: BLE001
+            pass
         result = {"verified": False, "stop_reason": "task_timeout",
                   "iteration": 0, "feedback": f"任务超时({task_timeout}s)"}
     elif result_box:

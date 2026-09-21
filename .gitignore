@@ -119,3 +119,7 @@ console/reports/
 
 # ---- Trae 编辑器产物 ----
 .trae/
+
+# Remotion 渲染产物（可再生成）
+promo/out/
+promo/

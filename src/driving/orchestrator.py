@@ -412,6 +412,8 @@ def _direct_glm_tool_call(llm, schema_cls, prompt: str, *, max_retries: int = 1)
                 # M156.15: thinking 默认关（GLM-5.2-fp8 thinking on → 重复循环/乱码）
                 # FLIPPED_PLANNER_ENABLE_THINKING=1 可开（与 worker 对齐）
                 "enable_thinking": _planner_enable_thinking(),
+                # EXO 1.0.71+ 仅认 reasoning_effort="none"（见 openhands_worker 注释）
+                **({} if _planner_enable_thinking() else {"reasoning_effort": "none"}),
                 "temperature": 0.1,
             }
             # 不传 max_tokens：让模型自然完成，不人为截断
@@ -1003,6 +1005,7 @@ def local_worker(state: OrchestratorState) -> dict:
                         "temperature": 0.1,
                         "enable_thinking": False,
                         "chat_template_kwargs": {"enable_thinking": False},
+                        "reasoning_effort": "none",
                         "stream": True,
                     },
                     timeout=httpx.Timeout(_kimi_timeout, connect=10.0),
@@ -1055,6 +1058,7 @@ def local_worker(state: OrchestratorState) -> dict:
                         "temperature": 0.1,
                         "enable_thinking": False,
                         "chat_template_kwargs": {"enable_thinking": False},
+                        "reasoning_effort": "none",
                         "stream": True,
                     },
                     timeout=httpx.Timeout(_kimi_timeout, connect=10.0),

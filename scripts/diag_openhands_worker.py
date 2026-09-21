@@ -41,13 +41,13 @@ def main() -> int:
     # 1) 环境清理 + .env 加载
     for k in ("http_proxy", "HTTP_PROXY", "https_proxy", "HTTPS_PROXY", "ALL_PROXY", "all_proxy"):
         os.environ.pop(k, None)
-    os.environ["NO_PROXY"] = "studio01-1,.ts.net,100.67.43.40,localhost,127.0.0.1,host.docker.internal"
+    os.environ["NO_PROXY"] = "dgmt-studio01mac-studio,.ts.net,100.67.43.40,localhost,127.0.0.1,host.docker.internal"
     os.environ["no_proxy"] = os.environ["NO_PROXY"]
     _load_dotenv(ROOT / ".env")
 
-    # M156 双模型模式：强制 coder=Kimi（即使 .env 有覆盖也用 Kimi 测）
-    os.environ["FLIPPED_CODER_MODEL"] = "mlx-community/Kimi-K2.7-Code-4bit"
-    # M149.6：thinking 默认关（GLM 单模型期决策，Kimi 也保持一致避免变量）
+    # 单模型模式：coder=GLM-5.2-fp8（与 .env / model_router 默认一致）
+    os.environ["FLIPPED_CODER_MODEL"] = "mlx-community/GLM-5.2-fp8"
+    # M149.6：thinking 默认关（GLM 单模型期决策，防 reasoning_content 抢占 content）
     os.environ["FLIPPED_WORKER_ENABLE_THINKING"] = "0"
     # 缩短 timeout 避免无限等待（5 分钟内必须出结果）
     os.environ["FLIPPED_WORKER_TIMEOUT"] = "300"
@@ -108,14 +108,14 @@ def main() -> int:
     bus = EventBus(store)
     session_id = "diag-m156"
     task_id = "diag-task-1"
-    # 用 resolve_worker_model_config 拿到真实路由（验证 Kimi）
+    # 用 resolve_worker_model_config 拿到真实路由（单模型模式：coder=GLM-5.2-fp8）
     from driving.model_router import resolve_worker_model_config
     base_url, model_name = resolve_worker_model_config("coder")
     print(f"[DIAG] resolve_worker_model_config('coder') → base_url={base_url}, model={model_name}", flush=True)
-    # 走 proxy 时 model_name 是别名 "coder"，走直连时是 full model name "mlx-community/Kimi-K2.7-Code-4bit"
-    # 关键：LiteLLM config.yaml 里 coder 别名已指 Kimi-K2.7-Code-4bit
-    assert model_name == "coder" or "Kimi" in model_name, (
-        f"期望 coder 别名或 Kimi 全名，实际 {model_name}"
+    # 走 proxy 时 model_name 是别名 "coder"，走直连时是 full model name "mlx-community/GLM-5.2-fp8"
+    # 关键：LiteLLM config.yaml 里 coder 别名已指 GLM-5.2-fp8（Kimi 已下线）
+    assert model_name == "coder" or "GLM" in model_name, (
+        f"期望 coder 别名或 GLM 全名，实际 {model_name}"
     )
 
     worker = OpenHandsWorker(
@@ -167,7 +167,10 @@ def main() -> int:
         result = worker.run(task_desc)
         elapsed = time.monotonic() - t0
         print(f"\n[DIAG] [{elapsed:.1f}s] worker.run() 返回: {result}", flush=True)
-        success = result.get("status") == "finished" or result.get("status") == "done"
+        # M199 跟进：worker 返回的是枚举 repr 'ConversationExecutionStatus.FINISHED'，
+        # 不是裸 'finished'——子串匹配兼容两种形态。
+        _st = str(result.get("status", "")).lower()
+        success = "finished" in _st or _st == "done"
         print(f"[DIAG] status={'✓ SUCCESS' if success else '⚠ UNEXPECTED STATUS'}", flush=True)
     except Exception as e:
         elapsed = time.monotonic() - t0

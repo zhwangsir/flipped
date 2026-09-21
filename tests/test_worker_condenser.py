@@ -65,9 +65,11 @@ def test_condenser_env_overrides(monkeypatch):
 def test_max_iterations_default_reduced(monkeypatch):
     """M3.1：max_iterations 默认 5（非 15/200）——GLM-5.2-fp8 稳定窗口
     ~11-12k chars，固定开销~8.2k，留给多轮历史~3-4k chars ≈ 2-3 轮。
-    5 轮已是上限，复杂任务由编排层拆短。"""
+    5 轮已是上限，复杂任务由编排层拆短。
+    M202(b) 回调到 8：COMMAND_DISCIPLINE 单命令+&&链式让单轮历史更短，
+    重复错误早停（M202(c)）兜底防 5+ 轮空转腐坏。"""
     monkeypatch.delenv("FLIPPED_WORKER_MAX_ITERATIONS", raising=False)
-    assert _worker().max_iterations == 5
+    assert _worker().max_iterations == 8
 
 
 def test_max_iterations_env_override(monkeypatch):

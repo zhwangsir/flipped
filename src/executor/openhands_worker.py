@@ -20,6 +20,7 @@ from openhands.sdk.agent.agent import Agent
 from openhands.sdk.conversation.impl.remote_conversation import RemoteConversation
 from openhands.sdk.conversation.state import ConversationExecutionStatus
 from openhands.sdk.event.base import Event as OHEvent
+from openhands.sdk.event.conversation_error import ConversationErrorEvent
 from openhands.sdk.event.llm_convertible.action import ActionEvent
 from openhands.sdk.event.llm_convertible.message import MessageEvent
 from openhands.sdk.event.llm_convertible.observation import ObservationEvent
@@ -133,7 +134,14 @@ class OpenHandsWorker:
 
 <PROCESS_MANAGEMENT>
 * When terminating processes: do NOT use pkill with general keywords; find the exact PID with ps aux first, then kill that specific PID.
-</PROCESS_MANAGEMENT>"""
+</PROCESS_MANAGEMENT>
+
+<COMMAND_DISCIPLINE>
+* Send EXACTLY ONE tool call per response. NEVER emit multiple tool calls in one turn — the sandbox rejects them ("Cannot execute multiple commands at once") and you will waste iterations.
+* Chain related shell steps into ONE command with && — e.g. write then verify: `cat > f.py <<'EOF' ... EOF && python3 -c "import f"`. Do NOT send a separate read/verify command after a write.
+* As soon as your verification passes, call finish IMMEDIATELY. Do NOT re-read, re-check, or re-run anything after success.
+* If the same command shape fails or is rejected twice, change approach — never retry the same shape a third time.
+</COMMAND_DISCIPLINE>"""
 
     @classmethod
     def _include_default_tools(cls) -> list[str]:
@@ -205,15 +213,26 @@ class OpenHandsWorker:
         #   GLM-5.2-fp8 经 exo 稳定窗口 ~11-12k chars，固定开销(SP+tools)~8.2k，
         #   留给多轮历史 ~3-4k chars ≈ 2-3 轮。5 轮已是上限，超过必乱码。
         #   复杂任务由 orchestrator 拆短子任务派发（M3 编排层分解）。
+        # - M202(b) 回调到 8：COMMAND_DISCIPLINE 让单轮完成写+验证（&& 链式），
+        #   历史/轮更短；重复错误早停(M202(c))兜底防 5+ 轮空转腐坏。
         #   FLIPPED_WORKER_MAX_ITERATIONS 可覆盖。
         self.timeout = timeout if timeout is not None else float(
             os.environ.get("FLIPPED_WORKER_TIMEOUT", "3600"))
-        self.max_iterations = int(os.environ.get("FLIPPED_WORKER_MAX_ITERATIONS", "5"))
+        self.max_iterations = int(os.environ.get("FLIPPED_WORKER_MAX_ITERATIONS", "8"))
         # F8 实测缺陷:orchestrator 模式下 worker 一跑完就把会话状态设 done,
         # 覆盖了还在继续的外层循环(overseer/verify/下一轮)。False=子任务模式,不碰会话状态。
         self.manage_session_status = manage_session_status
         self._events: list[OHEvent] = []
         self._lock = threading.Lock()
+        # M202(c) 重复错误早停：同一归一化错误签名累计 ≥threshold 次
+        # （M201 FAIL 实测：同一沙盒拒绝空转 30+ 次直到 3h task timeout）
+        # → daemon 线程远程 pause() 中断 run，收尾抛 RepeatedErrorAbort。
+        # FLIPPED_WORKER_ERROR_ABORT_THRESHOLD 可配，默认 3。
+        self.error_abort_threshold = int(
+            os.environ.get("FLIPPED_WORKER_ERROR_ABORT_THRESHOLD", "3"))
+        self._error_signatures: dict[str, int] = {}
+        self._abort_reason: str | None = None
+        self._conversation: Any | None = None
 
     @staticmethod
     def _to_container_path(host_path: str) -> str:
@@ -286,9 +305,18 @@ class OpenHandsWorker:
         """
         raw = os.environ.get("FLIPPED_WORKER_ENABLE_THINKING", "false").strip().lower()
         enabled = raw in ("1", "true", "on", "yes")
+        if enabled:
+            return {
+                "enable_thinking": True,
+                "chat_template_kwargs": {"enable_thinking": True},
+            }
         return {
-            "enable_thinking": enabled,
-            "chat_template_kwargs": {"enable_thinking": enabled},
+            "enable_thinking": False,
+            "chat_template_kwargs": {"enable_thinking": False},
+            # EXO 1.0.71+（2026-08-10 真机实测）：顶层 enable_thinking 与
+            # chat_template_kwargs 均被忽略，仅 reasoning_effort="none"
+            # 真正关闭 thinking（reasoning_tokens 29→0）。
+            "reasoning_effort": "none",
         }
 
     def _emit(self, type_: EventType, agent: Role | None, payload: dict[str, Any]) -> None:
@@ -298,6 +326,132 @@ class OpenHandsWorker:
         with self._lock:
             self._events.append(event)
         self._translate_and_emit(event)
+
+    # M202(c)：沙盒多命令拒绝等标志性文本（小写匹配）
+    _ABORT_TEXT_MARKERS = ("cannot execute multiple commands",)
+
+    # M203(b)：活跃实例注册表——factory per-task 硬超时只 abandon 线程、
+    # 杀不掉线程里的 worker 会话（2026-08-11 E2E 实测：task1 超时后僵尸
+    # 会话继续占 EXO 串行队列，后续 attempt 的 LLM 调用被排队拉长 7-8min，
+    # 更多超时 → 更多僵尸，自我强化）。factory 超时路径调
+    # cancel_all_active() 远程 pause 所有仍活跃的会话，释放队列。
+    _active_workers: set["OpenHandsWorker"] = set()
+    _active_lock = threading.Lock()
+
+    @classmethod
+    def _register_active(cls, w: "OpenHandsWorker") -> None:
+        with cls._active_lock:
+            cls._active_workers.add(w)
+
+    @classmethod
+    def _unregister_active(cls, w: "OpenHandsWorker") -> None:
+        with cls._active_lock:
+            cls._active_workers.discard(w)
+
+    @classmethod
+    def cancel_all_active(cls, reason: str = "") -> int:
+        """远程 pause 所有仍挂会话的活跃 worker；返回触发 pause 的数量。
+
+        pause 走独立 HTTP POST，放 daemon 线程避免阻塞调用方；失败静默
+        （_pause_safely），绝不拖垮 factory 超时收尾路径。
+        """
+        with cls._active_lock:
+            targets = [w for w in cls._active_workers if w._conversation is not None]
+        for w in targets:
+            w._abort_reason = w._abort_reason or (
+                f"FactoryTimeoutCancel: {reason}" if reason
+                else "FactoryTimeoutCancel")
+            threading.Thread(target=cls._pause_safely,
+                             args=(w._conversation,), daemon=True).start()
+        return len(targets)
+
+    def _observation_error_signature(self, event: OHEvent) -> str | None:
+        """从 ObservationEvent 提取归一化错误签名；非错误返回 None。
+
+        判定为错误（满足其一）：
+        - observation.success 显式为 False；
+        - terminal 观测 exit_code != 0 且有输出文本（空输出的探测性命令如
+          grep 空匹配不算——防探索期误伤）；
+        - 输出文本命中 _ABORT_TEXT_MARKERS（沙盒拒绝等，与退出码无关）。
+
+        归一化：压缩空白 + 小写 + 数字→#（行号/计数不同的同形错误归并）。
+        """
+        obs = getattr(event, "observation", None)
+        if obs is None:
+            return None
+        tool = getattr(event, "tool_name", None) or "unknown"
+        success = getattr(obs, "success", True)
+        exit_code = getattr(obs, "exit_code", 0) or 0
+        text = ""
+        for attr in ("output", "content"):
+            raw = getattr(obs, attr, None)
+            if raw is None:
+                continue
+            if isinstance(raw, list):
+                raw = "\n".join(getattr(c, "text", None) or str(c) for c in raw)
+            text = str(raw)
+            break
+        lowered = text.lower()
+        marker_hit = next(
+            (m for m in self._ABORT_TEXT_MARKERS if m in lowered), None)
+        is_error = (
+            success is False
+            or (tool == "terminal" and exit_code != 0 and bool(text.strip()))
+            or marker_hit is not None
+        )
+        if not is_error:
+            return None
+        if marker_hit is not None:
+            # 标志性文本错误：签名只含标记本身。拒绝文本会附带每次不同的
+            # 命令内容（Provided commands: ...），若用全文归一化，同形错误
+            # 永远归不到同一签名，早停永不触发
+            # （2026-08-10 E2E 实测：11 次多命令拒绝 0 次早停）。
+            return f"{tool}:marker:{marker_hit}"
+        norm = re.sub(r"\s+", " ", text).strip().lower()
+        norm = re.sub(r"\d+", "#", norm)
+        if not norm:  # 显式失败但无文本：工具+退出码兜底签名
+            norm = f"exit{exit_code}:success{success}"
+        return f"{tool}:{norm[:160]}"
+
+    def _track_and_maybe_abort(self, event: OHEvent) -> None:
+        """累计错误签名；同签名 ≥threshold 次 → 置 abort_reason + 远程 pause 早停。
+
+        在 WS 回调线程执行：pause 是独立 HTTP POST（不经 WS），放 daemon
+        线程避免阻塞事件流；触停幂等（abort_reason 置位后直接返回）。
+        """
+        if self._abort_reason is not None or self.error_abort_threshold <= 0:
+            return
+        sig = self._observation_error_signature(event)
+        if sig is None:
+            return
+        count = self._error_signatures.get(sig, 0) + 1
+        self._error_signatures[sig] = count
+        if count < self.error_abort_threshold:
+            return
+        self._abort_reason = (
+            f"RepeatedErrorAbort: 同一错误累计 {count} 次（阈值 "
+            f"{self.error_abort_threshold}）: {sig[:140]}")
+        conv = self._conversation
+        if conv is not None:
+            threading.Thread(target=self._pause_safely, args=(conv,),
+                             daemon=True).start()
+
+    @staticmethod
+    def _pause_safely(conv: Any) -> None:
+        """远程 pause 中断 agent 循环；失败静默（收尾仍会抛 abort）。"""
+        try:
+            conv.pause()
+        except Exception:  # noqa: BLE001 早停是优化路径，绝不拖垮主流程
+            pass
+
+    def _raise_if_aborted(self, *, status_done: bool) -> None:
+        """run() 收尾检查：已早停且 agent 未自行 finish → 抛 RepeatedErrorAbort。
+
+        orchestrator 捕获后按 tool_calls>0 归任务级失败，回灌 supervisor
+        重拆子任务（而非空转 3h）。agent 已自行 finish 时不抛——活干完就交卷。
+        """
+        if self._abort_reason is not None and not status_done:
+            raise RuntimeError(self._abort_reason)
 
     def _translate_and_emit(self, event: OHEvent) -> None:
         kind = event.__class__.__name__
@@ -328,6 +482,10 @@ class OpenHandsWorker:
                         self._emit(EventType.file_change, Role.worker,
                                    {"path": fpath, "change": getattr(event.action, "command", "mod"),
                                     "content": str(fcontent)[:8000]})
+
+            elif isinstance(event, ConversationErrorEvent):
+                # M203(a)：会话级错误不再静默——落成 error 事件（根因可诊断）
+                self._emit_conversation_error(event)
 
             elif isinstance(event, ObservationEvent):
                 tool = event.tool_name or "unknown"
@@ -362,9 +520,26 @@ class OpenHandsWorker:
                                     "title": extra.get("title", ""),
                                     "screenshot": extra.get("screenshot", "")})
                 self._emit(EventType.tool_result, Role.worker, payload)
+                # M202(c) 重复错误签名追踪（同形错误 ≥阈值 → 远程 pause 早停）
+                self._track_and_maybe_abort(event)
         except Exception as exc:
             self._emit(EventType.error, Role.system,
                        {"message": f"事件翻译失败({kind}): {exc}", "event_kind": kind})
+
+    def _emit_conversation_error(self, event: ConversationErrorEvent) -> None:
+        """M203(a)：ConversationErrorEvent 可观测化。
+
+        2026-08-11 E2E 实测：会话级错误（LLM 长挂后暴毙等）此前被静默吞掉
+        （SDK visualizer 未注册该事件类型，我方翻译层也不认识），日志只剩
+        一行 "Skipping visualization"，根因完全不可见，两次 task_timeout
+        各空烧 600s。这里把 code+detail 落成 error 事件进事件流/日志。
+        """
+        code = getattr(event, "code", "") or "unknown"
+        detail = str(getattr(event, "detail", "") or "")
+        self._emit(EventType.error, Role.system,
+                   {"message": f"会话级错误({code}): {detail[:500]}",
+                    "event_kind": "ConversationErrorEvent",
+                    "error_code": code})
 
     def _build_condenser(self, llm_api_key: str):
         """M149.14 上下文压缩：事件历史超阈值时调 LLM 压缩为摘要，钳住总上下文窗口。
@@ -416,6 +591,8 @@ class OpenHandsWorker:
         """同步阻塞运行一次任务；返回摘要。"""
         self._emit(EventType.status, Role.system,
                    {"status": "running", "progress": 5, "note": "连接 OpenHands agent-server"})
+        # M203(b)：登记活跃实例，factory 超时可 cancel_all_active 杀僵尸会话
+        type(self)._register_active(self)
         try:
             # 对 OpenAI 兼容端点，litellm 需要 provider 前缀才能识别路由
             model_name = self.model_alias
@@ -492,6 +669,8 @@ class OpenHandsWorker:
                     max_iteration_per_run=self.max_iterations,
                     delete_on_close=True,
                 )
+                # M202(c)：早停追踪需要远程 pause 句柄（在 run 前挂上）
+                self._conversation = conversation
                 self._emit(EventType.status, Role.system,
                            {"status": "running", "progress": 10, "note": "派发任务到沙盒"})
                 # M156.13：把 task_description 里的宿主机路径翻译成容器内路径。
@@ -523,6 +702,9 @@ class OpenHandsWorker:
                                    {"prompt": p, "completion": c, "calls": n, "source": "worker"})
                 except Exception:  # noqa: BLE001 统计失败绝不影响任务
                     pass
+                # M202(c)：重复错误早停且未自然完成 → 抛 RepeatedErrorAbort，
+                # 由 orchestrator 归任务级失败回灌 supervisor（不空转 3h）。
+                self._raise_if_aborted(status_done=status_done)
                 if self.manage_session_status:
                     self._emit(EventType.status, Role.system,
                                {"status": "done" if status_done else str(status),
@@ -546,6 +728,9 @@ class OpenHandsWorker:
                 self._emit(EventType.status, Role.system, {"status": "error", "progress": 100, "note": str(exc)})
                 self.bus.set_status(self.session_id, "error")
             raise
+        finally:
+            # M203(b)：无论成败摘出注册表，防 cancel_all_active 误碰已死实例
+            type(self)._unregister_active(self)
 
     @property
     def events(self) -> list[OHEvent]:

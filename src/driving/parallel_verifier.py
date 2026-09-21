@@ -180,6 +180,8 @@ def _call_glm_semantic(
                 "model": model,
                 "messages": [{"role": "user", "content": prompt}],
                 "enable_thinking": False,
+                # EXO 1.0.71+ 仅认 reasoning_effort="none" 关 thinking
+                "reasoning_effort": "none",
                 "max_tokens": int(os.environ.get("FLIPPED_PARALLEL_GLM_MAX_TOKENS", "800")),
                 "temperature": 0,
             },

@@ -45,7 +45,7 @@
       "debugApplicationIdSuffix": ".debug"
     },
     "shortDescription": "本地模型驱动的 AI 开发工厂",
-    "longDescription": "flipped 是一个接入本地 MLX 双模型（GLM-5.2 编排者 / Kimi-K2.7-Code 执行者）的 agentic 代码编辑器平台。",
+    "longDescription": "flipped 是一个接入本地 MLX 单模型（GLM-5.2-fp8 编排/执行同源）的 agentic 代码编辑器平台。",
     "macOS": {
       "minimumSystemVersion": "11.0",
       "signingIdentity": null

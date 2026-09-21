@@ -204,10 +204,10 @@ export function Settings() {
             <h2 className="settings-title">配置</h2>
             <section className="settings-sec">
               <div className="settings-sec-h">默认执行模型</div>
-              <div className="settings-sec-sub">本地 exo 集群双模型</div>
+              <div className="settings-sec-sub">本地 exo 集群单模型</div>
               <div className="set-rows">
                 {[
-                  ['coder', 'Kimi-K2.7 · coder', '执行者 / 码农(子 Agent)'],
+                  ['coder', 'GLM-5.2 · coder', '执行者 / 码农(子 Agent)'],
                   ['architect', 'GLM-5.2 · architect', '编排者 / 架构师(主 Agent)'],
                 ].map(([id, t, d]) => (
                   <button

@@ -12,7 +12,7 @@
 #        c) 回归：真实 registry + STATE.json check ok（增强校验不炸既有 82 条）
 #   3) 真实后端黑盒 HTTP（真 uvicorn，aliases 端点不调 LLM 无需假 server）：
 #        d) GET /models/aliases → 200，含 coder/architect/supervisor/overseer/monitor 5 alias，
-#           coder 默认 mlx-community/Kimi-K2.7-Code-4bit
+#           coder 默认 mlx-community/GLM-5.2-fp8（单模型模式）
 #        e) 启动 env FLIPPED_CODER_MODEL=m195-override-coder → 响应 coder 反映覆盖值
 #
 # 一键复跑: bash scripts/verify_m195.sh

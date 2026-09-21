@@ -10,13 +10,14 @@ ROOT=$(pwd)
 source .venv/bin/activate
 
 # 直连 exo，绕过当前 LiteLLM proxy 的 Postgres/prisma 阻塞
-export NO_PROXY="100.64.201.37,${NO_PROXY:-localhost,127.0.0.1,::1}"
+# M192: 主机名漂移跟进（dgmt-studio01mac-studio）+ 单模型默认（GLM-5.2-fp8，Kimi 已下线）
+export NO_PROXY="dgmt-studio01mac-studio,.ts.net,${NO_PROXY:-localhost,127.0.0.1,::1}"
 export PYTHONPATH="${ROOT}/src"
-export FLIPPED_MODEL_BASE_URL="${FLIPPED_MODEL_BASE_URL:-http://100.64.201.37:52415/v1}"
+export FLIPPED_MODEL_BASE_URL="${FLIPPED_MODEL_BASE_URL:-http://dgmt-studio01mac-studio:52415/v1}"
 export FLIPPED_ARCHITECT_MODEL="${FLIPPED_ARCHITECT_MODEL:-mlx-community/GLM-5.2-fp8}"
-export FLIPPED_CODER_MODEL="${FLIPPED_CODER_MODEL:-mlx-community/Kimi-K2.7-Code-4bit}"
-export OPENHANDS_BASE_URL="${OPENHANDS_BASE_URL:-http://100.64.201.37:52415/v1}"
-export OPENHANDS_MODEL="${OPENHANDS_MODEL:-openai/mlx-community/Kimi-K2.7-Code-4bit}"
+export FLIPPED_CODER_MODEL="${FLIPPED_CODER_MODEL:-mlx-community/GLM-5.2-fp8}"
+export OPENHANDS_BASE_URL="${OPENHANDS_BASE_URL:-http://dgmt-studio01mac-studio:52415/v1}"
+export OPENHANDS_MODEL="${OPENHANDS_MODEL:-openai/mlx-community/GLM-5.2-fp8}"
 export EXO_API_KEY="${EXO_API_KEY:-dummy}"
 
 CONTAINER="flipped-oh-canvas"

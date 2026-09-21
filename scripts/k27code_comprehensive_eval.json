@@ -1,0 +1,143 @@
+{
+  "model": "mlx-community/Kimi-K2.7-Code-mlx-DQ3_K_M-q8",
+  "label": "Kimi-K2.7-Code-4bit",
+  "endpoint": "http://192.168.71.109:52415/v1",
+  "results": [
+    {
+      "id": "fib_recursive",
+      "category": "python_basic",
+      "name": "递归斐波那契",
+      "gen_ok": false,
+      "error": "HTTP 404: {\"error\":{\"message\":\"No instance found for model mlx-community/Kimi-K2.7-Code-mlx-DQ3_K_M-q8\",\"type\":\"Not Found\",\"param\":null,\"code\":404}}",
+      "latency": 0.03235983848571777
+    },
+    {
+      "id": "binary_search",
+      "category": "python_basic",
+      "name": "二分查找",
+      "gen_ok": false,
+      "error": "HTTP 404: {\"error\":{\"message\":\"No instance found for model mlx-community/Kimi-K2.7-Code-mlx-DQ3_K_M-q8\",\"type\":\"Not Found\",\"param\":null,\"code\":404}}",
+      "latency": 0.016058683395385742
+    },
+    {
+      "id": "validate_email",
+      "category": "python_basic",
+      "name": "邮箱验证",
+      "gen_ok": false,
+      "error": "HTTP 404: {\"error\":{\"message\":\"No instance found for model mlx-community/Kimi-K2.7-Code-mlx-DQ3_K_M-q8\",\"type\":\"Not Found\",\"param\":null,\"code\":404}}",
+      "latency": 0.012655973434448242
+    },
+    {
+      "id": "stack_class",
+      "category": "python_basic",
+      "name": "栈数据结构",
+      "gen_ok": false,
+      "error": "HTTP 404: {\"error\":{\"message\":\"No instance found for model mlx-community/Kimi-K2.7-Code-mlx-DQ3_K_M-q8\",\"type\":\"Not Found\",\"param\":null,\"code\":404}}",
+      "latency": 0.01298379898071289
+    },
+    {
+      "id": "json_parser",
+      "category": "python_basic",
+      "name": "简易 JSON 解析器",
+      "gen_ok": false,
+      "error": "HTTP 404: {\"error\":{\"message\":\"No instance found for model mlx-community/Kimi-K2.7-Code-mlx-DQ3_K_M-q8\",\"type\":\"Not Found\",\"param\":null,\"code\":404}}",
+      "latency": 0.018049955368041992
+    },
+    {
+      "id": "quick_sort",
+      "category": "python_advanced",
+      "name": "快速排序",
+      "gen_ok": false,
+      "error": "HTTP 404: {\"error\":{\"message\":\"No instance found for model mlx-community/Kimi-K2.7-Code-mlx-DQ3_K_M-q8\",\"type\":\"Not Found\",\"param\":null,\"code\":404}}",
+      "latency": 0.015652179718017578
+    },
+    {
+      "id": "lru_cache",
+      "category": "python_advanced",
+      "name": "手写 LRU 缓存",
+      "gen_ok": false,
+      "error": "HTTP 404: {\"error\":{\"message\":\"No instance found for model mlx-community/Kimi-K2.7-Code-mlx-DQ3_K_M-q8\",\"type\":\"Not Found\",\"param\":null,\"code\":404}}",
+      "latency": 0.01555490493774414
+    },
+    {
+      "id": "trie",
+      "category": "python_advanced",
+      "name": "Trie 前缀树",
+      "gen_ok": false,
+      "error": "HTTP 404: {\"error\":{\"message\":\"No instance found for model mlx-community/Kimi-K2.7-Code-mlx-DQ3_K_M-q8\",\"type\":\"Not Found\",\"param\":null,\"code\":404}}",
+      "latency": 0.07699894905090332
+    },
+    {
+      "id": "graph_bfs",
+      "category": "python_advanced",
+      "name": "图 BFS 最短路径",
+      "gen_ok": false,
+      "error": "HTTP 404: {\"error\":{\"message\":\"No instance found for model mlx-community/Kimi-K2.7-Code-mlx-DQ3_K_M-q8\",\"type\":\"Not Found\",\"param\":null,\"code\":404}}",
+      "latency": 0.014421224594116211
+    },
+    {
+      "id": "typescript_promise_all",
+      "category": "multi_language",
+      "name": "TypeScript Promise.all",
+      "gen_ok": false,
+      "error": "HTTP 404: {\"error\":{\"message\":\"No instance found for model mlx-community/Kimi-K2.7-Code-mlx-DQ3_K_M-q8\",\"type\":\"Not Found\",\"param\":null,\"code\":404}}",
+      "latency": 0.01606011390686035
+    },
+    {
+      "id": "go_worker_pool",
+      "category": "multi_language",
+      "name": "Go Worker Pool",
+      "gen_ok": false,
+      "error": "HTTP 404: {\"error\":{\"message\":\"No instance found for model mlx-community/Kimi-K2.7-Code-mlx-DQ3_K_M-q8\",\"type\":\"Not Found\",\"param\":null,\"code\":404}}",
+      "latency": 0.018027067184448242
+    },
+    {
+      "id": "rust_result",
+      "category": "multi_language",
+      "name": "Rust Result 处理",
+      "gen_ok": false,
+      "error": "HTTP 404: {\"error\":{\"message\":\"No instance found for model mlx-community/Kimi-K2.7-Code-mlx-DQ3_K_M-q8\",\"type\":\"Not Found\",\"param\":null,\"code\":404}}",
+      "latency": 0.0199739933013916
+    },
+    {
+      "id": "debug_race_condition",
+      "category": "debugging",
+      "name": "并发 Bug 诊断",
+      "gen_ok": false,
+      "error": "HTTP 404: {\"error\":{\"message\":\"No instance found for model mlx-community/Kimi-K2.7-Code-mlx-DQ3_K_M-q8\",\"type\":\"Not Found\",\"param\":null,\"code\":404}}",
+      "latency": 0.01713109016418457
+    },
+    {
+      "id": "logic_puzzle",
+      "category": "reasoning",
+      "name": "逻辑推理题",
+      "gen_ok": false,
+      "error": "HTTP 404: {\"error\":{\"message\":\"No instance found for model mlx-community/Kimi-K2.7-Code-mlx-DQ3_K_M-q8\",\"type\":\"Not Found\",\"param\":null,\"code\":404}}",
+      "latency": 0.013947248458862305
+    },
+    {
+      "id": "math_sequence",
+      "category": "reasoning",
+      "name": "数列求和",
+      "gen_ok": false,
+      "error": "HTTP 404: {\"error\":{\"message\":\"No instance found for model mlx-community/Kimi-K2.7-Code-mlx-DQ3_K_M-q8\",\"type\":\"Not Found\",\"param\":null,\"code\":404}}",
+      "latency": 0.014369010925292969
+    },
+    {
+      "id": "long_context_needle",
+      "category": "long_context",
+      "name": "长文本关键信息提取",
+      "gen_ok": false,
+      "error": "HTTP 404: {\"error\":{\"message\":\"No instance found for model mlx-community/Kimi-K2.7-Code-mlx-DQ3_K_M-q8\",\"type\":\"Not Found\",\"param\":null,\"code\":404}}",
+      "latency": 0.020836830139160156
+    },
+    {
+      "id": "instruction_following",
+      "category": "long_context",
+      "name": "多步骤指令遵循",
+      "gen_ok": false,
+      "error": "HTTP 404: {\"error\":{\"message\":\"No instance found for model mlx-community/Kimi-K2.7-Code-mlx-DQ3_K_M-q8\",\"type\":\"Not Found\",\"param\":null,\"code\":404}}",
+      "latency": 0.013498783111572266
+    }
+  ]
+}

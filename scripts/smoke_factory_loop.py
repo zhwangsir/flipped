@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """M156.11 · factory_loop 最小冒烟测试（M156.10 import time 修复后验证编排层）。
 
-诊断脚本 diag_openhands_worker.py 已证明 OpenHandsWorker 层正常（Kimi coder
-35.4s 完成 hello.py）。本脚本验证上一层：factory_loop 编排层（planner 拆 roadmap
+诊断脚本 diag_openhands_worker.py 已证明 OpenHandsWorker 层正常（GLM coder
+完成 hello.py）。本脚本验证上一层：factory_loop 编排层（planner 拆 roadmap
 + orchestrator 调 worker + verify 验收）是否真的能跑通。
 
 策略：max_tasks=2 + 简单 goal + 关 auto_proposer，10min watchdog 内出结论：
@@ -54,14 +54,15 @@ def main() -> int:
     # 1) 环境清理 + .env 加载
     for k in ("http_proxy", "HTTP_PROXY", "https_proxy", "HTTPS_PROXY", "ALL_PROXY", "all_proxy"):
         os.environ.pop(k, None)
-    os.environ["NO_PROXY"] = "studio01-1,.ts.net,100.67.43.40,localhost,127.0.0.1,host.docker.internal"
+    # M192: MagicDNS 主机名漂移跟进——tailnet 中该节点现为 dgmt-studio01mac-studio（旧名 studio01-1 已失效）
+    os.environ["NO_PROXY"] = "dgmt-studio01mac-studio,.ts.net,100.67.43.40,localhost,127.0.0.1,host.docker.internal"
     os.environ["no_proxy"] = os.environ["NO_PROXY"]
     _load_dotenv(ROOT / ".env")
 
-    # M156 双模型：coder=Kimi（.env 已配，这里防御性确认）
-    os.environ.setdefault("FLIPPED_CODER_MODEL", "mlx-community/Kimi-K2.7-Code-4bit")
+    # 单模型模式：architect/coder 同源 GLM-5.2-fp8（.env 已配，这里防御性确认）
+    os.environ.setdefault("FLIPPED_CODER_MODEL", "mlx-community/GLM-5.2-fp8")
     os.environ.setdefault("FLIPPED_ARCHITECT_MODEL", "mlx-community/GLM-5.2-fp8")
-    # thinking 关（M149.6 决策，Kimi 也保持一致避免变量）
+    # thinking 关（M149.6 决策，防 reasoning_content 抢占 content）
     os.environ["FLIPPED_WORKER_ENABLE_THINKING"] = "0"
     # M156.13: GLM planner 超时 180s（默认 1800s=30min 太长，smoke 10min watchdog 内跑不完）。
     # 实测简单 prompt 60s，复杂 default_planner prompt 可能 2-3min，180s 留足裕量。

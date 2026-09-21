@@ -5865,6 +5865,15 @@ select.set-select-native option {
   padding: 40px 28px;
   text-align: center;
 }
+.assistant-empty .hero-art {
+  width: 216px;
+  height: auto;
+  margin-bottom: 10px;
+  border-radius: 18px;
+  /* 边缘径向渐隐融入 --assistant-bg，无硬边 */
+  -webkit-mask-image: radial-gradient(ellipse 90% 90% at 50% 50%, #000 52%, transparent 98%);
+  mask-image: radial-gradient(ellipse 90% 90% at 50% 50%, #000 52%, transparent 98%);
+}
 .assistant-empty .hero {
   font-size: var(--text-2xl);
   font-weight: 600;

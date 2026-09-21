@@ -1,0 +1,749 @@
+{
+  "model": "moonshotai/Kimi-K3",
+  "endpoint": "http://43.119.32.180:8002/v1",
+  "results": [
+    {
+      "id": "fib_recursive",
+      "category": "python_basic",
+      "name": "递归斐波那契",
+      "gen_ok": true,
+      "latency": 27.05348491668701,
+      "tokens": {
+        "prompt_tokens": 146,
+        "total_tokens": 808,
+        "completion_tokens": 662,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 470
+      },
+      "reasoning_length": 1767,
+      "reasoning_preview": "The user wants a Python function `fib(n: int) -> int` that:\n1. Returns the nth Fibonacci number\n2. Uses recursion with memoization\n3. Includes type hints\n4. Includes a docstring\n5. Only output the cod",
+      "code_length": 605,
+      "code_preview": "from functools import lru_cache\n\n\n@lru_cache(maxsize=None)\ndef fib(n: int) -> int:\n    \"\"\"\n    Return the nth Fibonacci number using recursion with memoization.\n\n    The sequence is defined as fib(0) = 0, fib(1) = 1, and\n    fib(n) = fib(n - 1) + fib(n - 2) for n >= 2.\n\n    Args:\n        n: The inde",
+      "code_full": "from functools import lru_cache\n\n\n@lru_cache(maxsize=None)\ndef fib(n: int) -> int:\n    \"\"\"\n    Return the nth Fibonacci number using recursion with memoization.\n\n    The sequence is defined as fib(0) = 0, fib(1) = 1, and\n    fib(n) = fib(n - 1) + fib(n - 2) for n >= 2.\n\n    Args:\n        n: The index of the desired Fibonacci number (must be non-negative).\n\n    Returns:\n        The nth Fibonacci number.\n\n    Raises:\n        ValueError: If n is negative.\n    \"\"\"\n    if n < 0:\n        raise ValueError(\"n must be a non-negative integer\")\n    if n < 2:\n        return n\n    return fib(n - 1) + fib(n - 2)",
+      "quality": {
+        "checks": {
+          "type_hints": true,
+          "docstring": true,
+          "memoization": true,
+          "recursion": true
+        },
+        "passed": 4,
+        "total": 4,
+        "score": 1.0
+      },
+      "run": {
+        "ok": true,
+        "tests_passed": 6,
+        "tests_total": 6,
+        "errors": [],
+        "output": "ALL_TESTS_PASSED",
+        "stderr": ""
+      },
+      "text_match": null,
+      "scores": {
+        "correctness": 1.0,
+        "quality": 1.0,
+        "completeness": 1.0,
+        "total": 1.0
+      },
+      "retried_with_no_thinking": false
+    },
+    {
+      "id": "binary_search",
+      "category": "python_basic",
+      "name": "二分查找",
+      "gen_ok": true,
+      "latency": 16.349971055984497,
+      "tokens": {
+        "prompt_tokens": 147,
+        "total_tokens": 446,
+        "completion_tokens": 299,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 60
+      },
+      "reasoning_length": 256,
+      "reasoning_preview": "The user wants a binary search function in Python with:\n- Type hints\n- Docstring\n- Handles edge cases (empty array, target not found)\n- Returns index of target or -1\n- Only output the code block\n\nLet ",
+      "code_length": 783,
+      "code_preview": "def binary_search(arr: list[int], target: int) -> int:\n    \"\"\"\n    Perform binary search on a sorted array to find the target value.\n\n    Args:\n        arr: A list of integers sorted in ascending order.\n        target: The integer value to search for.\n\n    Returns:\n        The index of the target in",
+      "code_full": "def binary_search(arr: list[int], target: int) -> int:\n    \"\"\"\n    Perform binary search on a sorted array to find the target value.\n\n    Args:\n        arr: A list of integers sorted in ascending order.\n        target: The integer value to search for.\n\n    Returns:\n        The index of the target in the array, or -1 if not found.\n\n    Examples:\n        >>> binary_search([1, 3, 5, 7, 9], 5)\n        2\n        >>> binary_search([1, 3, 5, 7, 9], 4)\n        -1\n        >>> binary_search([], 1)\n        -1\n    \"\"\"\n    left, right = 0, len(arr) - 1\n\n    while left <= right:\n        mid = left + (right - left) // 2\n\n        if arr[mid] == target:\n            return mid\n        elif arr[mid] < target:\n            left = mid + 1\n        else:\n            right = mid - 1\n\n    return -1",
+      "quality": {
+        "checks": {
+          "type_hints": true,
+          "docstring": true,
+          "edge_empty": false,
+          "while_loop": true
+        },
+        "passed": 3,
+        "total": 4,
+        "score": 0.75
+      },
+      "run": {
+        "ok": true,
+        "tests_passed": 7,
+        "tests_total": 7,
+        "errors": [],
+        "output": "ALL_TESTS_PASSED",
+        "stderr": ""
+      },
+      "text_match": null,
+      "scores": {
+        "correctness": 1.0,
+        "quality": 0.75,
+        "completeness": 1.0,
+        "total": 0.925
+      },
+      "retried_with_no_thinking": false
+    },
+    {
+      "id": "validate_email",
+      "category": "python_basic",
+      "name": "邮箱验证",
+      "gen_ok": true,
+      "latency": 63.77037191390991,
+      "tokens": {
+        "prompt_tokens": 160,
+        "total_tokens": 1415,
+        "completion_tokens": 1255,
+        "prompt_tokens_details": {
+          "cached_tokens": 128
+        },
+        "reasoning_tokens": 876
+      },
+      "reasoning_length": 3244,
+      "reasoning_preview": "The user wants a Python function `validate_email(email: str) -> bool` that validates an email address using regex. Requirements:\n- Check for exactly one @\n- Valid local part (alphanumeric + . _ -)\n- V",
+      "code_length": 1488,
+      "code_preview": "import re\n\n\ndef validate_email(email: str) -> bool:\n    \"\"\"\n    Validate an email address using a regular expression.\n\n    Validation rules:\n        - Exactly one '@' separator must be present.\n        - Local part: alphanumeric characters plus '.', '_', '-';\n          must start with an alphanumeri",
+      "code_full": "import re\n\n\ndef validate_email(email: str) -> bool:\n    \"\"\"\n    Validate an email address using a regular expression.\n\n    Validation rules:\n        - Exactly one '@' separator must be present.\n        - Local part: alphanumeric characters plus '.', '_', '-';\n          must start with an alphanumeric character, must not end\n          with a dot, and must not contain consecutive dots.\n        - Domain: dot-separated labels of alphanumeric characters and\n          hyphens (labels may not start or end with a hyphen), ending\n          with a top-level domain of at least 2 alphabetic characters.\n\n    Args:\n        email: The email address string to validate.\n\n    Returns:\n        True if the email address is valid, False otherwise.\n\n    Examples:\n        >>> validate_email(\"user.name+tag@example.com\")\n        False\n        >>> validate_email(\"user_name@example-domain.com\")\n        True\n        >>> validate_email(\"invalid@@example.com\")\n        False\n    \"\"\"\n    if not isinstance(email, str) or not email:\n        return False\n\n    if email.count(\"@\") != 1:\n        return False\n\n    pattern = re.compile(\n        r\"^(?!.*\\.\\.)\"                                # no consecutive dots anywhere\n        r\"[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9_-])?\"  # local part\n        r\"@\"\n        r\"(?:[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?\\.)+\"  # domain labels\n        r\"[A-Za-z]{2,}$\"                              # TLD (>= 2 letters)\n    )\n\n    return pattern.fullmatch(email) is not None",
+      "quality": {
+        "checks": {
+          "type_hints": true,
+          "docstring": true,
+          "regex": true,
+          "import_re": true
+        },
+        "passed": 4,
+        "total": 4,
+        "score": 1.0
+      },
+      "run": {
+        "ok": true,
+        "tests_passed": 9,
+        "tests_total": 9,
+        "errors": [],
+        "output": "ALL_TESTS_PASSED",
+        "stderr": ""
+      },
+      "text_match": null,
+      "scores": {
+        "correctness": 1.0,
+        "quality": 1.0,
+        "completeness": 1.0,
+        "total": 1.0
+      },
+      "retried_with_no_thinking": false
+    },
+    {
+      "id": "stack_class",
+      "category": "python_basic",
+      "name": "栈数据结构",
+      "gen_ok": true,
+      "latency": 31.95811104774475,
+      "tokens": {
+        "prompt_tokens": 142,
+        "total_tokens": 980,
+        "completion_tokens": 838,
+        "prompt_tokens_details": {
+          "cached_tokens": 128
+        },
+        "reasoning_tokens": 476
+      },
+      "reasoning_length": 2085,
+      "reasoning_preview": "The user wants a Python Stack class with:\n- push(item)\n- pop() - raises IndexError if empty\n- peek() - raises IndexError if empty\n- is_empty()\n- __len__\n- Type hints\n- Docstrings\n- Uses a list interna",
+      "code_length": 1550,
+      "code_preview": "from typing import Generic, TypeVar\n\nT = TypeVar(\"T\")\n\n\nclass Stack(Generic[T]):\n    \"\"\"A last-in, first-out (LIFO) stack data structure.\"\"\"\n\n    def __init__(self) -> None:\n        \"\"\"Initialize an empty stack.\"\"\"\n        self._items: list[T] = []\n\n    def push(self, item: T) -> None:\n        \"\"\"Pu",
+      "code_full": "from typing import Generic, TypeVar\n\nT = TypeVar(\"T\")\n\n\nclass Stack(Generic[T]):\n    \"\"\"A last-in, first-out (LIFO) stack data structure.\"\"\"\n\n    def __init__(self) -> None:\n        \"\"\"Initialize an empty stack.\"\"\"\n        self._items: list[T] = []\n\n    def push(self, item: T) -> None:\n        \"\"\"Push an item onto the top of the stack.\n\n        Args:\n            item: The item to add to the stack.\n        \"\"\"\n        self._items.append(item)\n\n    def pop(self) -> T:\n        \"\"\"Remove and return the item at the top of the stack.\n\n        Returns:\n            The item at the top of the stack.\n\n        Raises:\n            IndexError: If the stack is empty.\n        \"\"\"\n        if self.is_empty():\n            raise IndexError(\"pop from empty stack\")\n        return self._items.pop()\n\n    def peek(self) -> T:\n        \"\"\"Return the item at the top of the stack without removing it.\n\n        Returns:\n            The item at the top of the stack.\n\n        Raises:\n            IndexError: If the stack is empty.\n        \"\"\"\n        if self.is_empty():\n            raise IndexError(\"peek from empty stack\")\n        return self._items[-1]\n\n    def is_empty(self) -> bool:\n        \"\"\"Check whether the stack is empty.\n\n        Returns:\n            True if the stack contains no items, False otherwise.\n        \"\"\"\n        return len(self._items) == 0\n\n    def __len__(self) -> int:\n        \"\"\"Return the number of items in the stack.\n\n        Returns:\n            The number of items currently in the stack.\n        \"\"\"\n        return len(self._items)",
+      "quality": {
+        "checks": {
+          "class_def": true,
+          "type_hints": true,
+          "docstring": true,
+          "push_method": true,
+          "pop_method": true,
+          "peek_method": true,
+          "is_empty_method": true,
+          "index_error": true
+        },
+        "passed": 8,
+        "total": 8,
+        "score": 1.0
+      },
+      "run": {
+        "ok": true,
+        "tests_passed": 0,
+        "tests_total": 0,
+        "errors": [],
+        "output": "ALL_TESTS_PASSED",
+        "stderr": ""
+      },
+      "text_match": null,
+      "scores": {
+        "correctness": 1.0,
+        "quality": 1.0,
+        "completeness": 1.0,
+        "total": 1.0
+      },
+      "retried_with_no_thinking": false
+    },
+    {
+      "id": "json_parser",
+      "category": "python_basic",
+      "name": "简易 JSON 解析器",
+      "gen_ok": false,
+      "error": "HTTP 504: <html>\r\n<head><title>504 Gateway Time-out</title></head>\r\n<body bgcolor=\"white\">\r\n<center><h1>504 Gateway Time-out</h1></center>\r\n<hr><center>nginx</center>\r\n</body>\r\n</html>\r\n",
+      "latency": 63.45317506790161
+    },
+    {
+      "id": "quick_sort",
+      "category": "python_advanced",
+      "name": "快速排序",
+      "gen_ok": true,
+      "latency": 18.068771839141846,
+      "tokens": {
+        "prompt_tokens": 137,
+        "total_tokens": 587,
+        "completion_tokens": 450,
+        "prompt_tokens_details": {
+          "cached_tokens": 128
+        },
+        "reasoning_tokens": 276
+      },
+      "reasoning_length": 1140,
+      "reasoning_preview": "The user wants a quicksort implementation in Python that:\n1. Returns a new sorted list (doesn't mutate input)\n2. Has type hints\n3. Has a docstring\n4. Handles empty list\n5. Only output the code block\n\n",
+      "code_length": 617,
+      "code_preview": "def quick_sort(arr: list[int]) -> list[int]:\n    \"\"\"\n    Sort a list of integers in ascending order using the quicksort algorithm.\n\n    Returns a new sorted list; the input list is not mutated.\n\n    Args:\n        arr: The list of integers to sort.\n\n    Returns:\n        A new list containing the elem",
+      "code_full": "def quick_sort(arr: list[int]) -> list[int]:\n    \"\"\"\n    Sort a list of integers in ascending order using the quicksort algorithm.\n\n    Returns a new sorted list; the input list is not mutated.\n\n    Args:\n        arr: The list of integers to sort.\n\n    Returns:\n        A new list containing the elements of arr in ascending order.\n    \"\"\"\n    if len(arr) <= 1:\n        return list(arr)\n\n    pivot = arr[len(arr) // 2]\n    less = [x for x in arr if x < pivot]\n    equal = [x for x in arr if x == pivot]\n    greater = [x for x in arr if x > pivot]\n\n    return quick_sort(less) + quick_sort(equal) + quick_sort(greater)",
+      "quality": {
+        "checks": {
+          "type_hints": true,
+          "docstring": true,
+          "partition": true,
+          "no_mutation": false
+        },
+        "passed": 3,
+        "total": 4,
+        "score": 0.75
+      },
+      "run": {
+        "ok": true,
+        "tests_passed": 0,
+        "tests_total": 4,
+        "errors": [
+          "RecursionError: maximum recursion depth exceeded"
+        ],
+        "output": "TEST_ERROR: RecursionError: maximum recursion depth exceeded",
+        "stderr": ""
+      },
+      "text_match": null,
+      "scores": {
+        "correctness": 0.0,
+        "quality": 0.75,
+        "completeness": 1.0,
+        "total": 0.425
+      },
+      "retried_with_no_thinking": false
+    },
+    {
+      "id": "lru_cache",
+      "category": "python_advanced",
+      "name": "手写 LRU 缓存",
+      "gen_ok": true,
+      "latency": 42.157111167907715,
+      "tokens": {
+        "prompt_tokens": 164,
+        "total_tokens": 1179,
+        "completion_tokens": 1015,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 563
+      },
+      "reasoning_length": 2512,
+      "reasoning_preview": "The user wants an LRUCache class in Python with:\n- `get(key: Any) -> Any` - raises KeyError on missing key\n- `put(key: Any, value: Any) -> None`\n- Evicts least recently used item when capacity exceede",
+      "code_length": 1987,
+      "code_preview": "from collections import OrderedDict\nfrom typing import Any\n\n\nclass LRUCache:\n    \"\"\"A Least Recently Used (LRU) cache with a fixed capacity.\n\n    When the number of items exceeds the capacity, the least recently\n    used item is evicted. Both `get` and `put` run in O(1) time.\n\n    Attributes:\n      ",
+      "code_full": "from collections import OrderedDict\nfrom typing import Any\n\n\nclass LRUCache:\n    \"\"\"A Least Recently Used (LRU) cache with a fixed capacity.\n\n    When the number of items exceeds the capacity, the least recently\n    used item is evicted. Both `get` and `put` run in O(1) time.\n\n    Attributes:\n        capacity: The maximum number of items the cache can hold.\n    \"\"\"\n\n    def __init__(self, capacity: int) -> None:\n        \"\"\"Initialize the LRU cache.\n\n        Args:\n            capacity: The maximum number of items the cache can hold.\n                Must be a positive integer.\n\n        Raises:\n            ValueError: If capacity is not a positive integer.\n        \"\"\"\n        if capacity <= 0:\n            raise ValueError(\"Capacity must be a positive integer.\")\n        self.capacity: int = capacity\n        self._cache: OrderedDict[Any, Any] = OrderedDict()\n\n    def get(self, key: Any) -> Any:\n        \"\"\"Retrieve the value associated with the given key.\n\n        Accessing the key marks it as the most recently used.\n\n        Args:\n            key: The key to look up.\n\n        Returns:\n            The value associated with the key.\n\n        Raises:\n            KeyError: If the key is not present in the cache.\n        \"\"\"\n        if key not in self._cache:\n            raise KeyError(key)\n        self._cache.move_to_end(key)\n        return self._cache[key]\n\n    def put(self, key: Any, value: Any) -> None:\n        \"\"\"Insert or update the value associated with the given key.\n\n        The key is marked as the most recently used. If inserting a new\n        key causes the cache to exceed its capacity, the least recently\n        used item is evicted.\n\n        Args:\n            key: The key to insert or update.\n            value: The value to associate with the key.\n        \"\"\"\n        if key in self._cache:\n            self._cache.move_to_end(key)\n        self._cache[key] = value\n        if len(self._cache) > self.capacity:\n            self._cache.popitem(last=False)",
+      "quality": {
+        "checks": {
+          "class_def": true,
+          "type_hints": true,
+          "docstring": true,
+          "get_method": true,
+          "put_method": true,
+          "ordered_dict_or_linked": true,
+          "key_error": true
+        },
+        "passed": 7,
+        "total": 7,
+        "score": 1.0
+      },
+      "run": {
+        "ok": true,
+        "tests_passed": 0,
+        "tests_total": 0,
+        "errors": [],
+        "output": "ALL_TESTS_PASSED",
+        "stderr": ""
+      },
+      "text_match": null,
+      "scores": {
+        "correctness": 1.0,
+        "quality": 1.0,
+        "completeness": 1.0,
+        "total": 1.0
+      },
+      "retried_with_no_thinking": false
+    },
+    {
+      "id": "trie",
+      "category": "python_advanced",
+      "name": "Trie 前缀树",
+      "gen_ok": true,
+      "latency": 47.71736812591553,
+      "tokens": {
+        "prompt_tokens": 132,
+        "total_tokens": 1361,
+        "completion_tokens": 1229,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 730
+      },
+      "reasoning_length": 3302,
+      "reasoning_preview": "The user wants a Python Trie class with insert, search, and starts_with methods. They want type hints and docstrings, and only the code block as output.\n\nLet me write a clean, well-documented Trie imp",
+      "code_length": 2230,
+      "code_preview": "class Trie:\n    \"\"\"A trie (prefix tree) for efficient string storage and lookup.\n\n    Supports word insertion, exact-match search, and prefix queries.\n    Each operation runs in O(L) time, where L is the length of the\n    word or prefix.\n    \"\"\"\n\n    class _Node:\n        \"\"\"A single node in the trie",
+      "code_full": "class Trie:\n    \"\"\"A trie (prefix tree) for efficient string storage and lookup.\n\n    Supports word insertion, exact-match search, and prefix queries.\n    Each operation runs in O(L) time, where L is the length of the\n    word or prefix.\n    \"\"\"\n\n    class _Node:\n        \"\"\"A single node in the trie, representing one character position.\"\"\"\n\n        __slots__ = (\"children\", \"is_end\")\n\n        def __init__(self) -> None:\n            self.children: dict[str, \"Trie._Node\"] = {}\n            self.is_end: bool = False\n\n    def __init__(self) -> None:\n        \"\"\"Initialize an empty trie.\"\"\"\n        self._root: Trie._Node = self._Node()\n\n    def insert(self, word: str) -> None:\n        \"\"\"Insert a word into the trie.\n\n        Args:\n            word: The string to insert.\n        \"\"\"\n        node = self._root\n        for char in word:\n            if char not in node.children:\n                node.children[char] = self._Node()\n            node = node.children[char]\n        node.is_end = True\n\n    def search(self, word: str) -> bool:\n        \"\"\"Check whether an exact word exists in the trie.\n\n        Args:\n            word: The string to look up.\n\n        Returns:\n            True if the word was previously inserted, False otherwise.\n        \"\"\"\n        node = self._traverse(word)\n        return node is not None and node.is_end\n\n    def starts_with(self, prefix: str) -> bool:\n        \"\"\"Check whether any stored word begins with the given prefix.\n\n        Args:\n            prefix: The prefix to look up.\n\n        Returns:\n            True if at least one inserted word starts with prefix,\n            False otherwise.\n        \"\"\"\n        return self._traverse(prefix) is not None\n\n    def _traverse(self, text: str) -> \"Trie._Node | None\":\n        \"\"\"Follow the path of characters in text starting from the root.\n\n        Args:\n            text: The string whose path to follow.\n\n        Returns:\n            The node reached after consuming all characters of text,\n            or None if the path does not exist in the trie.\n        \"\"\"\n        node = self._root\n        for char in text:\n            if char not in node.children:\n                return None\n            node = node.children[char]\n        return node",
+      "quality": {
+        "checks": {
+          "class_def": true,
+          "type_hints": true,
+          "docstring": true,
+          "insert": true,
+          "search": true,
+          "starts_with": true,
+          "dict_node": true
+        },
+        "passed": 7,
+        "total": 7,
+        "score": 1.0
+      },
+      "run": {
+        "ok": true,
+        "tests_passed": 0,
+        "tests_total": 0,
+        "errors": [],
+        "output": "ALL_TESTS_PASSED",
+        "stderr": ""
+      },
+      "text_match": null,
+      "scores": {
+        "correctness": 1.0,
+        "quality": 1.0,
+        "completeness": 1.0,
+        "total": 1.0
+      },
+      "retried_with_no_thinking": true
+    },
+    {
+      "id": "graph_bfs",
+      "category": "python_advanced",
+      "name": "图 BFS 最短路径",
+      "gen_ok": true,
+      "latency": 24.838433027267456,
+      "tokens": {
+        "prompt_tokens": 153,
+        "total_tokens": 816,
+        "completion_tokens": 663,
+        "prompt_tokens_details": {
+          "cached_tokens": 128
+        },
+        "reasoning_tokens": 390
+      },
+      "reasoning_length": 1669,
+      "reasoning_preview": "The user wants a Python function for shortest path using BFS in an unweighted directed graph. Requirements:\n- Function signature: `shortest_path(graph: dict[str, list[str]], start: str, end: str) -> i",
+      "code_length": 1139,
+      "code_preview": "from collections import deque\n\n\ndef shortest_path(graph: dict[str, list[str]], start: str, end: str) -> int:\n    \"\"\"\n    Find the shortest path length from start to end in an unweighted directed graph.\n\n    Uses breadth-first search (BFS) to explore nodes level by level, which\n    guarantees the sho",
+      "code_full": "from collections import deque\n\n\ndef shortest_path(graph: dict[str, list[str]], start: str, end: str) -> int:\n    \"\"\"\n    Find the shortest path length from start to end in an unweighted directed graph.\n\n    Uses breadth-first search (BFS) to explore nodes level by level, which\n    guarantees the shortest path in terms of the number of edges.\n\n    Args:\n        graph: Adjacency list representation of the directed graph, where each\n            key is a node and its value is a list of neighboring nodes.\n        start: The starting node.\n        end: The target node.\n\n    Returns:\n        The number of edges in the shortest path from start to end, or -1 if\n        no path exists.\n    \"\"\"\n    if start == end:\n        return 0\n\n    visited: set[str] = {start}\n    queue: deque[tuple[str, int]] = deque([(start, 0)])\n\n    while queue:\n        node, distance = queue.popleft()\n        for neighbor in graph.get(node, []):\n            if neighbor == end:\n                return distance + 1\n            if neighbor not in visited:\n                visited.add(neighbor)\n                queue.append((neighbor, distance + 1))\n\n    return -1",
+      "quality": {
+        "checks": {
+          "type_hints": true,
+          "docstring": true,
+          "bfs": true,
+          "visited": true
+        },
+        "passed": 4,
+        "total": 4,
+        "score": 1.0
+      },
+      "run": {
+        "ok": true,
+        "tests_passed": 4,
+        "tests_total": 4,
+        "errors": [],
+        "output": "ALL_TESTS_PASSED",
+        "stderr": ""
+      },
+      "text_match": null,
+      "scores": {
+        "correctness": 1.0,
+        "quality": 1.0,
+        "completeness": 1.0,
+        "total": 1.0
+      },
+      "retried_with_no_thinking": false
+    },
+    {
+      "id": "typescript_promise_all",
+      "category": "multi_language",
+      "name": "TypeScript Promise.all",
+      "gen_ok": true,
+      "latency": 38.627098083496094,
+      "tokens": {
+        "prompt_tokens": 146,
+        "total_tokens": 1164,
+        "completion_tokens": 1018,
+        "prompt_tokens_details": {
+          "cached_tokens": 128
+        },
+        "reasoning_tokens": 620
+      },
+      "reasoning_length": 2713,
+      "reasoning_preview": "The user wants a TypeScript generic function `promiseAll<T>(promises: Promise<T>[]): Promise<T[]>` that behaves like Promise.all:\n- Resolves when all succeed with an array of results in order\n- Reject",
+      "code_length": 681,
+      "code_preview": "/**\n * Creates a single Promise that resolves when all of the provided promises\n * have resolved, or rejects with the reason of the first promise that\n * rejects.\n *\n * The resolved values are placed in the same order as the input promises,\n * regardless of the order in which they settle. If the inp",
+      "code_full": "/**\n * Creates a single Promise that resolves when all of the provided promises\n * have resolved, or rejects with the reason of the first promise that\n * rejects.\n *\n * The resolved values are placed in the same order as the input promises,\n * regardless of the order in which they settle. If the input array is empty,\n * the returned promise resolves immediately with an empty array.\n *\n * @typeParam T - The type of the values produced by the input promises.\n * @param promises - An array of promises to wait for.\n * @returns A promise that resolves to an array of the resolved values in\n *   input order, or rejects with the first rejection reason encountered.\n *\n * @example\n *",
+      "quality": {
+        "checks": {
+          "generic": false,
+          "jsdoc": true,
+          "promise": true,
+          "reject": true,
+          "resolve": true
+        },
+        "passed": 4,
+        "total": 5,
+        "score": 0.8
+      },
+      "run": {
+        "ok": true,
+        "tests_passed": 0,
+        "tests_total": 0,
+        "errors": [],
+        "output": "",
+        "stderr": ""
+      },
+      "text_match": null,
+      "scores": {
+        "correctness": 0.0,
+        "quality": 0.8,
+        "completeness": 1.0,
+        "total": 0.44
+      },
+      "retried_with_no_thinking": false
+    },
+    {
+      "id": "go_worker_pool",
+      "category": "multi_language",
+      "name": "Go Worker Pool",
+      "gen_ok": false,
+      "error": "HTTP 504: <html>\r\n<head><title>504 Gateway Time-out</title></head>\r\n<body bgcolor=\"white\">\r\n<center><h1>504 Gateway Time-out</h1></center>\r\n<hr><center>nginx</center>\r\n</body>\r\n</html>\r\n",
+      "latency": 61.90324282646179
+    },
+    {
+      "id": "rust_result",
+      "category": "multi_language",
+      "name": "Rust Result 处理",
+      "gen_ok": true,
+      "latency": 50.62923502922058,
+      "tokens": {
+        "prompt_tokens": 135,
+        "total_tokens": 1542,
+        "completion_tokens": 1407,
+        "prompt_tokens_details": {
+          "cached_tokens": 128
+        },
+        "reasoning_tokens": 1125
+      },
+      "reasoning_length": 4287,
+      "reasoning_preview": "The user wants a Rust function that:\n1. Takes `Vec<String>` \n2. Returns `Result<Vec<i32>, String>`\n3. Parses each line as i32\n4. Returns Err with the first invalid line\n5. Uses the `?` operator\n6. Inc",
+      "code_length": 465,
+      "code_preview": "/// Parses each line in the given vector of strings into an `i32`.\n///\n/// Returns `Ok(Vec<i32>)` containing all parsed numbers if every line is\n/// valid, or `Err(String)` containing the first line that fails to parse.\n///\n/// # Arguments\n///\n/// * `lines` - A vector of strings, each expected to co",
+      "code_full": "/// Parses each line in the given vector of strings into an `i32`.\n///\n/// Returns `Ok(Vec<i32>)` containing all parsed numbers if every line is\n/// valid, or `Err(String)` containing the first line that fails to parse.\n///\n/// # Arguments\n///\n/// * `lines` - A vector of strings, each expected to contain a valid `i32`.\n///\n/// # Errors\n///\n/// Returns an `Err` containing the offending line if any line cannot be\n/// parsed as an `i32`.\n///\n/// # Examples\n///\n///",
+      "quality": {
+        "checks": {
+          "function_def": false,
+          "result_type": false,
+          "question_mark": false,
+          "doc_comment": true,
+          "parse": false
+        },
+        "passed": 1,
+        "total": 5,
+        "score": 0.2
+      },
+      "run": {
+        "ok": true,
+        "tests_passed": 0,
+        "tests_total": 0,
+        "errors": [],
+        "output": "",
+        "stderr": ""
+      },
+      "text_match": null,
+      "scores": {
+        "correctness": 0.0,
+        "quality": 0.2,
+        "completeness": 1.0,
+        "total": 0.26
+      },
+      "retried_with_no_thinking": false
+    },
+    {
+      "id": "debug_race_condition",
+      "category": "debugging",
+      "name": "并发 Bug 诊断",
+      "gen_ok": true,
+      "latency": 45.44642472267151,
+      "tokens": {
+        "prompt_tokens": 160,
+        "total_tokens": 1398,
+        "completion_tokens": 1238,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 985
+      },
+      "reasoning_length": 4634,
+      "reasoning_preview": "The user wants me to explain a bug in a Python snippet and provide a corrected, thread-safe version with type hints and docstring. They want only the explanation and code block.\n\nThe bug: The `counter",
+      "code_length": 337,
+      "code_preview": "import threading\n\ncounter = 0\ncounter_lock = threading.Lock()\n\n\ndef increment(n: int) -> None:\n    \"\"\"Increment the global counter ``n`` times in a thread-safe manner.\n\n    Args:\n        n: The number of times to increment the counter.\n    \"\"\"\n    global counter\n    with counter_lock:\n        for _ ",
+      "code_full": "import threading\n\ncounter = 0\ncounter_lock = threading.Lock()\n\n\ndef increment(n: int) -> None:\n    \"\"\"Increment the global counter ``n`` times in a thread-safe manner.\n\n    Args:\n        n: The number of times to increment the counter.\n    \"\"\"\n    global counter\n    with counter_lock:\n        for _ in range(n):\n            counter += 1",
+      "quality": {
+        "checks": {
+          "threading_lock": true,
+          "race_mentioned": false,
+          "type_hints": true,
+          "docstring": true
+        },
+        "passed": 3,
+        "total": 4,
+        "score": 0.75
+      },
+      "run": {
+        "ok": true,
+        "tests_passed": 0,
+        "tests_total": 0,
+        "errors": [],
+        "output": "",
+        "stderr": ""
+      },
+      "text_match": null,
+      "scores": {
+        "correctness": 0.0,
+        "quality": 0.75,
+        "completeness": 1.0,
+        "total": 0.425
+      },
+      "retried_with_no_thinking": false
+    },
+    {
+      "id": "logic_puzzle",
+      "category": "reasoning",
+      "name": "逻辑推理题",
+      "gen_ok": true,
+      "latency": 17.165292024612427,
+      "tokens": {
+        "prompt_tokens": 154,
+        "total_tokens": 569,
+        "completion_tokens": 415,
+        "prompt_tokens_details": {
+          "cached_tokens": 128
+        },
+        "reasoning_tokens": 164
+      },
+      "reasoning_length": 581,
+      "reasoning_preview": "Let me work through this logic puzzle.\n\nPeople: Alice, Bob, Carol\nPets: cat, dog, bird (each person has a different pet)\n\nClues:\n1. Alice does not like cats → Alice doesn't have a cat\n2. Bob's pet can",
+      "code_length": 831,
+      "code_preview": "# Solving Step by Step\n\n**Given information:**\n- Three people: Alice, Bob, Carol\n- Three pets: cat, dog, bird (each person has exactly one, all different)\n\n**Step 1: Use the most direct clue.**\n\"Bob's pet can fly.\" Of the three pets (cat, dog, bird), only a **bird** can fly.\n→ **Bob has the bird.**\n",
+      "code_full": "# Solving Step by Step\n\n**Given information:**\n- Three people: Alice, Bob, Carol\n- Three pets: cat, dog, bird (each person has exactly one, all different)\n\n**Step 1: Use the most direct clue.**\n\"Bob's pet can fly.\" Of the three pets (cat, dog, bird), only a **bird** can fly.\n→ **Bob has the bird.**\n\n**Step 2: Apply Alice's constraint.**\n\"Alice does not like cats,\" so Alice can't have the cat. The bird is already taken by Bob, leaving only the dog.\n→ **Alice has the dog.**\n\n**Step 3: Determine Carol's pet.**\nThe only remaining pet is the cat. Check against the clue \"Carol does not have a dog\" — the cat satisfies this. ✓\n→ **Carol has the cat.**\n\n**Verification:**\n- Alice: dog (not a cat ✓)\n- Bob: bird (can fly ✓)\n- Carol: cat (not a dog ✓)\n- All pets are different ✓\n\n```json\n{\"Alice\":\"dog\",\"Bob\":\"bird\",\"Carol\":\"cat\"}\n```",
+      "quality": {
+        "checks": {
+          "json_output": true,
+          "reasoning": false
+        },
+        "passed": 1,
+        "total": 2,
+        "score": 0.5
+      },
+      "run": {
+        "ok": true,
+        "tests_passed": 0,
+        "tests_total": 0,
+        "errors": [],
+        "output": "",
+        "stderr": ""
+      },
+      "text_match": 1.0,
+      "scores": {
+        "correctness": 0.0,
+        "quality": 0.5,
+        "completeness": 1.0,
+        "total": 0.85
+      },
+      "retried_with_no_thinking": false
+    },
+    {
+      "id": "math_sequence",
+      "category": "reasoning",
+      "name": "数列求和",
+      "gen_ok": true,
+      "latency": 15.921878814697266,
+      "tokens": {
+        "prompt_tokens": 154,
+        "total_tokens": 559,
+        "completion_tokens": 405,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 200
+      },
+      "reasoning_length": 596,
+      "reasoning_preview": "The user wants a Python function that computes the sum of the first n terms of an arithmetic sequence using the closed-form formula.\n\nThe formula: S_n = n/2 * (2*a1 + (n-1)*d) or equivalently n * (a1 ",
+      "code_length": 650,
+      "code_preview": "def sum_arithmetic(a1: int, d: int, n: int) -> int:\n    \"\"\"\n    Return the sum of the first n terms of an arithmetic sequence.\n\n    Uses the closed-form formula S_n = n * (2*a1 + (n - 1) * d) / 2,\n    which runs in O(1) time and O(1) space.\n\n    Args:\n        a1: The first term of the sequence.\n    ",
+      "code_full": "def sum_arithmetic(a1: int, d: int, n: int) -> int:\n    \"\"\"\n    Return the sum of the first n terms of an arithmetic sequence.\n\n    Uses the closed-form formula S_n = n * (2*a1 + (n - 1) * d) / 2,\n    which runs in O(1) time and O(1) space.\n\n    Args:\n        a1: The first term of the sequence.\n        d: The common difference between consecutive terms.\n        n: The number of terms to sum (must be non-negative).\n\n    Returns:\n        The sum of the first n terms as an integer.\n\n    Raises:\n        ValueError: If n is negative.\n    \"\"\"\n    if n < 0:\n        raise ValueError(\"n must be non-negative\")\n    return n * (2 * a1 + (n - 1) * d) // 2",
+      "quality": {
+        "checks": {
+          "type_hints": true,
+          "docstring": true,
+          "formula": true
+        },
+        "passed": 3,
+        "total": 3,
+        "score": 1.0
+      },
+      "run": {
+        "ok": true,
+        "tests_passed": 4,
+        "tests_total": 4,
+        "errors": [],
+        "output": "ALL_TESTS_PASSED",
+        "stderr": ""
+      },
+      "text_match": null,
+      "scores": {
+        "correctness": 1.0,
+        "quality": 1.0,
+        "completeness": 1.0,
+        "total": 1.0
+      },
+      "retried_with_no_thinking": false
+    },
+    {
+      "id": "long_context_needle",
+      "category": "long_context",
+      "name": "长文本关键信息提取",
+      "gen_ok": true,
+      "latency": 5.156327962875366,
+      "tokens": {
+        "prompt_tokens": 5624,
+        "total_tokens": 5683,
+        "completion_tokens": 59,
+        "prompt_tokens_details": {
+          "cached_tokens": 5568
+        },
+        "reasoning_tokens": 44
+      },
+      "reasoning_length": 186,
+      "reasoning_preview": "The user has provided a long text with repeated sentences. Hidden in the text is \"The secret code is BLUE-1984.\" The question asks for the secret code, and I should output only the code.",
+      "code_length": 9,
+      "code_preview": "BLUE-1984",
+      "code_full": "BLUE-1984",
+      "quality": {
+        "checks": {
+          "contains_code": true
+        },
+        "passed": 1,
+        "total": 1,
+        "score": 1.0
+      },
+      "run": {
+        "ok": true,
+        "tests_passed": 0,
+        "tests_total": 0,
+        "errors": [],
+        "output": "",
+        "stderr": ""
+      },
+      "text_match": 1.0,
+      "scores": {
+        "correctness": 0.0,
+        "quality": 1.0,
+        "completeness": 1.0,
+        "total": 1.0
+      },
+      "retried_with_no_thinking": false
+    },
+    {
+      "id": "instruction_following",
+      "category": "long_context",
+      "name": "多步骤指令遵循",
+      "gen_ok": true,
+      "latency": 6.293953895568848,
+      "tokens": {
+        "prompt_tokens": 145,
+        "total_tokens": 276,
+        "completion_tokens": 131,
+        "prompt_tokens_details": {
+          "cached_tokens": 128
+        },
+        "reasoning_tokens": 105
+      },
+      "reasoning_length": 377,
+      "reasoning_preview": "The user wants exact output:\n1. First say 'Step 1 done'.\n2. Then output a JSON object with keys 'a' and 'b' mapping to 1 and 2.\n3. Finally say 'Done' and nothing else.\nNo extra explanation.\n\nNeed fina",
+      "code_length": 30,
+      "code_preview": "Step 1 done\n{\"a\":1,\"b\":2}\nDone",
+      "code_full": "Step 1 done\n{\"a\":1,\"b\":2}\nDone",
+      "quality": {
+        "checks": {
+          "step1": true,
+          "json": true,
+          "done": true
+        },
+        "passed": 3,
+        "total": 3,
+        "score": 1.0
+      },
+      "run": {
+        "ok": true,
+        "tests_passed": 0,
+        "tests_total": 0,
+        "errors": [],
+        "output": "",
+        "stderr": ""
+      },
+      "text_match": 0.5,
+      "scores": {
+        "correctness": 0.0,
+        "quality": 1.0,
+        "completeness": 1.0,
+        "total": 0.6499999999999999
+      },
+      "retried_with_no_thinking": false
+    }
+  ]
+}

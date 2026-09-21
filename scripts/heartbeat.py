@@ -4,7 +4,7 @@
 扫描维度：
 1. STATE.json 当前里程碑 + 子任务状态
 2. git 状态（最近 commit 年龄、未提交改动、当前分支）
-3. 模型就绪探针（GLM-5.2-fp8 / Kimi-K2.7-Code-4bit，只读 ping）
+3. 模型就绪探针（GLM-5.2-fp8，只读 ping；单模型模式，Kimi-K2.7-Code 已下线不再探测）
 4. 测试基线（最近 quality_metrics.json）
 5. 进度偏差（计划 vs 实际）
 
@@ -49,9 +49,14 @@ if os.path.exists(ENV_PATH):
         line = line.strip()
         if line.startswith("EXO_API_KEY="):
             os.environ["EXO_API_KEY"] = line.split("=", 1)[1]
-os.environ["NO_PROXY"] = f"studio01-1,localhost,127.0.0.1,::1,.local,{os.environ.get('NO_PROXY','')}"
+# M199 跟进：双写 NO_PROXY/no_proxy——Python urllib 小写优先，只设大写时
+# 若 shell 已有小写 no_proxy（不含 exo 主机名）则探针走本机代理(Clash)→502 误判。
+# 对齐 smoke_factory_loop/diag_openhands_worker 等脚本的双写惯例。
+os.environ["NO_PROXY"] = f"dgmt-studio01mac-studio,localhost,127.0.0.1,::1,.local,{os.environ.get('NO_PROXY','')}"
+os.environ["no_proxy"] = os.environ["NO_PROXY"]
 
-EXO_URL = "http://studio01-1:52415/v1/chat/completions"
+# M192 跟进：MagicDNS 名已从 studio01-1 漂移为 dgmt-studio01mac-studio
+EXO_URL = "http://dgmt-studio01mac-studio:52415/v1/chat/completions"
 EXO_KEY = os.environ.get("EXO_API_KEY", "")
 
 
@@ -210,7 +215,7 @@ def compute_deviation(state: dict) -> dict:
 
 def load_prev_model_state() -> dict:
     """读上一次心跳的模型状态（从 heartbeat_history.jsonl 最后一行）。
-    M154.2：用于检测 Kimi 从 not ready → ready 的恢复事件。"""
+    M154.2：用于检测模型从 not ready → ready 的恢复事件。"""
     hist_path = os.path.join(REPORTS_DIR, "heartbeat_history.jsonl")
     if not os.path.exists(hist_path):
         return {}
@@ -270,8 +275,8 @@ def write_recovery_notice(recoveries: list, now_ts: str, now_human: str) -> None
             f.write(f"- **当前延迟**: {r['curr_latency_s']}s\n")
             f.write(f"- **恢复时间**: {now_human}\n\n")
         f.write(f"## 建议动作\n\n")
-        f.write(f"- 如果是 Kimi-K2.7-Code-4bit 恢复：可考虑切回双模型架构（GLM 编排 + Kimi 执行），解除 M147/M149.3 阻塞\n")
-        f.write(f"- 跑 `bash scripts/quality_gate.sh` 验证 tool-calling 契约\n")
+        f.write(f"- 模型恢复后：跑 `bash scripts/quality_gate.sh` 验证 tool-calling 契约\n")
+        f.write(f"- 若 exo 恢复 Kimi-K2.7-Code：可 export FLIPPED_CODER_MODEL=mlx-community/Kimi-K2.7-Code-4bit 切回双模型架构\n")
         f.write(f"- 跑 `python3 scripts/e2e_m147_10tasks.py` 重试 E2E 10-task\n")
     # 控制台高亮输出
     print(f"  📢 检测到模型恢复事件 → {notice_path}")
@@ -333,10 +338,9 @@ def main():
     # M154.2：读上一次心跳的模型状态，用于恢复检测
     prev_models = load_prev_model_state()
 
-    # 模型探针（只读，不扰动）
+    # 模型探针（只读，不扰动；单模型模式：Kimi-K2.7-Code 已下线，不再探测）
     models = {
         "GLM-5.2-fp8": probe_model("mlx-community/GLM-5.2-fp8"),
-        "Kimi-K2.7-Code-4bit": probe_model("mlx-community/Kimi-K2.7-Code-4bit"),
     }
 
     # M154.2：检测恢复事件并写通知
@@ -442,7 +446,7 @@ def main():
         recovery_mark = f" | 📢 RECOVERY={','.join(r['model'].split('-')[0] for r in recoveries)}" if recoveries else ""
         # M158.4：自动恢复标记
         auto_mark = f" | 🔄 AUTO_RESUME={len(auto_resume_results)}" if auto_resume_results else ""
-        f.write(f"[{now_human}] risk={deviation['risk_level']} | completion={deviation['completion_pct']}% | doing={len(state.get('doing',[]))} blocked={len(state.get('blocked',[]))} | models={ready_count}/2 ready | git_dirty={git.get('dirty_files',0)} commit_age={git.get('commit_age_min','?')}min{recovery_mark}{auto_mark}\n")
+        f.write(f"[{now_human}] risk={deviation['risk_level']} | completion={deviation['completion_pct']}% | doing={len(state.get('doing',[]))} blocked={len(state.get('blocked',[]))} | models={ready_count}/{len(models)} ready | git_dirty={git.get('dirty_files',0)} commit_age={git.get('commit_age_min','?')}min{recovery_mark}{auto_mark}\n")
 
     # 追加结构化历史
     hist_path = os.path.join(REPORTS_DIR, "heartbeat_history.jsonl")
@@ -451,7 +455,7 @@ def main():
 
     # 控制台摘要
     print(f"[{now_human}] 心跳完成 → {report_path}")
-    print(f"  风险: {deviation['risk_level']} | 完成度: {deviation['completion_pct']}% | 模型: {sum(1 for m in models.values() if m['ready'])}/2 就绪 | git_dirty: {git.get('dirty_files',0)}")
+    print(f"  风险: {deviation['risk_level']} | 完成度: {deviation['completion_pct']}% | 模型: {sum(1 for m in models.values() if m['ready'])}/{len(models)} 就绪 | git_dirty: {git.get('dirty_files',0)}")
 
 
 if __name__ == "__main__":

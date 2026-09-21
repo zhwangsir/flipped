@@ -29,16 +29,14 @@ def _api_key() -> str | None:
 
 
 def _model_id_for_alias(alias: str) -> str:
-    # M156 双模型模式恢复（Kimi-K2.7-Code 在 exo 已恢复，实测 2.5s 响应）：
-    # - architect/supervisor/overseer/monitor → GLM-5.2-fp8（编排者，1M 上下文）
-    # - coder → Kimi-K2.7-Code-4bit（执行者，MCP 强、编码强）
-    # 解除 M147-A 熔断：GLM 单模型 + enable_thinking=true 时 reasoning_content
-    # 抢占 content 路径不可代码修复；Kimi 接管 coder 后该瓶颈消失。
-    # M149 单模型模式作为逃生门：export FLIPPED_CODER_MODEL=mlx-community/GLM-5.2-fp8
-    # 即可回退。env 变量始终覆盖默认。
+    # 当前单模型模式（Kimi-K2.7-Code 已从 exo 下线，回归 M149 语义）：
+    # - architect/coder/supervisor/overseer/monitor → GLM-5.2-fp8（编排/执行同源）
+    # M147-A 熔断缓解依赖 config.yaml 的 enable_thinking=false + temperature=0。
+    # 若未来 exo 恢复 Kimi，export FLIPPED_CODER_MODEL=mlx-community/Kimi-K2.7-Code-4bit
+    # 即可切回双模型。env 变量始终覆盖默认。
     env_map = {
         "architect": os.environ.get("FLIPPED_ARCHITECT_MODEL", "mlx-community/GLM-5.2-fp8"),
-        "coder": os.environ.get("FLIPPED_CODER_MODEL", "mlx-community/Kimi-K2.7-Code-4bit"),
+        "coder": os.environ.get("FLIPPED_CODER_MODEL", "mlx-community/GLM-5.2-fp8"),
         "supervisor": os.environ.get("FLIPPED_SUPERVISOR_MODEL", "mlx-community/GLM-5.2-fp8"),
         "overseer": os.environ.get("FLIPPED_OVERSEER_MODEL", "mlx-community/GLM-5.2-fp8"),
         "monitor": os.environ.get("FLIPPED_MONITOR_MODEL", "mlx-community/GLM-5.2-fp8"),

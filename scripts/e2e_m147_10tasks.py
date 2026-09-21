@@ -141,8 +141,9 @@ def _load_dotenv_into_environ(path: Path) -> None:
 def main():
     for k in ("http_proxy", "HTTP_PROXY", "https_proxy", "HTTPS_PROXY", "ALL_PROXY", "all_proxy"):
         os.environ.pop(k, None)
-    # M149: exo 端点改 MagicDNS studio01-1（旧裸 IP 100.64.201.37 已失效），.ts.net 后缀免疫 IP 漂移
-    os.environ["NO_PROXY"] = "studio01-1,.ts.net,100.67.43.40,localhost,127.0.0.1,host.docker.internal"
+    # M149: exo 端点用 MagicDNS（旧裸 IP 100.64.201.37 已失效），.ts.net 后缀免疫 IP 漂移
+    # M192: 主机名漂移跟进——tailnet 中该节点现为 dgmt-studio01mac-studio（旧名 studio01-1 已 Unknown host）
+    os.environ["NO_PROXY"] = "dgmt-studio01mac-studio,.ts.net,100.67.43.40,localhost,127.0.0.1,host.docker.internal"
     os.environ["no_proxy"] = os.environ["NO_PROXY"]
 
     # 关键：加载 .env → worker 才能拿到 LITELLM_MASTER_KEY 调 LiteLLM

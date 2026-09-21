@@ -13,7 +13,7 @@
 #        d) 第 5 张 → 422（FLIPPED_IMG_MAX_COUNT=4）
 #        e) GET /assistant/attachments/{sid}/{fname} 字节一致取回；
 #           未知 session 404；非法字符/穿越 404
-#        f) 无图消息回归：model=worker alias（Kimi-K2.7-Code），content 为纯 str
+#        f) 无图消息回归：model=worker alias（GLM-5.2-fp8 单模型），content 为纯 str
 #
 # 一键复跑: scripts/verify_m192.sh
 set -uo pipefail
@@ -59,7 +59,7 @@ class H(BaseHTTPRequestHandler):
         if self.path.rstrip("/").endswith("/models"):
             data = json.dumps({"object": "list", "data": [
                 {"id": VISION, "object": "model"},
-                {"id": "mlx-community/Kimi-K2.7-Code-4bit", "object": "model"},
+                {"id": "mlx-community/GLM-5.2-fp8", "object": "model"},
             ]}).encode()
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
@@ -121,7 +121,7 @@ import base64, json, os, struct, sys, time, urllib.request, urllib.error, zlib
 BASE = os.environ["FLIPPED_BASE"] + "/api/v1"
 LOG = os.environ["FLIPPED_LLM_LOG"]
 VISION = os.environ["FLIPPED_VISION_MODEL_EXPECT"]
-WORKER = "mlx-community/Kimi-K2.7-Code-4bit"
+WORKER = "mlx-community/GLM-5.2-fp8"
 fails = []
 
 def call(method, path, body=None, raw=False):

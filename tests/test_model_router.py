@@ -116,12 +116,12 @@ def test_resolve_worker_model_config_prefers_proxy(mock_get, monkeypatch):
     monkeypatch.setenv("OPENHANDS_PROXY_BASE_URL", "http://worker-proxy.test/v1")
     monkeypatch.setenv("FLIPPED_MODEL_BASE_URL", "http://direct.test/v1")
     monkeypatch.setenv("OPENHANDS_MODEL", "coder")
-    monkeypatch.setenv("FLIPPED_CODER_MODEL", "mlx-community/Kimi-K2.7-Code-4bit")
+    monkeypatch.setenv("FLIPPED_CODER_MODEL", "mlx-community/GLM-5.2-fp8")
 
     def side_effect(url, **kwargs):
         if url.startswith("http://proxy.test"):
             return _resp(200, [{"id": "coder"}])
-        return _resp(200, [{"id": "mlx-community/Kimi-K2.7-Code-4bit"}])
+        return _resp(200, [{"id": "mlx-community/GLM-5.2-fp8"}])
 
     mock_get.side_effect = side_effect
     base, model = resolve_worker_model_config()
@@ -134,26 +134,26 @@ def test_resolve_worker_model_config_fallback_direct(mock_get, monkeypatch):
     monkeypatch.setenv("LITELLM_BASE_URL", "http://proxy.test/v1")
     monkeypatch.setenv("FLIPPED_MODEL_BASE_URL", "http://direct.test/v1")
     monkeypatch.setenv("OPENHANDS_MODEL", "coder")
-    monkeypatch.setenv("FLIPPED_CODER_MODEL", "mlx-community/Kimi-K2.7-Code-4bit")
+    monkeypatch.setenv("FLIPPED_CODER_MODEL", "mlx-community/GLM-5.2-fp8")
 
     def side_effect(url, **kwargs):
         if url.startswith("http://proxy.test"):
             raise TimeoutError("down")
-        return _resp(200, [{"id": "mlx-community/Kimi-K2.7-Code-4bit"}])
+        return _resp(200, [{"id": "mlx-community/GLM-5.2-fp8"}])
 
     mock_get.side_effect = side_effect
     base, model = resolve_worker_model_config()
     assert base == "http://direct.test/v1"
-    assert model == "mlx-community/Kimi-K2.7-Code-4bit"
+    assert model == "mlx-community/GLM-5.2-fp8"
 
 
 @patch("driving.model_router.httpx.get")
 def test_resolve_worker_model_config_defaults_when_env_empty(mock_get, monkeypatch):
-    """M156 双模型模式恢复：env 全空时 coder 默认 = Kimi-K2.7-Code-4bit。
+    """当前单模型模式：env 全空时 coder 默认 = GLM-5.2-fp8。
 
-    历史：M149 单模型期此默认是 GLM-5.2-fp8（Kimi 掉线临时方案）；
-    M156 Kimi 在 exo 恢复后改回 Kimi-K2.7-Code-4bit，解除 M147-A 熔断。
-    逃生门：export FLIPPED_CODER_MODEL=mlx-community/GLM-5.2-fp8 回退单模型。
+    历史：M156 双模型期此默认曾是 Kimi-K2.7-Code-4bit；Kimi 从 exo 下线后
+    回归 M149 单模型语义（与 architect/supervisor/overseer/monitor 同源）。
+    若未来恢复双模型：export FLIPPED_CODER_MODEL=mlx-community/Kimi-K2.7-Code-4bit。
     """
     monkeypatch.delenv("LITELLM_BASE_URL", raising=False)
     monkeypatch.delenv("FLIPPED_MODEL_BASE_URL", raising=False)
@@ -163,15 +163,15 @@ def test_resolve_worker_model_config_defaults_when_env_empty(mock_get, monkeypat
     mock_get.side_effect = TimeoutError("down")
     base, model = resolve_worker_model_config()
     assert base == DEFAULT_EXO_URL
-    assert model == "mlx-community/Kimi-K2.7-Code-4bit"
+    assert model == "mlx-community/GLM-5.2-fp8"
 
 
 @patch("driving.model_router.httpx.get")
-def test_dual_model_routing_complete(mock_get, monkeypatch):
-    """M156 双模型路由完整性：coder→Kimi，其余 alias→GLM-5.2-fp8。
+def test_single_model_routing_complete(mock_get, monkeypatch):
+    """单模型路由完整性：全部 alias（含 coder）→ GLM-5.2-fp8。
 
-    锁定架构分工：architect/supervisor/overseer/monitor = GLM（编排者，1M 上下文），
-    coder = Kimi（执行者，编码强 + MCP 强）。env 全空时验证默认映射。
+    锁定单模型分工：architect/coder/supervisor/overseer/monitor 同源（编排/执行同源）。
+    env 全空时验证默认映射。
     """
     monkeypatch.delenv("FLIPPED_ARCHITECT_MODEL", raising=False)
     monkeypatch.delenv("FLIPPED_CODER_MODEL", raising=False)
@@ -184,29 +184,26 @@ def test_dual_model_routing_complete(mock_get, monkeypatch):
     monkeypatch.delenv("OPENHANDS_MODEL", raising=False)
     mock_get.side_effect = TimeoutError("down")  # 强制走直连回退，暴露 _model_id_for_alias 默认
 
-    glm_aliases = ["architect", "supervisor", "overseer", "monitor"]
-    for alias in glm_aliases:
+    for alias in ("architect", "coder", "supervisor", "overseer", "monitor"):
         _, model = resolve_worker_model_config(alias)
         assert model == "mlx-community/GLM-5.2-fp8", f"{alias} 应默认 GLM-5.2-fp8，实际 {model}"
 
-    _, coder_model = resolve_worker_model_config("coder")
-    assert coder_model == "mlx-community/Kimi-K2.7-Code-4bit"
-
 
 @patch("driving.model_router.httpx.get")
-def test_single_model_escape_hatch_via_env(mock_get, monkeypatch):
-    """M156 逃生门：FLIPPED_CODER_MODEL=mlx-community/GLM-5.2-fp8 回退单模型。
+def test_coder_env_override_switches_model(mock_get, monkeypatch):
+    """env 覆盖钉：FLIPPED_CODER_MODEL 可一行切换 coder 模型。
 
-    Kimi 抖动或掉线时无需改代码，env 一行即可回退 M149 单模型模式。
+    单模型模式下此机制保留为反向开关：若未来 exo 恢复 Kimi，
+    export FLIPPED_CODER_MODEL=mlx-community/Kimi-K2.7-Code-4bit 即可切回双模型，无需改代码。
     """
-    monkeypatch.setenv("FLIPPED_CODER_MODEL", "mlx-community/GLM-5.2-fp8")
+    monkeypatch.setenv("FLIPPED_CODER_MODEL", "mlx-community/Kimi-K2.7-Code-4bit")
     monkeypatch.delenv("LITELLM_BASE_URL", raising=False)
     monkeypatch.delenv("FLIPPED_MODEL_BASE_URL", raising=False)
     monkeypatch.delenv("OPENHANDS_BASE_URL", raising=False)
     monkeypatch.delenv("OPENHANDS_MODEL", raising=False)
     mock_get.side_effect = TimeoutError("down")
     _, model = resolve_worker_model_config()
-    assert model == "mlx-community/GLM-5.2-fp8"
+    assert model == "mlx-community/Kimi-K2.7-Code-4bit"
 
 
 @patch("driving.model_router.httpx.get")

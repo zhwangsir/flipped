@@ -26,6 +26,7 @@ import { ToolCard } from './ToolCard';
 import { MarkdownView } from '../components/MarkdownView';
 import { formatTokens } from '../lib/format';
 import { IconShield, IconX, IconCheck, IconEdit, IconFile, IconTarget, IconSmartphone } from '../icons';
+import emptyHeroArt from '../assets/empty-hero.jpg';
 import { RemoteModal } from '../components/RemoteModal';
 import { API_BASE } from '../api';
 
@@ -274,6 +275,7 @@ function MessageStream({ turns, sessionId }: { turns: AssistantTurn[]; sessionId
   if (turns.length === 0 && !showStream) {
     return (
       <div className='assistant-empty' data-testid='assistant-empty'>
+        <img className='hero-art' src={emptyHeroArt} alt='' aria-hidden='true' />
         <div className='hero'>我们能帮你构建什么?</div>
         <div className='sub'>输入需求开始 · / 唤起斜杠命令 · Enter 发送</div>
       </div>

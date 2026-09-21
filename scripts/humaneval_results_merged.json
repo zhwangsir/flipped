@@ -1,0 +1,2892 @@
+{
+  "model": "moonshotai/Kimi-K3",
+  "endpoint": "http://127.0.0.1:8002/v1/chat/completions",
+  "temperature": 0.0,
+  "max_tokens": 1024,
+  "total": 164,
+  "gen_ok": 164,
+  "gen_failed": 9,
+  "passed": 132,
+  "failed": 31,
+  "pass_at_1": 0.8048780487804879,
+  "elapsed_seconds": 8001.489619970322,
+  "avg_latency": 21.776624625728978,
+  "results": [
+    {
+      "task_id": "HumanEval/0",
+      "gen_ok": true,
+      "latency": 25.165897846221924,
+      "tokens": {
+        "prompt_tokens": 239,
+        "total_tokens": 872,
+        "completion_tokens": 633,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 458
+      },
+      "completion_preview": "def has_close_elements(numbers: List[float], threshold: float) -> bool:\n    \"\"\" Check if in given list of numbers, are any two numbers closer to each other than\n    given threshold.\n    >>> has_close_",
+      "passed": false,
+      "error": "Traceback (most recent call last):\n  File \"/tmp/tmpepaevi1x.py\", line 1, in <module>\n    def has_close_elements(numbers: List[float], threshold: float) -> bool:\n                                    ^^^^\nNameError: name 'List' is not defined. Did you mean: 'list'?",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/1",
+      "gen_ok": true,
+      "latency": 23.29733419418335,
+      "tokens": {
+        "prompt_tokens": 230,
+        "total_tokens": 747,
+        "completion_tokens": 517,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 404
+      },
+      "completion_preview": "def separate_paren_groups(paren_string: str) -> List[str]:\n    groups = []\n    current = []\n    balance = 0\n\n    for char in paren_string:\n        if char == ' ':\n            continue\n        current.",
+      "passed": false,
+      "error": "Traceback (most recent call last):\n  File \"/tmp/tmpd41ayytg.py\", line 1, in <module>\n    def separate_paren_groups(paren_string: str) -> List[str]:\n                                                    ^^^^\nNameError: name 'List' is not defined. Did you mean: 'list'?",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/2",
+      "gen_ok": true,
+      "latency": 11.89270544052124,
+      "tokens": {
+        "prompt_tokens": 198,
+        "total_tokens": 480,
+        "completion_tokens": 282,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 181
+      },
+      "completion_preview": "def truncate_number(number: float) -> float:\n    \"\"\" Given a positive floating point number, it can be decomposed into\n    and integer part (largest integer smaller than given number) and decimals\n   ",
+      "passed": true,
+      "error": "",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/3",
+      "gen_ok": true,
+      "latency": 11.0358145236969,
+      "tokens": {
+        "prompt_tokens": 231,
+        "total_tokens": 506,
+        "completion_tokens": 275,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 116
+      },
+      "completion_preview": "from typing import List\n\n\ndef below_zero(operations: List[int]) -> bool:\n    \"\"\" You're given a list of deposit and withdrawal operations on a bank account that starts with\n    zero balance. Your task",
+      "passed": true,
+      "error": "",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/4",
+      "gen_ok": true,
+      "latency": 22.01886773109436,
+      "tokens": {
+        "prompt_tokens": 233,
+        "total_tokens": 674,
+        "completion_tokens": 441,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 284
+      },
+      "completion_preview": "from typing import List\n\n\ndef mean_absolute_deviation(numbers: List[float]) -> float:\n    \"\"\" For a given list of input numbers, calculate Mean Absolute Deviation\n    around the mean of this dataset.\n",
+      "passed": true,
+      "error": "",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/5",
+      "gen_ok": true,
+      "latency": 11.941706418991089,
+      "tokens": {
+        "prompt_tokens": 209,
+        "total_tokens": 520,
+        "completion_tokens": 311,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 170
+      },
+      "completion_preview": "from typing import List\n\n\ndef intersperse(numbers: List[int], delimeter: int) -> List[int]:\n    \"\"\" Insert a number 'delimeter' between every two consecutive elements of input list `numbers'\n    >>> i",
+      "passed": true,
+      "error": "",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/6",
+      "gen_ok": true,
+      "latency": 15.112134456634521,
+      "tokens": {
+        "prompt_tokens": 227,
+        "total_tokens": 586,
+        "completion_tokens": 359,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 167
+      },
+      "completion_preview": "def parse_nested_parens(paren_string: str) -> List[int]:\n    \"\"\" Input to this function is a string represented multiple groups for nested parentheses separated by spaces.\n    For each of the group, o",
+      "passed": false,
+      "error": "Traceback (most recent call last):\n  File \"/tmp/tmpsyl87goj.py\", line 1, in <module>\n    def parse_nested_parens(paren_string: str) -> List[int]:\n                                                  ^^^^\nNameError: name 'List' is not defined. Did you mean: 'list'?",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/7",
+      "gen_ok": true,
+      "latency": 18.264604091644287,
+      "tokens": {
+        "prompt_tokens": 207,
+        "total_tokens": 351,
+        "completion_tokens": 144,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 30
+      },
+      "completion_preview": "from typing import List\n\n\ndef filter_by_substring(strings: List[str], substring: str) -> List[str]:\n    \"\"\" Filter an input list of strings only for ones that contain given substring\n    >>> filter_by",
+      "passed": true,
+      "error": "",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/8",
+      "gen_ok": true,
+      "latency": 9.009568691253662,
+      "tokens": {
+        "prompt_tokens": 224,
+        "total_tokens": 442,
+        "completion_tokens": 218,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 57
+      },
+      "completion_preview": "from typing import List, Tuple\n\n\ndef sum_product(numbers: List[int]) -> Tuple[int, int]:\n    \"\"\" For a given list of integers, return a tuple consisting of a sum and a product of all the integers in a",
+      "passed": true,
+      "error": "",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/9",
+      "gen_ok": true,
+      "latency": 18.81090259552002,
+      "tokens": {
+        "prompt_tokens": 214,
+        "total_tokens": 585,
+        "completion_tokens": 371,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 217
+      },
+      "completion_preview": "from typing import List, Tuple\n\n\ndef rolling_max(numbers: List[int]) -> List[int]:\n    \"\"\" From a given list of integers, generate a list of rolling maximum element found until given moment\n    in the",
+      "passed": true,
+      "error": "",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/10",
+      "gen_ok": true,
+      "latency": 34.932612657547,
+      "tokens": {
+        "prompt_tokens": 264,
+        "total_tokens": 1288,
+        "completion_tokens": 1024,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 991
+      },
+      "completion_preview": "def make_palindrome(string: str) -> str:\n    if not string:\n        return \"\"\n    for i in range(len(string)):\n        if is_palindrome(string[i:]):\n            return string + string[:i][::-1]\n    re",
+      "passed": false,
+      "error": "Traceback (most recent call last):\n  File \"/tmp/tmp73haffdf.py\", line 25, in <module>\n    check(make_palindrome)\n  File \"/tmp/tmp73haffdf.py\", line 19, in check\n    assert candidate('x') == 'x'\n           ^^^^^^^^^^^^^^\n  File \"/tmp/tmp73haffdf.py\", line 5, in make_palindrome\n    if is_palindrome(st",
+      "retried": false,
+      "note": "extraction rerun (real model result)"
+    },
+    {
+      "task_id": "HumanEval/11",
+      "gen_ok": true,
+      "latency": 13.232299566268921,
+      "tokens": {
+        "prompt_tokens": 189,
+        "total_tokens": 473,
+        "completion_tokens": 284,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 174
+      },
+      "completion_preview": "from typing import List\n\n\ndef string_xor(a: str, b: str) -> str:\n    \"\"\" Input are two strings a and b consisting only of 1s and 0s.\n    Perform binary XOR on these inputs and return result also as a ",
+      "passed": true,
+      "error": "",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/12",
+      "gen_ok": true,
+      "latency": 20.212810516357422,
+      "tokens": {
+        "prompt_tokens": 215,
+        "total_tokens": 734,
+        "completion_tokens": 519,
+        "prompt_tokens_details": {
+          "cached_tokens": 192
+        },
+        "reasoning_tokens": 363
+      },
+      "completion_preview": "from typing import List, Optional\n\n\ndef longest(strings: List[str]) -> Optional[str]:\n    \"\"\" Out of list of strings, return the longest one. Return the first one in case of multiple\n    strings of th",
+      "passed": true,
+      "error": "",
+      "retried": true
+    },
+    {
+      "task_id": "HumanEval/13",
+      "gen_ok": true,
+      "latency": 10.852673530578613,
+      "tokens": {
+        "prompt_tokens": 186,
+        "total_tokens": 465,
+        "completion_tokens": 279,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 170
+      },
+      "completion_preview": "def greatest_common_divisor(a: int, b: int) -> int:\n    \"\"\" Return a greatest common divisor of two integers a and b\n    >>> greatest_common_divisor(3, 5)\n    1\n    >>> greatest_common_divisor(25, 15)",
+      "passed": true,
+      "error": "",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/14",
+      "gen_ok": true,
+      "latency": 9.01301884651184,
+      "tokens": {
+        "prompt_tokens": 173,
+        "total_tokens": 394,
+        "completion_tokens": 221,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 132
+      },
+      "completion_preview": "from typing import List\n\n\ndef all_prefixes(string: str) -> List[str]:\n    \"\"\" Return list of all prefixes from shortest to longest of the input string\n    >>> all_prefixes('abc')\n    ['a', 'ab', 'abc'",
+      "passed": true,
+      "error": "",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/15",
+      "gen_ok": true,
+      "latency": 12.601641178131104,
+      "tokens": {
+        "prompt_tokens": 181,
+        "total_tokens": 396,
+        "completion_tokens": 215,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 121
+      },
+      "completion_preview": "def string_sequence(n: int) -> str:\n    \"\"\" Return a string containing space-delimited numbers starting from 0 upto n inclusive.\n    >>> string_sequence(0)\n    '0'\n    >>> string_sequence(5)\n    '0 1 ",
+      "passed": true,
+      "error": "",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/16",
+      "gen_ok": true,
+      "latency": 15.985643863677979,
+      "tokens": {
+        "prompt_tokens": 190,
+        "total_tokens": 364,
+        "completion_tokens": 174,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 84
+      },
+      "completion_preview": "def count_distinct_characters(string: str) -> int:\n    \"\"\" Given a string, find out how many distinct characters (regardless of case) does it consist of\n    >>> count_distinct_characters('xyzXYZ')\n   ",
+      "passed": true,
+      "error": "",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/17",
+      "gen_ok": true,
+      "latency": 17.259608030319214,
+      "tokens": {
+        "prompt_tokens": 283,
+        "total_tokens": 753,
+        "completion_tokens": 470,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 260
+      },
+      "completion_preview": "def parse_music(music_string: str) -> List[int]:\n    \"\"\" Input to this function is a string representing musical notes in a special ASCII format.\n    Your task is to parse this string and return list ",
+      "passed": false,
+      "error": "Traceback (most recent call last):\n  File \"/tmp/tmp97ugvc7p.py\", line 1, in <module>\n    def parse_music(music_string: str) -> List[int]:\n                                          ^^^^\nNameError: name 'List' is not defined. Did you mean: 'list'?",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/18",
+      "gen_ok": true,
+      "latency": 16.84199547767639,
+      "tokens": {
+        "prompt_tokens": 202,
+        "total_tokens": 603,
+        "completion_tokens": 401,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 258
+      },
+      "completion_preview": "def how_many_times(string: str, substring: str) -> int:\n    \"\"\" Find how many times a given substring can be found in the original string. Count overlaping cases.\n    >>> how_many_times('', 'a')\n    0",
+      "passed": true,
+      "error": "",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/19",
+      "gen_ok": true,
+      "latency": 12.834609985351562,
+      "tokens": {
+        "prompt_tokens": 220,
+        "total_tokens": 516,
+        "completion_tokens": 296,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 92
+      },
+      "completion_preview": "from typing import List\n\n\ndef sort_numbers(numbers: str) -> str:\n    \"\"\" Input is a space-delimited string of numberals from 'zero' to 'nine'.\n    Valid choices are 'zero', 'one', 'two', 'three', 'fou",
+      "passed": true,
+      "error": "",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/20",
+      "gen_ok": true,
+      "latency": 42.139418840408325,
+      "tokens": {
+        "prompt_tokens": 282,
+        "total_tokens": 1070,
+        "completion_tokens": 788,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 516
+      },
+      "completion_preview": "def find_closest_elements(numbers: List[float]) -> Tuple[float, float]:\n    \"\"\" From a supplied list of numbers (of length at least two) select and return two that are the closest to each\n    other an",
+      "passed": false,
+      "error": "Traceback (most recent call last):\n  File \"/tmp/tmpa_zxv1fp.py\", line 1, in <module>\n    def find_closest_elements(numbers: List[float]) -> Tuple[float, float]:\n                                       ^^^^\nNameError: name 'List' is not defined. Did you mean: 'list'?",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/21",
+      "gen_ok": true,
+      "latency": 26.740229606628418,
+      "tokens": {
+        "prompt_tokens": 239,
+        "total_tokens": 808,
+        "completion_tokens": 569,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 404
+      },
+      "completion_preview": "def rescale_to_unit(numbers: List[float]) -> List[float]:\n    \"\"\" Given list of numbers (of at least two elements), apply a linear transform to that list,\n    such that the smallest number will become",
+      "passed": false,
+      "error": "Traceback (most recent call last):\n  File \"/tmp/tmpot88xgh7.py\", line 1, in <module>\n    def rescale_to_unit(numbers: List[float]) -> List[float]:\n                                 ^^^^\nNameError: name 'List' is not defined. Did you mean: 'list'?",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/22",
+      "gen_ok": true,
+      "latency": 12.7961266040802,
+      "tokens": {
+        "prompt_tokens": 205,
+        "total_tokens": 521,
+        "completion_tokens": 316,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 202
+      },
+      "completion_preview": "from typing import List, Any\n\n\ndef filter_integers(values: List[Any]) -> List[int]:\n    \"\"\" Filter given list of any python values only for integers\n    >>> filter_integers(['a', 3.14, 5])\n    [5]\n   ",
+      "passed": true,
+      "error": "",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/23",
+      "gen_ok": true,
+      "error": "",
+      "latency": 23.099653482437134,
+      "passed": true,
+      "attempts": 1,
+      "note": "timeout rerun (real model result)"
+    },
+    {
+      "task_id": "HumanEval/24",
+      "gen_ok": true,
+      "latency": 18.030909061431885,
+      "tokens": {
+        "prompt_tokens": 167,
+        "total_tokens": 531,
+        "completion_tokens": 364,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 269
+      },
+      "completion_preview": "def largest_divisor(n: int) -> int:\n    \"\"\" For a given number n, find the largest number that divides n evenly, smaller than n\n    >>> largest_divisor(15)\n    5\n    \"\"\"\n    for i in range(n - 1, 0, -",
+      "passed": true,
+      "error": "",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/25",
+      "gen_ok": true,
+      "latency": 10.37110686302185,
+      "tokens": {
+        "prompt_tokens": 239,
+        "total_tokens": 481,
+        "completion_tokens": 242,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 46
+      },
+      "completion_preview": "from typing import List\n\n\ndef factorize(n: int) -> List[int]:\n    \"\"\" Return list of prime factors of given integer in the order from smallest to largest.\n    Each of the factors should be listed numb",
+      "passed": true,
+      "error": "",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/26",
+      "gen_ok": true,
+      "latency": 13.764561414718628,
+      "tokens": {
+        "prompt_tokens": 201,
+        "total_tokens": 483,
+        "completion_tokens": 282,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 157
+      },
+      "completion_preview": "from typing import List\n\n\ndef remove_duplicates(numbers: List[int]) -> List[int]:\n    \"\"\" From a list of integers, remove all elements that occur more than once.\n    Keep order of elements left the sa",
+      "passed": true,
+      "error": "",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/27",
+      "gen_ok": true,
+      "latency": 7.8944432735443115,
+      "tokens": {
+        "prompt_tokens": 161,
+        "total_tokens": 351,
+        "completion_tokens": 190,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 127
+      },
+      "completion_preview": "def flip_case(string: str) -> str:\n    \"\"\" For a given string, flip lowercase characters to uppercase and uppercase to lowercase.\n    >>> flip_case('Hello')\n    'hELLO'\n    \"\"\"\n    return string.swapc",
+      "passed": true,
+      "error": "",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/28",
+      "gen_ok": true,
+      "latency": 8.871177434921265,
+      "tokens": {
+        "prompt_tokens": 170,
+        "total_tokens": 295,
+        "completion_tokens": 125,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 53
+      },
+      "completion_preview": "from typing import List\n\n\ndef concatenate(strings: List[str]) -> str:\n    \"\"\" Concatenate list of strings into a single string\n    >>> concatenate([])\n    ''\n    >>> concatenate(['a', 'b', 'c'])\n    '",
+      "passed": true,
+      "error": "",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/29",
+      "gen_ok": true,
+      "latency": 6.438039302825928,
+      "tokens": {
+        "prompt_tokens": 200,
+        "total_tokens": 338,
+        "completion_tokens": 138,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 30
+      },
+      "completion_preview": "from typing import List\n\n\ndef filter_by_prefix(strings: List[str], prefix: str) -> List[str]:\n    \"\"\" Filter an input list of strings only for ones that start with a given prefix.\n    >>> filter_by_pr",
+      "passed": true,
+      "error": "",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/30",
+      "gen_ok": true,
+      "latency": 28.393229961395264,
+      "tokens": {
+        "prompt_tokens": 226,
+        "total_tokens": 652,
+        "completion_tokens": 426,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 290
+      },
+      "completion_preview": "def get_positive(l: list):\n    \"\"\"Return only positive numbers in the list.\n    >>> get_positive([-1, 2, -4, 5, 6])\n    [2, 5, 6]\n    >>> get_positive([5, 3, -5, 2, -3, 3, 9, 0, 123, 1, -10])\n    [5, ",
+      "passed": true,
+      "error": "",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/31",
+      "gen_ok": true,
+      "latency": 32.307570934295654,
+      "tokens": {
+        "prompt_tokens": 212,
+        "total_tokens": 1055,
+        "completion_tokens": 843,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 662
+      },
+      "completion_preview": "def is_prime(n):\n    \"\"\"Return true if a given number is prime, and false otherwise.\n    >>> is_prime(6)\n    False\n    >>> is_prime(101)\n    True\n    >>> is_prime(11)\n    True\n    >>> is_prime(13441)\n",
+      "passed": true,
+      "error": "",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/32",
+      "gen_ok": true,
+      "latency": 37.59890556335449,
+      "tokens": {
+        "prompt_tokens": 372,
+        "total_tokens": 1396,
+        "completion_tokens": 1024,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 1023
+      },
+      "completion_preview": "",
+      "passed": false,
+      "error": "Traceback (most recent call last):\n  File \"/tmp/tmpoeni9ayk.py\", line 49, in <module>\n    check(find_zero)\n  File \"/tmp/tmpoeni9ayk.py\", line 45, in check\n    assert math.fabs(poly(coeffs, solution)) < 1e-4\n                     ^^^^^^^^^^^^^^^^^^^^^^\n  File \"/tmp/tmpoeni9ayk.py\", line 9, in poly\n   ",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/33",
+      "gen_ok": true,
+      "latency": 16.46337342262268,
+      "tokens": {
+        "prompt_tokens": 267,
+        "total_tokens": 715,
+        "completion_tokens": 448,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 402
+      },
+      "completion_preview": "def sort_third(l: list):\n    result = l[:]\n    result[::3] = sorted(result[::3])\n    return result",
+      "passed": true,
+      "error": "",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/34",
+      "gen_ok": true,
+      "latency": 5.18176794052124,
+      "tokens": {
+        "prompt_tokens": 185,
+        "total_tokens": 293,
+        "completion_tokens": 108,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 20
+      },
+      "completion_preview": "def unique(l: list):\n    \"\"\"Return sorted unique elements in a list\n    >>> unique([5, 3, 5, 2, 3, 3, 9, 0, 123])\n    [0, 2, 3, 5, 9, 123]\n    \"\"\"\n    return sorted(set(l))",
+      "passed": true,
+      "error": "",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/35",
+      "gen_ok": true,
+      "latency": 10.072607517242432,
+      "tokens": {
+        "prompt_tokens": 195,
+        "total_tokens": 403,
+        "completion_tokens": 208,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 112
+      },
+      "completion_preview": "def max_element(l: list):\n    \"\"\"Return maximum element in the list.\n    >>> max_element([1, 2, 3])\n    3\n    >>> max_element([5, 3, -5, 2, -3, 3, 9, 0, 123, 1, -10])\n    123\n    \"\"\"\n    return max(l)",
+      "passed": true,
+      "error": "",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/36",
+      "gen_ok": true,
+      "latency": 52.53376388549805,
+      "tokens": {
+        "prompt_tokens": 198,
+        "total_tokens": 1222,
+        "completion_tokens": 1024,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 1023
+      },
+      "completion_preview": "",
+      "passed": false,
+      "error": "Traceback (most recent call last):\n  File \"/tmp/tmpj_vfygsk.py\", line 31, in <module>\n    check(fizz_buzz)\n  File \"/tmp/tmpj_vfygsk.py\", line 20, in check\n    assert candidate(50) == 0\n           ^^^^^^^^^^^^^^^^^^\nAssertionError",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/37",
+      "gen_ok": true,
+      "error": "",
+      "latency": 10.458136796951294,
+      "passed": true,
+      "attempts": 2,
+      "note": "timeout rerun (real model result)"
+    },
+    {
+      "task_id": "HumanEval/38",
+      "gen_ok": true,
+      "latency": 19.434598207473755,
+      "tokens": {
+        "prompt_tokens": 273,
+        "total_tokens": 543,
+        "completion_tokens": 270,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 124
+      },
+      "completion_preview": "def decode_cyclic(s: str):\n    \"\"\"\n    takes as input string encoded with encode_cyclic function. Returns decoded string.\n    \"\"\"\n    # split string to groups. Each of length 3.\n    groups = [s[(3 * i",
+      "passed": false,
+      "error": "Traceback (most recent call last):\n  File \"/tmp/tmph6qd_dm0.py\", line 28, in <module>\n    check(decode_cyclic)\n  File \"/tmp/tmph6qd_dm0.py\", line 23, in check\n    encoded_str = encode_cyclic(str)\n                  ^^^^^^^^^^^^^\nNameError: name 'encode_cyclic' is not defined. Did you mean: 'decode_cy",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/39",
+      "gen_ok": true,
+      "latency": 38.768088817596436,
+      "tokens": {
+        "prompt_tokens": 211,
+        "total_tokens": 1235,
+        "completion_tokens": 1024,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 1023
+      },
+      "completion_preview": "",
+      "passed": false,
+      "error": "Traceback (most recent call last):\n  File \"/tmp/tmpkfvuobm7.py\", line 38, in <module>\n    check(prime_fib)\n  File \"/tmp/tmpkfvuobm7.py\", line 25, in check\n    assert candidate(1) == 2\n           ^^^^^^^^^^^^^^^^^\nAssertionError",
+      "retried": true
+    },
+    {
+      "task_id": "HumanEval/40",
+      "gen_ok": true,
+      "latency": 37.25796341896057,
+      "tokens": {
+        "prompt_tokens": 282,
+        "total_tokens": 1223,
+        "completion_tokens": 941,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 821
+      },
+      "completion_preview": "def triples_sum_to_zero(l: list):\n    a = sorted(l)\n    n = len(a)\n    for i in range(n - 2):\n        left, right = i + 1, n - 1\n        while left < right:\n            total = a[i] + a[left] + a[righ",
+      "passed": true,
+      "error": "",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/41",
+      "gen_ok": true,
+      "latency": 10.423961639404297,
+      "tokens": {
+        "prompt_tokens": 264,
+        "total_tokens": 493,
+        "completion_tokens": 229,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 64
+      },
+      "completion_preview": "def car_race_collision(n: int):\n    \"\"\"\n    Imagine a road that's a perfectly straight infinitely long line.\n    n cars are driving left to right;  simultaneously, a different set of n cars\n    are dr",
+      "passed": true,
+      "error": "",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/42",
+      "gen_ok": true,
+      "latency": 7.270304441452026,
+      "tokens": {
+        "prompt_tokens": 221,
+        "total_tokens": 381,
+        "completion_tokens": 160,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 31
+      },
+      "completion_preview": "def incr_list(l: list):\n    \"\"\"Return list with elements incremented by 1.\n    >>> incr_list([1, 2, 3])\n    [2, 3, 4]\n    >>> incr_list([5, 3, 5, 2, 3, 3, 9, 0, 123])\n    [6, 4, 6, 3, 4, 4, 10, 1, 124",
+      "passed": true,
+      "error": "",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/43",
+      "gen_ok": true,
+      "latency": 28.93164896965027,
+      "tokens": {
+        "prompt_tokens": 272,
+        "total_tokens": 1025,
+        "completion_tokens": 753,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 700
+      },
+      "completion_preview": "def pairs_sum_to_zero(l):\n    seen = set()\n    for x in l:\n        if -x in seen:\n            return True\n        seen.add(x)\n    return False",
+      "passed": true,
+      "error": "",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/44",
+      "gen_ok": true,
+      "latency": 19.131218910217285,
+      "tokens": {
+        "prompt_tokens": 204,
+        "total_tokens": 711,
+        "completion_tokens": 507,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 375
+      },
+      "completion_preview": "def change_base(x: int, base: int):\n    \"\"\"Change numerical base of input number x to base.\n    return string representation after the conversion.\n    base numbers are less than 10.\n    >>> change_bas",
+      "passed": true,
+      "error": "",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/45",
+      "gen_ok": true,
+      "latency": 6.197979211807251,
+      "tokens": {
+        "prompt_tokens": 159,
+        "total_tokens": 301,
+        "completion_tokens": 142,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 76
+      },
+      "completion_preview": "def triangle_area(a, h):\n    \"\"\"Given length of a side and high return area for a triangle.\n    >>> triangle_area(5, 3)\n    7.5\n    \"\"\"\n    return (a * h) / 2",
+      "passed": true,
+      "error": "",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/46",
+      "gen_ok": true,
+      "latency": 44.12100410461426,
+      "tokens": {
+        "prompt_tokens": 283,
+        "total_tokens": 1163,
+        "completion_tokens": 880,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 735
+      },
+      "completion_preview": "def fib4(n: int):\n    if n < 0:\n        raise ValueError(\"n must be non-negative\")\n    a, b, c, d = 0, 0, 2, 0\n    if n == 0:\n        return a\n    if n == 1:\n        return b\n    if n == 2:\n        re",
+      "passed": true,
+      "error": "",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/47",
+      "gen_ok": true,
+      "latency": 37.980748653411865,
+      "tokens": {
+        "prompt_tokens": 187,
+        "total_tokens": 1211,
+        "completion_tokens": 1024,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 1023
+      },
+      "completion_preview": "",
+      "passed": false,
+      "error": "Traceback (most recent call last):\n  File \"/tmp/tmpq4uec969.py\", line 26, in <module>\n    check(median)\n  File \"/tmp/tmpq4uec969.py\", line 18, in check\n    assert candidate([3, 1, 2, 4, 5]) == 3\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/48",
+      "gen_ok": true,
+      "latency": 11.10457730293274,
+      "tokens": {
+        "prompt_tokens": 192,
+        "total_tokens": 488,
+        "completion_tokens": 296,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 201
+      },
+      "completion_preview": "def is_palindrome(text: str):\n    \"\"\"\n    Checks if given string is a palindrome\n    >>> is_palindrome('')\n    True\n    >>> is_palindrome('aba')\n    True\n    >>> is_palindrome('aaaaa')\n    True\n    >>",
+      "passed": true,
+      "error": "",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/49",
+      "gen_ok": true,
+      "latency": 13.955195903778076,
+      "tokens": {
+        "prompt_tokens": 218,
+        "total_tokens": 592,
+        "completion_tokens": 374,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 250
+      },
+      "completion_preview": "def modp(n: int, p: int):\n    \"\"\"Return 2^n modulo p (be aware of numerics).\n    >>> modp(3, 5)\n    3\n    >>> modp(1101, 101)\n    2\n    >>> modp(0, 101)\n    1\n    >>> modp(3, 11)\n    8\n    >>> modp(10",
+      "passed": true,
+      "error": "",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/50",
+      "gen_ok": true,
+      "latency": 8.488765478134155,
+      "tokens": {
+        "prompt_tokens": 203,
+        "total_tokens": 409,
+        "completion_tokens": 206,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 133
+      },
+      "completion_preview": "def decode_shift(s: str):\n    \"\"\"\n    takes as input string encoded with encode_shift function. Returns decoded string.\n    \"\"\"\n    return \"\".join([chr(((ord(ch) - 5 - ord(\"a\")) % 26) + ord(\"a\")) for ",
+      "passed": false,
+      "error": "Traceback (most recent call last):\n  File \"/tmp/tmpd60p0mnr.py\", line 25, in <module>\n    check(decode_shift)\n  File \"/tmp/tmpd60p0mnr.py\", line 20, in check\n    encoded_str = encode_shift(str)\n                  ^^^^^^^^^^^^\nNameError: name 'encode_shift' is not defined. Did you mean: 'decode_shift'",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/51",
+      "gen_ok": true,
+      "latency": 15.435118913650513,
+      "tokens": {
+        "prompt_tokens": 238,
+        "total_tokens": 622,
+        "completion_tokens": 384,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 233
+      },
+      "completion_preview": "def remove_vowels(text):\n    \"\"\"\n    remove_vowels is a function that takes string and returns string without vowels.\n    >>> remove_vowels('')\n    ''\n    >>> remove_vowels(\"abcdef\\nghijklm\")\n    'bcd",
+      "passed": true,
+      "error": "",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/52",
+      "gen_ok": true,
+      "latency": 10.083115577697754,
+      "tokens": {
+        "prompt_tokens": 192,
+        "total_tokens": 422,
+        "completion_tokens": 230,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 131
+      },
+      "completion_preview": "def below_threshold(l: list, t: int):\n    \"\"\"Return True if all numbers in the list l are below threshold t.\n    >>> below_threshold([1, 2, 4, 10], 100)\n    True\n    >>> below_threshold([1, 20, 4, 10]",
+      "passed": true,
+      "error": "",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/53",
+      "gen_ok": true,
+      "latency": 5.827570676803589,
+      "tokens": {
+        "prompt_tokens": 165,
+        "total_tokens": 276,
+        "completion_tokens": 111,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 43
+      },
+      "completion_preview": "def add(x: int, y: int):\n    \"\"\"Add two numbers x and y\n    >>> add(2, 3)\n    5\n    >>> add(5, 7)\n    12\n    \"\"\"\n    return x + y",
+      "passed": true,
+      "error": "",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/54",
+      "gen_ok": true,
+      "latency": 11.605280637741089,
+      "tokens": {
+        "prompt_tokens": 251,
+        "total_tokens": 563,
+        "completion_tokens": 312,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 154
+      },
+      "completion_preview": "def same_chars(s0: str, s1: str):\n    \"\"\"\n    Check if two words have the same characters.\n    >>> same_chars('eabcdzzzz', 'dddzzzzzzzddeddabc')\n    True\n    >>> same_chars('abcd', 'dddddddabc')\n    T",
+      "passed": true,
+      "error": "",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/55",
+      "gen_ok": true,
+      "latency": 15.106362104415894,
+      "tokens": {
+        "prompt_tokens": 165,
+        "total_tokens": 520,
+        "completion_tokens": 355,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 260
+      },
+      "completion_preview": "def fib(n: int):\n    \"\"\"Return n-th Fibonacci number.\n    >>> fib(10)\n    55\n    >>> fib(1)\n    1\n    >>> fib(8)\n    21\n    \"\"\"\n    a, b = 0, 1\n    for _ in range(n):\n        a, b = b, a + b\n    retur",
+      "passed": true,
+      "error": "",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/56",
+      "gen_ok": true,
+      "latency": 21.15583562850952,
+      "tokens": {
+        "prompt_tokens": 207,
+        "total_tokens": 767,
+        "completion_tokens": 560,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 405
+      },
+      "completion_preview": "def correct_bracketing(brackets: str):\n    \"\"\" brackets is a string of \"<\" and \">\".\n    return True if every opening bracket has a corresponding closing bracket.\n\n    >>> correct_bracketing(\"<\")\n    F",
+      "passed": true,
+      "error": "",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/57",
+      "gen_ok": true,
+      "error": "File \"/tmp/tmpdmo9j2sh.py\", line 12\n    Hi there! How can I help you today?\n       ^^^^^\nSyntaxError: invalid syntax",
+      "latency": 5.931619167327881,
+      "passed": false,
+      "attempts": 1,
+      "note": "timeout rerun (real model result)"
+    },
+    {
+      "task_id": "HumanEval/58",
+      "gen_ok": true,
+      "error": "Traceback (most recent call last):\n  File \"/tmp/tmpp7hshuu7.py\", line 11, in <module>\n    intersection([3, 2, 8], [3, 2])\n    ^^^^^^^^^^^^\nNameError: name 'intersection' is not defined",
+      "latency": 31.037458896636963,
+      "passed": false,
+      "attempts": 2,
+      "note": "timeout rerun (real model result)"
+    },
+    {
+      "task_id": "HumanEval/59",
+      "gen_ok": true,
+      "latency": 23.608348846435547,
+      "tokens": {
+        "prompt_tokens": 178,
+        "total_tokens": 729,
+        "completion_tokens": 551,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 395
+      },
+      "completion_preview": "def largest_prime_factor(n: int):\n    \"\"\"Return the largest prime factor of n. Assume n > 1 and is not a prime.\n    >>> largest_prime_factor(13195)\n    29\n    >>> largest_prime_factor(2048)\n    2\n    ",
+      "passed": true,
+      "error": "",
+      "retried": true
+    },
+    {
+      "task_id": "HumanEval/60",
+      "gen_ok": true,
+      "latency": 11.436246156692505,
+      "tokens": {
+        "prompt_tokens": 208,
+        "total_tokens": 414,
+        "completion_tokens": 206,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 89
+      },
+      "completion_preview": "def sum_to_n(n: int):\n    \"\"\"sum_to_n is a function that sums numbers from 1 to n.\n    >>> sum_to_n(30)\n    465\n    >>> sum_to_n(100)\n    5050\n    >>> sum_to_n(5)\n    15\n    >>> sum_to_n(10)\n    55\n  ",
+      "passed": true,
+      "error": "",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/61",
+      "gen_ok": true,
+      "latency": 17.143733739852905,
+      "tokens": {
+        "prompt_tokens": 207,
+        "total_tokens": 686,
+        "completion_tokens": 479,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 327
+      },
+      "completion_preview": "def correct_bracketing(brackets: str):\n    \"\"\" brackets is a string of \"(\" and \")\".\n    return True if every opening bracket has a corresponding closing bracket.\n\n    >>> correct_bracketing(\"(\")\n    F",
+      "passed": true,
+      "error": "",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/62",
+      "gen_ok": true,
+      "latency": 10.37362790107727,
+      "tokens": {
+        "prompt_tokens": 220,
+        "total_tokens": 473,
+        "completion_tokens": 253,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 118
+      },
+      "completion_preview": "def derivative(xs: list):\n    \"\"\" xs represent coefficients of a polynomial.\n    xs[0] + xs[1] * x + xs[2] * x^2 + ....\n     Return derivative of this polynomial in the same form.\n    >>> derivative([",
+      "passed": true,
+      "error": "",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/63",
+      "gen_ok": true,
+      "latency": 33.06381058692932,
+      "tokens": {
+        "prompt_tokens": 260,
+        "total_tokens": 935,
+        "completion_tokens": 675,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 591
+      },
+      "completion_preview": "def fibfib(n: int):\n    if n < 0:\n        raise ValueError(\"n must be non-negative\")\n    a, b, c = 0, 0, 1\n    for _ in range(n):\n        a, b, c = b, c, a + b + c\n    return a",
+      "passed": true,
+      "error": "",
+      "retried": true
+    },
+    {
+      "task_id": "HumanEval/64",
+      "gen_ok": true,
+      "latency": 18.661463260650635,
+      "tokens": {
+        "prompt_tokens": 246,
+        "total_tokens": 755,
+        "completion_tokens": 509,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 340
+      },
+      "completion_preview": "def vowels_count(s):\n    \"\"\"Write a function vowels_count which takes a string representing\n    a word as input and returns the number of vowels in the string.\n    Vowels in this case are 'a', 'e', 'i",
+      "passed": true,
+      "error": "",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/65",
+      "gen_ok": true,
+      "latency": 35.75246548652649,
+      "tokens": {
+        "prompt_tokens": 196,
+        "total_tokens": 1208,
+        "completion_tokens": 1012,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 882
+      },
+      "completion_preview": "def circular_shift(x, shift):\n    \"\"\"Circular shift the digits of the integer x, shift the digits right by shift\n    and return the result as a string.\n    If shift > number of digits, return digits r",
+      "passed": true,
+      "error": "",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/66",
+      "gen_ok": true,
+      "latency": 11.555890321731567,
+      "tokens": {
+        "prompt_tokens": 225,
+        "total_tokens": 527,
+        "completion_tokens": 302,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 165
+      },
+      "completion_preview": "def digitSum(s):\n    \"\"\"Task\n    Write a function that takes a string as input and returns the sum of the upper characters only'\n    ASCII codes.\n\n    Examples:\n        digitSum(\"\") => 0\n        digit",
+      "passed": true,
+      "error": "",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/67",
+      "gen_ok": true,
+      "latency": 22.02824902534485,
+      "tokens": {
+        "prompt_tokens": 323,
+        "total_tokens": 917,
+        "completion_tokens": 594,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 350
+      },
+      "completion_preview": "def fruit_distribution(s,n):\n    \"\"\"\n    In this task, you will be given a string that represents a number of apples and oranges \n    that are distributed in a basket of fruit this basket contains \n  ",
+      "passed": true,
+      "error": "",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/68",
+      "gen_ok": true,
+      "latency": 11.70921802520752,
+      "tokens": {
+        "prompt_tokens": 425,
+        "total_tokens": 714,
+        "completion_tokens": 289,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 193
+      },
+      "completion_preview": "def pluck(arr):\n    smallest_value = None\n    smallest_index = -1\n\n    for index, value in enumerate(arr):\n        if value % 2 == 0 and (smallest_value is None or value < smallest_value):\n           ",
+      "passed": true,
+      "error": "",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/69",
+      "gen_ok": true,
+      "latency": 18.845078945159912,
+      "tokens": {
+        "prompt_tokens": 277,
+        "total_tokens": 778,
+        "completion_tokens": 501,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 267
+      },
+      "completion_preview": "def search(lst):\n    '''\n    You are given a non-empty list of positive integers. Return the greatest integer that is greater than \n    zero, and has a frequency greater than or equal to the value of ",
+      "passed": true,
+      "error": "",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/70",
+      "gen_ok": true,
+      "latency": 15.851003170013428,
+      "tokens": {
+        "prompt_tokens": 239,
+        "total_tokens": 652,
+        "completion_tokens": 413,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 210
+      },
+      "completion_preview": "def strange_sort_list(lst):\n    '''\n    Given list of integers, return list in strange order.\n    Strange sorting, is when you start with the minimum value,\n    then maximum of the remaining integers,",
+      "passed": true,
+      "error": "",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/71",
+      "gen_ok": true,
+      "latency": 29.777851343154907,
+      "tokens": {
+        "prompt_tokens": 234,
+        "total_tokens": 991,
+        "completion_tokens": 757,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 551
+      },
+      "completion_preview": "def triangle_area(a, b, c):\n    '''\n    Given the lengths of the three sides of a triangle. Return the area of\n    the triangle rounded to 2 decimal points if the three sides form a valid triangle. \n ",
+      "passed": true,
+      "error": "",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/72",
+      "gen_ok": true,
+      "latency": 11.299561977386475,
+      "tokens": {
+        "prompt_tokens": 344,
+        "total_tokens": 619,
+        "completion_tokens": 275,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 21
+      },
+      "completion_preview": "def will_it_fly(q,w):\n    '''\n    Write a function that returns True if the object q will fly, and False otherwise.\n    The object q will fly if it's balanced (it is a palindromic list) and the sum of",
+      "passed": true,
+      "error": "",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/73",
+      "gen_ok": true,
+      "latency": 15.409421443939209,
+      "tokens": {
+        "prompt_tokens": 271,
+        "total_tokens": 639,
+        "completion_tokens": 368,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 317
+      },
+      "completion_preview": "def smallest_change(arr):\n    return sum(1 for i in range(len(arr) // 2) if arr[i] != arr[len(arr) - 1 - i])",
+      "passed": true,
+      "error": "",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/74",
+      "gen_ok": true,
+      "latency": 10.743065357208252,
+      "tokens": {
+        "prompt_tokens": 311,
+        "total_tokens": 602,
+        "completion_tokens": 291,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 221
+      },
+      "completion_preview": "def total_match(lst1, lst2):\n    total1 = sum(len(s) for s in lst1)\n    total2 = sum(len(s) for s in lst2)\n    if total1 <= total2:\n        return lst1\n    return lst2",
+      "passed": true,
+      "error": "",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/75",
+      "gen_ok": true,
+      "latency": 33.92617154121399,
+      "tokens": {
+        "prompt_tokens": 196,
+        "total_tokens": 1068,
+        "completion_tokens": 872,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 719
+      },
+      "completion_preview": "def is_multiply_prime(a):\n    \"\"\"Write a function that returns true if the given number is the multiplication of 3 prime numbers\n    and false otherwise.\n    Knowing that (a) is less then 100. \n    Ex",
+      "passed": true,
+      "error": "",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/76",
+      "gen_ok": true,
+      "latency": 38.98410224914551,
+      "tokens": {
+        "prompt_tokens": 256,
+        "total_tokens": 1280,
+        "completion_tokens": 1024,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 1023
+      },
+      "completion_preview": "",
+      "passed": false,
+      "error": "Traceback (most recent call last):\n  File \"/tmp/tmp26iba69g.py\", line 34, in <module>\n    check(is_simple_power)\n  File \"/tmp/tmp26iba69g.py\", line 19, in check\n    assert candidate(16, 2)== True, \"This prints if this assert fails 1 (good for debugging!)\"\n           ^^^^^^^^^^^^^^^^^^^^^^^\nAssertion",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/77",
+      "gen_ok": true,
+      "latency": 37.98179602622986,
+      "tokens": {
+        "prompt_tokens": 223,
+        "total_tokens": 1247,
+        "completion_tokens": 1024,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 1023
+      },
+      "completion_preview": "",
+      "passed": false,
+      "error": "Traceback (most recent call last):\n  File \"/tmp/tmp2_iro9sq.py\", line 34, in <module>\n    check(iscube)\n  File \"/tmp/tmp2_iro9sq.py\", line 20, in check\n    assert candidate(1) == True, \"First test error: \" + str(candidate(1))\n           ^^^^^^^^^^^^^^^^^^^^\nAssertionError: First test error: None",
+      "retried": true
+    },
+    {
+      "task_id": "HumanEval/78",
+      "gen_ok": true,
+      "latency": 9.25207781791687,
+      "tokens": {
+        "prompt_tokens": 412,
+        "total_tokens": 626,
+        "completion_tokens": 214,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 169
+      },
+      "completion_preview": "def hex_key(num):\n    prime_digits = set(\"2357BD\")\n    return sum(1 for digit in num if digit in prime_digits)",
+      "passed": true,
+      "error": "",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/79",
+      "gen_ok": true,
+      "latency": 9.216109275817871,
+      "tokens": {
+        "prompt_tokens": 254,
+        "total_tokens": 483,
+        "completion_tokens": 229,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 64
+      },
+      "completion_preview": "def decimal_to_binary(decimal):\n    \"\"\"You will be given a number in decimal form and your task is to convert it to\n    binary format. The function should return a string, with each character represen",
+      "passed": true,
+      "error": "",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/80",
+      "gen_ok": true,
+      "latency": 20.447551250457764,
+      "tokens": {
+        "prompt_tokens": 236,
+        "total_tokens": 581,
+        "completion_tokens": 345,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 166
+      },
+      "completion_preview": "def is_happy(s):\n    \"\"\"You are given a string s.\n    Your task is to check if the string is happy or not.\n    A string is happy if its length is at least 3 and every 3 consecutive letters are distinc",
+      "passed": true,
+      "error": "",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/81",
+      "gen_ok": true,
+      "latency": 52.65876770019531,
+      "tokens": {
+        "prompt_tokens": 389,
+        "total_tokens": 1413,
+        "completion_tokens": 1024,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 1023
+      },
+      "completion_preview": "",
+      "passed": false,
+      "error": "Traceback (most recent call last):\n  File \"/tmp/tmppi3_pplm.py\", line 44, in <module>\n    check(numerical_letter_grade)\n  File \"/tmp/tmppi3_pplm.py\", line 32, in check\n    assert candidate([4.0, 3, 1.7, 2, 3.5]) == ['A+', 'B', 'C-', 'C', 'A-']\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/82",
+      "gen_ok": true,
+      "latency": 11.934921741485596,
+      "tokens": {
+        "prompt_tokens": 193,
+        "total_tokens": 482,
+        "completion_tokens": 289,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 121
+      },
+      "completion_preview": "def prime_length(string):\n    \"\"\"Write a function that takes a string and returns True if the string\n    length is a prime number or False otherwise\n    Examples\n    prime_length('Hello') == True\n    ",
+      "passed": true,
+      "error": "",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/83",
+      "gen_ok": true,
+      "latency": 20.42517328262329,
+      "tokens": {
+        "prompt_tokens": 160,
+        "total_tokens": 707,
+        "completion_tokens": 547,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 467
+      },
+      "completion_preview": "def starts_one_ends(n):\n    \"\"\"\n    Given a positive integer n, return the count of the numbers of n-digit\n    positive integers that start or end with 1.\n    \"\"\"\n    if n == 1:\n        return 1\n    r",
+      "passed": true,
+      "error": "",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/84",
+      "gen_ok": true,
+      "latency": 18.16615056991577,
+      "tokens": {
+        "prompt_tokens": 245,
+        "total_tokens": 718,
+        "completion_tokens": 473,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 437
+      },
+      "completion_preview": "def solve(N):\n    return bin(sum(int(digit) for digit in str(N)))[2:]",
+      "passed": true,
+      "error": "",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/85",
+      "gen_ok": true,
+      "latency": 16.634269952774048,
+      "tokens": {
+        "prompt_tokens": 167,
+        "total_tokens": 600,
+        "completion_tokens": 433,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 340
+      },
+      "completion_preview": "def add(lst):\n    \"\"\"Given a non-empty list of integers lst. add the even elements that are at odd indices..\n\n\n    Examples:\n        add([4, 2, 6, 7]) ==> 2 \n    \"\"\"\n    return sum(x for i, x in enume",
+      "passed": true,
+      "error": "",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/86",
+      "gen_ok": true,
+      "latency": 19.17384910583496,
+      "tokens": {
+        "prompt_tokens": 243,
+        "total_tokens": 713,
+        "completion_tokens": 470,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 431
+      },
+      "completion_preview": "def anti_shuffle(s):\n    return ' '.join(''.join(sorted(word)) for word in s.split(' '))",
+      "passed": true,
+      "error": "",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/87",
+      "gen_ok": true,
+      "error": "",
+      "latency": 13.377797842025757,
+      "passed": true,
+      "attempts": 2,
+      "note": "timeout rerun (real model result)"
+    },
+    {
+      "task_id": "HumanEval/88",
+      "gen_ok": true,
+      "latency": 21.662469148635864,
+      "tokens": {
+        "prompt_tokens": 315,
+        "total_tokens": 893,
+        "completion_tokens": 578,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 328
+      },
+      "completion_preview": "def sort_array(array):\n    \"\"\"\n    Given an array of non-negative integers, return a copy of the given array after sorting,\n    you will sort the given array in ascending order if the sum( first index",
+      "passed": true,
+      "error": "",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/89",
+      "gen_ok": true,
+      "latency": 35.9863862991333,
+      "tokens": {
+        "prompt_tokens": 223,
+        "total_tokens": 1247,
+        "completion_tokens": 1024,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 1023
+      },
+      "completion_preview": "",
+      "passed": false,
+      "error": "Traceback (most recent call last):\n  File \"/tmp/tmp09a2522i.py\", line 32, in <module>\n    check(encrypt)\n  File \"/tmp/tmp09a2522i.py\", line 18, in check\n    assert candidate('hi') == 'lm', \"This prints if this assert fails 1 (good for debugging!)\"\n           ^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: T",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/90",
+      "gen_ok": true,
+      "latency": 16.60671067237854,
+      "tokens": {
+        "prompt_tokens": 238,
+        "total_tokens": 652,
+        "completion_tokens": 414,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 367
+      },
+      "completion_preview": "def next_smallest(lst):\n    unique = sorted(set(lst))\n    if len(unique) < 2:\n        return None\n    return unique[1]",
+      "passed": true,
+      "error": "",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/91",
+      "gen_ok": true,
+      "latency": 40.85120463371277,
+      "tokens": {
+        "prompt_tokens": 223,
+        "total_tokens": 1247,
+        "completion_tokens": 1024,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 1023
+      },
+      "completion_preview": "",
+      "passed": false,
+      "error": "Traceback (most recent call last):\n  File \"/tmp/tmp_b4xbrtv.py\", line 31, in <module>\n    check(is_bored)\n  File \"/tmp/tmp_b4xbrtv.py\", line 19, in check\n    assert candidate(\"Hello world\") == 0, \"Test 1\"\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: Test 1",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/92",
+      "gen_ok": true,
+      "latency": 41.824512243270874,
+      "tokens": {
+        "prompt_tokens": 252,
+        "total_tokens": 1276,
+        "completion_tokens": 1024,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 1016
+      },
+      "completion_preview": "",
+      "passed": false,
+      "error": "Traceback (most recent call last):\n  File \"/tmp/tmpzbyagba7.py\", line 40, in <module>\n    check(any_int)\n  File \"/tmp/tmpzbyagba7.py\", line 25, in check\n    assert candidate(2, 3, 1)==True, \"This prints if this assert fails 1 (good for debugging!)\"\n           ^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError:",
+      "retried": false,
+      "note": "extraction rerun (real model result)"
+    },
+    {
+      "task_id": "HumanEval/93",
+      "gen_ok": true,
+      "latency": 53.890355348587036,
+      "tokens": {
+        "prompt_tokens": 223,
+        "total_tokens": 1247,
+        "completion_tokens": 1024,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 1023
+      },
+      "completion_preview": "",
+      "passed": false,
+      "error": "Traceback (most recent call last):\n  File \"/tmp/tmp4jy4x9nn.py\", line 31, in <module>\n    check(encode)\n  File \"/tmp/tmp4jy4x9nn.py\", line 21, in check\n    assert candidate('TEST') == 'tgst', \"This prints if this assert fails 1 (good for debugging!)\"\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionE",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/94",
+      "gen_ok": true,
+      "latency": 42.38686418533325,
+      "tokens": {
+        "prompt_tokens": 402,
+        "total_tokens": 1426,
+        "completion_tokens": 1024,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 1023
+      },
+      "completion_preview": "",
+      "passed": false,
+      "error": "Traceback (most recent call last):\n  File \"/tmp/tmpqpmnmdtm.py\", line 42, in <module>\n    check(skjkasdkd)\n  File \"/tmp/tmpqpmnmdtm.py\", line 20, in check\n    assert candidate([0,3,2,1,3,5,7,4,5,5,5,2,181,32,4,32,3,2,32,324,4,3]) == 10, \"This prints if this assert fails 1 (good for debugging!)\"\n    ",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/95",
+      "gen_ok": true,
+      "latency": 27.389185905456543,
+      "tokens": {
+        "prompt_tokens": 293,
+        "total_tokens": 1020,
+        "completion_tokens": 727,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 655
+      },
+      "completion_preview": "def check_dict_case(dict):\n    if not dict:\n        return False\n    if not all(isinstance(key, str) for key in dict):\n        return False\n    return all(key.islower() for key in dict) or all(key.isu",
+      "passed": true,
+      "error": "",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/96",
+      "gen_ok": true,
+      "latency": 22.746538639068604,
+      "tokens": {
+        "prompt_tokens": 259,
+        "total_tokens": 837,
+        "completion_tokens": 578,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 352
+      },
+      "completion_preview": "def count_up_to(n):\n    \"\"\"Implement a function that takes an non-negative integer and returns an array of the first n\n    integers that are prime numbers and less than n.\n    for example:\n    count_u",
+      "passed": true,
+      "error": "",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/97",
+      "gen_ok": true,
+      "latency": 10.30879282951355,
+      "tokens": {
+        "prompt_tokens": 210,
+        "total_tokens": 474,
+        "completion_tokens": 264,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 228
+      },
+      "completion_preview": "def multiply(a, b):\n    return (a % 10) * (b % 10)",
+      "passed": true,
+      "error": "",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/98",
+      "gen_ok": true,
+      "latency": 12.967546224594116,
+      "tokens": {
+        "prompt_tokens": 187,
+        "total_tokens": 519,
+        "completion_tokens": 332,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 220
+      },
+      "completion_preview": "def count_upper(s):\n    \"\"\"\n    Given a string s, count the number of uppercase vowels in even indices.\n    \n    For example:\n    count_upper('aBCdEf') returns 1\n    count_upper('abcdefg') returns 0\n ",
+      "passed": true,
+      "error": "",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/99",
+      "gen_ok": true,
+      "latency": 23.526062726974487,
+      "tokens": {
+        "prompt_tokens": 269,
+        "total_tokens": 889,
+        "completion_tokens": 620,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 571
+      },
+      "completion_preview": "def closest_integer(value):\n    from decimal import Decimal, ROUND_HALF_UP\n    return int(Decimal(value).quantize(Decimal(\"1\"), rounding=ROUND_HALF_UP))",
+      "passed": true,
+      "error": "",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/100",
+      "gen_ok": true,
+      "latency": 12.648822546005249,
+      "tokens": {
+        "prompt_tokens": 247,
+        "total_tokens": 562,
+        "completion_tokens": 315,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 278
+      },
+      "completion_preview": "def make_a_pile(n):\n    return [n + 2 * i for i in range(n)]",
+      "passed": true,
+      "error": "",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/101",
+      "gen_ok": true,
+      "latency": 11.811474800109863,
+      "tokens": {
+        "prompt_tokens": 229,
+        "total_tokens": 538,
+        "completion_tokens": 309,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 175
+      },
+      "completion_preview": "def words_string(s):\n    \"\"\"\n    You will be given a string of words separated by commas or spaces. Your task is\n    to split the string into words and return an array of the words.\n    \n    For examp",
+      "passed": true,
+      "error": "",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/102",
+      "gen_ok": true,
+      "latency": 37.17723631858826,
+      "tokens": {
+        "prompt_tokens": 206,
+        "total_tokens": 1230,
+        "completion_tokens": 1024,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 1023
+      },
+      "completion_preview": "",
+      "passed": false,
+      "error": "Traceback (most recent call last):\n  File \"/tmp/tmpf288pob2.py\", line 29, in <module>\n    check(choose_num)\n  File \"/tmp/tmpf288pob2.py\", line 16, in check\n    assert candidate(12, 15) == 14\n           ^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/103",
+      "gen_ok": true,
+      "latency": 33.16972064971924,
+      "tokens": {
+        "prompt_tokens": 253,
+        "total_tokens": 1141,
+        "completion_tokens": 888,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 795
+      },
+      "completion_preview": "def rounded_avg(n, m):\n    if n > m:\n        return -1\n    total = n + m\n    if total % 2 == 0:\n        avg = total // 2\n    else:\n        half = total // 2\n        avg = half if half % 2 == 0 else ha",
+      "passed": true,
+      "error": "",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/104",
+      "gen_ok": true,
+      "latency": 15.116504430770874,
+      "tokens": {
+        "prompt_tokens": 214,
+        "total_tokens": 605,
+        "completion_tokens": 391,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 256
+      },
+      "completion_preview": "def unique_digits(x):\n    \"\"\"Given a list of positive integers x. return a sorted list of all \n    elements that hasn't any even digit.\n\n    Note: Returned list should be sorted in increasing order.\n ",
+      "passed": true,
+      "error": "",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/105",
+      "gen_ok": true,
+      "latency": 18.07373833656311,
+      "tokens": {
+        "prompt_tokens": 389,
+        "total_tokens": 841,
+        "completion_tokens": 452,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 371
+      },
+      "completion_preview": "def by_length(arr):\n    names = [\"One\", \"Two\", \"Three\", \"Four\", \"Five\", \"Six\", \"Seven\", \"Eight\", \"Nine\"]\n    return [names[n - 1] for n in sorted((x for x in arr if 1 <= x <= 9), reverse=True)]",
+      "passed": true,
+      "error": "",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/106",
+      "gen_ok": true,
+      "latency": 29.601439237594604,
+      "tokens": {
+        "prompt_tokens": 236,
+        "total_tokens": 938,
+        "completion_tokens": 702,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 604
+      },
+      "completion_preview": "def f(n):\n    result = []\n    for i in range(1, n + 1):\n        if i % 2 == 0:\n            fact = 1\n            for j in range(2, i + 1):\n                fact *= j\n            result.append(fact)\n    ",
+      "passed": true,
+      "error": "",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/107",
+      "gen_ok": true,
+      "latency": 18.44193148612976,
+      "tokens": {
+        "prompt_tokens": 330,
+        "total_tokens": 810,
+        "completion_tokens": 480,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 385
+      },
+      "completion_preview": "def even_odd_palindrome(n):\n    even = 0\n    odd = 0\n    for i in range(1, n + 1):\n        s = str(i)\n        if s == s[::-1]:\n            if i % 2 == 0:\n                even += 1\n            else:\n  ",
+      "passed": true,
+      "error": "",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/108",
+      "gen_ok": true,
+      "latency": 35.689618825912476,
+      "tokens": {
+        "prompt_tokens": 237,
+        "total_tokens": 1148,
+        "completion_tokens": 911,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 818
+      },
+      "completion_preview": "def count_nums(arr):\n    def signed_digit_sum(n):\n        if n < 0:\n            digits = str(-n)\n            return -int(digits[0]) + sum(int(d) for d in digits[1:])\n        return sum(int(d) for d in",
+      "passed": true,
+      "error": "",
+      "retried": true
+    },
+    {
+      "task_id": "HumanEval/109",
+      "gen_ok": true,
+      "latency": 37.587307929992676,
+      "tokens": {
+        "prompt_tokens": 415,
+        "total_tokens": 958,
+        "completion_tokens": 543,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 455
+      },
+      "completion_preview": "def move_one_ball(arr):\n    n = len(arr)\n    if n == 0:\n        return True\n    breaks = 0\n    for i in range(n):\n        if arr[i] > arr[(i + 1) % n]:\n            breaks += 1\n            if breaks > ",
+      "passed": true,
+      "error": "",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/110",
+      "gen_ok": true,
+      "latency": 29.982954502105713,
+      "tokens": {
+        "prompt_tokens": 309,
+        "total_tokens": 1051,
+        "completion_tokens": 742,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 654
+      },
+      "completion_preview": "def exchange(lst1, lst2):\n    odd_in_lst1 = sum(1 for num in lst1 if num % 2 != 0)\n    even_in_lst2 = sum(1 for num in lst2 if num % 2 == 0)\n    return \"YES\" if even_in_lst2 >= odd_in_lst1 else \"NO\"",
+      "passed": true,
+      "error": "",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/111",
+      "gen_ok": true,
+      "latency": 19.645740032196045,
+      "tokens": {
+        "prompt_tokens": 263,
+        "total_tokens": 785,
+        "completion_tokens": 522,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 296
+      },
+      "completion_preview": "def histogram(test):\n    \"\"\"Given a string representing a space separated lowercase letters, return a dictionary\n    of the letter with the most repetition and containing the corresponding count.\n    ",
+      "passed": true,
+      "error": "",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/112",
+      "gen_ok": true,
+      "latency": 9.349461555480957,
+      "tokens": {
+        "prompt_tokens": 275,
+        "total_tokens": 489,
+        "completion_tokens": 214,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 165
+      },
+      "completion_preview": "def reverse_delete(s,c):\n    result = ''.join(ch for ch in s if ch not in c)\n    return (result, result == result[::-1])",
+      "passed": true,
+      "error": "",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/113",
+      "gen_ok": true,
+      "latency": 30.179824113845825,
+      "tokens": {
+        "prompt_tokens": 287,
+        "total_tokens": 1073,
+        "completion_tokens": 786,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 558
+      },
+      "completion_preview": "def odd_count(lst):\n    \"\"\"Given a list of strings, where each string consists of only digits, return a list.\n    Each element i of the output should be \"the number of odd elements in the\n    string i",
+      "passed": true,
+      "error": "",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/114",
+      "gen_ok": true,
+      "latency": 13.601090908050537,
+      "tokens": {
+        "prompt_tokens": 203,
+        "total_tokens": 523,
+        "completion_tokens": 320,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 159
+      },
+      "completion_preview": "def minSubArraySum(nums):\n    \"\"\"\n    Given an array of integers nums, find the minimum sum of any non-empty sub-array\n    of nums.\n    Example\n    minSubArraySum([2, 3, 4, 1, 2, 4]) == 1\n    minSubAr",
+      "passed": true,
+      "error": "",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/115",
+      "gen_ok": true,
+      "latency": 20.849947929382324,
+      "tokens": {
+        "prompt_tokens": 436,
+        "total_tokens": 968,
+        "completion_tokens": 532,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 490
+      },
+      "completion_preview": "def max_fill(grid, capacity):\n    import math\n    return sum(math.ceil(sum(row) / capacity) for row in grid)",
+      "passed": true,
+      "error": "",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/116",
+      "gen_ok": true,
+      "latency": 40.7025625705719,
+      "tokens": {
+        "prompt_tokens": 284,
+        "total_tokens": 1308,
+        "completion_tokens": 1024,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 1023
+      },
+      "completion_preview": "",
+      "passed": false,
+      "error": "Traceback (most recent call last):\n  File \"/tmp/tmpnj1e2h3j.py\", line 33, in <module>\n    check(sort_array)\n  File \"/tmp/tmpnj1e2h3j.py\", line 19, in check\n    assert candidate([1,5,2,3,4]) == [1, 2, 4, 3, 5]\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/117",
+      "gen_ok": true,
+      "latency": 23.629632711410522,
+      "tokens": {
+        "prompt_tokens": 294,
+        "total_tokens": 918,
+        "completion_tokens": 624,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 557
+      },
+      "completion_preview": "def select_words(s, n):\n    vowels = set(\"aeiou\")\n    return [\n        word\n        for word in s.split()\n        if sum(1 for ch in word if ch.lower() not in vowels) == n\n    ]",
+      "passed": true,
+      "error": "",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/118",
+      "gen_ok": true,
+      "latency": 23.273604154586792,
+      "tokens": {
+        "prompt_tokens": 265,
+        "total_tokens": 897,
+        "completion_tokens": 632,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 405
+      },
+      "completion_preview": "def get_closest_vowel(word):\n    \"\"\"You are given a word. Your task is to find the closest vowel that stands between \n    two consonants from the right side of the word (case sensitive).\n    \n    Vowe",
+      "passed": true,
+      "error": "",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/119",
+      "gen_ok": true,
+      "latency": 19.90142846107483,
+      "tokens": {
+        "prompt_tokens": 279,
+        "total_tokens": 839,
+        "completion_tokens": 560,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 463
+      },
+      "completion_preview": "def match_parens(lst):\n    def good(s):\n        bal = 0\n        for ch in s:\n            bal += 1 if ch == '(' else -1\n            if bal < 0:\n                return False\n        return bal == 0\n\n   ",
+      "passed": true,
+      "error": "",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/120",
+      "gen_ok": true,
+      "latency": 18.151000261306763,
+      "tokens": {
+        "prompt_tokens": 329,
+        "total_tokens": 780,
+        "completion_tokens": 451,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 214
+      },
+      "completion_preview": "def maximum(arr, k):\n    \"\"\"\n    Given an array arr of integers and a positive integer k, return a sorted list \n    of length k with the maximum k numbers in arr.\n\n    Example 1:\n\n        Input: arr =",
+      "passed": true,
+      "error": "",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/121",
+      "gen_ok": true,
+      "latency": 14.305953741073608,
+      "tokens": {
+        "prompt_tokens": 209,
+        "total_tokens": 580,
+        "completion_tokens": 371,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 236
+      },
+      "completion_preview": "def solution(lst):\n    \"\"\"Given a non-empty list of integers, return the sum of all of the odd elements that are in even positions.\n    \n\n    Examples\n    solution([5, 8, 7, 1]) ==> 12\n    solution([3",
+      "passed": true,
+      "error": "",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/122",
+      "gen_ok": true,
+      "latency": 12.630730867385864,
+      "tokens": {
+        "prompt_tokens": 241,
+        "total_tokens": 568,
+        "completion_tokens": 327,
+        "prompt_tokens_details": {
+          "cached_tokens": 192
+        },
+        "reasoning_tokens": 171
+      },
+      "completion_preview": "def add_elements(arr, k):\n    \"\"\"\n    Given a non-empty array of integers arr and an integer k, return\n    the sum of the elements with at most two digits from the first k elements of arr.\n\n    Exampl",
+      "passed": true,
+      "error": "",
+      "retried": true
+    },
+    {
+      "task_id": "HumanEval/123",
+      "gen_ok": true,
+      "latency": 26.08715581893921,
+      "tokens": {
+        "prompt_tokens": 349,
+        "total_tokens": 1018,
+        "completion_tokens": 669,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 580
+      },
+      "completion_preview": "def get_odd_collatz(n):\n    odd_numbers = set()\n    while n != 1:\n        if n % 2 == 1:\n            odd_numbers.add(n)\n        n = n // 2 if n % 2 == 0 else 3 * n + 1\n    odd_numbers.add(1)\n    retur",
+      "passed": true,
+      "error": "",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/124",
+      "gen_ok": true,
+      "latency": 37.939695596694946,
+      "tokens": {
+        "prompt_tokens": 377,
+        "total_tokens": 1401,
+        "completion_tokens": 1024,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 1023
+      },
+      "completion_preview": "",
+      "passed": false,
+      "error": "Traceback (most recent call last):\n  File \"/tmp/tmpik619iwk.py\", line 60, in <module>\n    check(valid_date)\n  File \"/tmp/tmpik619iwk.py\", line 27, in check\n    assert candidate('03-11-2000') == True\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/125",
+      "gen_ok": true,
+      "latency": 26.288875341415405,
+      "tokens": {
+        "prompt_tokens": 257,
+        "total_tokens": 928,
+        "completion_tokens": 671,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 590
+      },
+      "completion_preview": "def split_words(txt):\n    if any(ch.isspace() for ch in txt):\n        return txt.split()\n    if ',' in txt:\n        return txt.split(',')\n    return sum(1 for ch in txt if ch.islower() and (ord(ch) - ",
+      "passed": true,
+      "error": "",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/126",
+      "gen_ok": true,
+      "latency": 22.474311113357544,
+      "tokens": {
+        "prompt_tokens": 370,
+        "total_tokens": 969,
+        "completion_tokens": 599,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 509
+      },
+      "completion_preview": "def is_sorted(lst):\n    for i in range(1, len(lst)):\n        if lst[i] < lst[i - 1]:\n            return False\n\n    counts = {}\n    for num in lst:\n        counts[num] = counts.get(num, 0) + 1\n        ",
+      "passed": true,
+      "error": "",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/127",
+      "gen_ok": true,
+      "latency": 19.866863489151,
+      "tokens": {
+        "prompt_tokens": 368,
+        "total_tokens": 872,
+        "completion_tokens": 504,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 357
+      },
+      "completion_preview": "def intersection(interval1, interval2):\n    start = max(interval1[0], interval2[0])\n    end = min(interval1[1], interval2[1])\n\n    if start > end:\n        return \"NO\"\n\n    length = end - start\n    if ",
+      "passed": true,
+      "error": "",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/128",
+      "gen_ok": true,
+      "latency": 18.768831729888916,
+      "tokens": {
+        "prompt_tokens": 236,
+        "total_tokens": 708,
+        "completion_tokens": 472,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 271
+      },
+      "completion_preview": "def prod_signs(arr):\n    \"\"\"\n    You are given an array arr of integers and you need to return\n    sum of magnitudes of integers multiplied by product of all signs\n    of each number in the array, rep",
+      "passed": true,
+      "error": "",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/129",
+      "gen_ok": true,
+      "latency": 39.34793758392334,
+      "tokens": {
+        "prompt_tokens": 509,
+        "total_tokens": 1533,
+        "completion_tokens": 1024,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 627
+      },
+      "completion_preview": "def minPath(grid, k):\n    \"\"\"\n    Given a grid with N rows and N columns (N >= 2) and a positive integer k, \n    each cell of the grid contains a value. Every integer in the range [1, N * N]\n    inclu",
+      "passed": false,
+      "error": "Traceback (most recent call last):\n  File \"/tmp/tmplgpf6g2s.py\", line 52, in <module>\n    check(minPath)\n  File \"/tmp/tmplgpf6g2s.py\", line 36, in check\n    assert candidate([[1, 2, 3], [4, 5, 6], [7, 8, 9]], 3) == [1, 2, 1]\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAss",
+      "retried": false,
+      "note": "extraction rerun (real model result)"
+    },
+    {
+      "task_id": "HumanEval/130",
+      "gen_ok": true,
+      "latency": 40.17830157279968,
+      "tokens": {
+        "prompt_tokens": 347,
+        "total_tokens": 1371,
+        "completion_tokens": 1024,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 1023
+      },
+      "completion_preview": "",
+      "passed": false,
+      "error": "Traceback (most recent call last):\n  File \"/tmp/tmpvj5en9n4.py\", line 39, in <module>\n    check(tri)\n  File \"/tmp/tmpvj5en9n4.py\", line 25, in check\n    assert candidate(3) == [1, 3, 2.0, 8.0]\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/131",
+      "gen_ok": true,
+      "latency": 13.70597767829895,
+      "tokens": {
+        "prompt_tokens": 183,
+        "total_tokens": 500,
+        "completion_tokens": 317,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 181
+      },
+      "completion_preview": "def digits(n):\n    \"\"\"Given a positive integer n, return the product of the odd digits.\n    Return 0 if all digits are even.\n    For example:\n    digits(1)  == 1\n    digits(4)  == 0\n    digits(235) ==",
+      "passed": true,
+      "error": "",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/132",
+      "gen_ok": true,
+      "latency": 39.73781108856201,
+      "tokens": {
+        "prompt_tokens": 252,
+        "total_tokens": 1276,
+        "completion_tokens": 1024,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 1023
+      },
+      "completion_preview": "",
+      "passed": false,
+      "error": "Traceback (most recent call last):\n  File \"/tmp/tmprlu89xql.py\", line 39, in <module>\n    check(is_nested)\n  File \"/tmp/tmprlu89xql.py\", line 20, in check\n    assert candidate('[[]]') == True, \"This prints if this assert fails 1 (good for debugging!)\"\n           ^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionEr",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/133",
+      "gen_ok": true,
+      "latency": 21.37154221534729,
+      "tokens": {
+        "prompt_tokens": 272,
+        "total_tokens": 850,
+        "completion_tokens": 578,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 392
+      },
+      "completion_preview": "def sum_squares(lst):\n    \"\"\"You are given a list of numbers.\n    You need to return the sum of squared numbers in the given list,\n    round each element in the list to the upper int(Ceiling) first.\n ",
+      "passed": true,
+      "error": "",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/134",
+      "gen_ok": true,
+      "latency": 29.97050380706787,
+      "tokens": {
+        "prompt_tokens": 265,
+        "total_tokens": 974,
+        "completion_tokens": 709,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 654
+      },
+      "completion_preview": "def check_if_last_char_is_a_letter(txt):\n    return bool(txt) and txt[-1].isalpha() and (len(txt) == 1 or txt[-2] == \" \")",
+      "passed": true,
+      "error": "",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/135",
+      "gen_ok": true,
+      "latency": 18.086202383041382,
+      "tokens": {
+        "prompt_tokens": 217,
+        "total_tokens": 675,
+        "completion_tokens": 458,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 307
+      },
+      "completion_preview": "def can_arrange(arr):\n    \"\"\"Create a function which returns the largest index of an element which\n    is not greater than or equal to the element immediately preceding it. If\n    no such element exis",
+      "passed": true,
+      "error": "",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/136",
+      "gen_ok": true,
+      "latency": 13.205656290054321,
+      "tokens": {
+        "prompt_tokens": 255,
+        "total_tokens": 595,
+        "completion_tokens": 340,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 143
+      },
+      "completion_preview": "def largest_smallest_integers(lst):\n    '''\n    Create a function that returns a tuple (a, b), where 'a' is\n    the largest of negative integers, and 'b' is the smallest\n    of positive integers in a ",
+      "passed": true,
+      "error": "",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/137",
+      "gen_ok": true,
+      "latency": 24.333287477493286,
+      "tokens": {
+        "prompt_tokens": 259,
+        "total_tokens": 804,
+        "completion_tokens": 545,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 320
+      },
+      "completion_preview": "def compare_one(a, b):\n    \"\"\"\n    Create a function that takes integers, floats, or strings representing\n    real numbers, and returns the larger variable in its given variable type.\n    Return None ",
+      "passed": true,
+      "error": "",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/138",
+      "gen_ok": true,
+      "latency": 18.162764310836792,
+      "tokens": {
+        "prompt_tokens": 193,
+        "total_tokens": 509,
+        "completion_tokens": 316,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 215
+      },
+      "completion_preview": "def is_equal_to_sum_even(n):\n    \"\"\"Evaluate whether the given number n can be written as the sum of exactly 4 positive even numbers\n    Example\n    is_equal_to_sum_even(4) == False\n    is_equal_to_su",
+      "passed": true,
+      "error": "",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/139",
+      "gen_ok": true,
+      "error": "",
+      "latency": 9.865404605865479,
+      "passed": true,
+      "attempts": 1,
+      "note": "timeout rerun (real model result)"
+    },
+    {
+      "task_id": "HumanEval/140",
+      "gen_ok": true,
+      "error": "",
+      "latency": 25.95485234260559,
+      "passed": true,
+      "attempts": 1,
+      "note": "timeout rerun (real model result)"
+    },
+    {
+      "task_id": "HumanEval/141",
+      "gen_ok": true,
+      "latency": 31.14022707939148,
+      "tokens": {
+        "prompt_tokens": 328,
+        "total_tokens": 1036,
+        "completion_tokens": 708,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 565
+      },
+      "completion_preview": "def file_name_check(file_name):\n    if file_name.count('.') != 1:\n        return 'No'\n    if sum('0' <= ch <= '9' for ch in file_name) > 3:\n        return 'No'\n    before, after = file_name.split('.')",
+      "passed": true,
+      "error": "",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/142",
+      "gen_ok": true,
+      "error": "",
+      "latency": 26.585538864135742,
+      "passed": true,
+      "attempts": 1,
+      "note": "timeout rerun (real model result)"
+    },
+    {
+      "task_id": "HumanEval/143",
+      "gen_ok": true,
+      "error": "",
+      "latency": 20.879608154296875,
+      "passed": true,
+      "attempts": 1,
+      "note": "timeout rerun (real model result)"
+    },
+    {
+      "task_id": "HumanEval/144",
+      "gen_ok": true,
+      "latency": 17.393168926239014,
+      "tokens": {
+        "prompt_tokens": 268,
+        "total_tokens": 647,
+        "completion_tokens": 379,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 193
+      },
+      "completion_preview": "def simplify(x, n):\n    \"\"\"Your task is to implement a function that will simplify the expression\n    x * n. The function returns True if x * n evaluates to a whole number and False\n    otherwise. Bot",
+      "passed": true,
+      "error": "",
+      "retried": true
+    },
+    {
+      "task_id": "HumanEval/145",
+      "gen_ok": true,
+      "latency": 37.81189560890198,
+      "tokens": {
+        "prompt_tokens": 229,
+        "total_tokens": 1253,
+        "completion_tokens": 1024,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 1023
+      },
+      "completion_preview": "",
+      "passed": false,
+      "error": "Traceback (most recent call last):\n  File \"/tmp/tmp_8e66bmw.py\", line 30, in <module>\n    check(order_by_points)\n  File \"/tmp/tmp_8e66bmw.py\", line 18, in check\n    assert candidate([1, 11, -1, -11, -12]) == [-1, -11, 1, -12, 11]\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nA",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/146",
+      "gen_ok": true,
+      "latency": 23.89874029159546,
+      "tokens": {
+        "prompt_tokens": 232,
+        "total_tokens": 845,
+        "completion_tokens": 613,
+        "prompt_tokens_details": {
+          "cached_tokens": 192
+        },
+        "reasoning_tokens": 531
+      },
+      "completion_preview": "def specialFilter(nums):\n    count = 0\n    for num in nums:\n        if num > 10:\n            s = str(abs(num))\n            if int(s[0]) % 2 == 1 and int(s[-1]) % 2 == 1:\n                count += 1\n   ",
+      "passed": true,
+      "error": "",
+      "retried": true
+    },
+    {
+      "task_id": "HumanEval/147",
+      "gen_ok": true,
+      "latency": 39.98476052284241,
+      "tokens": {
+        "prompt_tokens": 281,
+        "total_tokens": 1305,
+        "completion_tokens": 1024,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 1023
+      },
+      "completion_preview": "",
+      "passed": false,
+      "error": "Traceback (most recent call last):\n  File \"/tmp/tmplbf6wtuo.py\", line 26, in <module>\n    check(get_max_triples)\n  File \"/tmp/tmplbf6wtuo.py\", line 20, in check\n    assert candidate(5) == 1\n           ^^^^^^^^^^^^^^^^^\nAssertionError",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/148",
+      "gen_ok": true,
+      "latency": 13.64926290512085,
+      "tokens": {
+        "prompt_tokens": 324,
+        "total_tokens": 668,
+        "completion_tokens": 344,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 218
+      },
+      "completion_preview": "def bf(planet1, planet2):\n    planets = [\"Mercury\", \"Venus\", \"Earth\", \"Mars\", \"Jupiter\", \"Saturn\", \"Uranus\", \"Neptune\"]\n    if planet1 not in planets or planet2 not in planets:\n        return ()\n    i",
+      "passed": true,
+      "error": "",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/149",
+      "gen_ok": true,
+      "latency": 10.852550506591797,
+      "tokens": {
+        "prompt_tokens": 301,
+        "total_tokens": 563,
+        "completion_tokens": 262,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 211
+      },
+      "completion_preview": "def sorted_list_sum(lst):\n    return sorted((s for s in lst if len(s) % 2 == 0), key=lambda s: (len(s), s))",
+      "passed": true,
+      "error": "",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/150",
+      "gen_ok": true,
+      "latency": 13.761091709136963,
+      "tokens": {
+        "prompt_tokens": 200,
+        "total_tokens": 574,
+        "completion_tokens": 374,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 206
+      },
+      "completion_preview": "def x_or_y(n, x, y):\n    \"\"\"A simple program which should return the value of x if n is \n    a prime number and should return the value of y otherwise.\n\n    Examples:\n    for x_or_y(7, 34, 12) == 34\n ",
+      "passed": true,
+      "error": "",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/151",
+      "gen_ok": true,
+      "latency": 27.27838897705078,
+      "tokens": {
+        "prompt_tokens": 251,
+        "total_tokens": 945,
+        "completion_tokens": 694,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 636
+      },
+      "completion_preview": "def double_the_difference(lst):\n    return sum(n * n for n in lst if isinstance(n, int) and not isinstance(n, bool) and n >= 0 and n % 2 == 1)",
+      "passed": true,
+      "error": "",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/152",
+      "gen_ok": true,
+      "latency": 11.489178895950317,
+      "tokens": {
+        "prompt_tokens": 342,
+        "total_tokens": 625,
+        "completion_tokens": 283,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 244
+      },
+      "completion_preview": "def compare(game, guess):\n    return [abs(score - guessed) for score, guessed in zip(game, guess)]",
+      "passed": true,
+      "error": "",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/153",
+      "gen_ok": true,
+      "latency": 22.266915559768677,
+      "tokens": {
+        "prompt_tokens": 391,
+        "total_tokens": 994,
+        "completion_tokens": 603,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 532
+      },
+      "completion_preview": "def Strongest_Extension(class_name, extensions):\n    strongest = max(\n        extensions,\n        key=lambda ext: sum(ch.isupper() for ch in ext) - sum(ch.islower() for ch in ext)\n    )\n    return f\"{",
+      "passed": true,
+      "error": "",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/154",
+      "gen_ok": true,
+      "latency": 20.525730848312378,
+      "tokens": {
+        "prompt_tokens": 249,
+        "total_tokens": 1273,
+        "completion_tokens": 1024,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 1006
+      },
+      "completion_preview": "def cycpattern_check(a , b):\n    \"\"\"You are given 2 words. You need to return True if the second word or any of its rotations is a substring in the first word\n    cycpattern_check(\"abcd\",\"abd\") => Fal",
+      "passed": true,
+      "error": "",
+      "retried": false,
+      "note": "extraction rerun (real model result)"
+    },
+    {
+      "task_id": "HumanEval/155",
+      "gen_ok": true,
+      "latency": 12.329201698303223,
+      "tokens": {
+        "prompt_tokens": 179,
+        "total_tokens": 513,
+        "completion_tokens": 334,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 205
+      },
+      "completion_preview": "def even_odd_count(num):\n    \"\"\"Given an integer. return a tuple that has the number of even and odd digits respectively.\n\n     Example:\n        even_odd_count(-12) ==> (1, 1)\n        even_odd_count(1",
+      "passed": true,
+      "error": "",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/156",
+      "gen_ok": true,
+      "latency": 18.830233812332153,
+      "tokens": {
+        "prompt_tokens": 219,
+        "total_tokens": 723,
+        "completion_tokens": 504,
+        "prompt_tokens_details": {
+          "cached_tokens": 192
+        },
+        "reasoning_tokens": 268
+      },
+      "completion_preview": "def int_to_mini_roman(number):\n    \"\"\"\n    Given a positive integer, obtain its roman numeral equivalent as a string,\n    and return it in lowercase.\n    Restrictions: 1 <= num <= 1000\n\n    Examples:\n",
+      "passed": true,
+      "error": "",
+      "retried": true
+    },
+    {
+      "task_id": "HumanEval/157",
+      "gen_ok": true,
+      "latency": 53.02695655822754,
+      "tokens": {
+        "prompt_tokens": 222,
+        "total_tokens": 1246,
+        "completion_tokens": 1024,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 1020
+      },
+      "completion_preview": "",
+      "passed": false,
+      "error": "Traceback (most recent call last):\n  File \"/tmp/tmpa62_2gyh.py\", line 33, in <module>\n    check(right_angle_triangle)\n  File \"/tmp/tmpa62_2gyh.py\", line 17, in check\n    assert candidate(3, 4, 5) == True, \"This prints if this assert fails 1 (good for debugging!)\"\n           ^^^^^^^^^^^^^^^^^^^^^^^^^",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/158",
+      "gen_ok": true,
+      "latency": 27.795190811157227,
+      "tokens": {
+        "prompt_tokens": 233,
+        "total_tokens": 979,
+        "completion_tokens": 746,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 710
+      },
+      "completion_preview": "def find_max(words):\n    return min(words, key=lambda word: (-len(set(word)), word))",
+      "passed": true,
+      "error": "",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/159",
+      "gen_ok": true,
+      "latency": 7.841742992401123,
+      "tokens": {
+        "prompt_tokens": 388,
+        "total_tokens": 546,
+        "completion_tokens": 158,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 115
+      },
+      "completion_preview": "def eat(number, need, remaining):\n    eaten = min(need, remaining)\n    return [number + eaten, remaining - eaten]",
+      "passed": true,
+      "error": "",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/160",
+      "gen_ok": true,
+      "latency": 17.684043169021606,
+      "tokens": {
+        "prompt_tokens": 321,
+        "total_tokens": 757,
+        "completion_tokens": 436,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 178
+      },
+      "completion_preview": "def do_algebra(operator, operand):\n    \"\"\"\n    Given two lists operator, and operand. The first list has basic algebra operations, and \n    the second list is a list of integers. Use the two given lis",
+      "passed": true,
+      "error": "",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/161",
+      "gen_ok": true,
+      "latency": 12.937194347381592,
+      "tokens": {
+        "prompt_tokens": 219,
+        "total_tokens": 553,
+        "completion_tokens": 334,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 178
+      },
+      "completion_preview": "def solve(s):\n    \"\"\"You are given a string s.\n    if s[i] is a letter, reverse its case from lower to upper or vise versa, \n    otherwise keep it as it is.\n    If the string contains no letters, reve",
+      "passed": true,
+      "error": "",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/162",
+      "gen_ok": true,
+      "latency": 9.282916069030762,
+      "tokens": {
+        "prompt_tokens": 191,
+        "total_tokens": 385,
+        "completion_tokens": 194,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 83
+      },
+      "completion_preview": "import hashlib\n\n\ndef string_to_md5(text):\n    \"\"\"\n    Given a string 'text', return its md5 hash equivalent string.\n    If 'text' is an empty string, return None.\n\n    >>> string_to_md5('Hello world')",
+      "passed": true,
+      "error": "",
+      "retried": false
+    },
+    {
+      "task_id": "HumanEval/163",
+      "gen_ok": true,
+      "latency": 21.7672016620636,
+      "tokens": {
+        "prompt_tokens": 218,
+        "total_tokens": 778,
+        "completion_tokens": 560,
+        "prompt_tokens_details": {
+          "cached_tokens": 64
+        },
+        "reasoning_tokens": 406
+      },
+      "completion_preview": "def generate_integers(a, b):\n    \"\"\"\n    Given two positive integers a and b, return the even digits between a\n    and b, in ascending order.\n\n    For example:\n    generate_integers(2, 8) => [2, 4, 6,",
+      "passed": true,
+      "error": "",
+      "retried": false
+    }
+  ],
+  "note": "merged: extraction rerun + timeout rerun, all gen_ok, 32 real failures"
+}

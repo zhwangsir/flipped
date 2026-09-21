@@ -561,7 +561,7 @@ export function Composer({
               disabled={isDisabled}
               title='模型'
             >
-              <option value='coder'>Kimi-K2.7 · coder</option>
+              <option value='coder'>GLM-5.2 · coder</option>
               <option value='architect'>GLM-5.2 · architect</option>
             </select>
           )}

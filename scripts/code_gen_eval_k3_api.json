@@ -1,0 +1,185 @@
+{
+  "Kimi-K3-API": [
+    {
+      "task": "fib_recursive",
+      "desc": "递归斐波那契",
+      "gen_ok": true,
+      "latency": 25.883522987365723,
+      "tokens": {
+        "prompt": 146,
+        "completion": 667,
+        "reasoning": 475
+      },
+      "reasoning_length": 1786,
+      "reasoning_preview": "The user wants a Python function `fib(n: int) -> int` that:\n1. Returns the nth Fibonacci number\n2. Uses recursion with memoization\n3. Includes type hints\n4. Includes a docstring\n5. Only output the cod",
+      "code_length": 605,
+      "code_preview": "from functools import lru_cache\n\n\n@lru_cache(maxsize=None)\ndef fib(n: int) -> int:\n    \"\"\"\n    Return the nth Fibonacci number using recursion with memoization.\n\n    The sequence is defined as fib(0) = 0, fib(1) = 1, and\n    fib(n) = fib(n - 1) + fib(n - 2) for n >= 2.\n\n    Args:\n        n: The inde",
+      "code_full": "from functools import lru_cache\n\n\n@lru_cache(maxsize=None)\ndef fib(n: int) -> int:\n    \"\"\"\n    Return the nth Fibonacci number using recursion with memoization.\n\n    The sequence is defined as fib(0) = 0, fib(1) = 1, and\n    fib(n) = fib(n - 1) + fib(n - 2) for n >= 2.\n\n    Args:\n        n: The index of the desired Fibonacci number (must be non-negative).\n\n    Returns:\n        The nth Fibonacci number.\n\n    Raises:\n        ValueError: If n is negative.\n    \"\"\"\n    if n < 0:\n        raise ValueError(\"n must be a non-negative integer\")\n    if n < 2:\n        return n\n    return fib(n - 1) + fib(n - 2)",
+      "quality": {
+        "checks": {
+          "type_hints": true,
+          "docstring": true,
+          "memoization": true,
+          "recursion": true
+        },
+        "passed": 4,
+        "total": 4,
+        "score": 1.0
+      },
+      "run": {
+        "ok": true,
+        "tests_passed": 6,
+        "tests_total": 6,
+        "errors": [],
+        "output": "ALL_TESTS_PASSED",
+        "stderr": ""
+      },
+      "scores": {
+        "correctness": 1.0,
+        "quality": 1.0,
+        "completeness": 1.0,
+        "total": 1.0
+      }
+    },
+    {
+      "task": "binary_search",
+      "desc": "二分查找",
+      "gen_ok": true,
+      "latency": 10.586005210876465,
+      "tokens": {
+        "prompt": 147,
+        "completion": 242,
+        "reasoning": 60
+      },
+      "reasoning_length": 256,
+      "reasoning_preview": "The user wants a binary search function in Python with:\n- Type hints\n- Docstring\n- Handles edge cases (empty array, target not found)\n- Returns index of target or -1\n- Only output the code block\n\nLet ",
+      "code_length": 655,
+      "code_preview": "def binary_search(arr: list[int], target: int) -> int:\n    \"\"\"\n    Perform binary search on a sorted array to find the target value.\n\n    Args:\n        arr: A list of integers sorted in ascending order.\n        target: The integer value to search for.\n\n    Returns:\n        The index of the target in",
+      "code_full": "def binary_search(arr: list[int], target: int) -> int:\n    \"\"\"\n    Perform binary search on a sorted array to find the target value.\n\n    Args:\n        arr: A list of integers sorted in ascending order.\n        target: The integer value to search for.\n\n    Returns:\n        The index of the target in the array, or -1 if the target\n        is not found or the array is empty.\n    \"\"\"\n    left, right = 0, len(arr) - 1\n\n    while left <= right:\n        mid = left + (right - left) // 2\n\n        if arr[mid] == target:\n            return mid\n        elif arr[mid] < target:\n            left = mid + 1\n        else:\n            right = mid - 1\n\n    return -1",
+      "quality": {
+        "checks": {
+          "type_hints": true,
+          "docstring": true,
+          "edge_empty": false,
+          "while_loop": true
+        },
+        "passed": 3,
+        "total": 4,
+        "score": 0.75
+      },
+      "run": {
+        "ok": true,
+        "tests_passed": 7,
+        "tests_total": 7,
+        "errors": [],
+        "output": "ALL_TESTS_PASSED",
+        "stderr": ""
+      },
+      "scores": {
+        "correctness": 1.0,
+        "quality": 0.75,
+        "completeness": 1.0,
+        "total": 0.925
+      }
+    },
+    {
+      "task": "validate_email",
+      "gen_ok": false,
+      "error": "HTTP 504: <html>\r\n<head><title>504 Gateway Time-out</title></head>\r\n<body bgcolor=\"white\">\r\n<center><h1>504 Gateway Time-out</h1></center>\r\n<hr><center>nginx</center>\r\n</body>\r\n</html>\r\n",
+      "latency": 69.59619498252869
+    },
+    {
+      "task": "stack_class",
+      "desc": "栈数据结构",
+      "gen_ok": true,
+      "latency": 34.891738176345825,
+      "tokens": {
+        "prompt": 142,
+        "completion": 873,
+        "reasoning": 498
+      },
+      "reasoning_length": 2189,
+      "reasoning_preview": "The user wants a Python Stack class with:\n- push(item)\n- pop() - raises IndexError if empty\n- peek() - raises IndexError if empty\n- is_empty()\n- __len__\n- Type hints\n- Docstrings\n- Uses a list interna",
+      "code_length": 1609,
+      "code_preview": "from typing import Generic, TypeVar\n\nT = TypeVar(\"T\")\n\n\nclass Stack(Generic[T]):\n    \"\"\"A last-in, first-out (LIFO) stack data structure.\n\n    Internally uses a Python list to store elements.\n    \"\"\"\n\n    def __init__(self) -> None:\n        \"\"\"Initialize an empty stack.\"\"\"\n        self._items: list[",
+      "code_full": "from typing import Generic, TypeVar\n\nT = TypeVar(\"T\")\n\n\nclass Stack(Generic[T]):\n    \"\"\"A last-in, first-out (LIFO) stack data structure.\n\n    Internally uses a Python list to store elements.\n    \"\"\"\n\n    def __init__(self) -> None:\n        \"\"\"Initialize an empty stack.\"\"\"\n        self._items: list[T] = []\n\n    def push(self, item: T) -> None:\n        \"\"\"Push an item onto the top of the stack.\n\n        Args:\n            item: The item to add to the stack.\n        \"\"\"\n        self._items.append(item)\n\n    def pop(self) -> T:\n        \"\"\"Remove and return the item at the top of the stack.\n\n        Returns:\n            The item at the top of the stack.\n\n        Raises:\n            IndexError: If the stack is empty.\n        \"\"\"\n        if self.is_empty():\n            raise IndexError(\"pop from empty stack\")\n        return self._items.pop()\n\n    def peek(self) -> T:\n        \"\"\"Return the item at the top of the stack without removing it.\n\n        Returns:\n            The item at the top of the stack.\n\n        Raises:\n            IndexError: If the stack is empty.\n        \"\"\"\n        if self.is_empty():\n            raise IndexError(\"peek from empty stack\")\n        return self._items[-1]\n\n    def is_empty(self) -> bool:\n        \"\"\"Check whether the stack is empty.\n\n        Returns:\n            True if the stack contains no items, False otherwise.\n        \"\"\"\n        return len(self._items) == 0\n\n    def __len__(self) -> int:\n        \"\"\"Return the number of items in the stack.\n\n        Returns:\n            The number of items currently in the stack.\n        \"\"\"\n        return len(self._items)",
+      "quality": {
+        "checks": {
+          "class_def": true,
+          "type_hints": true,
+          "docstring": true,
+          "push_method": true,
+          "pop_method": true,
+          "peek_method": true,
+          "is_empty_method": true,
+          "index_error": true
+        },
+        "passed": 8,
+        "total": 8,
+        "score": 1.0
+      },
+      "run": {
+        "ok": true,
+        "tests_passed": 0,
+        "tests_total": 0,
+        "errors": [],
+        "output": "ALL_TESTS_PASSED",
+        "stderr": ""
+      },
+      "scores": {
+        "correctness": 1.0,
+        "quality": 1.0,
+        "completeness": 1.0,
+        "total": 1.0
+      }
+    },
+    {
+      "task": "js_debounce",
+      "desc": "JS 防抖函数",
+      "gen_ok": true,
+      "latency": 38.05776500701904,
+      "tokens": {
+        "prompt": 135,
+        "completion": 891,
+        "reasoning": 552
+      },
+      "reasoning_length": 2303,
+      "reasoning_preview": "The user wants a JavaScript debounce function with JSDoc comments. They want only the code block output. Let me write a clean, well-documented debounce function.\n\nKey requirements:\n1. `debounce(func, ",
+      "code_length": 1343,
+      "code_preview": "/**\n * Creates a debounced version of the provided function that delays its\n * execution until after `delay` milliseconds have elapsed since the last\n * time the debounced function was invoked.\n *\n * @param {Function} func - The function to debounce.\n * @param {number} delay - The number of millisec",
+      "code_full": "/**\n * Creates a debounced version of the provided function that delays its\n * execution until after `delay` milliseconds have elapsed since the last\n * time the debounced function was invoked.\n *\n * @param {Function} func - The function to debounce.\n * @param {number} delay - The number of milliseconds to wait after the last\n *   invocation before executing `func`.\n * @returns {Function} The debounced function. It preserves the `this` context\n *   and arguments of the most recent invocation, and exposes a `cancel()`\n *   method to clear any pending execution.\n */\nfunction debounce(func, delay) {\n  /** @type {ReturnType<typeof setTimeout> | null} */\n  let timeoutId = null;\n\n  /**\n   * The debounced function.\n   *\n   * @this {*} The context the debounced function is invoked with.\n   * @param {...*} args - Arguments to forward to `func`.\n   * @returns {void}\n   */\n  function debounced(...args) {\n    if (timeoutId !== null) {\n      clearTimeout(timeoutId);\n    }\n\n    timeoutId = setTimeout(() => {\n      timeoutId = null;\n      func.apply(this, args);\n    }, delay);\n  }\n\n  /**\n   * Cancels any pending execution of the debounced function.\n   *\n   * @returns {void}\n   */\n  debounced.cancel = function cancel() {\n    if (timeoutId !== null) {\n      clearTimeout(timeoutId);\n      timeoutId = null;\n    }\n  };\n\n  return debounced;\n}",
+      "quality": {
+        "checks": {
+          "function_def": true,
+          "jsdoc": true,
+          "clear_timeout": true,
+          "set_timeout": true,
+          "apply_or_call": true
+        },
+        "passed": 5,
+        "total": 5,
+        "score": 1.0
+      },
+      "run": {
+        "ok": true,
+        "tests_passed": 0,
+        "tests_total": 0,
+        "errors": [],
+        "output": "",
+        "stderr": ""
+      },
+      "scores": {
+        "correctness": 0.0,
+        "quality": 1.0,
+        "completeness": 1.0,
+        "total": 0.5
+      }
+    },
+    {
+      "task": "json_parser",
+      "gen_ok": false,
+      "error": "HTTP 504: <html>\r\n<head><title>504 Gateway Time-out</title></head>\r\n<body bgcolor=\"white\">\r\n<center><h1>504 Gateway Time-out</h1></center>\r\n<hr><center>nginx</center>\r\n</body>\r\n</html>\r\n",
+      "latency": 61.05854105949402
+    }
+  ]
+}

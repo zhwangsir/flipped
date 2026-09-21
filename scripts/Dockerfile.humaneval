@@ -1,0 +1,11 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+RUN pip install --no-cache-dir -i https://mirrors.aliyun.com/pypi/simple/ httpx
+
+COPY humaneval_eval.py /app/humaneval_eval.py
+
+RUN mkdir -p /results /data
+
+CMD ["python3", "/app/humaneval_eval.py"]

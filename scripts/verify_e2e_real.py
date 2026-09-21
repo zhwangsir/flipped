@@ -7,20 +7,20 @@ flipped OpenHandsWorker → 真实 OpenHands agent-server 沙盒 → 真实本�
   PYTHONPATH=src .venv/bin/python scripts/verify_e2e_real.py
 环境变量(均有默认):
   OH_AGENT_HOST   agent-server 地址(默认 http://localhost:8000)
-  OH_BASE_URL     模型端点(默认 exo 直连 http://100.64.201.37:52415/v1)
-  OH_MODEL        模型 id(默认 mlx-community/Kimi-K2.7-Code-4bit)
+  OH_BASE_URL     模型端点(默认 exo 直连 http://dgmt-studio01mac-studio:52415/v1)
+  OH_MODEL        模型 id(默认 mlx-community/GLM-5.2-fp8)
 退出码 0=PASS,2=FAIL。
 """
 import os
 import sys
 
-os.environ.setdefault("NO_PROXY", "100.64.201.37,localhost,127.0.0.1,::1")
+os.environ.setdefault("NO_PROXY", "dgmt-studio01mac-studio,.ts.net,localhost,127.0.0.1,::1")
 os.environ["no_proxy"] = os.environ["NO_PROXY"]
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 AGENT_HOST = os.environ.get("OH_AGENT_HOST", "http://localhost:8000")
-BASE_URL = os.environ.get("OH_BASE_URL", "http://100.64.201.37:52415/v1")
-MODEL = os.environ.get("OH_MODEL", "mlx-community/Kimi-K2.7-Code-4bit")
+BASE_URL = os.environ.get("OH_BASE_URL", "http://dgmt-studio01mac-studio:52415/v1")
+MODEL = os.environ.get("OH_MODEL", "mlx-community/GLM-5.2-fp8")
 
 
 class _CollectingBus:
@@ -60,7 +60,15 @@ def main() -> int:
         return 2
 
     finished = res.get("status", "").endswith("FINISHED")
-    made_file = any(t.endswith("file_change") and "hello" in (p.get("path") or "") for t, p in bus.events)
+    # M199 跟进：agent 可能用 terminal  heredoc/printf 建文件（无 file_change 事件），
+    # 此时以「terminal 命令写 hello.py」作为创建证据；file editor 路径仍认 file_change。
+    made_file = any(
+        t.endswith("file_change") and "hello" in (p.get("path") or "") for t, p in bus.events
+    ) or any(
+        t.endswith("terminal") and "hello.py" in (p.get("command") or "")
+        and (">" in (p.get("command") or "") or "tee" in (p.get("command") or ""))
+        for t, p in bus.events
+    )
     ran_ok = any(t.endswith("tool_result") and p.get("tool") == "terminal" and p.get("status") == "ok"
                  for t, p in bus.events)
     ok = finished and made_file and ran_ok

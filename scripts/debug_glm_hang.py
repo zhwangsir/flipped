@@ -7,7 +7,8 @@ import json
 import time
 import urllib.request
 
-EXO = "http://studio01-1:52415/v1/chat/completions"
+# M192: 主机名漂移跟进——dgmt-studio01mac-studio（旧名 studio01-1 已失效）
+EXO = "http://dgmt-studio01mac-studio:52415/v1/chat/completions"
 
 # 构造约 12k token 的系统 prompt（重复填充模拟 OpenHands 大系统提示）
 filler = (

@@ -146,7 +146,7 @@ export function Plugins() {
             <div className="plugins-grid">
               {[
                 ['Supervisor · GLM-5.2', '编排者 / 架构师,拆解需求与调度'],
-                ['Worker · Kimi-K2.7', '执行者 / 码农,沙盒内改代码跑测'],
+                ['Worker · GLM-5.2', '执行者 / 码农,沙盒内改代码跑测(与编排同源)'],
                 ['Overseer · GLM-5.2', '监督者,评估效率与方向(强制验收)'],
               ].map(([t, d]) => (
                 <div className="plugin-card" key={t}>

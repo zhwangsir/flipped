@@ -79,7 +79,7 @@ describe('Settings — 配置页 / 模型选择', () => {
     render(<Settings />);
     fireEvent.click(screen.getByText('配置'));
     expect(screen.getByText('默认执行模型')).toBeInTheDocument();
-    expect(screen.getByText('Kimi-K2.7 · coder')).toBeInTheDocument();
+    expect(screen.getByText('GLM-5.2 · coder')).toBeInTheDocument();
     expect(screen.getByText('GLM-5.2 · architect')).toBeInTheDocument();
   });
 
@@ -97,7 +97,7 @@ describe('Settings — 配置页 / 模型选择', () => {
     mockedUseApp.mockReturnValue({ ...baseState, selectedModel: 'architect', setModel } as never);
     render(<Settings />);
     fireEvent.click(screen.getByText('配置'));
-    fireEvent.click(screen.getByText('Kimi-K2.7 · coder'));
+    fireEvent.click(screen.getByText('GLM-5.2 · coder'));
     expect(setModel).toHaveBeenCalledWith('coder');
   });
 
@@ -105,7 +105,7 @@ describe('Settings — 配置页 / 模型选择', () => {
     mockedUseApp.mockReturnValue({ ...baseState, selectedModel: 'coder' } as never);
     render(<Settings />);
     fireEvent.click(screen.getByText('配置'));
-    const coderBtn = screen.getByText('Kimi-K2.7 · coder').closest('button') as HTMLElement;
+    const coderBtn = screen.getByText('GLM-5.2 · coder').closest('button') as HTMLElement;
     const architectBtn = screen.getByText('GLM-5.2 · architect').closest('button') as HTMLElement;
     expect(coderBtn.classList.contains('active')).toBe(true);
     expect(architectBtn.classList.contains('active')).toBe(false);

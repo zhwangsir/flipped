@@ -74,7 +74,7 @@ describe('Plugins — 渲染', () => {
     const skillsTab = screen.getByText('技能');
     fireEvent.click(skillsTab);
     expect(screen.getByText('Supervisor · GLM-5.2')).toBeInTheDocument();
-    expect(screen.getByText('Worker · Kimi-K2.7')).toBeInTheDocument();
+    expect(screen.getByText('Worker · GLM-5.2')).toBeInTheDocument();
     expect(screen.getByText('Overseer · GLM-5.2')).toBeInTheDocument();
   });
 
@@ -251,7 +251,7 @@ describe('Plugins — 技能 tab 内容', () => {
     render(<Plugins />);
     fireEvent.click(screen.getByText('技能'));
     expect(screen.getByText('Supervisor · GLM-5.2')).toBeInTheDocument();
-    expect(screen.getByText('Worker · Kimi-K2.7')).toBeInTheDocument();
+    expect(screen.getByText('Worker · GLM-5.2')).toBeInTheDocument();
     expect(screen.getByText('Overseer · GLM-5.2')).toBeInTheDocument();
   });
 
